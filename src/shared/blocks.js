@@ -57,10 +57,9 @@ export const WEAPON = {
   [BT.LANCE]: { kind: 'lance', range: 450, damage: 2500, cooldown: 20 },
 };
 
-// Firing arcs: a weapon faces out of whichever hull sides it is exposed on, and can only
-// fire at targets within ARC_DEG of that direction. Missile launchers and heavy lasers
+// Firing arcs: a cannon, laser or point-defence gun can fire in any direction where its shot
+// wouldn't pass through its own ship (see arcs.js). Missile launchers and heavy lasers
 // (turrets) fire in any direction.
-export const ARC_DEG = 100;
 
 export const isWeapon = (t) => t >= BT.LASER && t <= BT.LANCE;
 

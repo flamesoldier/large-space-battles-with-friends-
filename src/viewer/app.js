@@ -234,8 +234,12 @@ mm.addEventListener('pointerdown', (e) => { mm.setPointerCapture(e.pointerId); m
 mm.addEventListener('pointermove', (e) => { if (e.buttons) minimapJump(e); });
 
 requestAnimationFrame(loop);
-// Opened by the ship designer's test battle (viewer.html#replay): it posts the packed replay.
-if (location.hash === '#replay' && window.opener) {
+// Shown by the ship designer's test battle (inside its overlay, or opened as viewer.html#replay):
+// the designer posts the packed replay.
+const host = window.parent !== window ? window.parent : location.hash === '#replay' ? window.opener : null;
+if (host) {
+  document.querySelector('.setup').hidden = true; // the designer resolved this battle; no demo controls
+  document.querySelector('.brand b').textContent = 'Test battle';
   $('progress').hidden = false;
   $('progress-title').textContent = 'Waiting for the test battle';
   addEventListener('message', (e) => {
@@ -244,7 +248,7 @@ if (location.hash === '#replay' && window.opener) {
     info.computeMs = e.data.computeMs || 0;
     show(new Uint8Array(e.data.bytes));
   });
-  window.opener.postMessage({ type: 'lsb-viewer-ready' }, '*');
+  host.postMessage({ type: 'lsb-viewer-ready' }, '*');
 } else resolve();
 
 // Small hook for debugging and automated screenshots.

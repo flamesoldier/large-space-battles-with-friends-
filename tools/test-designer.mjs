@@ -5,7 +5,8 @@ import assert from 'node:assert/strict';
 import { makeDesign, CLASSES } from '../src/shared/designs.js';
 import { Battle } from '../src/sim/battle.js';
 import { BT } from '../src/shared/blocks.js';
-import { analyzeDesign, cropDesign, encodeDesign, decodeDesign } from '../src/shared/shipStats.js';
+import { analyzeDesign, cropDesign, encodeDesign, decodeDesign, weaponFacing } from '../src/shared/shipStats.js';
+import { binOf, binOpen } from '../src/shared/arcs.js';
 import { shipyardPrice } from '../src/shared/economy.js';
 import { ShipEditor } from '../src/designer/editor.js';
 import { makeTestScenario } from '../src/designer/testBattle.js';
@@ -29,7 +30,8 @@ for (const cls of Object.keys(CLASSES))
       assert.equal(dw.omni, sw.omni, `${d.name} omni at ${sw.cell}`);
       if (!sw.omni) {
         assert.equal(dw.buried, sw.buried, `${d.name} buried at ${sw.cell}`);
-        close(dw.fx, sw.fx, 'fx'); close(dw.fy, sw.fy, 'fy');
+        assert.equal(dw.m0, sw.m0, `${d.name} arc mask at ${sw.cell}`); assert.equal(dw.m1, sw.m1);
+        assert.ok(dw.arcDeg < 360, `${d.name}: a ${sw.type} at ${sw.cell} fires all the way round`);
       }
     }
     // Generated test ships are valid designs (they're what a player could build).
@@ -88,5 +90,15 @@ assert.equal(f.toDesign().w, 9, 'crop keeps hub to nose');
 // Test battle scenarios cost the same on both sides.
 const sc = makeTestScenario(makeDesign('cruiser', 5), 6, null, 2);
 assert.ok(Math.abs(sc.enemyCost - sc.budget) / sc.budget < 0.1, `budgets ${sc.enemyCost} vs ${sc.budget}`);
+
+// Line of fire: a gun on the end of a spar can fire forward, not back through its own ship.
+{
+  const cells = new Uint8Array(5); cells.set([BT.ARMOR, BT.HUB, BT.ARMOR, BT.FRAME, BT.CANNON]);
+  const f = weaponFacing(cells, 5, 1, 4);
+  assert.ok(!f.buried && f.arcDeg > 180 && f.arcDeg < 360, `spar gun arc ${f.arcDeg}`);
+  assert.ok(binOpen(f.m0, f.m1, binOf(1, 0)) && !binOpen(f.m0, f.m1, binOf(-1, 0)), 'fires forward, not aft');
+  const boxed = new Uint8Array(9).fill(BT.ARMOR); boxed[4] = BT.LASER;
+  assert.ok(weaponFacing(boxed, 3, 3, 4).buried, 'enclosed gun is buried');
+}
 
 console.log(`designer stats match the sim for ${checked} generated designs; validation ok`);

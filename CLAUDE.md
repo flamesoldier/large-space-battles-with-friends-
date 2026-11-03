@@ -47,9 +47,12 @@ Weapons (numbers in `blocks.js`):
 
 Combat rules:
 - **Friendly fire off**: allied hulls still block shots but take no damage.
-- **Firing arcs**: a weapon fires only out of the hull side it is exposed on (100° arc).
-  Missile launchers and heavy lasers fire any direction. Fully buried weapons can't fire until
-  the armour around them is shot away.
+- **Firing arcs = line of fire**: cannons, lasers and point defence can fire in any direction
+  where the shot wouldn't pass through their own ship (no fixed cone, never 360°). Worked out by
+  `src/shared/arcs.js` (64 direction slices, ray walk through the ship's grid), used by both the
+  sim and the designer, and recomputed as blocks are lost, so shooting away armour opens arcs.
+  Missile launchers and heavy lasers fire any direction. A gun with no clear direction is buried
+  and can't fire. Flat hull-mounted guns get about 90°; guns that stick out get more.
 - **Stances** chosen per design (will be a designer option): charge, brawl, line, standoff,
   escort. Escorts take limited slots around a big ship and break off to attack nearby enemies.
 - **Debris** must stay clearly visible (wrecks keep most of their colour).
@@ -89,20 +92,22 @@ Battle end:
 designer's numbers against the sim.
 
 - `src/shared/shipStats.js`: price, mass, speed, turn rate, firepower, weapon facing/arcs,
-  validation, crop and JSON save format. It mirrors `Battle.refit()` / `Battle.facing()`;
+  validation, crop and JSON save format. It mirrors `Battle.refit()` and shares `arcs.js` with
+  `Battle.facing()`;
   `tools/test-designer.mjs` fails if they drift apart, so change both together.
 - `src/shared/economy.js`: shipyard price and build interval.
 - `src/designer/editor.js`: grid editing (no DOM): mirror across the hub row, whole 10×10 heavy
   laser units, one movable hub, rectangle and fill tools, undo/redo, crop on save.
 - `src/designer/app.js`: the page. Live cost, shipyard price, hull class, stats, weapon table,
   arcs overlay, validation list, stance picker, local library (localStorage), JSON export/import,
-  and a test battle (N copies vs an equal-cost mixed fleet or a saved design) that can open the
-  replay in `viewer.html#replay`.
+  and a test battle (N copies vs an equal-cost mixed fleet or a saved design). The build embeds
+  the viewer page in `designer.html`, so the replay plays in an in-page overlay (iframe +
+  postMessage): the designer works as a single file, with no pop-ups.
 - Hull class comes from block count (`HULL_CLASSES` in `blocks.js`): corvette ≤ 40, frigate ≤ 85,
   destroyer ≤ 200, cruiser ≤ 500, battleship ≤ 1,200, titan ≤ 3,000. Grid limit 96 × 64.
 - Validation errors block test battles (and should block shipyards): one hub, everything
   connected to it, block limit, heavy lasers as whole separate 10×10 units. Warnings: no weapons,
-  buried weapons, no thrusters, big escorts.
+  buried weapons, guns with under 45° of arc, no thrusters, big escorts.
 - Designs are saved cropped, in the format above; JSON export stores `cells` as base64.
 
 Still open with the owner: the actual block prices and the shipyard multiplier (placeholders

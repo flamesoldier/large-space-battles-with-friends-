@@ -142,6 +142,10 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
 .verdict { font-size: 18px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 8px; }
 .verdict.win { color: var(--azure); } .verdict.loss { color: var(--ember); }
 
+#replay { position: fixed; inset: 0; z-index: 10; background: var(--void); }
+#replay iframe { width: 100%; height: 100%; border: 0; display: block; }
+#replay-close { position: absolute; left: 50%; transform: translateX(-50%); bottom: max(78px, calc(env(safe-area-inset-bottom, 0px) + 78px)); box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+
 @media (max-width: 980px) {
   #app { grid-template-columns: 200px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; grid-template-areas: "top top" "pal grid" "stats stats"; }
   #stats { border-left: 0; border-top: 1px solid var(--line); max-height: 34vh; }
@@ -198,7 +202,7 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
     </div>
     <h2>Controls</h2>
     <p class="hint"><b>Left drag</b> places blocks, <b>right drag</b> erases. <b>Scroll</b> zooms, <b>middle drag</b> or <b>Space + drag</b> pans (two fingers on touch). Keys <b>1–0</b> pick blocks. The nose points <b>right</b>.</p>
-    <p class="hint">Weapons fire out of the hull side they're exposed on, up to 100° either way. Missile launchers and heavy lasers fire in any direction.</p>
+    <p class="hint">Cannons, lasers and point defence can only fire where the shot won't pass through your own ship: hover a gun (or turn on Arcs) to see where. Guns that stick out cover more. Missile launchers and heavy lasers fire in any direction.</p>
   </aside>
 
   <main>
@@ -243,6 +247,11 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
     <div class="lib" id="lib-list"></div>
     <div class="actions"><button value="close" id="lib-close">Close</button></div>
   </dialog>
+
+  <div id="replay" hidden>
+    <iframe id="replay-frame" title="Test battle replay"></iframe>
+    <button id="replay-close" class="go">Back to designer</button>
+  </div>
 
   <dialog id="test">
     <h3>Test battle</h3>

@@ -72,10 +72,12 @@ Each tick:
    - *Point defence*: range 30 rapid beam. Shoots the nearest enemy missile first (found via a
      second small grid of live missiles), otherwise any enemy ship that close.
    Every weapon aims at a random block of its target so damage spreads over the hull.
-   **Firing arcs:** a weapon faces out of whichever hull side it is exposed on and can only fire
-   within 100° of that direction (missile launchers fire any way). A weapon buried inside the
-   hull can't fire until the armour around it is shot away. The check is one rotation and a dot
-   product, so it costs nothing measurable.
+   **Firing arcs (line of fire):** a cannon, laser or point-defence gun can only fire in
+   directions where its shot wouldn't pass through its own ship. `src/shared/arcs.js` splits the
+   circle into 64 slices and walks a ray from the gun through the ship's block grid for each;
+   the open slices are a 64-bit mask on the weapon. Aiming is one rotation, one `atan2` and a
+   bit test. Masks are recomputed when the ship loses blocks, so armour shot away opens arcs.
+   Missile launchers and heavy lasers fire any way. No measurable cost in the benchmark.
 5. **Break-up.** Ships that lost blocks this tick run a flood fill from the hub. Every piece no
    longer connected to the hub becomes a separate debris chunk with its own grid, inheriting
    the ship's velocity plus a kick and spin. Destroying the hub breaks the whole ship into chunks.
@@ -170,9 +172,10 @@ designs and checks the two agree, so a stat on screen is the stat in combat.
 A ship's price is the sum of its block costs. Players buy a shipyard for a design rather than
 single ships; the shipyard's price is a multiple of the ship price (`economy.js`).
 
-The test battle runs the real sim in the page (your design × N vs an equal-cost fleet) and can
-hand the packed replay to `viewer.html#replay` through `postMessage`, so the viewer plays exactly
-what the designer resolved.
+The test battle runs the real sim in the page (your design × N vs an equal-cost fleet). The build
+embeds the whole viewer page into `designer.html`; "Watch replay" loads it in an iframe overlay and
+hands it the packed replay through `postMessage`, so the viewer plays exactly what the designer
+resolved, and the designer still works as one file.
 
 ## What's next for battles
 

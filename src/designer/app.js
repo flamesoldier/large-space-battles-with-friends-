@@ -2,7 +2,8 @@
 // All game numbers come from src/shared (blocks.js, shipStats.js, economy.js), the same code the
 // battle sim and server use.
 
-import { BT, BLOCKS, WEAPON, MULTIBLOCK, HULL_CLASSES, ARC_DEG } from '../shared/blocks.js';
+import { BT, BLOCKS, WEAPON, MULTIBLOCK, HULL_CLASSES } from '../shared/blocks.js';
+import { ARC_BINS, binAngle, binOpen } from '../shared/arcs.js';
 import { analyzeDesign, encodeDesign, decodeDesign, designCost, STANCE_INFO } from '../shared/shipStats.js';
 import { shipyardPrice, SHIPYARD_INTERVAL_MIN, SHIPYARD_PRICE_MULT } from '../shared/economy.js';
 import { makeDesign, CLASSES } from '../shared/designs.js';
@@ -25,7 +26,6 @@ const PALETTE = [
   [BT.CANNON, '6'], [BT.PD, '7'], [BT.MISSILE, '8'], [BT.LANCE, '9'], [BT.HUB, '0'], [0, 'x'],
 ];
 const WEAPON_ORDER = [BT.LASER, BT.CANNON, BT.PD, BT.MISSILE, BT.LANCE];
-const ARC = (ARC_DEG * Math.PI) / 180;
 
 const ed = new ShipEditor();
 let block = BT.ARMOR, tool = 'pencil', showArcs = false;
@@ -299,10 +299,39 @@ function drawArc(w, x, y, z, strong) {
     g.setLineDash([]);
     return;
   }
-  const a = Math.atan2(w.fy, w.fx);
-  g.beginPath(); g.moveTo(x, y); g.arc(x, y, R, a - ARC, a + ARC); g.closePath();
-  g.fillStyle = strong ? 'rgba(134,232,255,0.16)' : 'rgba(134,232,255,0.05)'; g.fill();
-  g.strokeStyle = strong ? 'rgba(134,232,255,0.8)' : 'rgba(134,232,255,0.2)'; g.stroke();
+  // Draw each run of open directions as one wedge.
+  const half = Math.PI / ARC_BINS;
+  g.fillStyle = strong ? 'rgba(134,232,255,0.16)' : 'rgba(134,232,255,0.06)';
+  g.strokeStyle = strong ? 'rgba(134,232,255,0.8)' : 'rgba(134,232,255,0.22)';
+  for (const [k0, k1] of openRuns(w)) {
+    g.beginPath(); g.moveTo(x, y); g.arc(x, y, R, binAngle(k0) - half, binAngle(k1) + half); g.closePath();
+    g.fill(); g.stroke();
+  }
+}
+
+/** Runs of consecutive open slices [first, last] (last may exceed ARC_BINS when a run wraps). */
+function openRuns(w) {
+  const open = (k) => binOpen(w.m0, w.m1, ((k % ARC_BINS) + ARC_BINS) % ARC_BINS);
+  let start = 0;
+  while (start < ARC_BINS && open(start)) start++; // begin just after a closed slice
+  const runs = [];
+  for (let i = 1; i <= ARC_BINS; i++) {
+    const k = start + i;
+    if (!open(k)) continue;
+    let e = k;
+    while (e + 1 <= start + ARC_BINS && open(e + 1)) e++;
+    runs.push([k, e]); i = e - start;
+  }
+  return runs;
+}
+
+/** Middle direction of the widest open run, as a compass word. */
+function mainSide(w) {
+  let best = null;
+  for (const r of openRuns(w)) if (!best || r[1] - r[0] > best[1] - best[0]) best = r;
+  if (!best) return '';
+  const a = (binAngle(best[0]) + binAngle(best[1])) / 2;
+  return SIDES[(Math.round(Math.atan2(Math.sin(a), Math.cos(a)) / (Math.PI / 4)) + 8) % 8];
 }
 
 // ------------------------------------------------------------ hover readout
@@ -315,9 +344,9 @@ function describe(x, y) {
     const ox = design.x0, oy = design.y0;
     const w = info.weapons.find((v) => v.group ? v.group.cells.some((c) => (c % design.w) + ox === x && ((c / design.w) | 0) + oy === y) : (v.x - 0.5 + ox) === x && (v.y - 0.5 + oy) === y);
     if (w) {
-      if (w.buried) s += ' · buried: can\'t fire until exposed';
+      if (w.buried) s += ' · buried: every shot would hit your own hull';
       else if (w.omni) s += ' · fires in any direction';
-      else s += ` · fires ${SIDES[(Math.round(Math.atan2(w.fy, w.fx) / (Math.PI / 4)) + 8) % 8]} ±${ARC_DEG}°`;
+      else s += ` · ${Math.round(w.arcDeg)}° arc, mainly ${mainSide(w)}`;
     }
     if (info.loose.includes((y - oy) * design.w + (x - ox))) s += ' · not connected to the hub';
   }
@@ -577,17 +606,29 @@ $('t-run').addEventListener('click', async () => {
   $('test-result').hidden = false; $('test-progress').hidden = true; $('t-watch').hidden = false;
 });
 
+// The replay viewer page is built into this page (tools/build-viewer.mjs injects it), so the
+// test battle plays in an overlay: no second file, no pop-up window.
+/* global __VIEWER_PAGE__ */
+const VIEWER_PAGE = typeof __VIEWER_PAGE__ === 'string' ? __VIEWER_PAGE__ : '';
 $('t-watch').addEventListener('click', () => {
   if (!lastReplay) return;
-  const win = window.open('viewer.html#replay', '_blank');
-  if (!win) return toast('Your browser blocked the replay window. Allow pop-ups for this page.');
+  if (!VIEWER_PAGE) return toast('This build has no replay viewer. Run npm run build.');
+  const frame = $('replay-frame');
   const send = (e) => {
-    if (e.source !== win || e.data?.type !== 'lsb-viewer-ready') return;
+    if (e.source !== frame.contentWindow || e.data?.type !== 'lsb-viewer-ready') return;
     removeEventListener('message', send);
     const copy = lastReplay.bytes.slice();
-    win.postMessage({ type: 'lsb-replay', bytes: copy.buffer, computeMs: lastReplay.computeMs, sides: lastReplay.sides }, '*', [copy.buffer]);
+    frame.contentWindow.postMessage({ type: 'lsb-replay', bytes: copy.buffer, computeMs: lastReplay.computeMs, sides: lastReplay.sides }, '*', [copy.buffer]);
   };
   addEventListener('message', send);
+  $('test').close();
+  $('replay').hidden = false;
+  frame.srcdoc = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0">${VIEWER_PAGE}</body></html>`;
+});
+$('replay-close').addEventListener('click', () => {
+  $('replay').hidden = true;
+  $('replay-frame').srcdoc = ''; // stop rendering and free the replay
+  $('test').showModal();
 });
 
 // ------------------------------------------------------------ start

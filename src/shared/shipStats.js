@@ -1,11 +1,13 @@
 // Ship analysis shared by the ship designer, the server and (later) shipyards and fleets:
 // price, mobility, firepower, weapon arcs and design validation.
 //
-// Mobility and arcs mirror Battle.refit() and Battle.facing() in src/sim/battle.js exactly, so
+// Mobility mirrors Battle.refit() in src/sim/battle.js exactly, and arcs use the same
+// lineOfFire() as Battle.facing(), so
 // what the designer shows is what the ship does in battle. tools/test-designer.mjs checks that
 // the two agree; if you change the formulas in battle.js, change them here too.
 
 import { BT, BLOCKS, WEAPON, MULTIBLOCK, HULL_CLASSES, MAX_BLOCKS, MAX_W, MAX_H, isWeapon } from './blocks.js';
+import { lineOfFire, openDegrees } from './arcs.js';
 
 export const STANCE_INFO = {
   charge: { label: 'Charge', hint: 'Dives straight in to point blank. For small, fast, cheap ships.' },
@@ -29,16 +31,15 @@ export function designCost(d) {
   return c;
 }
 
-/** Which way a weapon faces, as Battle.facing() decides it for an undamaged ship. */
+/**
+ * A weapon's line of fire for an undamaged ship, exactly as Battle.facing() works it out:
+ * { omni, buried, m0, m1, arcDeg }. m0/m1 is the open-direction mask from arcs.js.
+ */
 export function weaponFacing(cells, w, h, cell) {
   const t = cells[cell];
-  if (t === BT.MISSILE || t === BT.LANCE) return { omni: true, fx: 0, fy: 0, buried: false };
-  const x = cell % w, y = (cell / w) | 0;
-  const open = (nx, ny) => nx < 0 || ny < 0 || nx >= w || ny >= h || !cells[ny * w + nx];
-  const r = open(x + 1, y), l = open(x - 1, y), d = open(x, y + 1), u = open(x, y - 1);
-  if ((r && l) || (d && u)) return { omni: true, fx: 0, fy: 0, buried: false };
-  const fx = (r ? 1 : 0) - (l ? 1 : 0), fy = (d ? 1 : 0) - (u ? 1 : 0), n = Math.hypot(fx, fy);
-  return { omni: false, fx: n ? fx / n : 0, fy: n ? fy / n : 0, buried: !n };
+  if (t === BT.MISSILE || t === BT.LANCE) return { omni: true, buried: false, m0: 0, m1: 0, arcDeg: 360 };
+  const out = lineOfFire(cells, null, w, h, cell, { m0: 0, m1: 0, buried: false });
+  return { omni: false, buried: out.buried, m0: out.m0, m1: out.m1, arcDeg: openDegrees(out.m0, out.m1) };
 }
 
 /** Connected groups of multi-block weapon cells (the sim treats each group as one gun). */
@@ -113,7 +114,7 @@ export function analyzeDesign(d) {
   for (const g of groups) {
     let sx = 0, sy = 0;
     for (const c of g.cells) { sx += (c % w) + 0.5; sy += ((c / w) | 0) + 0.5; }
-    weapons.push({ type: g.type, cell: g.cells[0], x: sx / g.cells.length, y: sy / g.cells.length, omni: true, fx: 0, fy: 0, buried: false, group: g });
+    weapons.push({ type: g.type, cell: g.cells[0], x: sx / g.cells.length, y: sy / g.cells.length, omni: true, buried: false, m0: 0, m1: 0, arcDeg: 360, group: g });
   }
 
   const fire = {};
@@ -144,7 +145,9 @@ export function analyzeDesign(d) {
   if (!weapons.length) warnings.push('No weapons: the ship counts as a disarmed hulk in battle.');
   else if (!weapons.some((x) => x.type !== BT.PD)) warnings.push('Only point defence: it can only hit things within 30.');
   const buried = weapons.filter((x) => x.buried);
-  if (buried.length) warnings.push(`${buried.length} weapon${buried.length > 1 ? 's are' : ' is'} buried and can't fire until the armour around ${buried.length > 1 ? 'them' : 'it'} is shot away.`);
+  if (buried.length) warnings.push(`${buried.length} weapon${buried.length > 1 ? 's are' : ' is'} buried: every shot would hit your own hull, so ${buried.length > 1 ? 'they' : 'it'} can't fire until the armour around ${buried.length > 1 ? 'them' : 'it'} is shot away.`);
+  const narrow = weapons.filter((x) => !x.omni && !x.buried && x.arcDeg < 45);
+  if (narrow.length) warnings.push(`${narrow.length} weapon${narrow.length > 1 ? 's have' : ' has'} a firing arc under 45°. Guns that stick out of the hull can cover more.`);
   if (!thrust && blocks > 1) warnings.push('No thrusters: the ship crawls on hub jets (2.5 speed).');
   if (d.stance === 'escort' && cls && cls.id !== 'corvette' && cls.id !== 'frigate' && cls.id !== 'destroyer')
     warnings.push('Escorts only screen ships 3× their mass, so big escorts rarely find a ship to guard.');

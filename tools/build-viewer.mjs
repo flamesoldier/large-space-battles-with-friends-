@@ -12,14 +12,18 @@ const PAGES = {
 };
 const only = process.argv[2];
 mkdirSync('dist', { recursive: true });
+const built = {};
+// The designer embeds the viewer page (its test battles play in an overlay), so build the viewer first.
 for (const [name, p] of Object.entries(PAGES)) {
-  if (only && only !== name) continue;
   const res = await build({
     entryPoints: [p.entry], bundle: true, format: 'esm', write: false,
     minify: true, target: 'es2020', legalComments: 'none',
+    define: name === 'designer' ? { __VIEWER_PAGE__: JSON.stringify(built.viewer) } : {},
   });
   const js = res.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
   const page = readFileSync(p.html, 'utf8').replace('/*APP*/', () => js);
+  built[name] = page;
+  if (only && only !== name) continue;
   writeFileSync(p.artifact, page);
   writeFileSync(`dist/${name}.html`, `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"></head><body style="margin:0">\n${page}\n</body></html>\n`);
   console.log(`dist/${name}.html ${(page.length / 1024).toFixed(0)} KB`);

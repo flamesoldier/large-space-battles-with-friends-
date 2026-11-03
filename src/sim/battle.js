@@ -11,7 +11,8 @@
 //    their position at any time with a formula and nothing has to be recorded.
 //  * Everything is recorded as events + low-rate transform samples (see toReplay()).
 
-import { BT, BLOCKS, WEAPON, ARC_DEG, MULTIBLOCK, isWeapon } from '../shared/blocks.js';
+import { BT, BLOCKS, WEAPON, MULTIBLOCK, isWeapon } from '../shared/blocks.js';
+import { lineOfFire, binOf, binOpen } from '../shared/arcs.js';
 import { mulberry32 } from '../shared/rng.js';
 import { Col } from '../shared/replayFormat.js';
 import { SpatialGrid } from './spatial.js';
@@ -29,7 +30,6 @@ const wrapAngle = (a) => a - TWO_PI * Math.floor((a + Math.PI) / TWO_PI);
 const SHIP = 0, CHUNK = 1;
 const CHUNK_RETIRE_TICKS = 250; // after 25 s debris stops being hittable (still drawn by viewer)
 const K_KINETIC = 0, K_SHELL = 1, K_MISSILE = 2;
-const COS_ARC = Math.cos((ARC_DEG * Math.PI) / 180);
 
 // Combat stances, chosen per ship design. range(e, direct, shortest, longest) -> preferred distance.
 //   direct   = longest non-missile weapon range, shortest = shortest weapon range,
@@ -93,7 +93,7 @@ export class Battle {
       const t = e.types[i];
       if (!isWeapon(t) || MULTIBLOCK[t]) continue;
       const cd = t === BT.MISSILE ? volley + 0.15 * launcher++ : this.rng() * 2;
-      e.weapons.push({ cell: i, cells: null, type: t, lx: (i % d.w) + 0.5 - d.w / 2, ly: ((i / d.w) | 0) + 0.5 - d.h / 2, cd });
+      e.weapons.push({ cell: i, cells: null, type: t, lx: (i % d.w) + 0.5 - d.w / 2, ly: ((i / d.w) | 0) + 0.5 - d.h / 2, cd, omni: false, buried: false, m0: 0, m1: 0 });
     }
     // Multi-block weapons: each connected group of their blocks is one gun, aimed from its centre.
     const seen = new Uint8Array(e.types.length);
@@ -108,7 +108,7 @@ export class Battle {
       }
       let sx = 0, sy = 0;
       for (const c of group) { sx += (c % d.w) + 0.5 - d.w / 2; sy += ((c / d.w) | 0) + 0.5 - d.h / 2; }
-      e.weapons.push({ cell: group[0], cells: group, type: t, lx: sx / group.length, ly: sy / group.length, cd: 4 + this.rng() * 6 });
+      e.weapons.push({ cell: group[0], cells: group, type: t, lx: sx / group.length, ly: sy / group.length, cd: 4 + this.rng() * 6, omni: true, buried: false, m0: 0, m1: 0 });
     }
     e.track = [];
     e.t1 = 65535;
@@ -170,26 +170,23 @@ export class Battle {
     e.prefRange = STANCES[e.stance].range(e, range || 60, shortest === Infinity ? 60 : shortest, longest || 60);
   }
 
-  /** Which way a weapon block faces: out of each hull side with nothing alive next to it. */
+  /**
+   * Line of fire: the directions this weapon can shoot without hitting its own ship
+   * (src/shared/arcs.js). Recomputed when blocks are lost, so shooting away the armour around
+   * a gun opens up its arc. Missile launchers and heavy lasers fire any way.
+   */
   facing(e, w) {
-    w.omni = w.type === BT.MISSILE || w.type === BT.LANCE; // launchers and turrets fire any way
+    w.omni = w.type === BT.MISSILE || w.type === BT.LANCE;
     if (w.omni) return;
-    const i = w.cell, x = i % e.w, y = (i / e.w) | 0;
-    const open = (nx, ny) => nx < 0 || ny < 0 || nx >= e.w || ny >= e.h || !e.types[ny * e.w + nx] || e.hp[ny * e.w + nx] <= 0;
-    const r = open(x + 1, y), l = open(x - 1, y), d = open(x, y + 1), u = open(x, y - 1);
-    if ((r && l) || (d && u)) { w.omni = true; return; } // a one-block-thin spar sees both ways
-    const fx = (r ? 1 : 0) - (l ? 1 : 0), fy = (d ? 1 : 0) - (u ? 1 : 0), n = Math.hypot(fx, fy);
-    w.fx = n ? fx / n : 0; w.fy = n ? fy / n : 0;
-    w.buried = !n; // fully enclosed: can't fire until the hull around it is shot open
+    lineOfFire(e.types, e.hp, e.w, e.h, w.cell, w);
   }
 
-  /** Can this weapon bear on point (tx, ty)? One rotate + dot product per check. */
+  /** Can this weapon bear on point (tx, ty)? One rotation, one atan2 and a bit test. */
   bears(e, w, wx, wy, tx, ty) {
     if (w.omni) return true;
     if (w.buried) return false;
     const dx = tx - wx, dy = ty - wy;
-    const lx = dx * e.c + dy * e.s, ly = -dx * e.s + dy * e.c;
-    return lx * w.fx + ly * w.fy >= COS_ARC * Math.hypot(lx, ly);
+    return binOpen(w.m0, w.m1, binOf(dx * e.c + dy * e.s, -dx * e.s + dy * e.c));
   }
 
   // ---------------------------------------------------------------- main loop
