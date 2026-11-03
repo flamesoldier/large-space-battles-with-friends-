@@ -30,13 +30,17 @@ export const BLOCKS = {
 export const WEAPON = {
   // Instant beam, never misses what it's aimed at, but slow to recharge.
   [BT.LASER]: { kind: 'laser', range: 260, damage: 22, cooldown: 2.6 },
-  // Slow guided shell (gently steers toward its target), small blast on impact.
-  [BT.CANNON]: { kind: 'shell', range: 170, damage: 50, cooldown: 2.0, speed: 45, turn: 0.5, life: 5.5, splash: 1.6, spread: 0.05 },
+  // Slow shell that flies dead straight (aimed with lead at firing), small blast on impact.
+  [BT.CANNON]: { kind: 'shell', range: 170, damage: 50, cooldown: 2.0, speed: 45, life: 5.5, splash: 1.6, spread: 0.05 },
   // Heavy missile: crawls across the map, flies over friendly ships, devastating blast.
   // Has hit points, so point defence can shoot it down on the way in.
   [BT.MISSILE]: { kind: 'missile', range: 700, damage: 220, cooldown: 24, speed: 20, turn: 0.8, life: 45, splash: 4.5, hp: 40 },
   // Point defence: shoots the nearest enemy missile in range, otherwise any enemy ship that close.
-  [BT.PD]: { kind: 'pd', range: 50, damage: 6, missileDamage: 10, cooldown: 0.2 },
+  [BT.PD]: { kind: 'pd', range: 30, damage: 6, missileDamage: 10, cooldown: 0.2 },
 };
+
+// Firing arcs: a weapon faces out of whichever hull sides it is exposed on, and can only
+// fire at targets within ARC_DEG of that direction. Missile launchers fire in any direction.
+export const ARC_DEG = 100;
 
 export const isWeapon = (t) => t >= BT.LASER && t <= BT.PD;

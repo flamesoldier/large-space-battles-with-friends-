@@ -11,7 +11,7 @@
 //    their position at any time with a formula and nothing has to be recorded.
 //  * Everything is recorded as events + low-rate transform samples (see toReplay()).
 
-import { BT, BLOCKS, WEAPON, isWeapon } from '../shared/blocks.js';
+import { BT, BLOCKS, WEAPON, ARC_DEG, isWeapon } from '../shared/blocks.js';
 import { mulberry32 } from '../shared/rng.js';
 import { Col } from '../shared/replayFormat.js';
 import { SpatialGrid } from './spatial.js';
@@ -29,6 +29,7 @@ const wrapAngle = (a) => a - TWO_PI * Math.floor((a + Math.PI) / TWO_PI);
 const SHIP = 0, CHUNK = 1;
 const CHUNK_RETIRE_TICKS = 250; // after 25 s debris stops being hittable (still drawn by viewer)
 const K_KINETIC = 0, K_SHELL = 1, K_MISSILE = 2;
+const COS_ARC = Math.cos((ARC_DEG * Math.PI) / 180);
 
 // Combat stances, chosen per ship design. range(e, direct, shortest, longest) -> preferred distance.
 //   direct   = longest non-missile weapon range, shortest = shortest weapon range,
@@ -101,6 +102,11 @@ export class Battle {
       id: this.byId.length, kind, team, w, h, types, hp: new Float32Array(w * h), alive: 0,
       x: 0, y: 0, a: 0, vx: 0, vy: 0, va: 0, c: 1, s: 0,
       radius: Math.hypot(w, h) / 2, dead: false, retired: false, dirty: false, hubDead: false, _q: 0, t0: this.now,
+      // Every field declared up front so ships and chunks share one object shape:
+      // adding fields later makes V8 deoptimise every entity access (measured ~40% slower).
+      _threatTick: -1, _threats: [], _gx0: 0, _gx1: 0, _gy0: 0, _gy1: 0,
+      design: 0, hub: -1, stance: 'line', orbit: 1, targets: [], retarget: 0, weapons: [], track: null, t1: 65535,
+      mass: 1, maxSpeed: 0, turn: 0, agility: 0, prefRange: 60, ward: null,
     };
     this.byId.push(e);
     this.ents.push(e);
@@ -118,6 +124,7 @@ export class Battle {
       if (t === BT.THRUSTER) thrust += BLOCKS[t].thrust;
     }
     e.weapons = e.weapons.filter((w) => e.hp[w.cell] > 0);
+    for (const w of e.weapons) this.facing(e, w); // armour shot away can open new arcs
     // Point defence doesn't drive positioning. "Direct" range is the main gun: cannons if fitted, else lasers.
     let shortest = Infinity, longest = 0, cannon = 0, laser = 0;
     for (const w of e.weapons) {
@@ -135,6 +142,28 @@ export class Battle {
     e.turn = Math.max(0.05, Math.min(2.5, (1.6 * e.maxSpeed) / e.w));
     e.agility = Math.max(0.25, Math.min(2, e.maxSpeed / 8));
     e.prefRange = STANCES[e.stance].range(e, range || 60, shortest === Infinity ? 60 : shortest, longest || 60);
+  }
+
+  /** Which way a weapon block faces: out of each hull side with nothing alive next to it. */
+  facing(e, w) {
+    w.omni = w.type === BT.MISSILE;
+    if (w.omni) return;
+    const i = w.cell, x = i % e.w, y = (i / e.w) | 0;
+    const open = (nx, ny) => nx < 0 || ny < 0 || nx >= e.w || ny >= e.h || !e.types[ny * e.w + nx] || e.hp[ny * e.w + nx] <= 0;
+    const r = open(x + 1, y), l = open(x - 1, y), d = open(x, y + 1), u = open(x, y - 1);
+    if ((r && l) || (d && u)) { w.omni = true; return; } // a one-block-thin spar sees both ways
+    const fx = (r ? 1 : 0) - (l ? 1 : 0), fy = (d ? 1 : 0) - (u ? 1 : 0), n = Math.hypot(fx, fy);
+    w.fx = n ? fx / n : 0; w.fy = n ? fy / n : 0;
+    w.buried = !n; // fully enclosed: can't fire until the hull around it is shot open
+  }
+
+  /** Can this weapon bear on point (tx, ty)? One rotate + dot product per check. */
+  bears(e, w, wx, wy, tx, ty) {
+    if (w.omni) return true;
+    if (w.buried) return false;
+    const dx = tx - wx, dy = ty - wy;
+    const lx = dx * e.c + dy * e.s, ly = -dx * e.s + dy * e.c;
+    return lx * w.fx + ly * w.fy >= COS_ARC * Math.hypot(lx, ly);
   }
 
   // ---------------------------------------------------------------- main loop
@@ -334,16 +363,17 @@ export class Battle {
       const W = WEAPON[w.type];
       const wx = e.x + w.lx * e.c - w.ly * e.s, wy = e.y + w.lx * e.s + w.ly * e.c;
       if (W.kind === 'pd') {
-        w.cd = this.firePD(e, wx, wy, W) ? W.cooldown * (0.85 + 0.3 * this.rng()) : 0.1;
+        w.cd = this.firePD(e, w, wx, wy, W) ? W.cooldown * (0.85 + 0.3 * this.rng()) : 0.25;
         continue;
       }
       if (!tl) { w.cd = 0.3; continue; }
-      let tg = e.targets[k % tl];
-      let dx = tg.x - wx, dy = tg.y - wy;
-      if (dx * dx + dy * dy > W.range * W.range) {
-        tg = e.targets[0]; dx = tg.x - wx; dy = tg.y - wy;
-        if (dx * dx + dy * dy > W.range * W.range) { w.cd = 0.3 + this.rng() * 0.3; continue; }
+      // Preferred target first, then any other target that is in range and inside this weapon's arc.
+      let tg = null;
+      for (let j = 0; j < tl; j++) {
+        const o = e.targets[(k + j) % tl];
+        if ((o.x - wx) ** 2 + (o.y - wy) ** 2 <= W.range * W.range && this.bears(e, w, wx, wy, o.x, o.y)) { tg = o; break; }
       }
+      if (!tg) { w.cd = 0.2 + this.rng() * 0.2; continue; }
       w.cd = W.cooldown * (0.85 + 0.3 * this.rng());
       const [ax, ay] = this.aimPoint(tg);
       if (W.kind === 'laser') { this.fireBeam(e, wx, wy, ax, ay, W.range, W.damage, 0); continue; }
@@ -373,15 +403,21 @@ export class Battle {
   }
 
   /** Point defence: nearest enemy missile in range first, otherwise an enemy ship that close. */
-  firePD(e, wx, wy, W) {
+  firePD(e, w, wx, wy, W) {
     const P = this.P, r = W.range;
     let best = -1, bd = r * r;
-    this.mgrid.queryBox(wx - r, wy - r, wx + r, wy + r, (o) => {
-      const i = o.i;
-      if (P.team[i] === e.team || P.hp[i] <= 0) return;
+    // Enemy missiles near the ship are gathered once per tick and shared by all its PD blocks.
+    if (e._threatTick !== this.now) {
+      e._threatTick = this.now;
+      const list = e._threats, R = e.radius + r;
+      list.length = 0;
+      if (this.mobjs.length) this.mgrid.queryBox(e.x - R, e.y - R, e.x + R, e.y + R, (o) => { if (P.team[o.i] !== e.team) list.push(o.i); });
+    }
+    for (const i of e._threats) {
+      if (P.hp[i] <= 0) continue;
       const d = (P.x[i] - wx) ** 2 + (P.y[i] - wy) ** 2;
-      if (d < bd) { bd = d; best = i; }
-    });
+      if (d < bd && this.bears(e, w, wx, wy, P.x[i], P.y[i])) { bd = d; best = i; }
+    }
     if (best >= 0) {
       const tx = P.x[best], ty = P.y[best];
       // A ship in the way (friend or foe) soaks the burst instead.
@@ -395,7 +431,7 @@ export class Battle {
       return true;
     }
     for (const tg of e.targets) {
-      if (Math.hypot(tg.x - wx, tg.y - wy) - tg.radius * 0.6 > r) continue;
+      if (Math.hypot(tg.x - wx, tg.y - wy) - tg.radius * 0.6 > r || !this.bears(e, w, wx, wy, tg.x, tg.y)) continue;
       const [ax, ay] = this.aimPoint(tg);
       this.fireBeam(e, wx, wy, ax, ay, r, W.damage, 1);
       return true;
@@ -444,10 +480,10 @@ export class Battle {
         this.removeProjectile(i--);
         continue;
       }
-      if (kind !== K_KINETIC) {
+      if (kind === K_MISSILE) { // only heavy missiles steer; shells fly dead straight
         const W = WEAPON[P.wtype[i]];
         let tg = this.byId[P.target[i]];
-        if ((!tg || tg.dead) && kind === K_MISSILE) { tg = this.sampleEnemy(P.team[i], P.x[i], P.y[i]); if (tg) P.target[i] = tg.id; }
+        if (!tg || tg.dead) { tg = this.sampleEnemy(P.team[i], P.x[i], P.y[i]); if (tg) P.target[i] = tg.id; }
         if (tg && !tg.dead) {
           const cur = Math.atan2(P.vy[i], P.vx[i]);
           const da = wrapAngle(Math.atan2(tg.y - P.y[i], tg.x - P.x[i]) - cur), mt = W.turn * DT;

@@ -55,12 +55,17 @@ Each tick:
    hulls still stop the round but take no damage; this costs nothing extra.
 4. **Weapons fire.** Four weapon blocks:
    - *Laser*: instant beam, range 260, low damage, slow recharge. The reliable chip damage.
-   - *Cannon*: slow guided shell (range 170) with a visible trail and a small blast. Main damage.
+   - *Cannon*: slow shell (range 170) fired with lead, then flies dead straight. Visible trail,
+     small blast. Main damage.
    - *Missile launcher*: huge, slow heavy missile (range 700) that flies over friendly ships and
      hits with a big blast. It has hit points, so it can be shot down.
-   - *Point defence*: short-range rapid beam. Shoots the nearest enemy missile first (found via a
+   - *Point defence*: range 30 rapid beam. Shoots the nearest enemy missile first (found via a
      second small grid of live missiles), otherwise any enemy ship that close.
    Every weapon aims at a random block of its target so damage spreads over the hull.
+   **Firing arcs:** a weapon faces out of whichever hull side it is exposed on and can only fire
+   within 100° of that direction (missile launchers fire any way). A weapon buried inside the
+   hull can't fire until the armour around it is shot away. The check is one rotation and a dot
+   product, so it costs nothing measurable.
 5. **Break-up.** Ships that lost blocks this tick run a flood fill from the hub. Every piece no
    longer connected to the hub becomes a separate debris chunk with its own grid, inheriting
    the ship's velocity plus a kick and spin. Destroying the hub breaks the whole ship into chunks.
@@ -94,6 +99,11 @@ CPU. JavaScript's `Math.sin`/`Math.cos` are not guaranteed identical across engi
 means rewriting all math in fixed point and never touching floats. Recording costs about 2 MB
 per 1,000 ships, which is nothing for a group of friends, and it is robust. We can revisit this if
 storage ever matters.
+
+### Performance note
+
+Every entity object gets all its fields in one place (`makeEntity`). Adding a field to some
+objects later changes their hidden class in V8 and made the whole sim about 40% slower.
 
 ## Rendering (`src/viewer/renderer.js`)
 
