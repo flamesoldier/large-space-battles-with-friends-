@@ -83,7 +83,7 @@ function blockPalette(team, dead) {
   const T = TEAM[team], k = dead ? 0.7 : 1; // wrecks stay readable, just burnt
   const p = [];
   p[BT.HUB] = T.hub; p[BT.ARMOR] = T.armor; p[BT.HEAVY] = T.heavy; p[BT.FRAME] = T.frame;
-  p[BT.THRUSTER] = '#3d434f'; p[BT.LASER] = team ? '#ffd9c9' : '#d8f4ff'; p[BT.CANNON] = '#9aa1ab'; p[BT.MISSILE] = '#b9b16c'; p[BT.PD] = team ? '#e8a07a' : '#7fc4e0';
+  p[BT.THRUSTER] = '#3d434f'; p[BT.LASER] = team ? '#ffd9c9' : '#d8f4ff'; p[BT.CANNON] = '#9aa1ab'; p[BT.MISSILE] = '#b9b16c'; p[BT.PD] = team ? '#e8a07a' : '#7fc4e0'; p[BT.LANCE] = team ? '#8a4f63' : '#5b5f9c';
   return p.map((c) => (c ? rgba(dead ? shade(c, k) : c) : 0));
 }
 const PAL = [[blockPalette(0, false), blockPalette(1, false)], [blockPalette(0, true), blockPalette(1, true)]];
@@ -206,9 +206,11 @@ export class Renderer {
     const minW = px * 1.1;
     const alpha = (col, k) => (col & 0xffffff) | ((Math.max(0, Math.min(1, k)) * 255) << 24);
 
-    // Beams: lasers linger 0.4 s and are thick; point defence is a thin, quick flicker.
+    // Beams: lasers linger 0.4 s; point defence is a thin, quick flicker; heavy lasers are
+    // a wide white-hot lance that holds for a full second.
     const L = m.laser;
-    for (let i = lowerBound(L.t, t - 4); i < L.n && L.t[i] <= t; i++) {
+    for (let i = lowerBound(L.t, t - 10); i < L.n && L.t[i] <= t; i++) {
+      if (L.kind[i] === 2) { this.drawLance(L, i, t, vis, minW); continue; }
       const pd = L.kind[i] === 1, life = pd ? 1.5 : 4, age = t - L.t[i];
       if (age > life) continue;
       const x0 = L.x0[i], y0 = L.y0[i], x1 = L.x1[i], y1 = L.y1[i];
@@ -226,7 +228,7 @@ export class Renderer {
     for (let i = lowerBound(E.t, t - 24); i < E.n && E.t[i] <= t; i++) {
       const sz = E.s[i], life = sz === 2 ? 24 : sz === 1 ? 8 : 6, age = t - E.t[i];
       if (age > life || !vis(E.x[i], E.y[i], 20)) continue;
-      const u = age / life, base = sz === 2 ? 4 : sz === 1 ? 1.5 : 1, grow = sz === 2 ? 12 : sz === 1 ? 5 : 2.5;
+      const u = age / life, base = sz === 2 ? 5 : sz === 1 ? 1.5 : 1, grow = sz === 2 ? 15 : sz === 1 ? 5 : 2.5;
       const r = base + u * grow;
       g.push(E.x[i], E.y[i], 0, r, r, 1, alpha(sz === 0 ? C.pop : C.boom, 1 - u));
       if (u < 0.3) g.push(E.x[i], E.y[i], 0, r * 0.5, r * 0.5, 1, alpha(C.boomCore, 1 - u / 0.3));
@@ -255,6 +257,23 @@ export class Renderer {
       g.push(x, y, 0, R, R, 1, alpha(C.boom, (1 - u) * 0.9));
       if (u < 0.35) g.push(x, y, 0, R * 0.55, R * 0.55, 1, alpha(C.boomCore, 1 - u / 0.35));
     }
+  }
+
+  drawLance(L, i, t, vis, minW) {
+    const g = this.glow, age = t - L.t[i], life = 10;
+    if (age > life) return;
+    const x0 = L.x0[i], y0 = L.y0[i], x1 = L.x1[i], y1 = L.y1[i];
+    const mx = (x0 + x1) / 2, my = (y0 + y1) / 2, len = Math.hypot(x1 - x0, y1 - y0) / 2;
+    if (!vis(mx, my, len + 10)) return;
+    const a = Math.atan2(y1 - y0, x1 - x0), k = 1 - age / life, team = L.team[i];
+    // Full strength for the first 0.3 s, then fades; outer glow, coloured body, white core.
+    const f = age < 3 ? 1 : k;
+    g.push(mx, my, a, len, Math.max(6, minW * 6), 4, alpha2(C.mGlow[team], 0.45 * f));
+    g.push(mx, my, a, len, Math.max(2.8, minW * 3), 4, alpha2(C.beam[team], f));
+    g.push(mx, my, a, len, Math.max(1.1, minW * 1.5), 4, alpha2(C.beamCore, f));
+    const r = 7 * (0.6 + k * 0.6);
+    g.push(x0, y0, 0, r, r, 1, alpha2(C.beamCore, f));
+    if (L.hit[i]) { g.push(x1, y1, 0, r * 1.3, r * 1.3, 1, alpha2(C.boom, f)); g.push(x1, y1, 0, r * 0.6, r * 0.6, 1, alpha2(C.boomCore, f)); }
   }
 
   /** Shells and heavy missiles: straight-line flight, so position is launch + velocity * age. */

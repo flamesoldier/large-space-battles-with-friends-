@@ -13,8 +13,8 @@ export const CLASSES = {
   frigate:    { w: [10, 13], h: [5, 7],   lasers: 1, cannons: 2, missiles: 0, pd: 1,  thrustCols: 1, heavyFront: false, armorDepth: 1 },
   destroyer:  { w: [16, 20], h: [7, 9],   lasers: 2, cannons: 4, missiles: 1, pd: 2,  thrustCols: 1, heavyFront: true,  armorDepth: 1 },
   cruiser:    { w: [26, 32], h: [11, 13], lasers: 4, cannons: 6, missiles: 2, pd: 4,  thrustCols: 2, heavyFront: true,  armorDepth: 2 },
-  battleship: { w: [44, 52], h: [17, 21], lasers: 8, cannons: 12, missiles: 4, pd: 8,  thrustCols: 2, heavyFront: true,  armorDepth: 2 },
-  titan:      { w: [80, 90], h: [29, 33], lasers: 16, cannons: 22, missiles: 8, pd: 16, thrustCols: 3, heavyFront: true,  armorDepth: 3 },
+  battleship: { w: [44, 52], h: [17, 21], lasers: 8, cannons: 12, missiles: 4, pd: 8, lances: 1,  thrustCols: 2, heavyFront: true,  armorDepth: 2 },
+  titan:      { w: [80, 90], h: [29, 33], lasers: 16, cannons: 22, missiles: 8, pd: 16, lances: 2, thrustCols: 3, heavyFront: true,  armorDepth: 3 },
 };
 
 // Default combat stance odds per class for generated test designs. In the real game the
@@ -136,6 +136,22 @@ export function makeDesign(cls, seed) {
   place(groups[1], C.cannons, BT.CANNON);
   place(groups[2], C.pd, BT.PD);
   place(inner.length ? inner : skin, C.missiles, BT.MISSILE);
+  // Heavy lasers: 10x10 turrets on the centreline of the biggest ships, kept clear of the hub.
+  for (let k = 0; k < (C.lances || 0); k++) {
+    const want = C.lances === 1 ? 0.68 : k === 0 ? 0.24 : 0.7;
+    for (let shift = 0; shift < w * 0.3; shift++) {
+      const x0 = Math.round(w * want) - 5 + (shift % 2 ? shift : -shift) / 2 | 0, y0 = Math.round(cy) - 5;
+      let ok = x0 >= C.thrustCols && x0 + 10 <= w && y0 >= 0 && y0 + 10 <= h;
+      for (let y = y0; ok && y < y0 + 10; y++)
+        for (let x = x0; ok && x < x0 + 10; x++) {
+          const t = cells[y * w + x];
+          ok = t && t !== BT.HUB && t !== BT.LANCE && Math.abs(x - hubX) > 1;
+        }
+      if (!ok) continue;
+      for (let y = y0; y < y0 + 10; y++) for (let x = x0; x < x0 + 10; x++) cells[y * w + x] = BT.LANCE;
+      break;
+    }
+  }
   // Small ships get a nose gun.
   if (w <= 13) cells[cy * w + (w - 1)] = r() < 0.5 ? BT.CANNON : BT.LASER;
 

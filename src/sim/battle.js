@@ -11,7 +11,7 @@
 //    their position at any time with a formula and nothing has to be recorded.
 //  * Everything is recorded as events + low-rate transform samples (see toReplay()).
 
-import { BT, BLOCKS, WEAPON, ARC_DEG, isWeapon } from '../shared/blocks.js';
+import { BT, BLOCKS, WEAPON, ARC_DEG, MULTIBLOCK, isWeapon } from '../shared/blocks.js';
 import { mulberry32 } from '../shared/rng.js';
 import { Col } from '../shared/replayFormat.js';
 import { SpatialGrid } from './spatial.js';
@@ -43,6 +43,7 @@ export const STANCES = {
 };
 
 export class Battle {
+  // maxTime: 4 minutes while testing; the plan for launch is 30 minutes so every battle resolves.
   constructor({ designs, ships, seed = 1, maxTime = 240, friendlyFire = false }) {
     // friendlyFire off: allied hulls still block shots (rounds stop on them), they just take no damage.
     this.friendlyFire = friendlyFire;
@@ -86,9 +87,28 @@ export class Battle {
     e.targets = [];
     e.retarget = this.rng();
     e.weapons = [];
+    const volley = 3 + this.rng() * 10; // all missile launchers on a ship share one volley timer
+    let launcher = 0;
     for (let i = 0; i < e.types.length; i++) {
-      if (!isWeapon(e.types[i])) continue;
-      e.weapons.push({ cell: i, type: e.types[i], lx: (i % d.w) + 0.5 - d.w / 2, ly: ((i / d.w) | 0) + 0.5 - d.h / 2, cd: this.rng() * 2 });
+      const t = e.types[i];
+      if (!isWeapon(t) || MULTIBLOCK[t]) continue;
+      const cd = t === BT.MISSILE ? volley + 0.15 * launcher++ : this.rng() * 2;
+      e.weapons.push({ cell: i, cells: null, type: t, lx: (i % d.w) + 0.5 - d.w / 2, ly: ((i / d.w) | 0) + 0.5 - d.h / 2, cd });
+    }
+    // Multi-block weapons: each connected group of their blocks is one gun, aimed from its centre.
+    const seen = new Uint8Array(e.types.length);
+    for (let i = 0; i < e.types.length; i++) {
+      if (!MULTIBLOCK[e.types[i]] || seen[i]) continue;
+      const group = [i], t = e.types[i];
+      seen[i] = 1;
+      for (let k = 0; k < group.length; k++) {
+        const c = group[k], x = c % d.w;
+        for (const n of [x > 0 ? c - 1 : -1, x < d.w - 1 ? c + 1 : -1, c - d.w, c + d.w])
+          if (n >= 0 && n < e.types.length && !seen[n] && e.types[n] === t) { seen[n] = 1; group.push(n); }
+      }
+      let sx = 0, sy = 0;
+      for (const c of group) { sx += (c % d.w) + 0.5 - d.w / 2; sy += ((c / d.w) | 0) + 0.5 - d.h / 2; }
+      e.weapons.push({ cell: group[0], cells: group, type: t, lx: sx / group.length, ly: sy / group.length, cd: 4 + this.rng() * 6 });
     }
     e.track = [];
     e.t1 = 65535;
@@ -124,12 +144,17 @@ export class Battle {
       mass += BLOCKS[t].mass;
       if (t === BT.THRUSTER) thrust += BLOCKS[t].thrust;
     }
-    e.weapons = e.weapons.filter((w) => e.hp[w.cell] > 0);
+    e.weapons = e.weapons.filter((w) => {
+      if (!w.cells) return e.hp[w.cell] > 0;
+      let alive = 0;
+      for (const c of w.cells) if (e.hp[c] > 0) alive++;
+      return alive >= w.cells.length * MULTIBLOCK[w.type].minIntact;
+    });
     for (const w of e.weapons) this.facing(e, w); // armour shot away can open new arcs
     // Point defence doesn't drive positioning. "Direct" range is the main gun: cannons if fitted, else lasers.
     let shortest = Infinity, longest = 0, cannon = 0, laser = 0;
     for (const w of e.weapons) {
-      if (w.type === BT.PD) continue;
+      if (w.type === BT.PD || w.type === BT.LANCE) continue;
       const r = WEAPON[w.type].range;
       if (w.type === BT.CANNON) cannon = r;
       if (w.type === BT.LASER) laser = r;
@@ -147,7 +172,7 @@ export class Battle {
 
   /** Which way a weapon block faces: out of each hull side with nothing alive next to it. */
   facing(e, w) {
-    w.omni = w.type === BT.MISSILE;
+    w.omni = w.type === BT.MISSILE || w.type === BT.LANCE; // launchers and turrets fire any way
     if (w.omni) return;
     const i = w.cell, x = i % e.w, y = (i / e.w) | 0;
     const open = (nx, ny) => nx < 0 || ny < 0 || nx >= e.w || ny >= e.h || !e.types[ny * e.w + nx] || e.hp[ny * e.w + nx] <= 0;
@@ -203,12 +228,10 @@ export class Battle {
     // End when a side has no warships left, when the fleets have disengaged (20 s with no
     // damage dealt), or at the time limit.
     const stalled = this.tick > 300 && this.now - (this.lastDamage || 0) > 200;
-    // Rout: a side down to <12% of its starting ships still able to fight, and outgunned 2:1.
+    // Rout: a side down to <20% of its starting ships still able to fight, and outgunned 2:1.
     const a0 = this.armed[0].length, a1 = this.armed[1].length;
-    const routed = (a0 < this.teamStart[0] * 0.12 && a1 > 2 * a0) || (a1 < this.teamStart[1] * 0.12 && a0 > 2 * a1);
-    // Mutual exhaustion: both sides down to <10% of their ships still able to fight.
-    const exhausted = a0 < this.teamStart[0] * 0.1 && a1 < this.teamStart[1] * 0.1;
-    if (this.endTick < 0 && (!a0 || !a1 || stalled || routed || exhausted || this.tick >= this.maxTicks))
+    const routed = (a0 < this.teamStart[0] * 0.2 && a1 > 2 * a0) || (a1 < this.teamStart[1] * 0.2 && a0 > 2 * a1);
+    if (this.endTick < 0 && (!a0 || !a1 || stalled || routed || this.tick >= this.maxTicks))
       this.endTick = this.tick + 40; // let the last missiles and debris play out
     if (this.endTick >= 0 && this.tick >= this.endTick) this.done = true;
     return !this.done;
@@ -389,14 +412,18 @@ export class Battle {
       }
       if (!tl) { w.cd = 0.3; continue; }
       // Preferred target first, then any other target that is in range and inside this weapon's arc.
+      // Missiles and heavy lasers all go for the primary target so volleys land together.
+      const spreadFire = W.kind !== 'missile' && W.kind !== 'lance';
       let tg = null;
       for (let j = 0; j < tl; j++) {
-        const o = e.targets[(k + j) % tl];
+        const o = e.targets[spreadFire ? (k + j) % tl : j];
         if ((o.x - wx) ** 2 + (o.y - wy) ** 2 <= W.range * W.range && this.bears(e, w, wx, wy, o.x, o.y)) { tg = o; break; }
       }
       if (!tg) { w.cd = 0.2 + this.rng() * 0.2; continue; }
-      w.cd = W.cooldown * (0.85 + 0.3 * this.rng());
       const [ax, ay] = this.aimPoint(tg);
+      if (W.kind === 'lance') { w.cd = this.fireLance(e, wx, wy, ax, ay, W) ? W.cooldown : 0.5; continue; }
+      // Launchers keep in step (no jitter) so a ship's missiles always leave as one volley.
+      w.cd = W.kind === 'missile' ? W.cooldown : W.cooldown * (0.85 + 0.3 * this.rng());
       if (W.kind === 'laser') { this.fireBeam(e, wx, wy, ax, ay, W.range, W.damage, 0); continue; }
       // Shells and missiles are unguided: aimed with lead at launch, then fly dead straight.
       const t = Math.hypot(ax - wx, ay - wy) / W.speed;
@@ -492,7 +519,8 @@ export class Battle {
       if (hit) {
         const t = this.hitT, hx = x0 + (x1 - x0) * t, hy = y0 + (y1 - y0) * t;
         const ok = this.canDamage(this.hitE, P.team[i]);
-        if (ok) this.splash(this.hitE, hx, hy, WEAPON[P.wtype[i]].splash, P.dmg[i]);
+        if (kind === K_MISSILE) this.blast(hx, hy, WEAPON[P.wtype[i]].splash, P.dmg[i], P.team[i]);
+        else if (ok) this.splash(this.hitE, hx, hy, WEAPON[P.wtype[i]].splash, P.dmg[i]);
         this.shotEnd(rec, this.now - 1 + t, 1);
         this.recExplosion(hx, hy, kind === K_MISSILE ? 2 : 1);
         this.removeProjectile(i--);
@@ -613,6 +641,102 @@ export class Battle {
     e.dirty = true;
     this.recBlockDeath(e.id, i, 0);
     if (e.kind === SHIP && i === e.hub) e.hubDead = true;
+  }
+
+  /**
+   * Missile blast: hits every ship and wreck within the radius, block by block, with damage
+   * falling off as peak * (1 - d / radius)^2. Lethal at the centre, a wide ring of weakened
+   * blocks around it, so overlapping blasts are what really tear ships apart.
+   */
+  blast(x, y, radius, peak, team) {
+    const R = radius, hit = [];
+    this.grid.queryBox(x - R, y - R, x + R, y + R, (e) => { if (!e.dead && !e.retired) hit.push(e); });
+    for (const e of hit) {
+      if (!this.canDamage(e, team)) continue;
+      const dx = x - e.x, dy = y - e.y;
+      if (dx * dx + dy * dy > (R + e.radius) ** 2) continue;
+      const gx = dx * e.c + dy * e.s + e.w * 0.5, gy = -dx * e.s + dy * e.c + e.h * 0.5;
+      const r = Math.ceil(R);
+      for (let j = Math.max(0, Math.floor(gy) - r); j <= Math.min(e.h - 1, Math.floor(gy) + r); j++)
+        for (let i = Math.max(0, Math.floor(gx) - r); i <= Math.min(e.w - 1, Math.floor(gx) + r); i++) {
+          const c = j * e.w + i;
+          if (!e.types[c] || e.hp[c] <= 0) continue;
+          const d = Math.hypot(i + 0.5 - gx, j + 0.5 - gy);
+          if (d >= R) continue;
+          const f = 1 - d / R, dmg = peak * f * f;
+          if (dmg > 1) this.damageCell(e, c, dmg);
+        }
+    }
+  }
+
+  /**
+   * Heavy laser: a beam with a damage budget that burns through every block on its line,
+   * ship after ship, until the budget is spent. Holds fire (returns false) if the first
+   * thing in the line of fire is a friendly ship.
+   */
+  fireLance(e, x0, y0, ax, ay, W) {
+    const dx = ax - x0, dy = ay - y0, d = Math.hypot(dx, dy) || 1;
+    const x1 = x0 + (dx / d) * W.range, y1 = y0 + (dy / d) * W.range;
+    if (this.sweep(x0, y0, x1, y1, e.id) && this.hitE.kind === SHIP && this.hitE.team === e.team) return false;
+    const hits = [];
+    const g = this.grid, q = ++g.qid, n = g.n;
+    const gx0 = g.cx(Math.min(x0, x1)), gx1 = g.cx(Math.max(x0, x1)), gy0 = g.cx(Math.min(y0, y1)), gy1 = g.cx(Math.max(y0, y1));
+    const sdx = x1 - x0, sdy = y1 - y0, len2 = sdx * sdx + sdy * sdy;
+    for (let cy = gy0; cy <= gy1; cy++)
+      for (let cx = gx0; cx <= gx1; cx++) {
+        const c = cy * n + cx, s = g.start[c], m = g.count[c];
+        for (let k = 0; k < m; k++) {
+          const o = g.ents[g.items[s + k]];
+          if (o._q === q) continue;
+          o._q = q;
+          if (o.dead || o.retired || o === e) continue;
+          let t = ((o.x - x0) * sdx + (o.y - y0) * sdy) / len2;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          if ((x0 + sdx * t - o.x) ** 2 + (y0 + sdy * t - o.y) ** 2 > o.radius * o.radius) continue;
+          this.raycastAll(o, x0, y0, x1, y1, hits);
+        }
+      }
+    hits.sort((a, b) => a.t - b.t);
+    let budget = W.damage, endT = 1;
+    for (const h of hits) {
+      const o = h.e, hp = o.hp[h.cell];
+      if (hp <= 0) continue;
+      if (!this.canDamage(o, e.team)) { endT = h.t; break; } // a friendly hull stops the beam
+      const dmg = Math.min(hp, budget);
+      this.damageCell(o, h.cell, dmg);
+      budget -= dmg;
+      if (budget <= 0) { endT = h.t; break; }
+    }
+    this.recBeam(x0, y0, x0 + sdx * endT, y0 + sdy * endT, e.team, 2, hits.length ? 1 : 0);
+    return true;
+  }
+
+  /** Like raycast(), but records every live block along the segment, not just the first. */
+  raycastAll(e, x0, y0, x1, y1, out) {
+    const c = e.c, s = e.s, w = e.w, h = e.h;
+    let dx = x0 - e.x, dy = y0 - e.y;
+    const gx0 = dx * c + dy * s + w * 0.5, gy0 = -dx * s + dy * c + h * 0.5;
+    dx = x1 - e.x; dy = y1 - e.y;
+    const ddx = dx * c + dy * s + w * 0.5 - gx0, ddy = -dx * s + dy * c + h * 0.5 - gy0;
+    let t0 = 0, t1 = 1;
+    for (const [p0, dd, lim] of [[gx0, ddx, w], [gy0, ddy, h]]) {
+      if (dd === 0) { if (p0 < 0 || p0 > lim) return; continue; }
+      const ra = -p0 / dd, rb = (lim - p0) / dd;
+      t0 = Math.max(t0, Math.min(ra, rb)); t1 = Math.min(t1, Math.max(ra, rb));
+    }
+    if (t0 > t1) return;
+    let ix = Math.min(w - 1, Math.max(0, Math.floor(gx0 + ddx * t0))), iy = Math.min(h - 1, Math.max(0, Math.floor(gy0 + ddy * t0)));
+    const stx = ddx > 0 ? 1 : -1, sty = ddy > 0 ? 1 : -1;
+    const tdx = ddx !== 0 ? Math.abs(1 / ddx) : Infinity, tdy = ddy !== 0 ? Math.abs(1 / ddy) : Infinity;
+    let tmx = ddx > 0 ? (ix + 1 - gx0) / ddx : ddx < 0 ? (ix - gx0) / ddx : Infinity;
+    let tmy = ddy > 0 ? (iy + 1 - gy0) / ddy : ddy < 0 ? (iy - gy0) / ddy : Infinity;
+    let t = t0;
+    for (let guard = w + h + 2; guard > 0; guard--) {
+      const i = iy * w + ix;
+      if (e.types[i] && e.hp[i] > 0) out.push({ t, e, cell: i });
+      if (tmx < tmy) { t = tmx; if (t > t1) return; ix += stx; tmx += tdx; if (ix < 0 || ix >= w) return; }
+      else { t = tmy; if (t > t1) return; iy += sty; tmy += tdy; if (iy < 0 || iy >= h) return; }
+    }
   }
 
   splash(e, x, y, radius, dmg) {

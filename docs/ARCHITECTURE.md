@@ -60,7 +60,14 @@ Each tick:
    - *Cannon*: slow shell (range 170) fired with lead, then flies dead straight. Visible trail,
      small blast. Main damage.
    - *Missile launcher*: huge, slow, unguided heavy missile (range 700) aimed with lead, flying
-     dead straight over friendly ships to a big blast. It has hit points, so it can be shot down.
+     dead straight over friendly ships. 100 hit points, so point defence can shoot it down. Its
+     blast hits every ship and wreck within 9 blocks, with damage falling off as
+     `200 × (1 − d/9)²`: one missile craters a hull, a volley tears it apart. All launchers on a
+     ship share one 40 s timer and fire together as a rippling volley at the same target.
+   - *Heavy laser*: a 10×10 multi-block turret (fires in any direction) that keeps working while
+     half its blocks survive. Range 450, every 20 s. The beam carries 2,500 damage and burns
+     through block after block, ship after ship, until that is spent, so it can cut ships in
+     half. It holds fire if a friendly ship is first in the line of fire.
    - *Point defence*: range 30 rapid beam. Shoots the nearest enemy missile first (found via a
      second small grid of live missiles), otherwise any enemy ship that close.
    Every weapon aims at a random block of its target so damage spreads over the hull.
@@ -143,12 +150,12 @@ These keep every battle inside the budget above:
 
 - **Blocks per ship by hull class** (for example corvette ≤ 40, titan ≤ 3,000).
 - **Total blocks per battle** around 1M. Bigger engagements can be split into waves.
-- **Time limit** per battle (currently 4 simulated minutes), after which survivors disengage.
+- **Time limit** per battle: 4 simulated minutes while testing, 30 minutes planned for launch so
+  every battle comes to a resolution.
 
 A battle ends early when any of these happens (a 4 s tail lets the last shots land):
 - one side has no ships left that can still fire (disarmed hulks don't count);
-- rout: a side is down to under 12% of its starting ships still armed and is outgunned 2:1;
-- mutual exhaustion: both sides are under 10% of their starting ships still armed;
+- rout: a side is down to under 20% of its starting ships still armed and is outgunned 2:1;
 - disengagement: 20 s pass with no damage dealt anywhere (after the first 30 s).
 
 ## What's next for battles

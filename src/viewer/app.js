@@ -231,3 +231,6 @@ mm.addEventListener('pointermove', (e) => { if (e.buttons) minimapJump(e); });
 
 requestAnimationFrame(loop);
 resolve();
+
+// Small hook for debugging and automated screenshots.
+window.battleViewer = { get model() { return model; }, cam, seek: (v) => { t = v; playing = false; setPlayIcon(); } };
