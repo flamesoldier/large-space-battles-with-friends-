@@ -159,12 +159,26 @@ A battle ends early when any of these happens (a 4 s tail lets the last shots la
 - rout: a side is down to under 20% of its starting ships still armed and is outgunned 2:1;
 - disengagement: 20 s pass with no damage dealt anywhere (after the first 30 s).
 
+## Ship designer (`src/designer/`, `src/shared/shipStats.js`)
+
+The designer edits a 96×64 grid and saves the cropped `{ name, cls, w, h, cells, hub, stance }`
+design the sim reads. Every number it shows comes from shared code: block prices and hit points
+from `blocks.js`, and speed, turn rate and weapon arcs from `shipStats.js`, which repeats the
+formulas in `Battle.refit()` and `Battle.facing()`. `npm test` builds a Battle for 150 generated
+designs and checks the two agree, so a stat on screen is the stat in combat.
+
+A ship's price is the sum of its block costs. Players buy a shipyard for a design rather than
+single ships; the shipyard's price is a multiple of the ship price (`economy.js`).
+
+The test battle runs the real sim in the page (your design × N vs an equal-cost fleet) and can
+hand the packed replay to `viewer.html#replay` through `postMessage`, so the viewer plays exactly
+what the designer resolved.
+
 ## What's next for battles
 
 In rough order:
 
-1. Ship designer: edit a grid, validate it (connected to hub, class limits), save the same
-   `{w, h, cells, hub}` format the sim already uses.
+1. ~~Ship designer~~: done (`src/designer/`, see below).
 2. Battle job runner on the server: queue, worker threads, store replays, write losses back to
    the fleets.
 3. Combat depth: a railgun that punches through several blocks, shields, reactor/power blocks, and smarter AI roles (screens, flankers, capital ships holding

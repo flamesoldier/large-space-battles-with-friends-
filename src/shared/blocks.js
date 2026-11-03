@@ -21,17 +21,20 @@ export const MULTIBLOCK = {
   [BT.LANCE]: { size: 10, minIntact: 0.5 },
 };
 
+// cost: credits per block, paid once when the design is bought (via its shipyard).
+// Rough rule: armour is priced by hit points, weapons by what they do in a fight.
+// These are the only place prices live; the designer, shipyards and fleets all read them.
 export const BLOCKS = {
-  [BT.HUB]: { name: 'Hub', hp: 450, mass: 4 },
-  [BT.ARMOR]: { name: 'Armor', hp: 110, mass: 2 },
-  [BT.HEAVY]: { name: 'Heavy armor', hp: 240, mass: 4 },
-  [BT.FRAME]: { name: 'Frame', hp: 45, mass: 1 },
-  [BT.THRUSTER]: { name: 'Thruster', hp: 60, mass: 1.5, thrust: 10 },
-  [BT.LASER]: { name: 'Laser', hp: 130, mass: 2 },
-  [BT.CANNON]: { name: 'Cannon', hp: 150, mass: 3 },
-  [BT.MISSILE]: { name: 'Missile launcher', hp: 200, mass: 5 },
-  [BT.PD]: { name: 'Point defense', hp: 80, mass: 1.5 },
-  [BT.LANCE]: { name: 'Heavy laser', hp: 120, mass: 4 }, // per block; the gun is 10x10 of these
+  [BT.HUB]: { name: 'Hub', hp: 450, mass: 4, cost: 25 },
+  [BT.ARMOR]: { name: 'Armor', hp: 110, mass: 2, cost: 3 },
+  [BT.HEAVY]: { name: 'Heavy armor', hp: 240, mass: 4, cost: 7 },
+  [BT.FRAME]: { name: 'Frame', hp: 45, mass: 1, cost: 1 },
+  [BT.THRUSTER]: { name: 'Thruster', hp: 60, mass: 1.5, thrust: 10, cost: 5 },
+  [BT.LASER]: { name: 'Laser', hp: 130, mass: 2, cost: 14 },
+  [BT.CANNON]: { name: 'Cannon', hp: 150, mass: 3, cost: 18 },
+  [BT.MISSILE]: { name: 'Missile launcher', hp: 200, mass: 5, cost: 35 },
+  [BT.PD]: { name: 'Point defense', hp: 80, mass: 1.5, cost: 10 },
+  [BT.LANCE]: { name: 'Heavy laser', hp: 120, mass: 4, cost: 10 }, // per block; the gun is 10x10 of these (1,000 a gun)
 };
 
 // Weapon behaviour. Ranges/speeds in world units (blocks) and seconds.
@@ -60,3 +63,17 @@ export const WEAPON = {
 export const ARC_DEG = 100;
 
 export const isWeapon = (t) => t >= BT.LASER && t <= BT.LANCE;
+
+// Hull classes come from block count (the ship designer shows which one a design falls in).
+// Limits keep every battle inside the compute budget in docs/ARCHITECTURE.md.
+export const HULL_CLASSES = [
+  { id: 'corvette', name: 'Corvette', maxBlocks: 40 },
+  { id: 'frigate', name: 'Frigate', maxBlocks: 85 },
+  { id: 'destroyer', name: 'Destroyer', maxBlocks: 200 },
+  { id: 'cruiser', name: 'Cruiser', maxBlocks: 500 },
+  { id: 'battleship', name: 'Battleship', maxBlocks: 1200 },
+  { id: 'titan', name: 'Titan', maxBlocks: 3000 },
+];
+export const MAX_BLOCKS = HULL_CLASSES[HULL_CLASSES.length - 1].maxBlocks;
+// Largest grid a design may use (width along the nose axis x height).
+export const MAX_W = 96, MAX_H = 64;

@@ -11,7 +11,7 @@ Battles are huge (up to thousands of ships), 2D top-down, and chaotic: lasers, s
 debris everywhere, hulls breaking apart. Players never control battles directly.
 
 Build order chosen by the owner: hardest part first. Battle engine (done, being polished) →
-**ship designer (next)** → world, economy and fleets last.
+ship designer (first version done, being tuned) → **world, economy and fleets (next)**.
 
 ## Status: battle engine
 
@@ -73,14 +73,38 @@ Battle end:
   (`Math.sin`/`cos` aren't identical across engines). The real game records replays on the
   server, so that's fine.
 
-## Next: ship designer
+## Economy rules the owner has set (for the world/economy phase)
 
-What we know the owner wants:
-- Players build ships on a block grid around a central hub, choosing armour, frame, thrusters
-  and weapons, with the heavy laser placed as one 10×10 unit.
-- A stance picker (charge / brawl / line / standoff / escort).
-- It saves the design format above, which the battle sim already reads.
+- Each world gives a fixed credit income into the player's **global** credit pool.
+- Ships aren't bought one at a time. A player buys a **shipyard** on one of their worlds for one
+  design; it builds that ship **for free every 30 minutes**, forever.
+- The **shipyard's price is set by the price of the ship it makes** (`src/shared/economy.js`:
+  currently 10× the ship cost, so a shipyard pays for itself in 5 hours). Not yet confirmed by the owner.
+- A world can have any number of shipyards. **All of them are destroyed if an enemy takes the world.**
+- Every ship part has a credit cost (`cost` in `blocks.js`); a ship's price is the sum of its blocks.
 
-Likely needs, still to agree with the owner: validation (everything connected to the hub, hull
-class block limits, warning about buried weapons), live stats (mass, speed, turn rate, firepower,
-weapon arcs), symmetry/mirror tools, and a way to test a design in a quick battle.
+## Status: ship designer
+
+`npm run build` writes `dist/designer.html` (and `dist/viewer.html`); `npm test` checks the
+designer's numbers against the sim.
+
+- `src/shared/shipStats.js`: price, mass, speed, turn rate, firepower, weapon facing/arcs,
+  validation, crop and JSON save format. It mirrors `Battle.refit()` / `Battle.facing()`;
+  `tools/test-designer.mjs` fails if they drift apart, so change both together.
+- `src/shared/economy.js`: shipyard price and build interval.
+- `src/designer/editor.js`: grid editing (no DOM): mirror across the hub row, whole 10×10 heavy
+  laser units, one movable hub, rectangle and fill tools, undo/redo, crop on save.
+- `src/designer/app.js`: the page. Live cost, shipyard price, hull class, stats, weapon table,
+  arcs overlay, validation list, stance picker, local library (localStorage), JSON export/import,
+  and a test battle (N copies vs an equal-cost mixed fleet or a saved design) that can open the
+  replay in `viewer.html#replay`.
+- Hull class comes from block count (`HULL_CLASSES` in `blocks.js`): corvette ≤ 40, frigate ≤ 85,
+  destroyer ≤ 200, cruiser ≤ 500, battleship ≤ 1,200, titan ≤ 3,000. Grid limit 96 × 64.
+- Validation errors block test battles (and should block shipyards): one hub, everything
+  connected to it, block limit, heavy lasers as whole separate 10×10 units. Warnings: no weapons,
+  buried weapons, no thrusters, big escorts.
+- Designs are saved cropped, in the format above; JSON export stores `cells` as base64.
+
+Still open with the owner: the actual block prices and the shipyard multiplier (placeholders
+until there's an income number to balance against), and whether hull class should matter beyond
+the block limit.

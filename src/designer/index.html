@@ -1,0 +1,264 @@
+<title>Ship Designer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Same instrument-panel look as the replay viewer: dark void, thin rules, mono numbers. */
+:root {
+  --void: #05070c;
+  --panel: rgba(10, 15, 24, 0.92);
+  --line: rgba(140, 170, 210, 0.18);
+  --ink: #dbe4f2;
+  --dim: #7d8ba1;
+  --azure: #86e8ff;
+  --ember: #ffb35c;
+  --bad: #ff6b6b;
+  --warn: #ffcf5c;
+  --signal: #e6eeff;
+  --display: "Chakra Petch", "Bahnschrift", "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+[hidden] { display: none !important; }
+body { background: var(--void); color: var(--ink); font-family: var(--display); overflow: hidden; }
+
+#app {
+  height: 100%; display: grid; grid-template-columns: 236px minmax(0, 1fr) 300px; grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas: "top top top" "pal grid stats";
+  background: radial-gradient(ellipse at 40% 30%, rgba(60, 90, 160, 0.14), transparent 60%), var(--void);
+}
+.top {
+  grid-area: top; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+  padding: 10px max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px));
+  background: var(--panel); border-bottom: 1px solid var(--line);
+}
+.brand { display: flex; flex-direction: column; line-height: 1.1; margin-right: 6px; }
+.brand b { font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; font-size: 15px; }
+.brand span { color: var(--dim); font-size: 12px; letter-spacing: 0.04em; }
+.top .grow { flex: 1 1 0; }
+.group { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+
+label { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); display: flex; gap: 6px; align-items: center; }
+input[type=text], input[type=number], select {
+  font: 500 13px var(--mono); color: var(--ink); background: rgba(255,255,255,0.04);
+  border: 1px solid var(--line); padding: 5px 7px; border-radius: 3px; min-width: 0;
+}
+#name { width: 170px; font-family: var(--display); font-weight: 600; font-size: 14px; }
+input[type=number] { width: 70px; }
+button {
+  font: 600 12.5px var(--display); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink);
+  background: rgba(255,255,255,0.05); border: 1px solid var(--line); padding: 6px 11px; border-radius: 3px; cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: var(--signal); }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--azure); outline-offset: 1px; }
+button.go { background: var(--signal); color: var(--void); border-color: var(--signal); }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+button[aria-pressed="true"] { border-color: var(--azure); color: var(--azure); background: rgba(134,232,255,0.08); }
+
+aside { overflow-y: auto; background: var(--panel); padding: 12px 14px 20px; }
+#palette { grid-area: pal; border-right: 1px solid var(--line); }
+#stats { grid-area: stats; border-left: 1px solid var(--line); }
+h2 { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); font-weight: 600; margin: 16px 0 8px; }
+h2:first-child { margin-top: 0; }
+
+.blocks { display: grid; gap: 3px; }
+.blk {
+  display: grid; grid-template-columns: 18px 1fr auto; gap: 9px; align-items: center; text-align: left;
+  text-transform: none; letter-spacing: 0.02em; font-weight: 500; font-size: 13px; padding: 5px 8px;
+}
+.blk i { width: 18px; height: 18px; border-radius: 2px; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.35); }
+.blk em { font-style: normal; font-family: var(--mono); font-size: 11.5px; color: var(--dim); }
+.blk kbd { display: none; }
+.blk[aria-pressed="true"] em { color: var(--azure); }
+.row { display: flex; gap: 4px; flex-wrap: wrap; }
+.row button { flex: 1 1 auto; }
+.hint { color: var(--dim); font-size: 11.5px; line-height: 1.5; }
+.hint b { color: var(--ink); font-weight: 600; }
+
+main { grid-area: grid; position: relative; min-width: 0; min-height: 0; }
+#grid { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; }
+#hover {
+  position: absolute; left: 12px; bottom: 12px; background: var(--panel); border: 1px solid var(--line);
+  padding: 6px 10px; font-family: var(--mono); font-size: 11.5px; pointer-events: none; max-width: calc(100% - 24px);
+}
+#toast {
+  position: absolute; left: 50%; top: 14px; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--line);
+  padding: 7px 14px; font-size: 13px; pointer-events: none; transition: opacity .25s; opacity: 0;
+}
+#toast.on { opacity: 1; }
+
+/* stats */
+.price { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.price div { border: 1px solid var(--line); padding: 8px 10px; }
+.price small { display: block; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
+.price strong { font-family: var(--mono); font-size: 22px; font-weight: 500; color: var(--azure); font-variant-numeric: tabular-nums; }
+.price .yard strong { color: var(--ember); }
+.price span { font-size: 11px; color: var(--dim); }
+.cls { margin-top: 12px; }
+.cls header { display: flex; justify-content: space-between; align-items: baseline; }
+.cls b { font-size: 15px; letter-spacing: 0.04em; }
+.cls span { font-family: var(--mono); font-size: 12px; color: var(--dim); }
+.meter { height: 3px; background: var(--line); margin-top: 6px; }
+.meter i { display: block; height: 100%; background: var(--azure); width: 0; }
+dl.kv { display: grid; grid-template-columns: auto 1fr; gap: 5px 10px; margin: 0; font-size: 12.5px; }
+dl.kv dt { color: var(--dim); }
+dl.kv dd { margin: 0; text-align: right; font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th { color: var(--dim); font-weight: 500; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; text-align: right; padding: 0 0 4px; }
+th:first-child, td:first-child { text-align: left; }
+td { font-family: var(--mono); text-align: right; padding: 3px 0; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+td:first-child { font-family: var(--display); }
+td small { color: var(--bad); }
+.issues { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; font-size: 12.5px; line-height: 1.4; }
+.issues li { padding-left: 14px; position: relative; }
+.issues li::before { content: ""; position: absolute; left: 0; top: 6px; width: 7px; height: 7px; border-radius: 50%; }
+.issues .err::before { background: var(--bad); }
+.issues .warn::before { background: var(--warn); }
+.issues .ok { color: var(--azure); }
+.issues .ok::before { background: var(--azure); }
+#stance-hint { margin-top: 6px; }
+
+/* dialogs */
+dialog {
+  background: #0b111b; color: var(--ink); border: 1px solid var(--line); padding: 18px 20px; width: min(560px, calc(100% - 32px));
+  max-height: calc(100% - 48px);
+}
+dialog::backdrop { background: rgba(2, 4, 8, 0.7); }
+dialog h3 { margin: 0 0 12px; font-size: 15px; letter-spacing: 0.08em; text-transform: uppercase; }
+dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; flex-wrap: wrap; }
+.lib { display: grid; gap: 6px; max-height: 50vh; overflow-y: auto; }
+.lib .item { display: grid; grid-template-columns: 96px 1fr auto; gap: 12px; align-items: center; border: 1px solid var(--line); padding: 6px 8px; }
+.lib img { width: 96px; height: 48px; object-fit: contain; image-rendering: pixelated; background: rgba(255,255,255,0.02); }
+.lib .meta b { display: block; font-size: 14px; }
+.lib .meta span { font-family: var(--mono); font-size: 11.5px; color: var(--dim); }
+.lib .empty { color: var(--dim); font-size: 13px; padding: 12px 0; }
+.form { display: grid; grid-template-columns: auto 1fr; gap: 10px 14px; align-items: center; }
+.form label { justify-content: flex-start; }
+#test-progress { margin-top: 14px; font-family: var(--mono); font-size: 12px; color: var(--dim); }
+.bar { height: 2px; background: var(--line); margin-top: 8px; }
+.bar i { display: block; height: 100%; width: 0; background: var(--signal); }
+#test-result { margin-top: 14px; }
+.verdict { font-size: 18px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 8px; }
+.verdict.win { color: var(--azure); } .verdict.loss { color: var(--ember); }
+
+@media (max-width: 980px) {
+  #app { grid-template-columns: 200px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; grid-template-areas: "top top" "pal grid" "stats stats"; }
+  #stats { border-left: 0; border-top: 1px solid var(--line); max-height: 34vh; }
+}
+@media (max-width: 640px) {
+  #app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto auto; grid-template-areas: "top" "grid" "pal" "stats"; }
+  #palette { border-right: 0; border-top: 1px solid var(--line); max-height: 30vh; }
+  #palette .hint { display: none; }
+  .blocks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #stats { max-height: 26vh; }
+  .brand span { display: none; }
+  #name { width: 130px; }
+}
+@media (prefers-reduced-motion: reduce) { #toast { transition: none; } }
+</style>
+
+<div id="app">
+  <header class="top">
+    <div class="brand"><b>Ship Designer</b><span>Build it block by block. Every block costs credits.</span></div>
+    <div class="group">
+      <input id="name" type="text" maxlength="40" aria-label="Design name" spellcheck="false">
+      <label for="stance">Stance <select id="stance"></select></label>
+    </div>
+    <div class="grow"></div>
+    <div class="group">
+      <select id="template" aria-label="Start from a template"></select>
+      <button id="library-btn">Library</button>
+      <button id="save">Save</button>
+      <button id="export">Export</button>
+      <button id="import">Import</button>
+      <input id="import-file" type="file" accept=".json,application/json" hidden>
+      <button id="test-btn" class="go">Test battle</button>
+    </div>
+  </header>
+
+  <aside id="palette">
+    <h2>Blocks</h2>
+    <div class="blocks" id="blocks" role="group" aria-label="Block to place"></div>
+    <h2>Tool</h2>
+    <div class="row" role="group" aria-label="Tool">
+      <button data-tool="pencil" title="Pencil (B)">Pencil</button>
+      <button data-tool="rect" title="Rectangle (R)">Rect</button>
+      <button data-tool="fill" title="Fill (F)">Fill</button>
+    </div>
+    <h2>Options</h2>
+    <div class="row">
+      <button id="mirror" title="Mirror across the hub's row (M)">Mirror</button>
+      <button id="arcs" title="Show every weapon's firing arc (A)">Arcs</button>
+    </div>
+    <div class="row" style="margin-top:4px">
+      <button id="undo" title="Undo (Ctrl+Z)">Undo</button>
+      <button id="redo" title="Redo (Ctrl+Shift+Z)">Redo</button>
+      <button id="fitbtn" title="Fit the ship in view">Fit</button>
+    </div>
+    <h2>Controls</h2>
+    <p class="hint"><b>Left drag</b> places blocks, <b>right drag</b> erases. <b>Scroll</b> zooms, <b>middle drag</b> or <b>Space + drag</b> pans (two fingers on touch). Keys <b>1–0</b> pick blocks. The nose points <b>right</b>.</p>
+    <p class="hint">Weapons fire out of the hull side they're exposed on, up to 100° either way. Missile launchers and heavy lasers fire in any direction.</p>
+  </aside>
+
+  <main>
+    <canvas id="grid" aria-label="Ship grid. Left drag to place blocks, right drag to erase."></canvas>
+    <div id="hover" hidden></div>
+    <div id="toast" role="status" aria-live="polite"></div>
+  </main>
+
+  <aside id="stats">
+    <div class="price">
+      <div><small>Ship cost</small><strong id="cost">0</strong> <span>cr</span></div>
+      <div class="yard"><small>Shipyard</small><strong id="yard">0</strong> <span>cr</span></div>
+    </div>
+    <p class="hint" id="yard-hint" style="margin:6px 0 0"></p>
+    <div class="cls">
+      <header><b id="cls">Corvette</b><span id="blocks-count">0 / 40 blocks</span></header>
+      <div class="meter"><i id="cls-meter"></i></div>
+    </div>
+    <h2>Performance</h2>
+    <dl class="kv">
+      <dt>Size</dt><dd id="s-size"></dd>
+      <dt>Mass</dt><dd id="s-mass"></dd>
+      <dt>Top speed</dt><dd id="s-speed"></dd>
+      <dt>Turn rate</dt><dd id="s-turn"></dd>
+      <dt>Hit points</dt><dd id="s-hp"></dd>
+      <dt>Damage / s</dt><dd id="s-dps"></dd>
+      <dt>Range</dt><dd id="s-range"></dd>
+    </dl>
+    <h2>Weapons</h2>
+    <table>
+      <thead><tr><th>Type</th><th>Count</th><th>Dmg/s</th><th>Range</th></tr></thead>
+      <tbody id="weapons"></tbody>
+    </table>
+    <h2>Stance</h2>
+    <p class="hint" id="stance-hint"></p>
+    <h2>Checks</h2>
+    <ul class="issues" id="issues"></ul>
+  </aside>
+
+  <dialog id="library">
+    <h3>Saved designs</h3>
+    <div class="lib" id="lib-list"></div>
+    <div class="actions"><button value="close" id="lib-close">Close</button></div>
+  </dialog>
+
+  <dialog id="test">
+    <h3>Test battle</h3>
+    <p class="hint" style="margin-top:0">Your ships fight an enemy fleet worth the same number of credits, using the real battle sim.</p>
+    <div class="form">
+      <label for="t-copies">Your ships</label><input id="t-copies" type="number" min="1" max="400" value="10">
+      <label for="t-opp">Enemy</label><select id="t-opp"></select>
+      <label for="t-seed">Seed</label><input id="t-seed" type="number" min="1" value="1">
+    </div>
+    <div id="test-progress" hidden><span id="t-status"></span><div class="bar"><i id="t-bar"></i></div></div>
+    <div id="test-result" hidden></div>
+    <div class="actions">
+      <button id="t-close">Close</button>
+      <button id="t-watch" hidden>Watch replay</button>
+      <button id="t-run" class="go">Fight</button>
+    </div>
+  </dialog>
+</div>
+<script type="module">/*APP*/</script>
