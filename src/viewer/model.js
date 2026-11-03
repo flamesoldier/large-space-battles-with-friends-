@@ -133,17 +133,23 @@ export class ReplayModel {
       if (f > s.maxFlight) s.maxFlight = f;
     }
     const nl = c.lasT.length;
-    this.laser = { n: nl, t: c.lasT, x0: new Float32Array(nl), y0: new Float32Array(nl), x1: new Float32Array(nl), y1: new Float32Array(nl), team: c.lasTeam, hit: c.lasHit };
+    this.laser = { n: nl, t: c.lasT, x0: new Float32Array(nl), y0: new Float32Array(nl), x1: new Float32Array(nl), y1: new Float32Array(nl), team: c.lasTeam, hit: c.lasHit, kind: c.lasKind };
     for (let i = 0; i < nl; i++) {
       const L = this.laser, a = (c.lasAng[i] / 65536) * Math.PI * 2, len = c.lasLen[i];
       L.x0[i] = c.lasX[i] / q; L.y0[i] = c.lasY[i] / q;
       L.x1[i] = L.x0[i] + Math.cos(a) * len; L.y1[i] = L.y0[i] + Math.sin(a) * len;
     }
-    const nm = c.misT0.length;
-    this.missile = { n: nm, t0: c.misT0, t1: c.misT1, team: c.misTeam, hit: c.misHit, s0: c.misS0, sn: c.misN,
-      xy: Float32Array.from(c.misXY, (v) => v / q), every: meta.missileEvery, maxLife: 0 };
-    for (let i = 0; i < nm; i++) this.missile.maxLife = Math.max(this.missile.maxLife, c.misT1[i] - c.misT0[i]);
-    this.expl = { n: c.expT.length, t: c.expT, x: Float32Array.from(c.expX, (v) => v / q), y: Float32Array.from(c.expY, (v) => v / q) };
+    // Guided projectiles: cannon shells (cn) and heavy missiles (bm) share one layout.
+    const track = (p) => {
+      const n = c[p + 'T0'].length;
+      const tr = { n, t0: c[p + 'T0'], t1: c[p + 'T1'], team: c[p + 'Team'], hit: c[p + 'Hit'], s0: c[p + 'S0'], sn: c[p + 'N'],
+        xy: Float32Array.from(c[p + 'XY'], (v) => v / q), every: meta.missileEvery, maxLife: 0 };
+      for (let i = 0; i < n; i++) tr.maxLife = Math.max(tr.maxLife, tr.t1[i] - tr.t0[i]);
+      return tr;
+    };
+    this.shell = track('cn');
+    this.missile = track('bm');
+    this.expl = { n: c.expT.length, t: c.expT, s: c.expS, x: Float32Array.from(c.expX, (v) => v / q), y: Float32Array.from(c.expY, (v) => v / q) };
     // Ship deaths, sorted by time.
     const deaths = [];
     const tr = { x: 0, y: 0, a: 0 };

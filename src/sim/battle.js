@@ -28,7 +28,7 @@ const qAng = (a) => Math.round((wrapAngle(a) / TWO_PI) * 65536) & 0xffff;
 const wrapAngle = (a) => a - TWO_PI * Math.floor((a + Math.PI) / TWO_PI);
 const SHIP = 0, CHUNK = 1;
 const CHUNK_RETIRE_TICKS = 250; // after 25 s debris stops being hittable (still drawn by viewer)
-const K_KINETIC = 0, K_MISSILE = 1;
+const K_KINETIC = 0, K_SHELL = 1, K_MISSILE = 2;
 
 // Combat stances, chosen per ship design. range(e, direct, shortest, longest) -> preferred distance.
 //   direct   = longest non-missile weapon range, shortest = shortest weapon range,
@@ -60,6 +60,7 @@ export class Battle {
     this.teamCx = [0, 0];
     this.teamCy = [0, 0];
     this.grid = new SpatialGrid(32, 6144);
+    this.mgrid = new SpatialGrid(64, 6144);
     this.stamp = new Int32Array(8192);
     this.stampGen = 1;
     this.queue = new Int32Array(8192);
@@ -117,12 +118,17 @@ export class Battle {
       if (t === BT.THRUSTER) thrust += BLOCKS[t].thrust;
     }
     e.weapons = e.weapons.filter((w) => e.hp[w.cell] > 0);
-    let shortest = Infinity, longest = 0;
+    // Point defence doesn't drive positioning. "Direct" range is the main gun: cannons if fitted, else lasers.
+    let shortest = Infinity, longest = 0, cannon = 0, laser = 0;
     for (const w of e.weapons) {
+      if (w.type === BT.PD) continue;
       const r = WEAPON[w.type].range;
-      if (w.type !== BT.MISSILE) { range = Math.max(range, r); shortest = Math.min(shortest, r); }
+      if (w.type === BT.CANNON) cannon = r;
+      if (w.type === BT.LASER) laser = r;
+      if (w.type !== BT.MISSILE) shortest = Math.min(shortest, r);
       longest = Math.max(longest, r);
     }
+    range = cannon || laser;
     e.mass = Math.max(1, mass);
     // The hub has weak manoeuvring jets, so a ship that loses every engine still crawls.
     e.maxSpeed = Math.max(2.5, Math.min(22, (30 * thrust) / e.mass));
@@ -152,6 +158,7 @@ export class Battle {
     this.grid.build(this.ents);
 
     this.updateProjectiles();
+    this.buildMissileGrid();
     const n = this.ents.length;
     for (let k = 0; k < n; k++) { const e = this.ents[k]; if (e.kind === SHIP && !e.dead) this.fire(e); }
     this.resolveDamage();
@@ -286,10 +293,11 @@ export class Battle {
       x: new Float64Array(cap), y: new Float64Array(cap), vx: new Float64Array(cap), vy: new Float64Array(cap),
       life: new Int32Array(cap), kind: new Uint8Array(cap), owner: new Int32Array(cap), team: new Uint8Array(cap),
       target: new Int32Array(cap), dmg: new Float32Array(cap), rec: new Int32Array(cap), t0: new Int32Array(cap),
+      wtype: new Uint8Array(cap), hp: new Float32Array(cap),
     };
   }
 
-  addProjectile(kind, x, y, vx, vy, life, owner, team, target, dmg, rec) {
+  addProjectile(kind, wtype, x, y, vx, vy, life, owner, team, target, dmg, hp, rec) {
     let P = this.P;
     if (P.n === P.cap) {
       const old = P;
@@ -299,8 +307,8 @@ export class Battle {
       P.n = old.n;
     }
     const i = P.n++;
-    P.x[i] = x; P.y[i] = y; P.vx[i] = vx; P.vy[i] = vy; P.life[i] = life; P.kind[i] = kind;
-    P.owner[i] = owner; P.team[i] = team; P.target[i] = target; P.dmg[i] = dmg; P.rec[i] = rec; P.t0[i] = this.now;
+    P.x[i] = x; P.y[i] = y; P.vx[i] = vx; P.vy[i] = vy; P.life[i] = life; P.kind[i] = kind; P.wtype[i] = wtype;
+    P.owner[i] = owner; P.team[i] = team; P.target[i] = target; P.dmg[i] = dmg; P.hp[i] = hp; P.rec[i] = rec; P.t0[i] = this.now;
   }
 
   removeProjectile(i) {
@@ -309,120 +317,197 @@ export class Battle {
     for (const k in P) { const a = P[k]; if (ArrayBuffer.isView(a)) a[i] = a[j]; }
   }
 
+  /** Spatial index of live heavy missiles, rebuilt each tick, so point defence can find them. */
+  buildMissileGrid() {
+    const P = this.P, objs = [];
+    for (let i = 0; i < P.n; i++) if (P.kind[i] === K_MISSILE) objs.push({ x: P.x[i], y: P.y[i], radius: 1, i, _q: 0 });
+    this.mobjs = objs;
+    this.mgrid.build(objs, 0);
+  }
+
   fire(e) {
     const tl = e.targets.length;
-    if (!tl) { for (const w of e.weapons) w.cd -= DT; return; }
     for (let k = 0; k < e.weapons.length; k++) {
       const w = e.weapons[k];
       w.cd -= DT;
       if (w.cd > 0) continue;
       const W = WEAPON[w.type];
-      let tg = e.targets[k % tl];
       const wx = e.x + w.lx * e.c - w.ly * e.s, wy = e.y + w.lx * e.s + w.ly * e.c;
+      if (W.kind === 'pd') {
+        w.cd = this.firePD(e, wx, wy, W) ? W.cooldown * (0.85 + 0.3 * this.rng()) : 0.1;
+        continue;
+      }
+      if (!tl) { w.cd = 0.3; continue; }
+      let tg = e.targets[k % tl];
       let dx = tg.x - wx, dy = tg.y - wy;
       if (dx * dx + dy * dy > W.range * W.range) {
         tg = e.targets[0]; dx = tg.x - wx; dy = tg.y - wy;
         if (dx * dx + dy * dy > W.range * W.range) { w.cd = 0.3 + this.rng() * 0.3; continue; }
       }
       w.cd = W.cooldown * (0.85 + 0.3 * this.rng());
-      // Aim at a random block of the target so hits spread over the hull.
-      let ax = tg.x, ay = tg.y;
-      for (let tries = 0; tries < 4; tries++) {
-        const ci = (this.rng() * tg.types.length) | 0;
-        if (!tg.types[ci] || tg.hp[ci] <= 0) continue;
-        const lx = (ci % tg.w) + 0.5 - tg.w / 2, ly = ((ci / tg.w) | 0) + 0.5 - tg.h / 2;
-        ax = tg.x + lx * tg.c - ly * tg.s; ay = tg.y + lx * tg.s + ly * tg.c;
-        break;
-      }
-      if (W.kind === 'laser') this.fireLaser(e, wx, wy, ax, ay, W);
-      else if (W.kind === 'kinetic') {
-        const dist = Math.hypot(ax - wx, ay - wy), t = dist / W.speed;
-        ax += tg.vx * t; ay += tg.vy * t; // lead the target
-        const ang = Math.atan2(ay - wy, ax - wx) + (this.rng() - 0.5) * 2 * W.spread;
-        const rec = this.R.shotT0.push(this.now);
-        this.R.shotFlight.push(0); this.R.shotX.push(q16(wx)); this.R.shotY.push(q16(wy));
-        this.R.shotAng.push(qAng(ang));
-        this.R.shotHit.push(0); this.R.shotTeam.push(e.team);
-        const life = Math.ceil((W.range * 1.15) / W.speed / DT);
-        this.addProjectile(K_KINETIC, wx, wy, Math.cos(ang) * W.speed, Math.sin(ang) * W.speed, life, e.id, e.team, -1, W.damage, rec);
+      const [ax, ay] = this.aimPoint(tg);
+      if (W.kind === 'laser') { this.fireBeam(e, wx, wy, ax, ay, W.range, W.damage, 0); continue; }
+      let ang;
+      if (W.kind === 'shell') {
+        const t = Math.hypot(ax - wx, ay - wy) / W.speed;
+        ang = Math.atan2(ay + tg.vy * t - wy, ax + tg.vx * t - wx) + (this.rng() - 0.5) * 2 * W.spread; // lead the target
       } else {
-        const ang = Math.atan2(ay - wy, ax - wx) + (this.rng() - 0.5) * 1.8;
-        const rec = this.R.misT0.push(this.now);
-        this.R.misT1.push(0); this.R.misTeam.push(e.team); this.R.misHit.push(0);
-        this.R.misS0.push(this.R.misXY.n / 2); this.R.misN.push(1);
-        this.R.misXY.push(q16(wx)); this.R.misXY.push(q16(wy));
-        this.addProjectile(K_MISSILE, wx, wy, Math.cos(ang) * W.speed, Math.sin(ang) * W.speed, Math.round(W.life / DT), e.id, e.team, tg.id, W.damage, rec);
+        ang = Math.atan2(ay - wy, ax - wx) + (this.rng() - 0.5) * 1.8; // missiles launch wide, then turn in
       }
+      const kind = W.kind === 'shell' ? K_SHELL : K_MISSILE;
+      const rec = this.trackStart(kind, e.team, wx, wy);
+      this.addProjectile(kind, w.type, wx, wy, Math.cos(ang) * W.speed, Math.sin(ang) * W.speed,
+        Math.round(W.life / DT), e.id, e.team, tg.id, W.damage, W.hp || 0, rec);
     }
   }
 
-  fireLaser(e, x0, y0, ax, ay, W) {
+  /** A random live block of the target, so hits spread over the hull. */
+  aimPoint(tg) {
+    for (let tries = 0; tries < 4; tries++) {
+      const ci = (this.rng() * tg.types.length) | 0;
+      if (!tg.types[ci] || tg.hp[ci] <= 0) continue;
+      const lx = (ci % tg.w) + 0.5 - tg.w / 2, ly = ((ci / tg.w) | 0) + 0.5 - tg.h / 2;
+      return [tg.x + lx * tg.c - ly * tg.s, tg.y + lx * tg.s + ly * tg.c];
+    }
+    return [tg.x, tg.y];
+  }
+
+  /** Point defence: nearest enemy missile in range first, otherwise an enemy ship that close. */
+  firePD(e, wx, wy, W) {
+    const P = this.P, r = W.range;
+    let best = -1, bd = r * r;
+    this.mgrid.queryBox(wx - r, wy - r, wx + r, wy + r, (o) => {
+      const i = o.i;
+      if (P.team[i] === e.team || P.hp[i] <= 0) return;
+      const d = (P.x[i] - wx) ** 2 + (P.y[i] - wy) ** 2;
+      if (d < bd) { bd = d; best = i; }
+    });
+    if (best >= 0) {
+      const tx = P.x[best], ty = P.y[best];
+      // A ship in the way (friend or foe) soaks the burst instead.
+      if (this.sweep(wx, wy, tx, ty, e.id) && this.hitT < 0.97) {
+        if (this.canDamage(this.hitE, e.team)) this.damageCell(this.hitE, this.hitCell, W.damage);
+        this.recBeam(wx, wy, wx + (tx - wx) * this.hitT, wy + (ty - wy) * this.hitT, e.team, 1, 1);
+      } else {
+        P.hp[best] -= W.missileDamage;
+        this.recBeam(wx, wy, tx, ty, e.team, 1, 1);
+      }
+      return true;
+    }
+    for (const tg of e.targets) {
+      if (Math.hypot(tg.x - wx, tg.y - wy) - tg.radius * 0.6 > r) continue;
+      const [ax, ay] = this.aimPoint(tg);
+      this.fireBeam(e, wx, wy, ax, ay, r, W.damage, 1);
+      return true;
+    }
+    return false;
+  }
+
+  fireBeam(e, x0, y0, ax, ay, range, damage, kind) {
     const dx = ax - x0, dy = ay - y0, d = Math.hypot(dx, dy) || 1;
-    const x1 = x0 + (dx / d) * W.range, y1 = y0 + (dy / d) * W.range;
+    const x1 = x0 + (dx / d) * range, y1 = y0 + (dy / d) * range;
     const hit = this.sweep(x0, y0, x1, y1, e.id);
     let ex = x1, ey = y1;
     if (hit) {
       ex = x0 + (x1 - x0) * this.hitT; ey = y0 + (y1 - y0) * this.hitT;
-      if (this.canDamage(this.hitE, e.team)) this.damageCell(this.hitE, this.hitCell, W.damage);
+      if (this.canDamage(this.hitE, e.team)) this.damageCell(this.hitE, this.hitCell, damage);
     }
+    this.recBeam(x0, y0, ex, ey, e.team, kind, hit ? 1 : 0);
+  }
+
+  recBeam(x0, y0, x1, y1, team, kind, hit) {
     const R = this.R;
     R.lasT.push(this.now); R.lasX.push(q16(x0)); R.lasY.push(q16(y0));
-    R.lasAng.push(qAng(Math.atan2(dy, dx))); R.lasLen.push(Math.min(255, Math.round(Math.hypot(ex - x0, ey - y0))));
-    R.lasTeam.push(e.team); R.lasHit.push(hit ? 1 : 0);
+    R.lasAng.push(qAng(Math.atan2(y1 - y0, x1 - x0))); R.lasLen.push(Math.round(Math.hypot(x1 - x0, y1 - y0)));
+    R.lasTeam.push(team); R.lasHit.push(hit); R.lasKind.push(kind);
+  }
+
+  /** Nearest of a random sample of enemy warships (missiles whose target died pick a new one). */
+  sampleEnemy(team, x, y) {
+    const pool = this.armed[1 - team];
+    let best = null, bd = Infinity;
+    for (let k = 0; k < Math.min(10, pool.length); k++) {
+      const o = pool[(this.rng() * pool.length) | 0], d = (o.x - x) ** 2 + (o.y - y) ** 2;
+      if (d < bd) { bd = d; best = o; }
+    }
+    return best;
   }
 
   updateProjectiles() {
     const P = this.P, R = this.R;
-    const MW = WEAPON[BT.MISSILE];
     for (let i = 0; i < P.n; i++) {
-      if (P.kind[i] === K_MISSILE) {
-        const tg = this.byId[P.target[i]];
+      const kind = P.kind[i], rec = P.rec[i];
+      if (kind === K_MISSILE && P.hp[i] <= 0) {
+        // Shot down by point defence.
+        this.trackEnd(kind, rec, P.x[i], P.y[i], this.now, 2);
+        this.recExplosion(P.x[i], P.y[i], 0);
+        this.removeProjectile(i--);
+        continue;
+      }
+      if (kind !== K_KINETIC) {
+        const W = WEAPON[P.wtype[i]];
+        let tg = this.byId[P.target[i]];
+        if ((!tg || tg.dead) && kind === K_MISSILE) { tg = this.sampleEnemy(P.team[i], P.x[i], P.y[i]); if (tg) P.target[i] = tg.id; }
         if (tg && !tg.dead) {
           const cur = Math.atan2(P.vy[i], P.vx[i]);
-          const da = wrapAngle(Math.atan2(tg.y - P.y[i], tg.x - P.x[i]) - cur), mt = MW.turn * DT;
+          const da = wrapAngle(Math.atan2(tg.y - P.y[i], tg.x - P.x[i]) - cur), mt = W.turn * DT;
           const na = cur + (da > mt ? mt : da < -mt ? -mt : da);
-          P.vx[i] = Math.cos(na) * MW.speed; P.vy[i] = Math.sin(na) * MW.speed;
+          P.vx[i] = Math.cos(na) * W.speed; P.vy[i] = Math.sin(na) * W.speed;
         }
       }
       const x0 = P.x[i], y0 = P.y[i], x1 = x0 + P.vx[i] * DT, y1 = y0 + P.vy[i] * DT;
-      const hit = this.sweep(x0, y0, x1, y1, P.owner[i]);
-      const rec = P.rec[i];
+      // Heavy missiles fly over their own side's ships; everything else stops on whatever it meets.
+      const hit = this.sweep(x0, y0, x1, y1, P.owner[i], kind === K_MISSILE ? P.team[i] : -1);
       if (hit) {
         const t = this.hitT, hx = x0 + (x1 - x0) * t, hy = y0 + (y1 - y0) * t;
-        if (P.kind[i] === K_KINETIC) {
-          if (this.canDamage(this.hitE, P.team[i])) this.damageCell(this.hitE, this.hitCell, P.dmg[i]);
+        const ok = this.canDamage(this.hitE, P.team[i]);
+        if (kind === K_KINETIC) {
+          if (ok) this.damageCell(this.hitE, this.hitCell, P.dmg[i]);
           R.shotFlight.set(rec, Math.round((this.now - 1 + t - R.shotT0.a[rec]) * 10)); R.shotHit.set(rec, 1);
         } else {
-          if (this.canDamage(this.hitE, P.team[i])) this.splash(this.hitE, hx, hy, MW.splash, P.dmg[i]);
-          this.endMissile(rec, hx, hy, this.now - 1 + t, 1);
-          R.expT.push(this.now); R.expX.push(q16(hx)); R.expY.push(q16(hy));
+          if (ok) this.splash(this.hitE, hx, hy, WEAPON[P.wtype[i]].splash, P.dmg[i]);
+          this.trackEnd(kind, rec, hx, hy, this.now - 1 + t, 1);
+          this.recExplosion(hx, hy, kind === K_MISSILE ? 2 : 1);
         }
         this.removeProjectile(i--);
         continue;
       }
       P.x[i] = x1; P.y[i] = y1;
       if (--P.life[i] <= 0) {
-        if (P.kind[i] === K_KINETIC) R.shotFlight.set(rec, Math.round((this.now - R.shotT0.a[rec]) * 10));
-        else this.endMissile(rec, x1, y1, this.now, 0);
+        if (kind === K_KINETIC) R.shotFlight.set(rec, Math.round((this.now - R.shotT0.a[rec]) * 10));
+        else this.trackEnd(kind, rec, x1, y1, this.now, 0);
         this.removeProjectile(i--);
         continue;
       }
-      if (P.kind[i] === K_MISSILE && (this.now - P.t0[i]) % MISSILE_EVERY === 0) {
-        R.misXY.push(q16(x1)); R.misXY.push(q16(y1)); R.misN.set(rec, R.misN.a[rec] + 1);
-      }
+      if (kind !== K_KINETIC && (this.now - P.t0[i]) % MISSILE_EVERY === 0) this.trackSample(kind, rec, x1, y1);
     }
   }
 
-  endMissile(rec, x, y, t1, hit) {
+  // Shells and heavy missiles are recorded as low-rate position tracks, one stream each.
+  trackStart(kind, team, x, y) {
+    const S = kind === K_SHELL ? this.R.cn : this.R.bm;
+    const rec = S.T0.push(this.now);
+    S.T1.push(0); S.Team.push(team); S.Hit.push(0);
+    S.pts.push([q16(x), q16(y)]); // per-projectile until export, so samples stay contiguous
+    return rec;
+  }
+  trackSample(kind, rec, x, y) {
+    const S = kind === K_SHELL ? this.R.cn : this.R.bm;
+    S.pts[rec].push(q16(x), q16(y));
+  }
+  trackEnd(kind, rec, x, y, t1, hit) {
+    const S = kind === K_SHELL ? this.R.cn : this.R.bm;
+    this.trackSample(kind, rec, x, y);
+    S.T1.set(rec, t1); S.Hit.set(rec, hit);
+  }
+  recExplosion(x, y, size) {
     const R = this.R;
-    R.misXY.push(q16(x)); R.misXY.push(q16(y));
-    R.misN.set(rec, R.misN.a[rec] + 1);
-    R.misT1.set(rec, t1); R.misHit.set(rec, hit);
+    R.expT.push(this.now); R.expX.push(q16(x)); R.expY.push(q16(y)); R.expS.push(size);
   }
 
   // ---------------------------------------------------------------- hit detection
   /** Find the first live block hit by segment (x0,y0)->(x1,y1). Sets hitE/hitCell/hitT. */
-  sweep(x0, y0, x1, y1, ownerId) {
+  sweep(x0, y0, x1, y1, ownerId, skipTeam = -1) {
     const g = this.grid, q = ++g.qid, ents = g.ents, n = g.n;
     const gx0 = g.cx(Math.min(x0, x1)), gx1 = g.cx(Math.max(x0, x1));
     const gy0 = g.cx(Math.min(y0, y1)), gy1 = g.cx(Math.max(y0, y1));
@@ -435,7 +520,7 @@ export class Battle {
           const e = ents[g.items[s + k]];
           if (e._q === q) continue;
           e._q = q;
-          if (e.dead || e.retired || e.id === ownerId) continue;
+          if (e.dead || e.retired || e.id === ownerId || (e.team === skipTeam && e.kind === SHIP)) continue;
           // Bounding circle vs segment.
           let t = ((e.x - x0) * sdx + (e.y - y0) * sdy) / len2;
           t = t < 0 ? 0 : t > 1 ? 1 : t;
@@ -601,16 +686,18 @@ export class Battle {
       // Kinetic rounds fly straight, so spawn + angle + flight time (0.01 s) is enough.
       shotT0: C(Uint16Array), shotFlight: C(Uint8Array), shotX: C(Int16Array), shotY: C(Int16Array),
       shotAng: C(Uint16Array), shotHit: C(Uint8Array), shotTeam: C(Uint8Array),
-      lasT: C(Uint16Array), lasX: C(Int16Array), lasY: C(Int16Array), lasAng: C(Uint16Array), lasLen: C(Uint8Array),
+      lasT: C(Uint16Array), lasX: C(Int16Array), lasY: C(Int16Array), lasAng: C(Uint16Array), lasLen: C(Uint16Array), lasKind: C(Uint8Array),
       lasTeam: C(Uint8Array), lasHit: C(Uint8Array),
-      misT0: C(Uint16Array), misT1: C(Float32Array), misTeam: C(Uint8Array), misHit: C(Uint8Array),
-      misS0: C(Uint32Array), misN: C(Uint16Array), misXY: C(Int16Array),
-      expT: C(Uint16Array), expX: C(Int16Array), expY: C(Int16Array),
+      expT: C(Uint16Array), expX: C(Int16Array), expY: C(Int16Array), expS: C(Uint8Array),
       chParent: C(Uint32Array), chT0: C(Uint16Array), chX: C(Float32Array), chY: C(Float32Array), chA: C(Float32Array),
       chVx: C(Float32Array), chVy: C(Float32Array), chVa: C(Float32Array),
       chMinI: C(Uint16Array), chMinJ: C(Uint16Array), chW: C(Uint16Array), chH: C(Uint16Array),
       chC0: C(Uint32Array), chN: C(Uint32Array), chCells: C(Uint16Array),
     };
+    // Guided projectiles: cn = cannon shells, bm = heavy missiles. Hit: 0 expired, 1 hit, 2 shot down.
+    const track = () => ({ T0: C(Uint16Array), T1: C(Float32Array), Team: C(Uint8Array), Hit: C(Uint8Array), pts: [] });
+    this.R.cn = track();
+    this.R.bm = track();
   }
 
   recBlockDeath(ent, cell, cause) {
@@ -656,7 +743,17 @@ export class Battle {
       shipTeam: team, shipDesign: design, shipT1: t1, shipTrackStart: tStart, shipTrackCount: tCount,
       shipX0: x0, shipY0: y0, shipA0: a0, trackDelta: deltas,
     };
-    for (const [k, c] of Object.entries(this.R)) cols[k] = c.done();
+    for (const [k, c] of Object.entries(this.R)) {
+      if (c instanceof Col) cols[k] = c.done();
+      else {
+        for (const [sub, cc] of Object.entries(c)) if (cc instanceof Col) cols[k + sub] = cc.done();
+        const n = c.pts.length, s0 = new Uint32Array(n), cnt = new Uint16Array(n);
+        const xy = new Int16Array(c.pts.reduce((a, p) => a + p.length, 0));
+        let o = 0;
+        c.pts.forEach((p, i) => { s0[i] = o / 2; cnt[i] = p.length / 2; xy.set(p, o); o += p.length; });
+        cols[k + 'S0'] = s0; cols[k + 'N'] = cnt; cols[k + 'XY'] = xy;
+      }
+    }
     const meta = {
       version: 1, friendlyFire: this.friendlyFire, trackTotal: total, evQ: EV_Q, dt: DT, trackEvery: TRACK_EVERY, missileEvery: MISSILE_EVERY, posQ: POS_Q, angQ: ANG_Q,
       ticks: this.tick, shipCount: S, chunkCount: this.byId.length - S,

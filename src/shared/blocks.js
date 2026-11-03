@@ -8,9 +8,10 @@ export const BT = {
   HEAVY: 3, // heavy armour
   FRAME: 4, // light internal structure
   THRUSTER: 5,
-  LASER: 6, // hitscan beam
-  CANNON: 7, // kinetic rounds (can hit allies in the line of fire)
-  MISSILE: 8, // homing missile launcher
+  LASER: 6, // long-range beam: always hits, low damage
+  CANNON: 7, // slow guided shells with a bright trail: the main damage dealer
+  MISSILE: 8, // huge, slow, long-range missiles that can be shot down
+  PD: 9, // point defence: short-range rapid laser, kills missiles, also hits close ships
 };
 
 export const BLOCKS = {
@@ -20,15 +21,22 @@ export const BLOCKS = {
   [BT.FRAME]: { name: 'Frame', hp: 45, mass: 1 },
   [BT.THRUSTER]: { name: 'Thruster', hp: 60, mass: 1.5, thrust: 10 },
   [BT.LASER]: { name: 'Laser', hp: 130, mass: 2 },
-  [BT.CANNON]: { name: 'Cannon', hp: 160, mass: 3 },
-  [BT.MISSILE]: { name: 'Missile launcher', hp: 140, mass: 3 },
+  [BT.CANNON]: { name: 'Cannon', hp: 150, mass: 3 },
+  [BT.MISSILE]: { name: 'Missile launcher', hp: 200, mass: 5 },
+  [BT.PD]: { name: 'Point defense', hp: 80, mass: 1.5 },
 };
 
 // Weapon behaviour. Ranges/speeds in world units (blocks) and seconds.
 export const WEAPON = {
-  [BT.LASER]: { kind: 'laser', range: 95, damage: 24, cooldown: 0.8 },
-  [BT.CANNON]: { kind: 'kinetic', range: 150, damage: 55, cooldown: 1.5, speed: 95, spread: 0.035 },
-  [BT.MISSILE]: { kind: 'missile', range: 300, damage: 110, cooldown: 8, speed: 45, turn: 2.6, life: 8, splash: 2.6 },
+  // Instant beam, never misses what it's aimed at, but slow to recharge.
+  [BT.LASER]: { kind: 'laser', range: 260, damage: 22, cooldown: 2.6 },
+  // Slow guided shell (gently steers toward its target), small blast on impact.
+  [BT.CANNON]: { kind: 'shell', range: 170, damage: 50, cooldown: 2.0, speed: 45, turn: 0.5, life: 5.5, splash: 1.6, spread: 0.05 },
+  // Heavy missile: crawls across the map, flies over friendly ships, devastating blast.
+  // Has hit points, so point defence can shoot it down on the way in.
+  [BT.MISSILE]: { kind: 'missile', range: 700, damage: 220, cooldown: 24, speed: 20, turn: 0.8, life: 45, splash: 4.5, hp: 40 },
+  // Point defence: shoots the nearest enemy missile in range, otherwise any enemy ship that close.
+  [BT.PD]: { kind: 'pd', range: 50, damage: 6, missileDamage: 10, cooldown: 0.2 },
 };
 
-export const isWeapon = (t) => t === BT.LASER || t === BT.CANNON || t === BT.MISSILE;
+export const isWeapon = (t) => t >= BT.LASER && t <= BT.PD;

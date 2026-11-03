@@ -34,9 +34,13 @@ const p = b.perf;
 console.log(`\nbattle length: ${(b.tick * DT).toFixed(1)}s simulated, survivors ${b.teamAlive.join(' vs ')}`);
 console.log(`compute: ${(simMs / 1000).toFixed(2)}s total, ${(p.ms / p.ticks).toFixed(2)} ms/tick avg (${((b.tick * DT) / (simMs / 1000)).toFixed(1)}x realtime)`);
 console.log(`peak entities ${p.peakEntities}, peak projectiles ${p.peakProjectiles}, raycasts ${p.raycasts.toLocaleString()}`);
-console.log(`events: ${rep.cols.shotT0.length.toLocaleString()} kinetic, ${rep.cols.lasT.length.toLocaleString()} laser, ${rep.cols.misT0.length.toLocaleString()} missiles, ${rep.cols.bdT.length.toLocaleString()} block deaths, ${rep.meta.chunkCount.toLocaleString()} debris chunks`);
+const c = rep.cols, count = (a, v) => a.reduce((n, x) => n + (x === v ? 1 : 0), 0);
+const pdBeams = count(c.lasKind, 1);
+console.log(`weapons: ${(c.lasT.length - pdBeams).toLocaleString()} laser shots, ${pdBeams.toLocaleString()} point-defence bursts, ${c.cnT0.length.toLocaleString()} cannon shells (${count(c.cnHit, 1).toLocaleString()} hit)`);
+console.log(`heavy missiles: ${c.bmT0.length.toLocaleString()} launched, ${count(c.bmHit, 1).toLocaleString()} hit, ${count(c.bmHit, 2).toLocaleString()} shot down, ${count(c.bmHit, 0).toLocaleString()} ran out of fuel`);
+console.log(`events: ${rep.cols.bdT.length.toLocaleString()} block deaths, ${rep.meta.chunkCount.toLocaleString()} debris chunks`);
 console.log(`replay: ${(packed.length / 1e6).toFixed(2)} MB raw, ${(gz.length / 1e6).toFixed(2)} MB gzip`);
-const groups = { tracks: /^(ship|track)/, debris: /^ch/, blockDeaths: /^bd/, kinetic: /^shot/, lasers: /^las/, missiles: /^mis/, explosions: /^exp/ };
+const groups = { tracks: /^(ship|track)/, debris: /^ch/, blockDeaths: /^bd/, beams: /^las/, shells: /^cn/, missiles: /^bm/, explosions: /^exp/ };
 const parts = Object.entries(groups).map(([g, re]) => {
   const cols = Object.entries(rep.cols).filter(([k]) => re.test(k));
   const z = cols.reduce((n, [, v]) => n + gzipSync(new Uint8Array(v.buffer, v.byteOffset, v.byteLength)).length, 0);

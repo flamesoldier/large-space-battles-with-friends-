@@ -53,8 +53,14 @@ Each tick:
    block. Any ship counts, allied or enemy (only the firing ship is skipped), so rounds that miss
    their target slam into whatever is behind it. With friendly fire off (the default) allied
    hulls still stop the round but take no damage; this costs nothing extra.
-4. **Weapons fire.** Lasers are instant sweeps. Cannons lead their target. Missiles home. Every
-   weapon aims at a random block of its target so damage spreads over the hull.
+4. **Weapons fire.** Four weapon blocks:
+   - *Laser*: instant beam, range 260, low damage, slow recharge. The reliable chip damage.
+   - *Cannon*: slow guided shell (range 170) with a visible trail and a small blast. Main damage.
+   - *Missile launcher*: huge, slow heavy missile (range 700) that flies over friendly ships and
+     hits with a big blast. It has hit points, so it can be shot down.
+   - *Point defence*: short-range rapid beam. Shoots the nearest enemy missile first (found via a
+     second small grid of live missiles), otherwise any enemy ship that close.
+   Every weapon aims at a random block of its target so damage spreads over the hull.
 5. **Break-up.** Ships that lost blocks this tick run a flood fill from the hub. Every piece no
    longer connected to the hub becomes a separate debris chunk with its own grid, inheriting
    the ship's velocity plus a kick and spin. Destroying the hub breaks the whole ship into chunks.
@@ -70,9 +76,9 @@ What gets recorded, and what deliberately does not:
 | Stream | Stored as | Reconstructed in the viewer by |
 | --- | --- | --- |
 | Ship movement | position + angle every 0.4 s, second-order delta encoded, 1/4-block precision | Catmull-Rom spline |
-| Kinetic rounds | spawn time, position, angle, flight time | straight line, pure function of time |
-| Lasers | time, origin, angle, length | fade over 0.25 s |
-| Missiles | position every 0.3 s | linear interpolation |
+| Straight rounds (unused for now, kept for a future railgun) | spawn time, position, angle, flight time | straight line, pure function of time |
+| Laser and point-defence beams | time, origin, angle, length, kind | fade out |
+| Cannon shells, heavy missiles | position every 0.3 s | linear interpolation, smoke trail from past samples |
 | Debris chunks | spawn position, velocity, spin, which blocks | `x0 + v·t`, nothing per frame |
 | Block destroyed | time, entity, cell | "is this block alive at t?" check, plus sparks |
 | Sparks, fireballs, glows | **not stored** | seeded hashes of the event id |
@@ -136,8 +142,7 @@ In rough order:
    `{w, h, cells, hub}` format the sim already uses.
 2. Battle job runner on the server: queue, worker threads, store replays, write losses back to
    the fleets.
-3. Combat depth: point defence that shoots missiles, kinetic penetration through several blocks,
-   shields, reactor/power blocks, and smarter AI roles (screens, flankers, capital ships holding
+3. Combat depth: a railgun that punches through several blocks, shields, reactor/power blocks, and smarter AI roles (screens, flankers, capital ships holding
    back).
 4. Balance. Battles currently drag on at the end with crippled stragglers; the rout and
    disengage rules help but need tuning against real player designs.

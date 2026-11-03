@@ -9,12 +9,12 @@ import { BT } from './blocks.js';
 import { mulberry32, randInt, randRange } from './rng.js';
 
 export const CLASSES = {
-  corvette:   { w: [6, 8],   h: [3, 5],   lasers: 1,  cannons: 1,  missiles: 0,  thrustCols: 1, heavyFront: false, armorDepth: 1 },
-  frigate:    { w: [10, 13], h: [5, 7],   lasers: 2,  cannons: 2,  missiles: 0,  thrustCols: 1, heavyFront: false, armorDepth: 1 },
-  destroyer:  { w: [16, 20], h: [7, 9],   lasers: 3,  cannons: 4,  missiles: 1,  thrustCols: 1, heavyFront: true,  armorDepth: 1 },
-  cruiser:    { w: [26, 32], h: [11, 13], lasers: 6,  cannons: 6,  missiles: 3,  thrustCols: 2, heavyFront: true,  armorDepth: 2 },
-  battleship: { w: [44, 52], h: [17, 21], lasers: 12, cannons: 14, missiles: 6,  thrustCols: 2, heavyFront: true,  armorDepth: 2 },
-  titan:      { w: [80, 90], h: [29, 33], lasers: 24, cannons: 28, missiles: 12, thrustCols: 3, heavyFront: true,  armorDepth: 3 },
+  corvette:   { w: [6, 8],   h: [3, 5],   lasers: 1, cannons: 1, missiles: 0, pd: 0,  thrustCols: 1, heavyFront: false, armorDepth: 1 },
+  frigate:    { w: [10, 13], h: [5, 7],   lasers: 1, cannons: 2, missiles: 0, pd: 1,  thrustCols: 1, heavyFront: false, armorDepth: 1 },
+  destroyer:  { w: [16, 20], h: [7, 9],   lasers: 2, cannons: 4, missiles: 1, pd: 2,  thrustCols: 1, heavyFront: true,  armorDepth: 1 },
+  cruiser:    { w: [26, 32], h: [11, 13], lasers: 4, cannons: 6, missiles: 2, pd: 4,  thrustCols: 2, heavyFront: true,  armorDepth: 2 },
+  battleship: { w: [44, 52], h: [17, 21], lasers: 8, cannons: 12, missiles: 4, pd: 8,  thrustCols: 2, heavyFront: true,  armorDepth: 2 },
+  titan:      { w: [80, 90], h: [29, 33], lasers: 16, cannons: 22, missiles: 8, pd: 16, thrustCols: 3, heavyFront: true,  armorDepth: 3 },
 };
 
 // Default combat stance odds per class for generated test designs. In the real game the
@@ -129,12 +129,12 @@ export function makeDesign(cls, seed) {
       if (cells[mirror] !== BT.HUB) cells[mirror] = type;
     }
   };
-  // Interleave so lasers and cannons spread along the hull.
-  const shuffled = skin.slice().sort(() => r() - 0.5);
-  const half1 = shuffled.slice(0, shuffled.length >> 1).sort((a, b) => a - b);
-  const half2 = shuffled.slice(shuffled.length >> 1).sort((a, b) => a - b);
-  place(half1, C.lasers, BT.LASER);
-  place(half2, C.cannons, BT.CANNON);
+  // Interleave so lasers, cannons and point defence spread along the hull.
+  const shuffled = skin.slice().sort(() => r() - 0.5), third = Math.ceil(shuffled.length / 3);
+  const groups = [0, 1, 2].map((g) => shuffled.slice(g * third, (g + 1) * third).sort((a, b) => a - b));
+  place(groups[0], C.lasers, BT.LASER);
+  place(groups[1], C.cannons, BT.CANNON);
+  place(groups[2], C.pd, BT.PD);
   place(inner.length ? inner : skin, C.missiles, BT.MISSILE);
   // Small ships get a nose gun.
   if (w <= 13) cells[cy * w + (w - 1)] = r() < 0.5 ? BT.CANNON : BT.LASER;
