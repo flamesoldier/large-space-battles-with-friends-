@@ -206,22 +206,6 @@ export class Renderer {
     const minW = px * 1.1;
     const alpha = (col, k) => (col & 0xffffff) | ((Math.max(0, Math.min(1, k)) * 255) << 24);
 
-    // Kinetic tracers
-    const S = m.shot;
-    for (let i = lowerBound(S.t0, t - S.maxFlight - 3); i < S.n && S.t0[i] <= t; i++) {
-      const t1 = S.t1[i];
-      if (t <= t1) {
-        const u = t - S.t0[i], x = S.x[i] + S.vx[i] * u, y = S.y[i] + S.vy[i] * u;
-        if (!vis(x, y, 4)) continue;
-        const a = Math.atan2(S.vy[i], S.vx[i]);
-        g.push(x - Math.cos(a) * 2.5, y - Math.sin(a) * 2.5, a, 3, Math.max(0.3, minW), 2, C.tracer);
-      } else if (S.hit[i] && t - t1 < 3) {
-        const u = t1 - S.t0[i], x = S.x[i] + S.vx[i] * u, y = S.y[i] + S.vy[i] * u;
-        if (!vis(x, y, 2)) continue;
-        const r = 0.8 + (t - t1) * 0.5;
-        g.push(x, y, 0, Math.max(r, minW * 2), Math.max(r, minW * 2), 1, alpha(C.impact, 1 - (t - t1) / 3));
-      }
-    }
     // Beams: lasers linger 0.4 s and are thick; point defence is a thin, quick flicker.
     const L = m.laser;
     for (let i = lowerBound(L.t, t - 4); i < L.n && L.t[i] <= t; i++) {
@@ -235,8 +219,8 @@ export class Renderer {
       if (!pd) g.push(mx, my, Math.atan2(y1 - y0, x1 - x0), len, Math.max(0.15, minW * 0.5), 4, alpha(C.beamCore, k));
       if (L.hit[i]) { const r = pd ? 0.7 : 1.8; g.push(x1, y1, 0, Math.max(r, minW * 2), Math.max(r, minW * 2), 1, alpha(col, k)); }
     }
-    this.drawTracks(m.shell, t, vis, minW, false);
-    this.drawTracks(m.missile, t, vis, minW, true);
+    this.drawStraight(m.shell, t, vis, minW, false);
+    this.drawStraight(m.missile, t, vis, minW, true);
     // Detonations: 0 = missile shot down, 1 = cannon shell, 2 = heavy missile
     const E = m.expl;
     for (let i = lowerBound(E.t, t - 24); i < E.n && E.t[i] <= t; i++) {
@@ -273,37 +257,27 @@ export class Renderer {
     }
   }
 
-  /** Shells and heavy missiles: interpolate recorded samples, draw head + exhaust trail. */
-  drawTracks(M, t, vis, minW, heavy) {
+  /** Shells and heavy missiles: straight-line flight, so position is launch + velocity * age. */
+  drawStraight(S, t, vis, minW, heavy) {
     const g = this.glow, sol = this.solid;
-    for (let i = lowerBound(M.t0, t - M.maxLife - 1); i < M.n && M.t0[i] <= t; i++) {
-      if (t > M.t1[i]) continue;
-      const n = M.sn[i], b = M.s0[i] * 2, u = t - M.t0[i];
-      const k = Math.min(n - 2, Math.floor(u / M.every));
-      if (k < 0) continue;
-      const ta = M.t0[i] + k * M.every, tb = k + 1 === n - 1 ? M.t1[i] : ta + M.every;
-      const f = tb > ta ? Math.min(1, (t - ta) / (tb - ta)) : 1;
-      const xa = M.xy[b + k * 2], ya = M.xy[b + k * 2 + 1], xb = M.xy[b + k * 2 + 2], yb = M.xy[b + k * 2 + 3];
-      const x = xa + (xb - xa) * f, y = ya + (yb - ya) * f;
-      if (!vis(x, y, heavy ? 30 : 6)) continue;
-      const a = Math.atan2(yb - ya, xb - xa);
+    for (let i = lowerBound(S.t0, t - S.maxFlight - 1); i < S.n && S.t0[i] <= t; i++) {
+      if (t > S.t1[i]) continue;
+      const age = t - S.t0[i], vx = S.vx[i], vy = S.vy[i];
+      const x = S.x[i] + vx * age, y = S.y[i] + vy * age;
+      if (!vis(x, y, heavy ? 40 : 6)) continue;
+      const a = Math.atan2(vy, vx), c = Math.cos(a), s = Math.sin(a);
       if (!heavy) {
-        g.push(x - Math.cos(a) * 3, y - Math.sin(a) * 3, a, 3.2, Math.max(0.45, minW), 2, C.trail);
+        g.push(x - c * 3, y - s * 3, a, 3.2, Math.max(0.45, minW), 2, C.trail);
         g.push(x, y, 0, Math.max(0.7, minW * 1.5), Math.max(0.7, minW * 1.5), 1, C.missile);
         continue;
       }
-      // Heavy missile: a solid body, a hot exhaust plume and a fading smoke trail along past samples.
+      // Heavy missile: solid body, hot exhaust plume, and a smoke trail back toward the launcher.
       sol.push(x, y, a, Math.max(1.4, minW * 2), Math.max(0.55, minW), 0, C.mBody);
-      sol.push(x + Math.cos(a) * 1.5, y + Math.sin(a) * 1.5, a, 0.4, 0.4, 0, C.mTip[M.team[i]]);
-      g.push(x - Math.cos(a) * 3.2, y - Math.sin(a) * 3.2, a, 2.2, Math.max(0.9, minW * 1.5), 2, C.mFlame);
-      g.push(x, y, 0, Math.max(3, minW * 4), Math.max(3, minW * 4), 1, alpha2(C.mGlow[M.team[i]], 0.5));
-      let px = x, py = y;
-      for (let j = k; j >= Math.max(0, k - 6); j--) {
-        const sx = M.xy[b + j * 2], sy = M.xy[b + j * 2 + 1];
-        const len = Math.hypot(px - sx, py - sy) / 2;
-        if (len > 0.01) g.push((px + sx) / 2, (py + sy) / 2, Math.atan2(py - sy, px - sx), len, Math.max(0.6 + (k - j) * 0.15, minW), 4, alpha2(C.smoke, 0.55 * (1 - (k - j) / 7)));
-        px = sx; py = sy;
-      }
+      sol.push(x + c * 1.5, y + s * 1.5, a, 0.4, 0.4, 0, C.mTip[S.team[i]]);
+      g.push(x - c * 3.2, y - s * 3.2, a, 2.2, Math.max(0.9, minW * 1.5), 2, C.mFlame);
+      g.push(x, y, 0, Math.max(3, minW * 4), Math.max(3, minW * 4), 1, alpha2(C.mGlow[S.team[i]], 0.5));
+      const trail = Math.min(age * Math.hypot(vx, vy), 40) / 2;
+      if (trail > 0.5) g.push(x - c * (trail + 3), y - s * (trail + 3), a, trail, Math.max(0.7, minW), 2, alpha2(C.smoke, 0.5));
     }
   }
 }

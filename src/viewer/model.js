@@ -122,16 +122,25 @@ export class ReplayModel {
 
   decodeEffects(meta, c) {
     const q = meta.evQ, dt = meta.dt, sp = meta.kineticSpeed;
-    // Kinetic rounds: straight lines from spawn.
-    const ns = c.shotT0.length;
-    this.shot = { n: ns, t0: c.shotT0, t1: new Float32Array(ns), x: new Float32Array(ns), y: new Float32Array(ns),
-      vx: new Float32Array(ns), vy: new Float32Array(ns), hit: c.shotHit, team: c.shotTeam, maxFlight: 0 };
-    for (let i = 0; i < ns; i++) {
-      const s = this.shot, f = c.shotFlight[i] / 10, a = (c.shotAng[i] / 65536) * Math.PI * 2;
-      s.t1[i] = c.shotT0[i] + f; s.x[i] = c.shotX[i] / q; s.y[i] = c.shotY[i] / q;
-      s.vx[i] = Math.cos(a) * sp * dt; s.vy[i] = Math.sin(a) * sp * dt; // units per tick
-      if (f > s.maxFlight) s.maxFlight = f;
-    }
+    // Shells (kind 0) and heavy missiles (kind 1) fly straight from launch: every position
+    // is launch point + velocity * age. Split by kind so each has a tight time window.
+    const straight = (kind) => {
+      const idx = [];
+      for (let i = 0; i < c.shotT0.length; i++) if (c.shotKind[i] === kind) idx.push(i);
+      const n = idx.length, spd = meta.shotSpeed[kind] * dt;
+      const S = { n, t0: new Float32Array(n), t1: new Float32Array(n), x: new Float32Array(n), y: new Float32Array(n),
+        vx: new Float32Array(n), vy: new Float32Array(n), hit: new Uint8Array(n), team: new Uint8Array(n), maxFlight: 0 };
+      idx.forEach((i, k) => {
+        const f = c.shotFlight[i] / 10, a = (c.shotAng[i] / 65536) * Math.PI * 2;
+        S.t0[k] = c.shotT0[i]; S.t1[k] = c.shotT0[i] + f; S.x[k] = c.shotX[i] / q; S.y[k] = c.shotY[i] / q;
+        S.vx[k] = Math.cos(a) * spd; S.vy[k] = Math.sin(a) * spd; // units per tick
+        S.hit[k] = c.shotHit[i]; S.team[k] = c.shotTeam[i];
+        if (f > S.maxFlight) S.maxFlight = f;
+      });
+      return S;
+    };
+    this.shell = straight(0);
+    this.missile = straight(1);
     const nl = c.lasT.length;
     this.laser = { n: nl, t: c.lasT, x0: new Float32Array(nl), y0: new Float32Array(nl), x1: new Float32Array(nl), y1: new Float32Array(nl), team: c.lasTeam, hit: c.lasHit, kind: c.lasKind };
     for (let i = 0; i < nl; i++) {
@@ -139,16 +148,6 @@ export class ReplayModel {
       L.x0[i] = c.lasX[i] / q; L.y0[i] = c.lasY[i] / q;
       L.x1[i] = L.x0[i] + Math.cos(a) * len; L.y1[i] = L.y0[i] + Math.sin(a) * len;
     }
-    // Guided projectiles: cannon shells (cn) and heavy missiles (bm) share one layout.
-    const track = (p) => {
-      const n = c[p + 'T0'].length;
-      const tr = { n, t0: c[p + 'T0'], t1: c[p + 'T1'], team: c[p + 'Team'], hit: c[p + 'Hit'], s0: c[p + 'S0'], sn: c[p + 'N'],
-        xy: Float32Array.from(c[p + 'XY'], (v) => v / q), every: meta.missileEvery, maxLife: 0 };
-      for (let i = 0; i < n; i++) tr.maxLife = Math.max(tr.maxLife, tr.t1[i] - tr.t0[i]);
-      return tr;
-    };
-    this.shell = track('cn');
-    this.missile = track('bm');
     this.expl = { n: c.expT.length, t: c.expT, s: c.expS, x: Float32Array.from(c.expX, (v) => v / q), y: Float32Array.from(c.expY, (v) => v / q) };
     // Ship deaths, sorted by time.
     const deaths = [];

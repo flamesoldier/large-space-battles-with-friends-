@@ -377,15 +377,11 @@ export class Battle {
       w.cd = W.cooldown * (0.85 + 0.3 * this.rng());
       const [ax, ay] = this.aimPoint(tg);
       if (W.kind === 'laser') { this.fireBeam(e, wx, wy, ax, ay, W.range, W.damage, 0); continue; }
-      let ang;
-      if (W.kind === 'shell') {
-        const t = Math.hypot(ax - wx, ay - wy) / W.speed;
-        ang = Math.atan2(ay + tg.vy * t - wy, ax + tg.vx * t - wx) + (this.rng() - 0.5) * 2 * W.spread; // lead the target
-      } else {
-        ang = Math.atan2(ay - wy, ax - wx) + (this.rng() - 0.5) * 1.8; // missiles launch wide, then turn in
-      }
+      // Shells and missiles are unguided: aimed with lead at launch, then fly dead straight.
+      const t = Math.hypot(ax - wx, ay - wy) / W.speed;
+      const ang = Math.atan2(ay + tg.vy * t - wy, ax + tg.vx * t - wx) + (this.rng() - 0.5) * 2 * W.spread;
       const kind = W.kind === 'shell' ? K_SHELL : K_MISSILE;
-      const rec = this.trackStart(kind, e.team, wx, wy);
+      const rec = this.shotStart(kind, e.team, wx, wy, ang);
       this.addProjectile(kind, w.type, wx, wy, Math.cos(ang) * W.speed, Math.sin(ang) * W.speed,
         Math.round(W.life / DT), e.id, e.team, tg.id, W.damage, W.hp || 0, rec);
     }
@@ -458,38 +454,16 @@ export class Battle {
     R.lasTeam.push(team); R.lasHit.push(hit); R.lasKind.push(kind);
   }
 
-  /** Nearest of a random sample of enemy warships (missiles whose target died pick a new one). */
-  sampleEnemy(team, x, y) {
-    const pool = this.armed[1 - team];
-    let best = null, bd = Infinity;
-    for (let k = 0; k < Math.min(10, pool.length); k++) {
-      const o = pool[(this.rng() * pool.length) | 0], d = (o.x - x) ** 2 + (o.y - y) ** 2;
-      if (d < bd) { bd = d; best = o; }
-    }
-    return best;
-  }
-
   updateProjectiles() {
     const P = this.P, R = this.R;
     for (let i = 0; i < P.n; i++) {
       const kind = P.kind[i], rec = P.rec[i];
       if (kind === K_MISSILE && P.hp[i] <= 0) {
         // Shot down by point defence.
-        this.trackEnd(kind, rec, P.x[i], P.y[i], this.now, 2);
+        this.shotEnd(rec, this.now, 2);
         this.recExplosion(P.x[i], P.y[i], 0);
         this.removeProjectile(i--);
         continue;
-      }
-      if (kind === K_MISSILE) { // only heavy missiles steer; shells fly dead straight
-        const W = WEAPON[P.wtype[i]];
-        let tg = this.byId[P.target[i]];
-        if (!tg || tg.dead) { tg = this.sampleEnemy(P.team[i], P.x[i], P.y[i]); if (tg) P.target[i] = tg.id; }
-        if (tg && !tg.dead) {
-          const cur = Math.atan2(P.vy[i], P.vx[i]);
-          const da = wrapAngle(Math.atan2(tg.y - P.y[i], tg.x - P.x[i]) - cur), mt = W.turn * DT;
-          const na = cur + (da > mt ? mt : da < -mt ? -mt : da);
-          P.vx[i] = Math.cos(na) * W.speed; P.vy[i] = Math.sin(na) * W.speed;
-        }
       }
       const x0 = P.x[i], y0 = P.y[i], x1 = x0 + P.vx[i] * DT, y1 = y0 + P.vy[i] * DT;
       // Heavy missiles fly over their own side's ships; everything else stops on whatever it meets.
@@ -497,44 +471,35 @@ export class Battle {
       if (hit) {
         const t = this.hitT, hx = x0 + (x1 - x0) * t, hy = y0 + (y1 - y0) * t;
         const ok = this.canDamage(this.hitE, P.team[i]);
-        if (kind === K_KINETIC) {
-          if (ok) this.damageCell(this.hitE, this.hitCell, P.dmg[i]);
-          R.shotFlight.set(rec, Math.round((this.now - 1 + t - R.shotT0.a[rec]) * 10)); R.shotHit.set(rec, 1);
-        } else {
-          if (ok) this.splash(this.hitE, hx, hy, WEAPON[P.wtype[i]].splash, P.dmg[i]);
-          this.trackEnd(kind, rec, hx, hy, this.now - 1 + t, 1);
-          this.recExplosion(hx, hy, kind === K_MISSILE ? 2 : 1);
-        }
+        if (ok) this.splash(this.hitE, hx, hy, WEAPON[P.wtype[i]].splash, P.dmg[i]);
+        this.shotEnd(rec, this.now - 1 + t, 1);
+        this.recExplosion(hx, hy, kind === K_MISSILE ? 2 : 1);
         this.removeProjectile(i--);
         continue;
       }
       P.x[i] = x1; P.y[i] = y1;
       if (--P.life[i] <= 0) {
-        if (kind === K_KINETIC) R.shotFlight.set(rec, Math.round((this.now - R.shotT0.a[rec]) * 10));
-        else this.trackEnd(kind, rec, x1, y1, this.now, 0);
+        this.shotEnd(rec, this.now, 0);
         this.removeProjectile(i--);
         continue;
       }
-      if (kind !== K_KINETIC && (this.now - P.t0[i]) % MISSILE_EVERY === 0) this.trackSample(kind, rec, x1, y1);
     }
   }
 
-  // Shells and heavy missiles are recorded as low-rate position tracks, one stream each.
-  trackStart(kind, team, x, y) {
-    const S = kind === K_SHELL ? this.R.cn : this.R.bm;
-    const rec = S.T0.push(this.now);
-    S.T1.push(0); S.Team.push(team); S.Hit.push(0);
-    S.pts.push([q16(x), q16(y)]); // per-projectile until export, so samples stay contiguous
+  // Straight projectiles need only launch time, point, angle and flight time: the viewer
+  // recomputes every position, so nothing is recorded while they fly.
+  shotStart(kind, team, x, y, ang) {
+    const R = this.R;
+    const rec = R.shotT0.push(this.now);
+    R.shotFlight.push(0); R.shotX.push(q16(x)); R.shotY.push(q16(y)); R.shotAng.push(qAng(ang));
+    R.shotHit.push(0); R.shotTeam.push(team); R.shotKind.push(kind === K_MISSILE ? 1 : 0);
     return rec;
   }
-  trackSample(kind, rec, x, y) {
-    const S = kind === K_SHELL ? this.R.cn : this.R.bm;
-    S.pts[rec].push(q16(x), q16(y));
-  }
-  trackEnd(kind, rec, x, y, t1, hit) {
-    const S = kind === K_SHELL ? this.R.cn : this.R.bm;
-    this.trackSample(kind, rec, x, y);
-    S.T1.set(rec, t1); S.Hit.set(rec, hit);
+  /** hit: 0 expired, 1 hit something, 2 shot down by point defence. */
+  shotEnd(rec, t1, hit) {
+    const R = this.R;
+    R.shotFlight.set(rec, Math.min(65535, Math.round((t1 - R.shotT0.a[rec]) * 10)));
+    R.shotHit.set(rec, hit);
   }
   recExplosion(x, y, size) {
     const R = this.R;
@@ -719,9 +684,9 @@ export class Battle {
     const C = (T) => new Col(T);
     this.R = {
       bdT: C(Uint16Array), bdEnt: C(Uint32Array), bdCell: C(Uint16Array), bdCause: C(Uint8Array),
-      // Kinetic rounds fly straight, so spawn + angle + flight time (0.01 s) is enough.
-      shotT0: C(Uint16Array), shotFlight: C(Uint8Array), shotX: C(Int16Array), shotY: C(Int16Array),
-      shotAng: C(Uint16Array), shotHit: C(Uint8Array), shotTeam: C(Uint8Array),
+      // Shells and missiles fly straight: launch + angle + flight time (in 0.01 s) is enough.
+      shotT0: C(Uint16Array), shotFlight: C(Uint16Array), shotX: C(Int16Array), shotY: C(Int16Array),
+      shotAng: C(Uint16Array), shotHit: C(Uint8Array), shotTeam: C(Uint8Array), shotKind: C(Uint8Array),
       lasT: C(Uint16Array), lasX: C(Int16Array), lasY: C(Int16Array), lasAng: C(Uint16Array), lasLen: C(Uint16Array), lasKind: C(Uint8Array),
       lasTeam: C(Uint8Array), lasHit: C(Uint8Array),
       expT: C(Uint16Array), expX: C(Int16Array), expY: C(Int16Array), expS: C(Uint8Array),
@@ -730,10 +695,6 @@ export class Battle {
       chMinI: C(Uint16Array), chMinJ: C(Uint16Array), chW: C(Uint16Array), chH: C(Uint16Array),
       chC0: C(Uint32Array), chN: C(Uint32Array), chCells: C(Uint16Array),
     };
-    // Guided projectiles: cn = cannon shells, bm = heavy missiles. Hit: 0 expired, 1 hit, 2 shot down.
-    const track = () => ({ T0: C(Uint16Array), T1: C(Float32Array), Team: C(Uint8Array), Hit: C(Uint8Array), pts: [] });
-    this.R.cn = track();
-    this.R.bm = track();
   }
 
   recBlockDeath(ent, cell, cause) {
@@ -780,20 +741,12 @@ export class Battle {
       shipX0: x0, shipY0: y0, shipA0: a0, trackDelta: deltas,
     };
     for (const [k, c] of Object.entries(this.R)) {
-      if (c instanceof Col) cols[k] = c.done();
-      else {
-        for (const [sub, cc] of Object.entries(c)) if (cc instanceof Col) cols[k + sub] = cc.done();
-        const n = c.pts.length, s0 = new Uint32Array(n), cnt = new Uint16Array(n);
-        const xy = new Int16Array(c.pts.reduce((a, p) => a + p.length, 0));
-        let o = 0;
-        c.pts.forEach((p, i) => { s0[i] = o / 2; cnt[i] = p.length / 2; xy.set(p, o); o += p.length; });
-        cols[k + 'S0'] = s0; cols[k + 'N'] = cnt; cols[k + 'XY'] = xy;
-      }
+      cols[k] = c.done();
     }
     const meta = {
       version: 1, friendlyFire: this.friendlyFire, trackTotal: total, evQ: EV_Q, dt: DT, trackEvery: TRACK_EVERY, missileEvery: MISSILE_EVERY, posQ: POS_Q, angQ: ANG_Q,
       ticks: this.tick, shipCount: S, chunkCount: this.byId.length - S,
-      kineticSpeed: WEAPON[BT.CANNON].speed,
+      shotSpeed: [WEAPON[BT.CANNON].speed, WEAPON[BT.MISSILE].speed],
       designs: this.designs.map((d) => ({ name: d.name, cls: d.cls, stance: d.stance, w: d.w, h: d.h, hub: d.hub, cells: Array.from(d.cells) })),
       survivors: [...this.teamAlive],
     };

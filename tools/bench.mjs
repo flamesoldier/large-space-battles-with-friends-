@@ -36,11 +36,12 @@ console.log(`compute: ${(simMs / 1000).toFixed(2)}s total, ${(p.ms / p.ticks).to
 console.log(`peak entities ${p.peakEntities}, peak projectiles ${p.peakProjectiles}, raycasts ${p.raycasts.toLocaleString()}`);
 const c = rep.cols, count = (a, v) => a.reduce((n, x) => n + (x === v ? 1 : 0), 0);
 const pdBeams = count(c.lasKind, 1);
-console.log(`weapons: ${(c.lasT.length - pdBeams).toLocaleString()} laser shots, ${pdBeams.toLocaleString()} point-defence bursts, ${c.cnT0.length.toLocaleString()} cannon shells (${count(c.cnHit, 1).toLocaleString()} hit)`);
-console.log(`heavy missiles: ${c.bmT0.length.toLocaleString()} launched, ${count(c.bmHit, 1).toLocaleString()} hit, ${count(c.bmHit, 2).toLocaleString()} shot down, ${count(c.bmHit, 0).toLocaleString()} ran out of fuel`);
+const sk = (kind, hit) => c.shotKind.reduce((n, k, i) => n + (k === kind && (hit < 0 || c.shotHit[i] === hit) ? 1 : 0), 0);
+console.log(`weapons: ${(c.lasT.length - pdBeams).toLocaleString()} laser shots, ${pdBeams.toLocaleString()} point-defence bursts, ${sk(0, -1).toLocaleString()} cannon shells (${sk(0, 1).toLocaleString()} hit)`);
+console.log(`heavy missiles: ${sk(1, -1).toLocaleString()} launched, ${sk(1, 1).toLocaleString()} hit, ${sk(1, 2).toLocaleString()} shot down, ${sk(1, 0).toLocaleString()} missed everything`);
 console.log(`events: ${rep.cols.bdT.length.toLocaleString()} block deaths, ${rep.meta.chunkCount.toLocaleString()} debris chunks`);
 console.log(`replay: ${(packed.length / 1e6).toFixed(2)} MB raw, ${(gz.length / 1e6).toFixed(2)} MB gzip`);
-const groups = { tracks: /^(ship|track)/, debris: /^ch/, blockDeaths: /^bd/, beams: /^las/, shells: /^cn/, missiles: /^bm/, explosions: /^exp/ };
+const groups = { tracks: /^(ship|track)/, debris: /^ch/, blockDeaths: /^bd/, beams: /^las/, shellsAndMissiles: /^shot/, explosions: /^exp/ };
 const parts = Object.entries(groups).map(([g, re]) => {
   const cols = Object.entries(rep.cols).filter(([k]) => re.test(k));
   const z = cols.reduce((n, [, v]) => n + gzipSync(new Uint8Array(v.buffer, v.byteOffset, v.byteLength)).length, 0);

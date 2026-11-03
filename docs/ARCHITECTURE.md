@@ -57,8 +57,8 @@ Each tick:
    - *Laser*: instant beam, range 260, low damage, slow recharge. The reliable chip damage.
    - *Cannon*: slow shell (range 170) fired with lead, then flies dead straight. Visible trail,
      small blast. Main damage.
-   - *Missile launcher*: huge, slow heavy missile (range 700) that flies over friendly ships and
-     hits with a big blast. It has hit points, so it can be shot down.
+   - *Missile launcher*: huge, slow, unguided heavy missile (range 700) aimed with lead, flying
+     dead straight over friendly ships to a big blast. It has hit points, so it can be shot down.
    - *Point defence*: range 30 rapid beam. Shoots the nearest enemy missile first (found via a
      second small grid of live missiles), otherwise any enemy ship that close.
    Every weapon aims at a random block of its target so damage spreads over the hull.
@@ -81,9 +81,8 @@ What gets recorded, and what deliberately does not:
 | Stream | Stored as | Reconstructed in the viewer by |
 | --- | --- | --- |
 | Ship movement | position + angle every 0.4 s, second-order delta encoded, 1/4-block precision | Catmull-Rom spline |
-| Straight rounds (unused for now, kept for a future railgun) | spawn time, position, angle, flight time | straight line, pure function of time |
+| Cannon shells, heavy missiles | launch time, point, angle, flight time, kind | straight line, pure function of time |
 | Laser and point-defence beams | time, origin, angle, length, kind | fade out |
-| Cannon shells, heavy missiles | position every 0.3 s | linear interpolation, smoke trail from past samples |
 | Debris chunks | spawn position, velocity, spin, which blocks | `x0 + v·t`, nothing per frame |
 | Block destroyed | time, entity, cell | "is this block alive at t?" check, plus sparks |
 | Sparks, fireballs, glows | **not stored** | seeded hashes of the event id |
