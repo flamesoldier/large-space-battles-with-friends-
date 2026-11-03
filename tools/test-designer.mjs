@@ -27,8 +27,8 @@ for (const cls of Object.keys(CLASSES))
     for (const sw of e.weapons) {
       const dw = a.weapons.find((x) => x.cell === sw.cell);
       assert.ok(dw, `${d.name} weapon at ${sw.cell}`);
-      assert.equal(dw.omni, sw.omni, `${d.name} omni at ${sw.cell}`);
-      if (!sw.omni) {
+      assert.equal(sw.omni, false, `${d.name}: weapon at ${sw.cell} fires all round`);
+      {
         assert.equal(dw.buried, sw.buried, `${d.name} buried at ${sw.cell}`);
         assert.equal(dw.m0, sw.m0, `${d.name} arc mask at ${sw.cell}`); assert.equal(dw.m1, sw.m1);
         assert.ok(dw.arcDeg < 360, `${d.name}: a ${sw.type} at ${sw.cell} fires all the way round`);
@@ -99,6 +99,34 @@ assert.ok(Math.abs(sc.enemyCost - sc.budget) / sc.budget < 0.1, `budgets ${sc.en
   assert.ok(binOpen(f.m0, f.m1, binOf(1, 0)) && !binOpen(f.m0, f.m1, binOf(-1, 0)), 'fires forward, not aft');
   const boxed = new Uint8Array(9).fill(BT.ARMOR); boxed[4] = BT.LASER;
   assert.ok(weaponFacing(boxed, 3, 3, 4).buried, 'enclosed gun is buried');
+}
+
+// Missile launchers and heavy lasers need a line of fire too.
+{
+  const W = 12, H = 12, cells = new Uint8Array(W * H).fill(BT.ARMOR);
+  for (let y = 1; y < 11; y++) for (let x = 1; x < 11; x++) cells[y * W + x] = BT.LANCE;
+  const group = []; for (let y = 1; y < 11; y++) for (let x = 1; x < 11; x++) group.push(y * W + x);
+  assert.ok(weaponFacing(cells, W, H, group[0], group).buried, 'heavy laser boxed in by armour is buried');
+  for (let y = 0; y < H; y++) cells[y * W + W - 1] = 0; // open the nose side
+  const f = weaponFacing(cells, W - 0, H, group[0], group);
+  assert.ok(!f.buried && binOpen(f.m0, f.m1, binOf(1, 0)) && !binOpen(f.m0, f.m1, binOf(-1, 0)), 'heavy laser sees forward only');
+  const m = new Uint8Array(9).fill(BT.ARMOR); m[4] = BT.MISSILE;
+  assert.ok(weaponFacing(m, 3, 3, 4).buried, 'enclosed missile launcher is buried');
+}
+
+// Heavy-laser cook-off: destroying one block chain-reacts, hurts the ship itself and allies,
+// even with friendly fire off.
+{
+  const d = makeDesign('battleship', 4);
+  const lance = d.cells.indexOf(BT.LANCE);
+  assert.ok(lance >= 0, 'sample battleship has a heavy laser');
+  const b = new Battle({ designs: [d], ships: [{ design: 0, team: 0, x: 0, y: 0, a: 0 }, { design: 0, team: 0, x: 0, y: d.h + 1, a: 0 }] });
+  const [e, ally] = b.ents, before = e.alive, allyBefore = ally.alive;
+  b.damageCell(e, lance, 1e6);
+  b.resolveCookoffs();
+  const lost = before - e.alive, lanceLeft = [...e.types].filter((t, i) => t === BT.LANCE && e.hp[i] > 0).length;
+  console.log(`cook-off: one heavy-laser block destroyed -> ${lost} of ${before} blocks of its own ship gone (${lanceLeft} laser blocks left), ally lost ${allyBefore - ally.alive}`);
+  assert.ok(lost > 100 && lanceLeft < 50, 'chain reaction takes most of the gun');
 }
 
 console.log(`designer stats match the sim for ${checked} generated designs; validation ok`);

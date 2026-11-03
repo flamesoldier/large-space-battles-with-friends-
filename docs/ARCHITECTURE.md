@@ -72,12 +72,15 @@ Each tick:
    - *Point defence*: range 30 rapid beam. Shoots the nearest enemy missile first (found via a
      second small grid of live missiles), otherwise any enemy ship that close.
    Every weapon aims at a random block of its target so damage spreads over the hull.
-   **Firing arcs (line of fire):** a cannon, laser or point-defence gun can only fire in
-   directions where its shot wouldn't pass through its own ship. `src/shared/arcs.js` splits the
-   circle into 64 slices and walks a ray from the gun through the ship's block grid for each;
-   the open slices are a 64-bit mask on the weapon. Aiming is one rotation, one `atan2` and a
-   bit test. Masks are recomputed when the ship loses blocks, so armour shot away opens arcs.
-   Missile launchers and heavy lasers fire any way. No measurable cost in the benchmark.
+   **Firing arcs (line of fire):** every weapon can only fire in directions where its shot
+   wouldn't pass through its own ship. `src/shared/arcs.js` splits the circle into 64 slices and
+   walks a ray from the gun through the ship's block grid for each (from the centre of the 10×10
+   unit for the heavy laser, passing through its own blocks); the open slices are a 64-bit mask
+   on the weapon. Aiming is one rotation, one `atan2` and a bit test. Masks are recomputed when
+   the ship loses blocks, so armour shot away opens arcs.
+   **Heavy-laser cook-off:** a destroyed heavy-laser block is queued and, after weapons fire,
+   detonates with a blast that ignores friendly fire (`resolveCookoffs()`). The blast kills the
+   neighbouring laser blocks, which go off in turn, so the whole unit chain-reacts.
 5. **Break-up.** Ships that lost blocks this tick run a flood fill from the hub. Every piece no
    longer connected to the hub becomes a separate debris chunk with its own grid, inheriting
    the ship's velocity plus a kick and spin. Destroying the hub breaks the whole ship into chunks.

@@ -2,7 +2,7 @@
 // All game numbers come from src/shared (blocks.js, shipStats.js, economy.js), the same code the
 // battle sim and server use.
 
-import { BT, BLOCKS, WEAPON, MULTIBLOCK, HULL_CLASSES } from '../shared/blocks.js';
+import { BT, BLOCKS, WEAPON, MULTIBLOCK, HULL_CLASSES, COOKOFF } from '../shared/blocks.js';
 import { ARC_BINS, binAngle, binOpen } from '../shared/arcs.js';
 import { analyzeDesign, encodeDesign, decodeDesign, designCost, STANCE_INFO } from '../shared/shipStats.js';
 import { shipyardPrice, SHIPYARD_INTERVAL_MIN, SHIPYARD_PRICE_MULT } from '../shared/economy.js';
@@ -46,7 +46,7 @@ function blockTitle(t) {
   if (!t) return 'Erase blocks (right drag also erases)';
   const B = BLOCKS[t], W = WEAPON[t];
   let s = `${B.name}: ${B.cost} cr, ${B.hp} hp, mass ${B.mass}`;
-  if (MULTIBLOCK[t]) s = `${B.name}: one 10×10 unit, ${B.cost * 100} cr, ${B.hp} hp per block, keeps firing while half survives`;
+  if (MULTIBLOCK[t]) s = `${B.name}: one 10×10 unit, ${B.cost * 100} cr, ${B.hp} hp per block, keeps firing while half survives. Destroyed blocks explode (${COOKOFF.damage} damage, radius ${COOKOFF.radius}), hurting your own ship and allies`;
   if (t === BT.THRUSTER) s += `, thrust ${B.thrust}`;
   if (W) s += `. Range ${W.range}, ${W.damage} damage every ${W.cooldown} s`;
   if (t === BT.HUB) s += '. One per ship; placing it moves it. Lose it and the ship breaks apart.';
@@ -289,7 +289,9 @@ function glyph(t, x, y, z) {
 
 function drawArc(w, x, y, z, strong) {
   // Direction only: real ranges (30 to 700 blocks) dwarf the ship, so arcs are drawn short.
-  const R = Math.min(110 * dpr(), Math.max(28 * dpr(), (strong ? 4 : 2.5) * z));
+  // A heavy laser's arc starts at the edge of its 10x10 unit, so draw it well past that.
+  const R = w.group ? (w.group.x1 - w.group.x0 + 1) * z * (strong ? 1.6 : 1.2)
+    : Math.min(110 * dpr(), Math.max(28 * dpr(), (strong ? 4 : 2.5) * z));
   g.lineWidth = Math.max(1, dpr());
   if (w.buried) return;
   if (w.omni) {

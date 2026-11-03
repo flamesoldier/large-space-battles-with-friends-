@@ -7,6 +7,7 @@
 
 import { BT } from './blocks.js';
 import { mulberry32, randInt, randRange } from './rng.js';
+import { lineOfFire, openDegrees } from './arcs.js';
 
 export const CLASSES = {
   corvette:   { w: [6, 8],   h: [3, 5],   lasers: 1, cannons: 1, missiles: 0, pd: 0,  thrustCols: 1, heavyFront: false, armorDepth: 1 },
@@ -135,21 +136,31 @@ export function makeDesign(cls, seed) {
   place(groups[0], C.lasers, BT.LASER);
   place(groups[1], C.cannons, BT.CANNON);
   place(groups[2], C.pd, BT.PD);
-  place(inner.length ? inner : skin, C.missiles, BT.MISSILE);
-  // Heavy lasers: 10x10 turrets on the centreline of the biggest ships, kept clear of the hub.
+  place(skin, C.missiles, BT.MISSILE); // on the skin: launchers need a line of fire too
+  // Heavy lasers: 10x10 units on the outside of the biggest ships, where they can see out
+  // (every weapon needs a line of fire). Try the nose first, then the top and bottom edges,
+  // and keep the first spot with a decent arc. A unit may overhang the hull a little.
+  const spots = [];
+  for (let x0 = w - 10; x0 >= C.thrustCols; x0--) spots.push([x0, Math.round(cy) - 5]);
+  for (let x0 = Math.round(w * 0.55); x0 >= C.thrustCols; x0--) { spots.push([x0, 0]); spots.push([x0, h - 10]); }
   for (let k = 0; k < (C.lances || 0); k++) {
-    const want = C.lances === 1 ? 0.68 : k === 0 ? 0.24 : 0.7;
-    for (let shift = 0; shift < w * 0.3; shift++) {
-      const x0 = Math.round(w * want) - 5 + (shift % 2 ? shift : -shift) / 2 | 0, y0 = Math.round(cy) - 5;
-      let ok = x0 >= C.thrustCols && x0 + 10 <= w && y0 >= 0 && y0 + 10 <= h;
+    for (const [x0, y0] of spots) {
+      if (x0 < 0 || y0 < 0 || x0 + 10 > w || y0 + 10 > h) continue;
+      let ok = true, inside = 0;
       for (let y = y0; ok && y < y0 + 10; y++)
         for (let x = x0; ok && x < x0 + 10; x++) {
           const t = cells[y * w + x];
-          ok = t && t !== BT.HUB && t !== BT.LANCE && Math.abs(x - hubX) > 1;
+          ok = t !== BT.HUB && t !== BT.LANCE && Math.abs(x - hubX) > 1 &&
+            // keep units apart (the sim treats touching units as one gun)
+            !(x0 > 0 && cells[y * w + x0 - 1] === BT.LANCE) && !(x0 + 10 < w && cells[y * w + x0 + 10] === BT.LANCE);
+          if (t) inside++;
         }
-      if (!ok) continue;
-      for (let y = y0; y < y0 + 10; y++) for (let x = x0; x < x0 + 10; x++) cells[y * w + x] = BT.LANCE;
-      break;
+      if (!ok || inside < 60) continue;
+      const before = cells.slice(), group = [];
+      for (let y = y0; y < y0 + 10; y++) for (let x = x0; x < x0 + 10; x++) { cells[y * w + x] = BT.LANCE; group.push(y * w + x); }
+      const f = lineOfFire(cells, null, w, h, group[0], { m0: 0, m1: 0, buried: false }, group);
+      if (openDegrees(f.m0, f.m1) >= 70) break;
+      cells.set(before);
     }
   }
   // Small ships get a nose gun.

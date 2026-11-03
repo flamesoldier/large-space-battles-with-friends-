@@ -223,12 +223,13 @@ export class Renderer {
     }
     this.drawStraight(m.shell, t, vis, minW, false);
     this.drawStraight(m.missile, t, vis, minW, true);
-    // Detonations: 0 = missile shot down, 1 = cannon shell, 2 = heavy missile
+    // Detonations: 0 = missile shot down, 1 = cannon shell, 2 = heavy missile, 3 = heavy-laser block cooking off
     const E = m.expl;
+    const LIFE = [6, 8, 24, 16], BASE = [1, 1.5, 5, 2], GROW = [2.5, 5, 15, 7];
     for (let i = lowerBound(E.t, t - 24); i < E.n && E.t[i] <= t; i++) {
-      const sz = E.s[i], life = sz === 2 ? 24 : sz === 1 ? 8 : 6, age = t - E.t[i];
+      const sz = E.s[i], life = LIFE[sz] ?? 8, age = t - E.t[i];
       if (age > life || !vis(E.x[i], E.y[i], 20)) continue;
-      const u = age / life, base = sz === 2 ? 5 : sz === 1 ? 1.5 : 1, grow = sz === 2 ? 15 : sz === 1 ? 5 : 2.5;
+      const u = age / life, base = BASE[sz] ?? 1.5, grow = GROW[sz] ?? 5;
       const r = base + u * grow;
       g.push(E.x[i], E.y[i], 0, r, r, 1, alpha(sz === 0 ? C.pop : C.boom, 1 - u));
       if (u < 0.3) g.push(E.x[i], E.y[i], 0, r * 0.5, r * 0.5, 1, alpha(C.boomCore, 1 - u / 0.3));

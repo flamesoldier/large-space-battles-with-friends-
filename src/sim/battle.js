@@ -11,7 +11,7 @@
 //    their position at any time with a formula and nothing has to be recorded.
 //  * Everything is recorded as events + low-rate transform samples (see toReplay()).
 
-import { BT, BLOCKS, WEAPON, MULTIBLOCK, isWeapon } from '../shared/blocks.js';
+import { BT, BLOCKS, WEAPON, MULTIBLOCK, COOKOFF, isWeapon } from '../shared/blocks.js';
 import { lineOfFire, binOf, binOpen } from '../shared/arcs.js';
 import { mulberry32 } from '../shared/rng.js';
 import { Col } from '../shared/replayFormat.js';
@@ -63,6 +63,7 @@ export class Battle {
     this.teamCy = [0, 0];
     this.grid = new SpatialGrid(32, 6144);
     this.mgrid = new SpatialGrid(64, 6144);
+    this.cookoffs = []; // world x, y pairs of heavy-laser blocks destroyed this tick
     this.stamp = new Int32Array(8192);
     this.stampGen = 1;
     this.queue = new Int32Array(8192);
@@ -108,7 +109,7 @@ export class Battle {
       }
       let sx = 0, sy = 0;
       for (const c of group) { sx += (c % d.w) + 0.5 - d.w / 2; sy += ((c / d.w) | 0) + 0.5 - d.h / 2; }
-      e.weapons.push({ cell: group[0], cells: group, type: t, lx: sx / group.length, ly: sy / group.length, cd: 4 + this.rng() * 6, omni: true, buried: false, m0: 0, m1: 0 });
+      e.weapons.push({ cell: group[0], cells: group, type: t, lx: sx / group.length, ly: sy / group.length, cd: 4 + this.rng() * 6, omni: false, buried: false, m0: 0, m1: 0 });
     }
     e.track = [];
     e.t1 = 65535;
@@ -173,12 +174,11 @@ export class Battle {
   /**
    * Line of fire: the directions this weapon can shoot without hitting its own ship
    * (src/shared/arcs.js). Recomputed when blocks are lost, so shooting away the armour around
-   * a gun opens up its arc. Missile launchers and heavy lasers fire any way.
+   * a gun opens up its arc. Applies to every weapon; the heavy laser looks out from the centre
+   * of its 10x10 unit.
    */
   facing(e, w) {
-    w.omni = w.type === BT.MISSILE || w.type === BT.LANCE;
-    if (w.omni) return;
-    lineOfFire(e.types, e.hp, e.w, e.h, w.cell, w);
+    lineOfFire(e.types, e.hp, e.w, e.h, w.cell, w, w.cells);
   }
 
   /** Can this weapon bear on point (tx, ty)? One rotation, one atan2 and a bit test. */
@@ -213,6 +213,7 @@ export class Battle {
     this.buildMissileGrid();
     const n = this.ents.length;
     for (let k = 0; k < n; k++) { const e = this.ents[k]; if (e.kind === SHIP && !e.dead) this.fire(e); }
+    this.resolveCookoffs();
     this.resolveDamage();
     if (this.now % TRACK_EVERY === 0) this.recordTracks();
 
@@ -640,6 +641,27 @@ export class Battle {
     e.dirty = true;
     this.recBlockDeath(e.id, i, 0);
     if (e.kind === SHIP && i === e.hub) e.hubDead = true;
+    if (e.types[i] === BT.LANCE) {
+      // Heavy-laser blocks cook off. Queue the blast and set it off in resolveCookoffs(), so a
+      // chain reaction through the rest of the gun doesn't recurse.
+      const lx = (i % e.w) + 0.5 - e.w / 2, ly = ((i / e.w) | 0) + 0.5 - e.h / 2;
+      this.cookoffs.push(e.x + lx * e.c - ly * e.s, e.y + lx * e.s + ly * e.c);
+    }
+  }
+
+  /**
+   * Detonate destroyed heavy-laser blocks. The blast ignores the friendly-fire setting: it
+   * wrecks its own ship and any ally alongside. It can kill the next heavy-laser blocks, which
+   * go off in turn, so a hit gun often takes the whole unit (and the middle of the ship) with it.
+   */
+  resolveCookoffs() {
+    const C = COOKOFF;
+    for (let k = 0; k < this.cookoffs.length && k < 4000; k += 2) {
+      const x = this.cookoffs[k], y = this.cookoffs[k + 1];
+      this.recExplosion(x, y, 3);
+      this.blast(x, y, C.radius, C.damage, -1, true);
+    }
+    this.cookoffs.length = 0;
   }
 
   /**
@@ -647,11 +669,11 @@ export class Battle {
    * falling off as peak * (1 - d / radius)^2. Lethal at the centre, a wide ring of weakened
    * blocks around it, so overlapping blasts are what really tear ships apart.
    */
-  blast(x, y, radius, peak, team) {
+  blast(x, y, radius, peak, team, anyone = false) {
     const R = radius, hit = [];
     this.grid.queryBox(x - R, y - R, x + R, y + R, (e) => { if (!e.dead && !e.retired) hit.push(e); });
     for (const e of hit) {
-      if (!this.canDamage(e, team)) continue;
+      if (!anyone && !this.canDamage(e, team)) continue;
       const dx = x - e.x, dy = y - e.y;
       if (dx * dx + dy * dy > (R + e.radius) ** 2) continue;
       const gx = dx * e.c + dy * e.s + e.w * 0.5, gy = -dx * e.s + dy * e.c + e.h * 0.5;

@@ -42,17 +42,21 @@ Weapons (numbers in `blocks.js`):
 - **Point defence**: range 30 rapid beam; shoots missiles first, close ships otherwise.
 - **Heavy laser**: 10×10 multi-block turret, range 450, every 20 s, 2,500-damage beam that
   burns through blocks and ships until spent (it cuts ships in half). Works while half its blocks
-  survive. Holds fire if a friendly ship is first in line.
+  survive. Holds fire if a friendly ship is first in line. **Its blocks explode when destroyed**
+  (`COOKOFF` in `blocks.js`: 260 peak damage, radius 5, ignores friendly fire, hurts its own
+  ship and allies). One destroyed block chain-reacts through the whole unit: about 160 blocks
+  of a battleship go with it (the gun plus ~60 around it).
 - Future weapons the owner wants: bigger cannons, a medium laser.
 
 Combat rules:
 - **Friendly fire off**: allied hulls still block shots but take no damage.
-- **Firing arcs = line of fire**: cannons, lasers and point defence can fire in any direction
-  where the shot wouldn't pass through their own ship (no fixed cone, never 360°). Worked out by
-  `src/shared/arcs.js` (64 direction slices, ray walk through the ship's grid), used by both the
-  sim and the designer, and recomputed as blocks are lost, so shooting away armour opens arcs.
-  Missile launchers and heavy lasers fire any direction. A gun with no clear direction is buried
-  and can't fire. Flat hull-mounted guns get about 90°; guns that stick out get more.
+- **Firing arcs = line of fire, for every weapon** (missile launchers and heavy lasers too): a
+  weapon can fire in any direction where the shot wouldn't pass through its own ship (no fixed
+  cone, never 360°). Worked out by `src/shared/arcs.js` (64 direction slices, ray walk through
+  the ship's grid), used by both the sim and the designer, and recomputed as blocks are lost, so
+  shooting away armour opens arcs. The heavy laser casts its rays from the centre of its 10×10
+  unit, through its own blocks. A weapon with no clear direction is buried and can't fire. Flat
+  hull-mounted guns get about 90°; guns that stick out get more.
 - **Stances** chosen per design (will be a designer option): charge, brawl, line, standoff,
   escort. Escorts take limited slots around a big ship and break off to attack nearby enemies.
 - **Debris** must stay clearly visible (wrecks keep most of their colour).
@@ -85,6 +89,9 @@ Battle end:
   currently 10× the ship cost, so a shipyard pays for itself in 5 hours). Not yet confirmed by the owner.
 - A world can have any number of shipyards. **All of them are destroyed if an enemy takes the world.**
 - Every ship part has a credit cost (`cost` in `blocks.js`); a ship's price is the sum of its blocks.
+  Owner's direction: **weapons and thrusters are expensive, armour and frame cheap**, to push
+  players towards armoured designs. Current: frame 1, armour 3, heavy 7, thruster 20, PD 30,
+  hub 40, laser 45, cannon 60, missile 120, heavy laser 3,500 a unit.
 
 ## Status: ship designer
 
@@ -107,9 +114,12 @@ designer's numbers against the sim.
   destroyer ≤ 200, cruiser ≤ 500, battleship ≤ 1,200, titan ≤ 3,000. Grid limit 96 × 64.
 - Validation errors block test battles (and should block shipyards): one hub, everything
   connected to it, block limit, heavy lasers as whole separate 10×10 units. Warnings: no weapons,
-  buried weapons, guns with under 45° of arc, no thrusters, big escorts.
+  buried weapons, guns with under 45° of arc, heavy-laser cook-off, no thrusters, big escorts.
 - Designs are saved cropped, in the format above; JSON export stores `cells` as base64.
 
-Still open with the owner: the actual block prices and the shipyard multiplier (placeholders
+The test-fleet generator (`designs.js`) puts missile launchers on the skin and heavy lasers on
+the nose or hull edge, where they have a line of fire.
+
+Still open with the owner: the exact block prices and the shipyard multiplier (placeholders
 until there's an income number to balance against), and whether hull class should matter beyond
 the block limit.
