@@ -41,9 +41,11 @@ Each tick:
 
 1. **AI and movement.** Each ship keeps up to 4 nearby targets (re-picked every ~1 s with a
    ring search of the broadphase grid). How it fights depends on its design's **stance**:
-   `charge` (dive in to point blank), `brawl` (close range), `line` (best gun range),
-   `standoff` (hang back at max range, back off if pressed) or `escort` (hold station between
-   the biggest nearby friendly ship and the enemy).
+   `charge` (dive in to point blank), `brawl` (40% of its shortest weapon range), `line` (60% of
+   its main gun range), `standoff` (90% of main gun range, backs off if pressed) or `escort`
+   (holds a slot on an arc in front of a big friendly ship, and breaks off to attack anything
+   within 250 of it; each big ship takes a limited number of escorts so they spread out).
+   Ships ignore fleeing disarmed wrecks unless they are within 150.
    Ships that lose every weapon flee; ships that lose every engine crawl on hub thrusters.
 2. **Broadphase rebuild.** A uniform 32-unit grid is rebuilt from scratch with a counting sort:
    two passes over the entities, no allocation, no hash maps.
@@ -141,7 +143,13 @@ These keep every battle inside the budget above:
 
 - **Blocks per ship by hull class** (for example corvette ≤ 40, titan ≤ 3,000).
 - **Total blocks per battle** around 1M. Bigger engagements can be split into waves.
-- **Time limit** per battle (currently 3 simulated minutes), after which survivors disengage.
+- **Time limit** per battle (currently 4 simulated minutes), after which survivors disengage.
+
+A battle ends early when any of these happens (a 4 s tail lets the last shots land):
+- one side has no ships left that can still fire (disarmed hulks don't count);
+- rout: a side is down to under 12% of its starting ships still armed and is outgunned 2:1;
+- mutual exhaustion: both sides are under 10% of their starting ships still armed;
+- disengagement: 20 s pass with no damage dealt anywhere (after the first 30 s).
 
 ## What's next for battles
 

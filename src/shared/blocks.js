@@ -9,7 +9,7 @@ export const BT = {
   FRAME: 4, // light internal structure
   THRUSTER: 5,
   LASER: 6, // long-range beam: always hits, low damage
-  CANNON: 7, // slow guided shells with a bright trail: the main damage dealer
+  CANNON: 7, // slow straight-flying shells with a bright trail: the main damage dealer
   MISSILE: 8, // huge, slow, long-range missiles that can be shot down
   PD: 9, // point defence: short-range rapid laser, kills missiles, also hits close ships
 };
@@ -29,9 +29,9 @@ export const BLOCKS = {
 // Weapon behaviour. Ranges/speeds in world units (blocks) and seconds.
 export const WEAPON = {
   // Instant beam, never misses what it's aimed at, but slow to recharge.
-  [BT.LASER]: { kind: 'laser', range: 260, damage: 22, cooldown: 2.6 },
+  [BT.LASER]: { kind: 'laser', range: 260, damage: 32, cooldown: 2.6 },
   // Slow shell that flies dead straight (aimed with lead at firing), small blast on impact.
-  [BT.CANNON]: { kind: 'shell', range: 170, damage: 50, cooldown: 2.0, speed: 45, life: 5.5, splash: 1.6, spread: 0.05 },
+  [BT.CANNON]: { kind: 'shell', range: 200, damage: 75, cooldown: 2.0, speed: 45, life: 5.5, splash: 1.6, spread: 0.05 },
   // Heavy missile: unguided, crawls across the map in a straight line, flies over friendly
   // ships, devastating blast. Has hit points, so point defence can shoot it down on the way in.
   [BT.MISSILE]: { kind: 'missile', range: 700, damage: 220, cooldown: 24, speed: 20, life: 45, splash: 4.5, hp: 40, spread: 0.02 },

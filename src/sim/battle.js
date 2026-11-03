@@ -36,14 +36,14 @@ const COS_ARC = Math.cos((ARC_DEG * Math.PI) / 180);
 //   longest  = longest range of any weapon (missiles included).
 export const STANCES = {
   charge:   { label: 'Charge',   range: (e) => e.radius + 14 },            // dive in, point blank
-  brawl:    { label: 'Brawler',  range: (e, d, s) => s * 0.55 },          // close range, inside enemy guns
-  line:     { label: 'Line',     range: (e, d) => d * 0.75 },             // mid range, best gun range
-  standoff: { label: 'Standoff', range: (e, d, s, l) => Math.max(d, l) * 0.85 }, // hang back, back off if pressed
-  escort:   { label: 'Escort',   range: (e, d) => d * 0.75 },             // guard a big friendly ship
+  brawl:    { label: 'Brawler',  range: (e, d, s) => s * 0.4 },           // close range, inside enemy guns
+  line:     { label: 'Line',     range: (e, d) => d * 0.6 },              // mid range, well inside gun range
+  standoff: { label: 'Standoff', range: (e, d) => d * 0.9 },           // hang back at the edge of gun range // hang back, back off if pressed
+  escort:   { label: 'Escort',   range: (e, d) => d * 0.6 },              // screen a big friendly ship
 };
 
 export class Battle {
-  constructor({ designs, ships, seed = 1, maxTime = 180, friendlyFire = false }) {
+  constructor({ designs, ships, seed = 1, maxTime = 240, friendlyFire = false }) {
     // friendlyFire off: allied hulls still block shots (rounds stop on them), they just take no damage.
     this.friendlyFire = friendlyFire;
     this.designs = designs;
@@ -106,6 +106,7 @@ export class Battle {
       // adding fields later makes V8 deoptimise every entity access (measured ~40% slower).
       _threatTick: -1, _threats: [], _gx0: 0, _gx1: 0, _gy0: 0, _gy1: 0,
       design: 0, hub: -1, stance: 'line', orbit: 1, targets: [], retarget: 0, weapons: [], track: null, t1: 65535,
+      escortCount: 0, slot: 0,
       mass: 1, maxSpeed: 0, turn: 0, agility: 0, prefRange: 60, ward: null,
     };
     this.byId.push(e);
@@ -205,7 +206,9 @@ export class Battle {
     // Rout: a side down to <12% of its starting ships still able to fight, and outgunned 2:1.
     const a0 = this.armed[0].length, a1 = this.armed[1].length;
     const routed = (a0 < this.teamStart[0] * 0.12 && a1 > 2 * a0) || (a1 < this.teamStart[1] * 0.12 && a0 > 2 * a1);
-    if (this.endTick < 0 && (!a0 || !a1 || stalled || routed || this.tick >= this.maxTicks))
+    // Mutual exhaustion: both sides down to <10% of their ships still able to fight.
+    const exhausted = a0 < this.teamStart[0] * 0.1 && a1 < this.teamStart[1] * 0.1;
+    if (this.endTick < 0 && (!a0 || !a1 || stalled || routed || exhausted || this.tick >= this.maxTicks))
       this.endTick = this.tick + 40; // let the last missiles and debris play out
     if (this.endTick >= 0 && this.tick >= this.endTick) this.done = true;
     return !this.done;
@@ -237,8 +240,11 @@ export class Battle {
     const best = [], bd = [];
     const fn = (o) => {
       if (o.kind !== SHIP || o.dead || o.team === e.team) return;
-      // Prefer ships that can still shoot back; burning hulks are low priority.
-      const d = ((o.x - e.x) ** 2 + (o.y - e.y) ** 2) * (o.weapons.length ? 1 : 9);
+      // Ships that can still shoot back come first. Disarmed hulks are only finished off when
+      // they're close, so nobody chases a fleeing wreck across the map while the fight goes on.
+      const d0 = (o.x - e.x) ** 2 + (o.y - e.y) ** 2;
+      if (!o.weapons.length && d0 > 150 * 150) return;
+      const d = d0 * (o.weapons.length ? 1 : 9);
       let k = best.length;
       while (k > 0 && bd[k - 1] > d) k--;
       if (k >= 4) return;
@@ -253,15 +259,25 @@ export class Battle {
       for (let k = 0; k < Math.min(16, pool.length); k++) fn(pool[(this.rng() * pool.length) | 0]);
     }
     e.targets = best;
-    if (e.stance === 'escort' && (!e.ward || e.ward.dead)) e.ward = this.pickWard(e);
+    if (e.stance === 'escort' && (!e.ward || e.ward.dead)) this.pickWard(e);
   }
 
-  /** Escorts guard the biggest friendly warship nearby (at least 3x their own mass). */
+  /**
+   * Escorts screen a big friendly warship (at least 3x their mass) that still has room:
+   * each ward takes a limited number of escorts, roughly one per 6 blocks of its radius,
+   * so they spread across the fleet instead of all piling onto the same titan.
+   */
   pickWard(e) {
-    let best = null;
-    for (const o of this.armed[e.team])
-      if (o !== e && o.mass > e.mass * 3 && (!best || o.mass > best.mass) && (o.x - e.x) ** 2 + (o.y - e.y) ** 2 < 600 * 600) best = o;
-    return best;
+    let best = null, bestScore = Infinity;
+    for (const o of this.armed[e.team]) {
+      if (o === e || o.mass <= e.mass * 3 || o.escortCount >= Math.max(2, Math.round(o.radius / 6))) continue;
+      const d2 = (o.x - e.x) ** 2 + (o.y - e.y) ** 2;
+      if (d2 > 500 * 500) continue;
+      const score = d2 / o.mass; // close and big is best
+      if (score < bestScore) { bestScore = score; best = o; }
+    }
+    e.ward = best;
+    if (best) e.slot = best.escortCount++;
   }
 
   move(e) {
@@ -277,12 +293,17 @@ export class Battle {
     if (disarmed) desired += Math.PI; // crippled: run away from the enemy fleet
     const pr = e.prefRange;
     let slow = false;
-    const ward = e.stance === 'escort' && e.ward && !e.ward.dead ? e.ward : null;
+    let ward = e.stance === 'escort' && e.ward && !e.ward.dead ? e.ward : null;
+    // Escorts break station to attack anything that gets within 250 of their ward.
+    if (ward && tg && (tg.x - ward.x) ** 2 + (tg.y - ward.y) ** 2 < 250 * 250) ward = null;
     if (ward && !disarmed) {
       // Hold station between the ward and the enemy, engaging whatever comes in range.
       const ex = tg ? tg.x - ward.x : this.teamCx[other] - ward.x, ey = tg ? tg.y - ward.y : this.teamCy[other] - ward.y;
-      const el = Math.hypot(ex, ey) || 1, off = ward.radius + 18;
-      const sx = ward.x + (ex / el) * off + e.orbit * (-ey / el) * off * 0.6, sy = ward.y + (ey / el) * off + e.orbit * (ex / el) * off * 0.6;
+      // Each escort has its own slot on an arc out in front of the ward, toward the enemy.
+      const cap = Math.max(2, Math.round(ward.radius / 6));
+      const ang = Math.atan2(ey, ex) + ((e.slot % cap) / (cap - 1) - 0.5) * 2.2;
+      const off = ward.radius + 35;
+      const sx = ward.x + Math.cos(ang) * off, sy = ward.y + Math.sin(ang) * off;
       const qx = sx - e.x, qy = sy - e.y, qd = Math.hypot(qx, qy);
       desired = qd > 6 ? Math.atan2(qy, qx) : Math.atan2(ey, ex);
       slow = qd < 25;
@@ -639,6 +660,7 @@ export class Battle {
 
   destroyShip(e) {
     e.dead = true;
+    if (e.ward) e.ward.escortCount--;
     e.t1 = this.now;
     this.teamAlive[e.team]--;
     for (let i = 0; i < e.types.length; i++)
