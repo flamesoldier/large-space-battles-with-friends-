@@ -426,7 +426,9 @@ export class Battle {
       w.cd = W.kind === 'missile' ? W.cooldown : W.cooldown * (0.85 + 0.3 * this.rng());
       if (W.kind === 'laser') { this.fireBeam(e, wx, wy, ax, ay, W.range, W.damage, 0); continue; }
       // Shells and missiles are unguided: aimed with lead at launch, then fly dead straight.
-      const t = Math.hypot(ax - wx, ay - wy) / W.speed;
+      // Lead is capped: a heavy missile can take 30 s to arrive, and leading a manoeuvring ship
+      // that far ahead sent volleys sideways or even backwards. Past maxLead, aim where it is.
+      const t = Math.min(Math.hypot(ax - wx, ay - wy) / W.speed, W.maxLead ?? Infinity);
       const ang = Math.atan2(ay + tg.vy * t - wy, ax + tg.vx * t - wx) + (this.rng() - 0.5) * 2 * W.spread;
       const kind = W.kind === 'shell' ? K_SHELL : K_MISSILE;
       const rec = this.shotStart(kind, e.team, wx, wy, ang);

@@ -64,6 +64,7 @@ Each tick:
      blast hits every ship and wreck within 9 blocks, with damage falling off as
      `200 × (1 − d/9)²`: one missile craters a hull, a volley tears it apart. All launchers on a
      ship share one 40 s timer and fire together as a rippling volley at the same target.
+     Lead is capped at 3 s so slow missiles don't get aimed far off at manoeuvring ships.
    - *Heavy laser*: a 10×10 multi-block turret (fires in any direction) that keeps working while
      half its blocks survive. Range 450, every 20 s. The beam carries 2,500 damage and burns
      through block after block, ship after ship, until that is spent, so it can cut ships in

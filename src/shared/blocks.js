@@ -45,7 +45,7 @@ export const WEAPON = {
   // Blast damage falls off with distance: peak * (1 - d / splash)^2, applied to every ship
   // (and wreck) in the radius. One missile cratres a hull; a volley tears it apart.
   // All launchers on a ship fire together as a rippling volley at the same target.
-  [BT.MISSILE]: { kind: 'missile', range: 700, damage: 200, cooldown: 40, speed: 20, life: 45, splash: 9, hp: 100, spread: 0.02 },
+  [BT.MISSILE]: { kind: 'missile', range: 700, damage: 200, cooldown: 40, speed: 20, life: 45, splash: 9, hp: 100, spread: 0.02, maxLead: 3 },
   // Point defence: shoots the nearest enemy missile in range, otherwise any enemy ship that close.
   [BT.PD]: { kind: 'pd', range: 30, damage: 6, missileDamage: 10, cooldown: 0.2 },
   // Heavy laser: turret-mounted, fires any direction. The beam carries a damage budget and
