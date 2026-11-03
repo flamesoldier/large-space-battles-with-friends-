@@ -17,6 +17,17 @@ export const CLASSES = {
   titan:      { w: [80, 90], h: [29, 33], lasers: 24, cannons: 28, missiles: 12, thrustCols: 3, heavyFront: true,  armorDepth: 3 },
 };
 
+// Default combat stance odds per class for generated test designs. In the real game the
+// player picks the stance in the ship designer.
+const STANCE_ODDS = {
+  corvette: [['charge', 0.5], ['brawl', 0.5]],
+  frigate: [['brawl', 0.4], ['escort', 0.3], ['line', 0.3]],
+  destroyer: [['line', 0.5], ['escort', 0.3], ['brawl', 0.2]],
+  cruiser: [['line', 0.6], ['standoff', 0.4]],
+  battleship: [['standoff', 0.7], ['line', 0.3]],
+  titan: [['standoff', 1]],
+};
+
 export const CLASS_MIX = [
   ['corvette', 0.45],
   ['frigate', 0.27],
@@ -128,7 +139,9 @@ export function makeDesign(cls, seed) {
   // Small ships get a nose gun.
   if (w <= 13) cells[cy * w + (w - 1)] = r() < 0.5 ? BT.CANNON : BT.LASER;
 
-  return { name: `${cls}-${seed % 1000}`, cls, w, h, cells, hub };
+  let roll = r(), stance = 'line';
+  for (const [st, p] of STANCE_ODDS[cls]) { if (roll < p) { stance = st; break; } roll -= p; }
+  return { name: `${cls}-${seed % 1000}`, cls, w, h, cells, hub, stance };
 }
 
 /** Build two opposing fleets. Returns { designs, ships:[{design, team, x, y, a}] }. */

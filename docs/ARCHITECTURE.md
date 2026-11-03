@@ -40,7 +40,10 @@ server and to the viewer.
 Each tick:
 
 1. **AI and movement.** Each ship keeps up to 4 nearby targets (re-picked every ~1 s with a
-   ring search of the broadphase grid). It closes to its preferred range, then orbits/broadsides.
+   ring search of the broadphase grid). How it fights depends on its design's **stance**:
+   `charge` (dive in to point blank), `brawl` (close range), `line` (best gun range),
+   `standoff` (hang back at max range, back off if pressed) or `escort` (hold station between
+   the biggest nearby friendly ship and the enemy).
    Ships that lose every weapon flee; ships that lose every engine crawl on hub thrusters.
 2. **Broadphase rebuild.** A uniform 32-unit grid is rebuilt from scratch with a counting sort:
    two passes over the entities, no allocation, no hash maps.
@@ -48,7 +51,8 @@ Each tick:
    candidate ships, a bounding-circle test rejects most, and survivors get an exact
    **DDA grid walk** (Amanatides & Woo) in the ship's local block grid, returning the first live
    block. Any ship counts, allied or enemy (only the firing ship is skipped), so rounds that miss
-   their target slam into whatever is behind it.
+   their target slam into whatever is behind it. With friendly fire off (the default) allied
+   hulls still stop the round but take no damage; this costs nothing extra.
 4. **Weapons fire.** Lasers are instant sweeps. Cannons lead their target. Missiles home. Every
    weapon aims at a random block of its target so damage spreads over the hull.
 5. **Break-up.** Ships that lost blocks this tick run a flood fill from the hub. Every piece no

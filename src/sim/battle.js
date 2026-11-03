@@ -30,8 +30,21 @@ const SHIP = 0, CHUNK = 1;
 const CHUNK_RETIRE_TICKS = 250; // after 25 s debris stops being hittable (still drawn by viewer)
 const K_KINETIC = 0, K_MISSILE = 1;
 
+// Combat stances, chosen per ship design. range(e, direct, shortest, longest) -> preferred distance.
+//   direct   = longest non-missile weapon range, shortest = shortest weapon range,
+//   longest  = longest range of any weapon (missiles included).
+export const STANCES = {
+  charge:   { label: 'Charge',   range: (e) => e.radius + 14 },            // dive in, point blank
+  brawl:    { label: 'Brawler',  range: (e, d, s) => s * 0.55 },          // close range, inside enemy guns
+  line:     { label: 'Line',     range: (e, d) => d * 0.75 },             // mid range, best gun range
+  standoff: { label: 'Standoff', range: (e, d, s, l) => Math.max(d, l) * 0.85 }, // hang back, back off if pressed
+  escort:   { label: 'Escort',   range: (e, d) => d * 0.75 },             // guard a big friendly ship
+};
+
 export class Battle {
-  constructor({ designs, ships, seed = 1, maxTime = 180 }) {
+  constructor({ designs, ships, seed = 1, maxTime = 180, friendlyFire = false }) {
+    // friendlyFire off: allied hulls still block shots (rounds stop on them), they just take no damage.
+    this.friendlyFire = friendlyFire;
     this.designs = designs;
     this.rng = mulberry32(seed);
     this.tick = 0;
@@ -66,6 +79,7 @@ export class Battle {
     e.x = spec.x; e.y = spec.y; e.a = spec.a; e.c = Math.cos(e.a); e.s = Math.sin(e.a);
     e.design = spec.design;
     e.hub = d.hub;
+    e.stance = STANCES[d.stance] ? d.stance : 'line';
     e.orbit = this.rng() < 0.5 ? 1 : -1;
     e.targets = [];
     e.retarget = this.rng();
@@ -103,13 +117,18 @@ export class Battle {
       if (t === BT.THRUSTER) thrust += BLOCKS[t].thrust;
     }
     e.weapons = e.weapons.filter((w) => e.hp[w.cell] > 0);
-    for (const w of e.weapons) if (w.type !== BT.MISSILE) range = Math.max(range, WEAPON[w.type].range);
+    let shortest = Infinity, longest = 0;
+    for (const w of e.weapons) {
+      const r = WEAPON[w.type].range;
+      if (w.type !== BT.MISSILE) { range = Math.max(range, r); shortest = Math.min(shortest, r); }
+      longest = Math.max(longest, r);
+    }
     e.mass = Math.max(1, mass);
     // The hub has weak manoeuvring jets, so a ship that loses every engine still crawls.
     e.maxSpeed = Math.max(2.5, Math.min(22, (30 * thrust) / e.mass));
     e.turn = Math.max(0.05, Math.min(2.5, (1.6 * e.maxSpeed) / e.w));
     e.agility = Math.max(0.25, Math.min(2, e.maxSpeed / 8));
-    e.prefRange = range ? range * 0.75 : 60;
+    e.prefRange = STANCES[e.stance].range(e, range || 60, shortest === Infinity ? 60 : shortest, longest || 60);
   }
 
   // ---------------------------------------------------------------- main loop
@@ -198,6 +217,15 @@ export class Battle {
       for (let k = 0; k < Math.min(16, pool.length); k++) fn(pool[(this.rng() * pool.length) | 0]);
     }
     e.targets = best;
+    if (e.stance === 'escort' && (!e.ward || e.ward.dead)) e.ward = this.pickWard(e);
+  }
+
+  /** Escorts guard the biggest friendly warship nearby (at least 3x their own mass). */
+  pickWard(e) {
+    let best = null;
+    for (const o of this.armed[e.team])
+      if (o !== e && o.mass > e.mass * 3 && (!best || o.mass > best.mass) && (o.x - e.x) ** 2 + (o.y - e.y) ** 2 < 600 * 600) best = o;
+    return best;
   }
 
   move(e) {
@@ -212,15 +240,27 @@ export class Battle {
     let desired = Math.atan2(dy, dx);
     if (disarmed) desired += Math.PI; // crippled: run away from the enemy fleet
     const pr = e.prefRange;
-    if (tg && !disarmed) {
-      if (d < pr * 0.8) desired += e.orbit * Math.PI * 0.5; // broadside / orbit
-      else if (d < pr * 1.1) desired += e.orbit * 0.5;
+    let slow = false;
+    const ward = e.stance === 'escort' && e.ward && !e.ward.dead ? e.ward : null;
+    if (ward && !disarmed) {
+      // Hold station between the ward and the enemy, engaging whatever comes in range.
+      const ex = tg ? tg.x - ward.x : this.teamCx[other] - ward.x, ey = tg ? tg.y - ward.y : this.teamCy[other] - ward.y;
+      const el = Math.hypot(ex, ey) || 1, off = ward.radius + 18;
+      const sx = ward.x + (ex / el) * off + e.orbit * (-ey / el) * off * 0.6, sy = ward.y + (ey / el) * off + e.orbit * (ex / el) * off * 0.6;
+      const qx = sx - e.x, qy = sy - e.y, qd = Math.hypot(qx, qy);
+      desired = qd > 6 ? Math.atan2(qy, qx) : Math.atan2(ey, ex);
+      slow = qd < 25;
+    } else if (tg && !disarmed) {
+      if (e.stance === 'standoff' && d < pr * 0.7) { desired += Math.PI - e.orbit * 0.4; } // too close: open the range
+      else if (e.stance === 'charge' && d > pr) { /* straight at them */ }
+      else if (d < pr * 0.8) { desired += e.orbit * Math.PI * 0.5; slow = e.stance !== 'charge'; } // broadside / orbit
+      else if (d < pr * 1.1) { desired += e.orbit * 0.5; slow = e.stance === 'standoff'; }
     }
     const da = wrapAngle(desired - e.a), mt = e.turn * DT;
     e.a = wrapAngle(e.a + (da > mt ? mt : da < -mt ? -mt : da));
     e.c = Math.cos(e.a); e.s = Math.sin(e.a);
     {
-      const want = tg && !disarmed && d < pr * 0.8 ? e.maxSpeed * 0.55 : e.maxSpeed;
+      const want = slow && !disarmed ? e.maxSpeed * 0.55 : e.maxSpeed;
       const k = 1 - Math.exp(-e.agility * DT);
       e.vx += (e.c * want - e.vx) * k;
       e.vy += (e.s * want - e.vy) * k;
@@ -323,7 +363,7 @@ export class Battle {
     let ex = x1, ey = y1;
     if (hit) {
       ex = x0 + (x1 - x0) * this.hitT; ey = y0 + (y1 - y0) * this.hitT;
-      this.damageCell(this.hitE, this.hitCell, W.damage);
+      if (this.canDamage(this.hitE, e.team)) this.damageCell(this.hitE, this.hitCell, W.damage);
     }
     const R = this.R;
     R.lasT.push(this.now); R.lasX.push(q16(x0)); R.lasY.push(q16(y0));
@@ -350,10 +390,10 @@ export class Battle {
       if (hit) {
         const t = this.hitT, hx = x0 + (x1 - x0) * t, hy = y0 + (y1 - y0) * t;
         if (P.kind[i] === K_KINETIC) {
-          this.damageCell(this.hitE, this.hitCell, P.dmg[i]);
+          if (this.canDamage(this.hitE, P.team[i])) this.damageCell(this.hitE, this.hitCell, P.dmg[i]);
           R.shotFlight.set(rec, Math.round((this.now - 1 + t - R.shotT0.a[rec]) * 10)); R.shotHit.set(rec, 1);
         } else {
-          this.splash(this.hitE, hx, hy, MW.splash, P.dmg[i]);
+          if (this.canDamage(this.hitE, P.team[i])) this.splash(this.hitE, hx, hy, MW.splash, P.dmg[i]);
           this.endMissile(rec, hx, hy, this.now - 1 + t, 1);
           R.expT.push(this.now); R.expX.push(q16(hx)); R.expY.push(q16(hy));
         }
@@ -448,6 +488,11 @@ export class Battle {
       else { t = tmy; if (t > t1) return -1; iy += sty; tmy += tdy; if (iy < 0 || iy >= h) return -1; }
     }
     return -1;
+  }
+
+  /** Shots always stop on whatever they hit; with friendly fire off, allied ships just shrug it off. */
+  canDamage(target, team) {
+    return this.friendlyFire || target.kind !== SHIP || target.team !== team;
   }
 
   damageCell(e, i, dmg) {
@@ -613,10 +658,10 @@ export class Battle {
     };
     for (const [k, c] of Object.entries(this.R)) cols[k] = c.done();
     const meta = {
-      version: 1, trackTotal: total, evQ: EV_Q, dt: DT, trackEvery: TRACK_EVERY, missileEvery: MISSILE_EVERY, posQ: POS_Q, angQ: ANG_Q,
+      version: 1, friendlyFire: this.friendlyFire, trackTotal: total, evQ: EV_Q, dt: DT, trackEvery: TRACK_EVERY, missileEvery: MISSILE_EVERY, posQ: POS_Q, angQ: ANG_Q,
       ticks: this.tick, shipCount: S, chunkCount: this.byId.length - S,
       kineticSpeed: WEAPON[BT.CANNON].speed,
-      designs: this.designs.map((d) => ({ name: d.name, cls: d.cls, w: d.w, h: d.h, hub: d.hub, cells: Array.from(d.cells) })),
+      designs: this.designs.map((d) => ({ name: d.name, cls: d.cls, stance: d.stance, w: d.w, h: d.h, hub: d.hub, cells: Array.from(d.cells) })),
       survivors: [...this.teamAlive],
     };
     return { meta, cols };

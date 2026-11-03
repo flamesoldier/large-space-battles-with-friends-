@@ -80,7 +80,7 @@ export const TEAM = [
 ];
 
 function blockPalette(team, dead) {
-  const T = TEAM[team], k = dead ? 0.42 : 1;
+  const T = TEAM[team], k = dead ? 0.7 : 1; // wrecks stay readable, just burnt
   const p = [];
   p[BT.HUB] = T.hub; p[BT.ARMOR] = T.armor; p[BT.HEAVY] = T.heavy; p[BT.FRAME] = T.frame;
   p[BT.THRUSTER] = '#3d434f'; p[BT.LASER] = team ? '#ffd9c9' : '#d8f4ff'; p[BT.CANNON] = '#9aa1ab'; p[BT.MISSILE] = '#b9b16c';
@@ -91,7 +91,7 @@ const C = {
   tracer: rgba('#ffe7a6', 230), impact: rgba('#ffc46b', 255), spark: rgba('#ff9d47', 255), sparkHot: rgba('#fff1c4', 255),
   missile: rgba('#ffffff', 255), trail: rgba('#ff8a3d', 200), boom: rgba('#ff9b45', 255), boomCore: rgba('#fff4d6', 255),
   engine: [rgba('#58b8ff', 150), rgba('#ff8a3d', 150)], beam: TEAM.map((t) => rgba(t.beam, 255)),
-  lod: TEAM.map((t) => rgba(t.accent)), lodDead: rgba('#4a4b52'), hotChunk: rgba('#ff7a2e', 255),
+  lod: TEAM.map((t) => rgba(t.accent)), lodDead: rgba('#7a7c86'), hotChunk: rgba('#ff7a2e', 255),
 };
 
 export class Renderer {
@@ -156,7 +156,7 @@ export class Renderer {
       if (!dead) ships++;
       if (lod) {
         // Far zoom: one quad per ship, debris as faint specks.
-        if (dead) { if (e.size > 6) solid.push(tr.x, tr.y, tr.a, Math.max(e.w * 0.35, px), Math.max(e.h * 0.35, px), 3, C.lodDead); }
+        if (dead) { if (e.size > 2) solid.push(tr.x, tr.y, tr.a, Math.max(e.w * 0.35, px), Math.max(e.h * 0.35, px), 3, C.lodDead); }
         else solid.push(tr.x, tr.y, tr.a, Math.max(e.w * 0.45, px * 1.2), Math.max(e.h * 0.32, px * 1.2), 3, C.lod[e.team]);
         continue;
       }
