@@ -1,0 +1,184 @@
+<title>Fleet Engagement Replay</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: full-bleed tactical display; thin instrument strips float over the battlefield. */
+:root {
+  --void: #05070c;
+  --panel: rgba(10, 15, 24, 0.82);
+  --line: rgba(140, 170, 210, 0.18);
+  --ink: #dbe4f2;
+  --dim: #7d8ba1;
+  --azure: #86e8ff;
+  --ember: #ffb35c;
+  --signal: #e6eeff;
+  --display: "Chakra Petch", "Bahnschrift", "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+[hidden] { display: none !important; }
+body {
+  background: var(--void); color: var(--ink); font-family: var(--display); overflow: hidden;
+}
+#app {
+  position: relative; height: 100%; overflow: hidden;
+  background:
+    radial-gradient(ellipse at 30% 20%, rgba(60, 90, 160, 0.16), transparent 60%),
+    radial-gradient(ellipse at 75% 80%, rgba(160, 70, 40, 0.12), transparent 55%),
+    var(--stars) var(--sx, 0) var(--sy, 0) / 512px 512px repeat,
+    var(--void);
+}
+#view { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; display: block; }
+#view:active { cursor: grabbing; }
+
+.strip {
+  position: absolute; left: 0; right: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 10px; background: var(--panel); backdrop-filter: blur(6px); border-color: var(--line); border-style: solid; border-width: 0;
+}
+.top { top: 0; border-bottom-width: 1px; }
+.bottom { bottom: 0; border-top-width: 1px; padding-bottom: max(10px, env(safe-area-inset-bottom, 0px)); }
+
+.brand { display: flex; flex-direction: column; line-height: 1.1; margin-right: auto; min-width: 0; }
+.brand b { font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; font-size: 15px; }
+.brand span { color: var(--dim); font-size: 12px; letter-spacing: 0.04em; }
+
+.sides { display: flex; gap: 18px; align-items: center; }
+.side { display: grid; grid-template-columns: auto auto; column-gap: 8px; align-items: baseline; min-width: 128px; }
+.side small { grid-column: 1 / -1; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
+.side strong { font-family: var(--mono); font-size: 20px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.side em { font-style: normal; color: var(--dim); font-size: 12px; }
+.meter { grid-column: 1 / -1; height: 3px; background: var(--line); margin-top: 4px; }
+.meter i { display: block; height: 100%; width: 100%; transition: width .3s; }
+#meter0 { background: var(--azure); } #meter1 { background: var(--ember); }
+.side.a strong { color: var(--azure); } .side.b strong { color: var(--ember); }
+
+.setup { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+label { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); display: flex; gap: 6px; align-items: center; }
+select, input[type=number] {
+  font: 500 13px var(--mono); color: var(--ink); background: rgba(255,255,255,0.04);
+  border: 1px solid var(--line); padding: 5px 6px; border-radius: 3px;
+}
+input[type=number] { width: 64px; }
+button {
+  font: 600 13px var(--display); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink);
+  background: rgba(255,255,255,0.05); border: 1px solid var(--line); padding: 6px 12px; border-radius: 3px; cursor: pointer;
+}
+button:hover { border-color: var(--signal); }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--azure); outline-offset: 1px; }
+button.go { background: var(--signal); color: var(--void); border-color: var(--signal); }
+button:disabled { opacity: 0.5; cursor: progress; }
+button[aria-pressed="true"] { border-color: var(--azure); color: var(--azure); }
+
+.transport { display: flex; gap: 6px; align-items: center; }
+#play { min-width: 72px; }
+#time { font-family: var(--mono); font-size: 13px; color: var(--ink); font-variant-numeric: tabular-nums; min-width: 112px; }
+.track { position: relative; flex: 1 1 260px; height: 34px; min-width: 0; }
+#strength { position: absolute; inset: 0; width: 100%; height: 100%; }
+#scrub { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; background: transparent; -webkit-appearance: none; appearance: none; cursor: pointer; }
+#scrub::-webkit-slider-runnable-track { height: 100%; background: transparent; }
+#scrub::-moz-range-track { height: 100%; background: transparent; }
+#scrub::-webkit-slider-thumb { -webkit-appearance: none; width: 2px; height: 34px; background: var(--signal); box-shadow: 0 0 8px var(--signal); }
+#scrub::-moz-range-thumb { width: 2px; height: 34px; border: 0; border-radius: 0; background: var(--signal); }
+.speeds button { padding: 6px 8px; font-family: var(--mono); font-weight: 500; text-transform: none; }
+
+.readout {
+  position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); top: 78px; width: 250px;
+  background: var(--panel); border: 1px solid var(--line); padding: 10px 12px; font-size: 12px;
+  display: grid; grid-template-columns: auto 1fr; gap: 4px 10px;
+}
+.readout dt { color: var(--dim); letter-spacing: 0.1em; text-transform: uppercase; font-size: 10px; padding-top: 2px; }
+.readout dd { margin: 0; font-family: var(--mono); font-size: 11.5px; text-align: right; font-variant-numeric: tabular-nums; }
+.readout .hint { grid-column: 1 / -1; color: var(--dim); font-size: 11px; border-top: 1px solid var(--line); padding-top: 6px; margin-top: 2px; line-height: 1.4; }
+
+#minimap {
+  background: rgba(8, 12, 19, 0.96) !important;
+  position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); bottom: 72px;
+  width: 220px; height: 140px; background: var(--panel); border: 1px solid var(--line); cursor: crosshair; touch-action: none;
+}
+
+#progress {
+  position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none;
+}
+#progress .card { background: var(--panel); border: 1px solid var(--line); padding: 18px 22px; width: min(420px, calc(100% - 32px)); }
+#progress-title { font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; font-size: 14px; }
+#progress-detail { font-family: var(--mono); font-size: 12px; color: var(--dim); margin-top: 6px; min-height: 1.4em; }
+.bar { height: 2px; background: var(--line); margin-top: 12px; }
+#progress-bar { height: 100%; width: 0; background: var(--signal); }
+
+@media (max-width: 760px) {
+  .readout { display: none; }
+  #minimap {
+  background: rgba(8, 12, 19, 0.96) !important; width: 150px; height: 96px; bottom: 116px; }
+  .side { min-width: 96px; }
+  .side strong { font-size: 16px; }
+  .brand span { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .meter i { transition: none; } }
+</style>
+
+<div id="app">
+  <canvas id="view" aria-label="Battle replay. Drag to pan, scroll or pinch to zoom."></canvas>
+
+  <header class="strip top">
+    <div class="brand"><b>Fleet Engagement</b><span>Replay of an auto-resolved battle</span></div>
+    <div class="sides">
+      <div class="side a"><small>Azure Compact</small><strong id="alive0">0</strong><em>ships</em><div class="meter"><i id="meter0"></i></div></div>
+      <div class="side b"><small>Ember Dominion</small><strong id="alive1">0</strong><em>ships</em><div class="meter"><i id="meter1"></i></div></div>
+    </div>
+    <div class="setup">
+      <label for="ships">Per side
+        <select id="ships">
+          <option value="100">100</option>
+          <option value="300">300</option>
+          <option value="500" selected>500</option>
+          <option value="1000">1,000</option>
+          <option value="2000">2,000</option>
+          <option value="5000">5,000</option>
+        </select>
+      </label>
+      <label for="seed">Seed <input id="seed" type="number" value="7" min="1"></label>
+      <button id="resolve" class="go">Resolve battle</button>
+    </div>
+  </header>
+
+  <dl class="readout">
+    <dt>Compute</dt><dd id="st-compute">…</dd>
+    <dt>Replay</dt><dd id="st-size">…</dd>
+    <dt>Drawn</dt><dd id="st-draw">…</dd>
+    <dt>Render</dt><dd id="st-fps">…</dd>
+    <dt>Zoom</dt><dd id="st-zoom">…</dd>
+    <p class="hint">Drag to pan, scroll or pinch to zoom. Zoom in past fleet view to see individual blocks, debris and friendly fire. Space plays and pauses.</p>
+  </dl>
+
+  <canvas id="minimap" aria-label="Minimap. Click to move the camera."></canvas>
+
+  <footer class="strip bottom">
+    <div class="transport">
+      <button id="play" aria-pressed="true">Pause</button>
+      <button id="fit">Fit</button>
+    </div>
+    <span id="time">0:00.0 / 0:00.0</span>
+    <div class="track">
+      <canvas id="strength" aria-hidden="true"></canvas>
+      <input id="scrub" type="range" min="0" max="1" step="0.1" value="0" aria-label="Battle timeline">
+    </div>
+    <div class="transport speeds" role="group" aria-label="Playback speed">
+      <button data-speed="0.25" aria-pressed="false">¼×</button>
+      <button data-speed="1" aria-pressed="true">1×</button>
+      <button data-speed="4" aria-pressed="false">4×</button>
+      <button data-speed="16" aria-pressed="false">16×</button>
+    </div>
+  </footer>
+
+  <div id="progress" hidden>
+    <div class="card">
+      <div id="progress-title">Resolving battle</div>
+      <div id="progress-detail"></div>
+      <div class="bar"><div id="progress-bar"></div></div>
+    </div>
+  </div>
+</div>
+<script type="module">/*APP*/</script>

@@ -1,0 +1,12 @@
+{
+  "name": "large-space-battles-with-friends",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bench": "node tools/bench.mjs",
+    "build:viewer": "node tools/build-viewer.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.2"
+  }
+}
