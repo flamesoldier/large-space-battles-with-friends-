@@ -125,8 +125,9 @@ designer's numbers against the sim.
   leviathan ≤ 30,000, colossus ≤ 120,000, worldbreaker ≤ 400,000. Grid limit 1024 × 640.
 - Built for huge grids: undo stores changed cells only; drawing culls to the visible cells and
   switches to a one-pixel-per-cell bitmap when zoomed out (also used by the minimap); analysis
-  of a slow-to-analyse design waits for the end of a stroke. Scroll pans, Ctrl/Cmd+scroll or
-  pinch zooms, plus a Hand tool, arrow keys, +/− and a clickable minimap.
+  of a slow-to-analyse design waits for the end of a stroke. Owner's controls: **mouse wheel
+  zooms** (towards the cursor), **WASD / arrow keys pan** smoothly while held (Shift faster),
+  plus a Hand tool (H), Space+drag, +/− buttons and a clickable minimap. Q toggles all arcs.
 - Validation errors block test battles (and should block shipyards): one hub, everything
   connected to it, block limit, heavy lasers as whole separate 10×10 units. Warnings: no weapons,
   buried weapons, guns with under 45° of arc, heavy-laser cook-off, no thrusters, big escorts.
@@ -136,14 +137,25 @@ The test-fleet generator (`designs.js`) puts missile launchers on the skin and h
 the nose or hull edge, where they have a line of fire. It also makes dreadnought, leviathan and
 colossus samples for the designer's templates (not used in the generated test fleets).
 
-## Measured, not built yet: ship collisions
+## Ship collisions (on)
 
-Ships only push apart from allies in the same grid cell, and only once they overlap by half,
-so hulls pass through each other (especially enemies). A prototype where every ship's hull
-rectangle pushes out of any overlapping ship (any team, separating-axis test):
-- 1,000 vs 1,000: +8% compute; pairs overlapping by more than 3 blocks fall from ~300 to ~6.
-- 3,000 vs 3,000: +26% compute (dense blobs have many neighbours); ~1,700 to ~140.
-Block-exact collision would cost far more and isn't needed for the look. Waiting on the owner.
+`Battle.collide()`: each ship's hull rectangle is pushed out of any other ship's rectangle it
+overlaps (either team; separating-axis test; the lighter ship moves more). Replaced the old
+"push apart from allies in the same grid cell once half-overlapped" nudge, which let hulls pass
+through each other. Cost: about +7% at 1,000 vs 1,000 (+26% measured at 3,000 vs 3,000 in the
+prototype); pairs overlapping by more than 3 blocks went from ~300 to ~6. Rectangles, not exact
+blocks, on purpose: block-exact would cost far more. Debris doesn't collide.
+
+## Beams stay on what they hit
+
+Lasers and point-defence beams fade over 0.4 s / 0.15 s while ships keep moving, so drawn as
+fixed world lines they ended up pointing at empty space where the block had been. Each beam now
+records the ship that fired it and the entity its end sits on (`lasSrc`/`lasDst` plus local
+offsets `lasSX/SY/DX/DY`; ids are 16-bit when the battle has under 65,535 entities). The viewer
+draws both ends attached (`ReplayModel.beamAt`). World coordinates are only stored for unattached
+ends, so replays grew only ~2%. `aimPoint()` never returns a destroyed block (it used to fall back
+to the target's centre, often a hole), and point defence aims at a block actually within its
+30 range.
 
 Still open with the owner: the exact block prices and the shipyard multiplier (placeholders
 until there's an income number to balance against), and whether hull class should matter beyond

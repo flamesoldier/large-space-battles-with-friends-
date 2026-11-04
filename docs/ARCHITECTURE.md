@@ -31,7 +31,7 @@ server and to the viewer.
 | **2D, top-down** | Cuts every cost (collision, rendering, AI, replay size) by an order of magnitude versus 3D. Reads clearly at fleet scale, like Cosmoteer or Reassembly. |
 | **Ships are grids of blocks** (1 block = 1 unit) | A hit test is a walk through a small grid instead of a mesh test. Damage, breakage and debris all fall out of the grid naturally. |
 | **10 ticks per simulated second** | Plenty for ships that turn and drift. Weapons use exact sweeps, so nothing tunnels through at this rate. |
-| **No rigid-body physics** | Ships steer with simple kinematics and a soft separation nudge. No ship-vs-ship collision response. Debris drifts at constant velocity and spin. |
+| **No rigid-body physics** | Ships steer with simple kinematics. Hull rectangles push out of each other (separating-axis test, no bounce or spin). Debris drifts at constant velocity and spin. |
 | **Turrets fire freely** | Weapon blocks don't need line of sight out of their own hull. Shots still hit anything in their path, which is where friendly fire comes from. |
 | **Debris retires after 25 s** | Old chunks stop being hit-testable (they keep drifting in the replay). This caps the cost of long battles. |
 
@@ -99,7 +99,7 @@ What gets recorded, and what deliberately does not:
 | --- | --- | --- |
 | Ship movement | position + angle every 0.4 s, second-order delta encoded, 1/4-block precision | Catmull-Rom spline |
 | Cannon shells, heavy missiles | launch time, point, angle, flight time, kind | straight line, pure function of time |
-| Laser and point-defence beams | time, origin, angle, length, kind | fade out |
+| Laser and point-defence beams | time, kind, shooter id + local origin, hit entity id + local end (world origin/angle/length only for unattached ends) | fade out, both ends following their ships |
 | Debris chunks | spawn position, velocity, spin, which blocks | `x0 + v·t`, nothing per frame |
 | Block destroyed | time, entity, cell | "is this block alive at t?" check, plus sparks |
 | Sparks, fireballs, glows | **not stored** | seeded hashes of the event id |
@@ -203,7 +203,7 @@ about 3 MB per copy.
 In rough order:
 
 1. ~~Ship designer~~: done (`src/designer/`, see below).
-1. Ship collisions: prototype measured (see CLAUDE.md), +8% compute at 1,000 vs 1,000.
+1. ~~Ship collisions~~: on (hull rectangles, any team), about +7% compute at 1,000 vs 1,000.
 2. Battle job runner on the server: queue, worker threads, store replays, write losses back to
    the fleets.
 3. Combat depth: a railgun that punches through several blocks, shields, reactor/power blocks, and smarter AI roles (screens, flankers, capital ships holding

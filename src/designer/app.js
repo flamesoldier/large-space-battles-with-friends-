@@ -539,15 +539,29 @@ const endPointer = (e) => {
 canvas.addEventListener('pointerup', endPointer);
 canvas.addEventListener('pointercancel', endPointer);
 canvas.addEventListener('pointerleave', () => { if (!drag) { hover = null; $('hover').hidden = true; dirty = true; } });
-// Scrolling moves around the design; Ctrl/Cmd + scroll (or a trackpad pinch) zooms.
+// The mouse wheel (and a trackpad pinch) zooms towards the cursor. Moving around is WASD /
+// arrow keys, the Hand tool, Space + drag, middle drag or the minimap.
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
   const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? canvas.clientHeight : 1;
-  if (e.ctrlKey || e.metaKey) { zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * unit * (e.ctrlKey && !e.metaKey && Math.abs(e.deltaY) < 50 ? 0.01 : 0.0015))); return; }
-  // Shift + wheel scrolls sideways on a plain mouse wheel.
-  const dx = e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX, dy = e.shiftKey && !e.deltaX ? 0 : e.deltaY;
-  panBy(dx * unit, dy * unit);
+  const pinch = e.ctrlKey && !e.metaKey && Math.abs(e.deltaY) < 50; // trackpad pinch: small, precise steps
+  zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * unit * (pinch ? 0.01 : 0.0015)));
 }, { passive: false });
+
+// WASD and the arrow keys move the view smoothly while held (Shift for faster).
+const held = new Set();
+const PAN_KEYS = { w: [0, -1], a: [-1, 0], s: [0, 1], d: [1, 0], arrowup: [0, -1], arrowleft: [-1, 0], arrowdown: [0, 1], arrowright: [1, 0] };
+let panT = 0, fast = false;
+function keyPan(now) {
+  const dt = panT ? Math.min(0.05, (now - panT) / 1000) : 0;
+  panT = held.size ? now : 0;
+  if (!held.size || !dt) return;
+  let vx = 0, vy = 0;
+  for (const k of held) { vx += PAN_KEYS[k][0]; vy += PAN_KEYS[k][1]; }
+  const speed = (fast ? 2400 : 900) * dt; // screen pixels per second
+  if (vx || vy) panBy(vx * speed, vy * speed);
+}
+addEventListener('blur', () => held.clear());
 const zoomCentre = (k) => { const r = canvas.getBoundingClientRect(); zoomAt(r.left + r.width / 2, r.top + r.height / 2, k); };
 $('zoom-in').addEventListener('click', () => zoomCentre(1.5));
 $('zoom-out').addEventListener('click', () => zoomCentre(1 / 1.5));
@@ -561,11 +575,7 @@ addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && k === 's') { e.preventDefault(); saveToLibrary(); return; }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.code === 'Space') { spaceDown = true; canvas.style.cursor = 'grab'; e.preventDefault(); return; }
-  const step = e.shiftKey ? 400 : 120;
-  if (e.key === 'ArrowLeft') { e.preventDefault(); return panBy(-step, 0); }
-  if (e.key === 'ArrowRight') { e.preventDefault(); return panBy(step, 0); }
-  if (e.key === 'ArrowUp') { e.preventDefault(); return panBy(0, -step); }
-  if (e.key === 'ArrowDown') { e.preventDefault(); return panBy(0, step); }
+  if (PAN_KEYS[k]) { e.preventDefault(); held.add(k); fast = e.shiftKey; return; }
   if (e.key === '+' || e.key === '=') return zoomCentre(1.4);
   if (e.key === '-' || e.key === '_') return zoomCentre(1 / 1.4);
   if (k === 'h') return setTool('pan');
@@ -575,9 +585,12 @@ addEventListener('keydown', (e) => {
   if (k === 'r') setTool('rect');
   if (k === 'f') setTool('fill');
   if (k === 'm') { ed.mirror = !ed.mirror; syncMirror(); dirty = true; }
-  if (k === 'a') { showArcs = !showArcs; syncArcs(); dirty = true; }
+  if (k === 'q') { showArcs = !showArcs; syncArcs(); dirty = true; }
 });
-addEventListener('keyup', (e) => { if (e.code === 'Space') { spaceDown = false; canvas.style.cursor = tool === 'pan' ? 'grab' : ''; } });
+addEventListener('keyup', (e) => {
+  held.delete(e.key.toLowerCase()); fast = e.shiftKey;
+  if (e.code === 'Space') { spaceDown = false; canvas.style.cursor = tool === 'pan' ? 'grab' : ''; }
+});
 
 // ------------------------------------------------------------ library, export, import
 function thumbnail(d) {
@@ -731,7 +744,8 @@ $('replay-close').addEventListener('click', () => {
 });
 
 // ------------------------------------------------------------ start
-function loop() {
+function loop(now) {
+  keyPan(now);
   refresh();
   if (dirty) { dirty = false; draw(); drawMinimap(); }
   requestAnimationFrame(loop);
@@ -744,7 +758,7 @@ let restored = false;
 if (saved) { try { const d = decodeDesign(saved); if (d.cells.some((c) => c && c !== BT.HUB)) { ed.load(d); ed.resetHistory(); restored = true; } } catch { /* start fresh */ } }
 if (!restored) { ed.load({ ...makeDesign('destroyer', 21), name: 'My destroyer' }); ed.resetHistory(); }
 setBlock(BT.ARMOR); setTool('pencil'); syncFields();
-requestAnimationFrame(() => { resize(); fit(); loop(); });
+requestAnimationFrame((now) => { resize(); fit(); loop(now); });
 
 // Small hook for debugging and automated checks.
 window.shipDesigner = { editor: ed, get design() { return design; }, get info() { return info; }, cam, fit };

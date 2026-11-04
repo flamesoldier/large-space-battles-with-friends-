@@ -142,11 +142,26 @@ export class ReplayModel {
     this.shell = straight(0);
     this.missile = straight(1);
     const nl = c.lasT.length;
-    this.laser = { n: nl, t: c.lasT, x0: new Float32Array(nl), y0: new Float32Array(nl), x1: new Float32Array(nl), y1: new Float32Array(nl), team: c.lasTeam, hit: c.lasHit, kind: c.lasKind };
+    this.laser = { n: nl, t: c.lasT, x0: new Float32Array(nl), y0: new Float32Array(nl), x1: new Float32Array(nl), y1: new Float32Array(nl), team: c.lasTeam, hit: c.lasHit, kind: c.lasKind,
+      // Beam ends attached to entities (newer replays): ids (0xffffffff = none) and local offsets.
+      src: c.lasSrc || null, dst: c.lasDst || null,
+      sx: c.lasSX ? Float32Array.from(c.lasSX, (v) => v / q) : null, sy: c.lasSY ? Float32Array.from(c.lasSY, (v) => v / q) : null,
+      dx: c.lasDX ? Float32Array.from(c.lasDX, (v) => v / q) : null, dy: c.lasDY ? Float32Array.from(c.lasDY, (v) => v / q) : null };
+    // World positions at the moment of firing (used for culling, and for unattached ends).
+    // Attached ends are stored only relative to their entity, so work them out here.
+    const L = this.laser, none = L.src && L.src.BYTES_PER_ELEMENT === 2 ? 0xffff : 0xffffffff, bt = { x: 0, y: 0, a: 0 };
+    const at = (id, t, lx, ly, out, k) => {
+      this.transform(this.ents[id], t, bt);
+      const cs = Math.cos(bt.a), sn = Math.sin(bt.a);
+      out[k] = bt.x + lx * cs - ly * sn; out[k + 1] = bt.y + lx * sn + ly * cs;
+    };
+    const p = [0, 0];
     for (let i = 0; i < nl; i++) {
-      const L = this.laser, a = (c.lasAng[i] / 65536) * Math.PI * 2, len = c.lasLen[i];
-      L.x0[i] = c.lasX[i] / q; L.y0[i] = c.lasY[i] / q;
-      L.x1[i] = L.x0[i] + Math.cos(a) * len; L.y1[i] = L.y0[i] + Math.sin(a) * len;
+      const a = (c.lasAng[i] / 65536) * Math.PI * 2, len = c.lasLen[i];
+      if (L.src && L.src[i] !== none) { at(L.src[i], L.t[i], L.sx[i], L.sy[i], p, 0); L.x0[i] = p[0]; L.y0[i] = p[1]; }
+      else { L.x0[i] = c.lasX[i] / q; L.y0[i] = c.lasY[i] / q; }
+      if (L.dst && L.dst[i] !== none) { at(L.dst[i], L.t[i], L.dx[i], L.dy[i], p, 0); L.x1[i] = p[0]; L.y1[i] = p[1]; }
+      else { L.x1[i] = L.x0[i] + Math.cos(a) * len; L.y1[i] = L.y0[i] + Math.sin(a) * len; }
     }
     this.expl = { n: c.expT.length, t: c.expT, s: c.expS, x: Float32Array.from(c.expX, (v) => v / q), y: Float32Array.from(c.expY, (v) => v / q) };
     // Ship deaths, sorted by time.
@@ -158,6 +173,28 @@ export class ReplayModel {
   }
 
   /** Interpolated transform. Ships: Catmull-Rom through 0.4 s samples. Chunks: analytic drift. */
+  /**
+   * Where beam i's ends are at time t: attached ends follow their ship or wreck, so a fading
+   * beam stays on the block it hit. Writes out.x0, y0, x1, y1.
+   */
+  beamAt(i, t, out) {
+    const L = this.laser, tr = this._tr || (this._tr = { x: 0, y: 0, a: 0 });
+    out.x0 = L.x0[i]; out.y0 = L.y0[i]; out.x1 = L.x1[i]; out.y1 = L.y1[i];
+    if (!L.src) return out;
+    const s = L.src[i], d = L.dst[i], none = L.src.BYTES_PER_ELEMENT === 2 ? 0xffff : 0xffffffff;
+    if (s !== none && this.ents[s]) {
+      this.transform(this.ents[s], t, tr);
+      const c = Math.cos(tr.a), n = Math.sin(tr.a);
+      out.x0 = tr.x + L.sx[i] * c - L.sy[i] * n; out.y0 = tr.y + L.sx[i] * n + L.sy[i] * c;
+    }
+    if (d !== none && this.ents[d]) {
+      this.transform(this.ents[d], t, tr);
+      const c = Math.cos(tr.a), n = Math.sin(tr.a);
+      out.x1 = tr.x + L.dx[i] * c - L.dy[i] * n; out.y1 = tr.y + L.dx[i] * n + L.dy[i] * c;
+    }
+    return out;
+  }
+
   transform(e, t, out) {
     if (e.kind === 1) {
       const s = (t - e.t0) * this.dt;
