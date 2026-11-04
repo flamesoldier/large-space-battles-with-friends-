@@ -187,9 +187,9 @@ economy, fleets, captures, with real battles).
   Layout: map with a small collapsible **Events** window in its top-left corner; the right-hand
   panel is all for the selected world (shipyards, moving ships) or fleet.
 - **Combat log** (top-bar button, with a badge for new ones): every battle and every world that
-  changed hands, from the current player's side (World taken / World lost / Defended / Repelled /
-  Broke through / Ambushed / Blocked a fleet), ships and credits lost on each side, a Watch button
-  and a Map button. Filter: Mine (you and allies) or Everyone. Replays are saved in IndexedDB
+  changed hands, and every siege (Under attack / Attack begins / Joined attack), from the current
+  player's side (World taken / World lost / Defended / Repelled / Ambushed / Blocked a fleet),
+  ships and credits lost on each side, a Watch button and a Map button. Filter: Mine (you and allies) or Everyone. Replays are saved in IndexedDB
   (`src/galaxy/replayStore.js`, newest 80) so old battles can be watched after a reload; on the
   server they'll be replay files. The world log trims routine entries before battles/captures.
 - Map: 2–10 players, one **spawn point** (home world) each, spread evenly round a ring so starts
@@ -200,9 +200,19 @@ economy, fleets, captures, with real battles).
   and the player can turn lanes off. Fleets can't be recalled.
 - **Fleets stop at every world on their route** (owner's rule, so enemies can block or ambush
   them). Passing a friendly world, or one with nobody defending it, they fly straight on. At a
-  world they don't hold with defenders there, they fight (`battle.passing`): win and they fly on
-  with the survivors (they don't take that world; only the destination is captured); lose and the
-  survivors fall back. The move panel's **"Avoid worlds you don't hold"** (on by default) plans
+  world they don't hold with defenders there, they fight (`battle.passing`): **win and they take
+  that world** (owner's rule) and fly on with the survivors, leaving it empty; lose and the
+  survivors fall back.
+- **Battles wait 30 minutes** (`BATTLE_HOLD_MIN`, owner's rule) so reinforcements can join. A
+  fleet reaching a world it attacks (its destination, or a stop with defenders) starts a **siege**
+  (`world.sieges`): it holds there (`fleet.wait`), drawn round the world with a "Battle in N min"
+  ring. Fleets allied with the siege's leader that arrive join it; the defenders' own and allied
+  fleets join the garrison, and shipyards keep building. When the hold ends, everyone fights one
+  battle (several attacking players can be on side 0). Win: the world is taken and every fleet
+  "re-arrives" (garrisons or flies on, delayed by the wait). Lose: survivors fall back. An enemy
+  of both sides arriving starts its own siege, resolved after. A world nobody defends is still
+  only taken when the hold ends, so the owner can rush ships in.
+- The move panel's **"Avoid worlds you don't hold"** (on by default) plans
   round every world not held by you or an ally (a straight flight always exists); with it off the
   route is fastest and the panel lists the hostile stops (marked on the map) and their ships.
   Saves from before this rule (`upgradeWorld`) let fleets already in flight fly straight on.
@@ -210,15 +220,22 @@ economy, fleets, captures, with real battles).
   hour: a destroyer takes ~10 h between neighbours through space, ~1 h along a lane. Ships under
   `MIN_FLEET_SPEED` can't leave (fixed defences; hub thrusters alone give ~2.5, so rare).
 - **Arrivals**: own or allied world → the ships join the garrison (allies' ships station there
-  as guests and defend it). Enemy or unclaimed world with nobody defending → captured. Otherwise
-  a battle: the fleet is team 0, every defending stack is team 1. The attacker takes the world
-  only if it still has armed ships and the defenders have none: yards destroyed, income and
-  world change hands, survivors garrison it. Otherwise attacker survivors fall back to where
-  they came from (or the nearest friendly world).
+  as guests and defend it). Otherwise a siege (above), then a battle: attackers team 0, every
+  defending stack team 1. The attackers take the world only if they still have armed ships and
+  the defenders have none: yards destroyed, income and world change hands (to the siege leader,
+  or the ally with the most ships left if the leader lost all of theirs), survivors garrison it.
+  Otherwise attacker survivors fall back to where they came from (or the nearest friendly world).
 - A ship survives a battle if it keeps its hub and a working weapon, and comes back at full
   strength (no damage carried between battles yet).
-- **Teams**: players with the same team letter are allies. A player with no worlds, ships or
-  fleets is knocked out; when everyone left is on one team, they win.
+- **Diplomacy** (owner's rule: alliances change during the game): every pair of players is
+  allied or enemies (`world.relations`, not transitive). Starting team letters only set who begins
+  allied. An alliance needs both sides (propose → accept; proposing back counts as accepting);
+  either side can break it alone, which sends each side's ships on the other's worlds home and
+  releases fleets waiting in a siege next to their new enemy. Diplomacy window in the top bar
+  (badge for proposals waiting for you, and a who-is-allied-with-whom grid). Allies station ships
+  on each other's worlds, defend together (stacks allied with both sides sit a battle out) and join
+  each other's sieges. A player with no worlds, ships or fleets is knocked out; when someone has
+  been knocked out and everyone left is allied with everyone else, they win.
 - Unclaimed worlds are held by **militia** (generated corvettes/frigates/destroyers worth 4 hours
   of the world's income, `NEUTRAL_GARRISON_HOURS`), so taking one is a real battle.
 - Designs used in the world are stored in `world.designs` (owner, cost, speed, encoded cells),
@@ -231,9 +248,8 @@ economy, fleets, captures, with real battles).
   starfield is a fixed backdrop that doesn't move when you pan or zoom (owner's request).
 
 Open with the owner (placeholders now): incomes and starting credits, the crowding share,
-the 50% resale, militia strength, travel scale, whether a fleet that wins at a world it's passing
-should also take it, fog of war, recalling fleets, damage carried between battles, and the battle
-size cap (a big late-game garrison can mean thousands of ships; the plan is waves).
+the 50% resale, militia strength, travel scale, the 30-minute hold, fog of war, recalling fleets,
+damage carried between battles, and the battle size cap (a big late-game garrison can mean thousands of ships; the plan is waves).
 
 Still open with the owner: the exact block prices and the shipyard multiplier (placeholders
 until there's an income number to balance against), and whether hull class should matter beyond

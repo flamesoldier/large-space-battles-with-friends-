@@ -63,20 +63,25 @@ export function planRoute(planets, lanes, from, to, speed, useLanes = true, bloc
 }
 
 /**
- * Where a fleet is at time t (ms), as a pure function of its plan: { x, y, angle, leg }.
- * fleet: { depart, legs } (legs as planRoute returns them).
+ * Where a fleet is at time t (ms), as a pure function of its plan: { x, y, angle, leg, holding }.
+ * fleet: { depart, legs, wait? }. Each leg ends at `at` (ms) and takes `hours`, so a fleet that
+ * waited at a world (a siege) sits there until its next leg starts. Legs without `at` (plain
+ * planRoute output) are timed back to back from `depart`.
  */
 export function fleetPosition(planets, fleet, t) {
-  let h = Math.max(0, (t - fleet.depart) / HOUR_MS);
+  let end = fleet.depart;
   for (let k = 0; k < fleet.legs.length; k++) {
     const L = fleet.legs[k], A = planets[L.from], B = planets[L.to];
     const angle = Math.atan2(B.y - A.y, B.x - A.x);
-    if (h <= L.hours || k === fleet.legs.length - 1) {
-      const f = L.hours > 0 ? Math.min(1, h / L.hours) : 1;
-      return { x: A.x + (B.x - A.x) * f, y: A.y + (B.y - A.y) * f, angle, leg: k };
+    end = L.at ?? end + L.hours * HOUR_MS;
+    const start = end - L.hours * HOUR_MS;
+    if (fleet.wait != null && k === fleet.leg) return { x: B.x, y: B.y, angle, leg: k, holding: true };
+    if (t < start) return { x: A.x, y: A.y, angle, leg: k, holding: true };
+    if (t <= end || k === fleet.legs.length - 1) {
+      const f = end > start ? Math.min(1, (t - start) / (end - start)) : 1;
+      return { x: A.x + (B.x - A.x) * f, y: A.y + (B.y - A.y) * f, angle, leg: k, holding: false };
     }
-    h -= L.hours;
   }
   const P = planets[fleet.to];
-  return { x: P.x, y: P.y, angle: 0, leg: 0 };
+  return { x: P.x, y: P.y, angle: 0, leg: 0, holding: false };
 }

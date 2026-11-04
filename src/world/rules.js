@@ -22,6 +22,10 @@ export const MIN_FLEET_SPEED = 0.5;
 // the plan for launch is 30 minutes so every battle comes to a resolution.
 export const BATTLE_MAX_TIME = 240;
 
+// When a fleet reaches a world it means to attack (or defenders bar its way), the battle waits
+// this long so reinforcements from both sides can arrive and join in. Game minutes.
+export const BATTLE_HOLD_MIN = 30;
+
 export const HOUR_MS = 3600 * 1000;
 
 // Ten easy-to-tell-apart faction colours, in the order players get them by default.

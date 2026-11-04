@@ -156,6 +156,24 @@ td input[type=number] { width: 64px; padding: 3px 5px; text-align: right; }
 #events li.capture, #events li.win { border-left-color: var(--azure); }
 #events li button { grid-row: span 2; align-self: center; }
 
+/* sieges, diplomacy */
+.route.siege { border-color: var(--ember); }
+#diplomacy { width: min(640px, calc(100% - 24px)); }
+#diplomacy .head, #combat .head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+#diplomacy .head h3 { margin: 0; flex: 1; }
+.dips { display: grid; gap: 6px; margin-top: 10px; }
+.dip { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) auto; gap: 10px; align-items: center; border: 1px solid var(--line); padding: 7px 10px; }
+.dip .who-col { display: grid; gap: 2px; min-width: 0; }
+.dip .who-col .hint { margin: 0; }
+.dip .acts { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.dip .res, .res.good, .res.bad { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; }
+.res.good { color: var(--azure); } .res.bad { color: var(--bad); }
+.grid-wrap { overflow-x: auto; }
+table.grid td, table.grid th { text-align: center; padding: 3px 6px; }
+table.grid td:first-child { text-align: left; white-space: nowrap; }
+.ally-dot { color: var(--azure); } .enemy-dot { color: var(--bad); opacity: 0.7; }
+@media (max-width: 640px) { .dip { grid-template-columns: minmax(0, 1fr); } .dip .acts { justify-content: flex-start; } }
+
 /* combat log */
 #combat { width: min(860px, calc(100% - 24px)); }
 #combat .head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
@@ -202,6 +220,8 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
 .overlay > button { position: absolute; left: 50%; transform: translateX(-50%); bottom: max(78px, calc(env(safe-area-inset-bottom, 0px) + 78px)); box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
 #designer-overlay > button { left: 12px; transform: none; bottom: max(12px, env(safe-area-inset-bottom, 0px)); }
 
+@media (max-width: 1500px) { .brand span { display: none; } .top { gap: 8px 12px; } }
+@media (max-width: 1250px) { .readout small { letter-spacing: 0.06em; } .speed button { padding: 5px 6px; } }
 @media (max-width: 900px) {
   #app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) 42vh; grid-template-areas: "top" "map" "side"; }
   aside { border-left: 0; border-top: 1px solid var(--line); }
@@ -223,6 +243,7 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
     <div class="grow"></div>
     <div class="readout"><small>Galaxy time</small><strong id="clock">Day 1</strong></div>
     <div class="group speed" role="group" aria-label="Game speed" id="speed"></div>
+    <button id="dip-btn" title="Allies and enemies">Diplomacy<span class="badge" id="dip-badge" hidden>0</span></button>
     <button id="combat-btn" title="Every battle and captured world, with replays">Combat log<span class="badge" id="combat-badge" hidden>0</span></button>
     <button id="new-btn">New game</button>
   </header>
@@ -268,12 +289,24 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
       <label for="ng-seed">Map seed</label><input id="ng-seed" type="number" min="1" value="1">
     </div>
     <div class="players" id="ng-players"></div>
-    <p class="hint">Players with the same <b>team</b> letter are allies: they can station ships on each other's worlds and defend them together. Everyone starts on a home world (a spawn point) with 20,000 credits; the other worlds are held by militia.</p>
+    <p class="hint">Players with the same <b>team</b> letter start the game as allies (they can station ships on each other's worlds and fight together). Alliances can change at any time from the Diplomacy window. Everyone starts on a home world (a spawn point) with 20,000 credits; the other worlds are held by militia.</p>
     <p class="hint" id="ng-warn" style="color:var(--warn)">Starting a new galaxy replaces the game in progress.</p>
     <div class="actions">
       <button id="ng-cancel">Cancel</button>
       <button id="ng-start" class="go">Start</button>
     </div>
+  </dialog>
+
+  <dialog id="diplomacy">
+    <div class="head">
+      <h3>Diplomacy</h3>
+      <button class="small" id="dip-close">Close</button>
+    </div>
+    <p class="sub" id="dip-who"></p>
+    <div id="dip-list" class="dips"></div>
+    <h2>Who is allied with whom</h2>
+    <div id="dip-grid" class="grid-wrap"></div>
+    <p class="hint">Allies can station ships on each other's worlds, defend them together and join each other's attacks. Everyone else is an enemy. An alliance needs both players to agree; either one can break it, which sends their ships on each other's worlds home.</p>
   </dialog>
 
   <dialog id="combat">

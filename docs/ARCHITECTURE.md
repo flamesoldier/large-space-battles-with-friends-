@@ -220,13 +220,28 @@ Fleet arrivals are the only discrete events: the driver advances to each arrival
 resolves it, and carries on. A server that slept for a week catches up in milliseconds plus the
 battles it owes.
 
-**Battles stay outside the rules.** `arrivalPlan()` turns a fleet arriving at a defended world
-into a Battle scenario (attacker = team 0, every defending stack = team 1, spawned in group order
-so ship k is entity k). The caller runs `src/sim/battle.js` however it likes (the page in slices
-with a progress card; the server in a worker) and hands `readBattle()`'s survivor counts to
-`completeArrival()`, which applies losses, captures the world (destroying its shipyards) or
-sends the beaten attackers home. While a battle runs, the world clock waits at the arrival time,
-so nothing can change underneath it.
+**Events and sieges.** Two kinds of event: a fleet reaching the next world on its route, and a
+siege's 30-minute hold running out (`dueEvent` returns whichever is first; at the same instant
+fleets go first, so a reinforcement arriving on the dot still fights). A fleet reaching a world it
+attacks starts a siege and waits there (`fleet.wait`, no events of its own); allied fleets that
+arrive join it, the defenders reinforce the garrison. When the hold ends, `planEvent` builds one
+Battle scenario from every waiting fleet (team 0, each group tagged with its fleet) against every
+stack defending the world (team 1). Afterwards the waiting fleets are *released*: they arrive at
+the world again, with their remaining legs shifted by the wait, and the ordinary arrival rule
+decides what they do under whatever is now true (they garrison a world they just took, fly on, or
+join a new siege). The same release covers alliances changing mid-hold and sieges with nobody
+left to fight, so there is one code path instead of a special case for each.
+
+**Battles stay outside the rules.** `planEvent()` returns a Battle scenario, the caller runs the
+sim however it likes (the page in slices with a progress card; the server in a worker) and hands
+`readBattle()`'s survivor counts to `applyEvent()`, which applies losses to the garrison and to each
+attacking fleet, then captures the world (destroying its shipyards) or sends the beaten attackers
+home. While a battle runs, the world clock waits, so nothing can change underneath it.
+
+**Diplomacy.** Relations are per pair (`world.relations["a|b"] = 'ally'`, absent = enemies) and can
+change at any time: alliances by proposal and acceptance, breaking by either side alone (guests
+are sent home, waiting fleets re-arrive). `allied()` reads it, and every rule goes through
+`allied()`, so nothing else needs to know alliances can change.
 
 **Routes.** Fleets can fly straight through normal space or ride hyperlanes at 10× speed. The
 planner is Dijkstra over every world, with a normal-space edge between every pair and a lane edge
@@ -258,7 +273,7 @@ In rough order:
 1. ~~Ship designer~~: done (`src/designer/`, see below).
 1. ~~Ship collisions~~: on (hull rectangles, any team), about +7% compute at 1,000 vs 1,000.
 2. Battle job runner on the server: queue, worker threads, store replays, write losses back to
-   the fleets. The world side of this is ready (`arrivalPlan` / `readBattle` / `completeArrival`
+   the fleets. The world side of this is ready (`dueEvent` / `planEvent` / `readBattle` / `applyEvent`
    in `src/world/`); what's missing is the server itself.
 3. Combat depth: a railgun that punches through several blocks, shields, reactor/power blocks, and smarter AI roles (screens, flankers, capital ships holding
    back).

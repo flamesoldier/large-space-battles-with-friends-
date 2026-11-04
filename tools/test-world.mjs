@@ -6,7 +6,8 @@ import { generateGalaxy } from '../src/world/galaxyGen.js';
 import { planRoute, fleetPosition, laneMap } from '../src/world/routes.js';
 import {
   createWorld, advanceTo, runWorld, buildShipyard, sellShipyard, quoteShipyard, sendFleet, previewFleet,
-  shipsAt, incomeOf, allied, YARD_MS, designOf, upgradeWorld,
+  shipsAt, incomeOf, allied, YARD_MS, HOLD_MS, designOf, upgradeWorld,
+  proposeAlliance, acceptAlliance, breakAlliance, proposalsFor, dueEvent,
 } from '../src/world/world.js';
 import { readBattle } from '../src/world/battleSetup.js';
 import { Battle } from '../src/sim/battle.js';
@@ -140,7 +141,7 @@ const resolve = (scen) => {
   const f2 = sendFleet(w, 0, home, target.id, { [did]: n });
   ok(f2.ok, `attack: ${f2.error}`);
   const income0 = incomeOf(w, 0);
-  runWorld(w, f2.fleet.arrive, resolve);
+  runWorld(w, f2.fleet.arrive + HOLD_MS + 1, resolve);
   const last = w.log.filter((e) => e.kind === 'battle').at(-1);
   ok(last && last.battle, 'a battle was fought and logged');
   console.log(`  battle: ${last.text}`);
@@ -160,7 +161,7 @@ const resolve = (scen) => {
   advanceTo(w, w.clock + YARD_MS * 4);
   const atk = sendFleet(w, 0, src.id, cyHome.id, { [did]: Math.max(1, shipsAt(src, 0)[did]) });
   ok(atk.ok, `attack Cy: ${atk.error}`);
-  runWorld(w, atk.fleet.arrive, resolve);
+  runWorld(w, atk.fleet.arrive + HOLD_MS + 1, resolve);
   ok(cyHome.owner === 0 && cyHome.yards.length === 0, 'undefended enemy world taken, its shipyards destroyed');
   ok(w.players[2].eliminated, 'Cy, with nothing left, is out');
   ok(w.winner && w.winner.includes(0) && w.winner.includes(1), 'Ann and Bo (allies) win');
@@ -183,7 +184,7 @@ const resolve = (scen) => {
   const militia = target.garrison.reduce((s, g) => s + g.n, 0);
   const f = sendFleet(w, 0, home, target.id, { [r.yard.design]: 1 });
   ok(f.ok, 'lone scout sent');
-  runWorld(w, f.fleet.arrive, resolve);
+  runWorld(w, f.fleet.arrive + HOLD_MS + 1, resolve);
   const e = w.log.filter((x) => x.kind === 'battle').at(-1);
   console.log(`  battle: ${e.text}`);
   ok(!e.battle.won && target.owner === null, '1 frigate does not beat the militia');
@@ -217,10 +218,12 @@ const resolve = (scen) => {
   const firstStop = T.pv.stops[0];
   const f = sendFleet(w, 0, home, T.p.id, ships, { avoid: false });
   ok(f.ok && f.fleet.legs.length > 1 && f.fleet.next < f.fleet.arrive, 'fleet has stops on the way');
-  runWorld(w, f.fleet.arrive + 1, resolve);
+  // Each stop with a fight adds a 30-minute hold, so run until the fleet is done.
+  for (let k = 0; k < 40 && w.fleets.some((x) => x.id === f.fleet.id); k++) runWorld(w, w.clock + HOLD_MS, resolve);
   const fights = w.log.filter((e) => e.battle?.passing);
   ok(fights.length >= 1 && fights[0].planet === firstStop, 'stopped and fought at the first hostile world on its route');
-  ok(w.planets[firstStop].owner === null, 'fighting through a world doesn\'t take it');
+  ok(fights[0].t - f.fleet.depart >= HOLD_MS, 'the battle waited 30 minutes after the fleet arrived');
+  if (fights[0].battle.won) ok(w.planets[firstStop].owner === 0, 'winning at a world on the way takes it');
   console.log(`  ${fights[0].text}`);
   // Older saves (fleets without stops) still load and fly straight on.
   const old = JSON.parse(JSON.stringify(w));
@@ -228,6 +231,100 @@ const resolve = (scen) => {
   upgradeWorld(old);
   const of = old.fleets.find((x) => x.id === 9999);
   ok(of.leg === of.legs.length - 1 && of.next === of.arrive, 'old fleets fly straight to their target');
+}
+
+// ---- allies: guests defend, allies attack together, reinforcements join during the hold
+{
+  const w = createWorld({ players: [{ name: 'Ann', team: 'A' }, { name: 'Bo', team: 'A' }, { name: 'Cy' }], seed: 21 });
+  const [ann, bo, cy] = w.players;
+  const dd = { ...makeDesign('destroyer', 8), name: 'Wall' };
+  const ids = [ann, bo, cy].map((p) => { p.credits = 1e8; return buildShipyard(w, p.id, p.home, { ...dd, name: `Wall ${p.name}` }).yard.design; });
+  for (const P of w.planets) for (const y of P.yards) y.next = Infinity; // ship counts set by hand below
+  const boHome = w.planets[bo.home], cyHome = w.planets[cy.home];
+  // A staging world next to each target, so fleets land within minutes of each other.
+  const near = (T) => w.planets.filter((p) => p.id !== T.id && p.home < 0).sort((p, q) => Math.hypot(p.x - T.x, p.y - T.y) - Math.hypot(q.x - T.x, q.y - T.y))[0];
+  const straight = { lanes: false, avoid: true };
+
+  // 1. Ann stations ships at her ally Bo's world. Cy attacks; Bo rushes reinforcements in during the hold.
+  boHome.garrison = [{ owner: bo.id, design: ids[1], n: 4 }, { owner: ann.id, design: ids[0], n: 10 }];
+  const stage = near(boHome);
+  stage.owner = cy.id; stage.garrison = [{ owner: cy.id, design: ids[2], n: 16 }];
+  const relief = near(stage) === boHome ? w.planets.find((p) => p.home < 0 && p.id !== stage.id) : near(stage);
+  const atk = sendFleet(w, cy.id, stage.id, bo.home, { [ids[2]]: 16 }, straight);
+  ok(atk.ok, 'Cy attacks Bo');
+  runWorld(w, atk.fleet.arrive, resolve);
+  ok(w.sieges.length === 1 && w.sieges[0].planet === bo.home, 'arriving starts a siege, not a battle');
+  ok(!w.log.some((e) => e.battle && e.planet === bo.home), 'no battle yet');
+  const siege = w.sieges[0];
+  // Bo's reinforcements, launched so they land 10 minutes before the battle.
+  relief.owner = bo.id; relief.garrison = [{ owner: bo.id, design: ids[1], n: 6 }];
+  const rp = previewFleet(w, relief.id, bo.home, { [ids[1]]: 6 }, { owner: bo.id, ...straight });
+  const launchAt = siege.startsAt - 10 * 60000 - Math.round(rp.hours * HOUR_MS);
+  if (launchAt < w.clock) w.clock = launchAt; // (rewinding is only safe in a test: nothing else is due)
+  else runWorld(w, launchAt, resolve);
+  const rf = sendFleet(w, bo.id, relief.id, bo.home, { [ids[1]]: 6 }, straight);
+  ok(rf.ok && rf.fleet.arrive < siege.startsAt, 'Bo\'s reinforcements will land inside the hold');
+  runWorld(w, siege.startsAt + 1, resolve);
+  const b1 = w.log.filter((e) => e.battle && e.planet === bo.home).at(-1);
+  ok(b1, 'the battle happens after the hold');
+  ok(b1.t - atk.fleet.arrive === HOLD_MS, 'it starts exactly 30 minutes after the attackers arrived');
+  ok(b1.battle.defenders.includes(ann.id) && b1.battle.defenders.includes(bo.id), 'Ann\'s stationed ships fought beside Bo');
+  ok(b1.battle.ships[1] === 4 + 10 + 6, `the reinforcements were in the battle (${b1.battle.ships[1]} defenders: 4 + 10 guests + 6 arrived)`);
+  ok((shipsAt(boHome, ann.id)[ids[0]] || 0) <= 10, 'Ann\'s losses come off her stationed ships');
+  console.log(`  ally defence: ${b1.text}`);
+
+  // 2. Ann and Bo attack Cy together: Bo's fleet lands during Ann's hold and joins her siege.
+  cyHome.garrison = [{ owner: cy.id, design: ids[2], n: 8 }];
+  const st2 = near(cyHome);
+  st2.owner = ann.id; st2.garrison = [{ owner: ann.id, design: ids[0], n: 8 }, { owner: bo.id, design: ids[1], n: 8 }];
+  const a2 = sendFleet(w, ann.id, st2.id, cy.home, { [ids[0]]: 8 }, straight);
+  runWorld(w, w.clock + 10 * 60000, resolve);
+  const b2 = sendFleet(w, bo.id, st2.id, cy.home, { [ids[1]]: 8 }, straight);
+  ok(a2.ok && b2.ok, 'Ann attacks, Bo follows ten minutes later');
+  runWorld(w, b2.fleet.arrive, resolve);
+  const sg = w.sieges.find((s) => s.planet === cy.home);
+  ok(sg && sg.leader === ann.id && sg.fleets.length === 2, 'Bo\'s fleet joined Ann\'s siege instead of starting its own');
+  runWorld(w, sg.startsAt + 1, resolve);
+  const b3 = w.log.filter((e) => e.battle && e.planet === cy.home).at(-1);
+  ok(b3.battle.attackers.includes(ann.id) && b3.battle.attackers.includes(bo.id) && b3.battle.ships[0] === 16, 'Ann and Bo fought on the same side');
+  if (b3.battle.won) ok(allied(w, cyHome.owner, ann.id) && cyHome.garrison.every((s) => s.owner === ann.id || s.owner === bo.id), 'the allies hold the world together');
+  console.log(`  joint attack: ${b3.text}`);
+}
+
+// ---- diplomacy: alliances form and break during the game
+{
+  const w = createWorld({ players: [{ name: 'A' }, { name: 'B' }, { name: 'C' }], seed: 4 });
+  ok(!allied(w, 0, 1), 'no teams: everyone starts as enemies');
+  ok(proposeAlliance(w, 0, 1).ok && proposalsFor(w, 1).length === 1 && !allied(w, 0, 1), 'a proposal waits for an answer');
+  ok(acceptAlliance(w, 1, 0).ok && allied(w, 0, 1) && allied(w, 1, 0), 'accepting makes them allies');
+  ok(!allied(w, 0, 2) && !allied(w, 1, 2), 'alliances are per pair');
+  ok(proposeAlliance(w, 1, 2).ok && proposeAlliance(w, 2, 1).allied, 'proposing back counts as accepting');
+  ok(allied(w, 1, 2) && !allied(w, 0, 2), 'not transitive: A and C are still enemies');
+  // A stations ships at B's world, then B breaks the alliance: they go home.
+  const d = Object.keys(w.designs)[0];
+  w.planets[w.players[1].home].garrison.push({ owner: 0, design: d, n: 3 });
+  ok(breakAlliance(w, 1, 0).ok && !allied(w, 0, 1), 'either side can break an alliance');
+  ok(!shipsAt(w.planets[w.players[1].home], 0)[d], 'guests leave the new enemy\'s world');
+  ok(w.fleets.some((f) => f.owner === 0 && f.retreat), 'and fly home');
+  ok(!breakAlliance(w, 1, 0).ok, 'can\'t break what isn\'t there');
+  // Everyone allied with everyone left = victory.
+  proposeAlliance(w, 0, 1); acceptAlliance(w, 1, 0);
+  proposeAlliance(w, 0, 2); acceptAlliance(w, 2, 0);
+  ok(w.winner === null, 'nobody wins while everyone is still in, even all allied');
+  // A siege dissolves if the two sides make peace during the hold.
+  const w2 = createWorld({ players: [{ name: 'A' }, { name: 'B' }], seed: 5 });
+  w2.players[0].credits = 1e8;
+  const y = buildShipyard(w2, 0, w2.players[0].home, { ...makeDesign('frigate', 3), name: 'F' });
+  advanceTo(w2, w2.clock + YARD_MS * 4 + 1);
+  w2.planets[w2.players[1].home].garrison = [{ owner: 1, design: y.yard.design, n: 1 }];
+  const f = sendFleet(w2, 0, w2.players[0].home, w2.players[1].home, { [y.yard.design]: 4 }, { avoid: true });
+  runWorld(w2, f.fleet.arrive, resolve);
+  ok(w2.sieges.length === 1, 'siege started');
+  proposeAlliance(w2, 1, 0); acceptAlliance(w2, 0, 1);
+  runWorld(w2, w2.clock + HOLD_MS + 1, resolve);
+  ok(!w2.log.some((e) => e.battle), 'peace during the hold: no battle');
+  ok(shipsAt(w2.planets[w2.players[1].home], 0)[y.yard.design] === 4, 'the fleet stays as a guest of its new ally');
+  ok(w2.winner === null, 'nobody wins while nobody has been knocked out');
 }
 
 // ---- fixed defences: a ship with no engines can't leave
