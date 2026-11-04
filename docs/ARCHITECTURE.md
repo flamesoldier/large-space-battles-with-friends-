@@ -234,6 +234,14 @@ where there is a lane, so it finds the fastest mix (fly to a lane, ride it, fly 
 worlds this is trivial. A fleet's position is a pure function of time (`fleetPosition`), like
 everything in the replay viewer, so the map never stores fleet positions.
 
+**Stops.** Fleets stop at every world on their route: each leg records when it ends (`legs[k].at`)
+and the fleet's next event is the end of its current leg (`fleet.next`). At a stop, defenders at a
+world the fleet's side doesn't hold fight it (a battle with `passing: true`); otherwise it flies
+on. The planner can be told to avoid hostile worlds (they're dropped as intermediate nodes in the
+Dijkstra), and because a straight flight between any two worlds always exists, there is always a
+route. Schedules never change after launch, and the clock waits during a battle, so a fleet that
+fights its way through keeps its timetable.
+
 **Map generation.** Spawn points go evenly round a ring at 72% of the radius (fair starts), other
 worlds by dart throwing with a minimum spacing. Lanes are a Euclidean minimum spanning tree (every
 world reachable, no crossings) plus a share of the short neighbour links that cross nothing and

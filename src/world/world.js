@@ -88,7 +88,12 @@ const newId = (world) => world.nextId++;
 
 export function log(world, kind, text, extra = {}) {
   world.log.push({ id: newId(world), t: world.clock, kind, text, ...extra });
-  if (world.log.length > LOG_KEEP) world.log.splice(0, world.log.length - LOG_KEEP);
+  if (world.log.length <= LOG_KEEP) return;
+  // Trim the oldest routine entries first: battles and captures are the combat log, keep them longest.
+  const combat = (e) => e.battle || e.capture;
+  let extraN = world.log.length - LOG_KEEP;
+  world.log = world.log.filter((e) => (extraN > 0 && !combat(e) ? (extraN--, false) : true));
+  if (world.log.length > LOG_KEEP * 2) world.log.splice(0, world.log.length - LOG_KEEP * 2);
 }
 
 /** Same player, or two players on the same (non-empty) team. Militia (null) has no allies. */
@@ -213,10 +218,10 @@ export function advanceTo(world, t) {
   world.clock = t;
 }
 
-/** The first fleet due to arrive at or before t, or null. */
+/** The first fleet due at a world (a stop on its way, or its destination) at or before t, or null. */
 export function dueFleet(world, t) {
   let f = null;
-  for (const x of world.fleets) if (x.arrive <= t && (!f || x.arrive < f.arrive || (x.arrive === f.arrive && x.id < f.id))) f = x;
+  for (const x of world.fleets) if (x.next <= t && (!f || x.next < f.next || (x.next === f.next && x.id < f.id))) f = x;
   return f;
 }
 
@@ -225,7 +230,7 @@ export function runWorld(world, t, resolveBattle) {
   for (;;) {
     const f = dueFleet(world, t);
     if (!f) break;
-    advanceTo(world, f.arrive);
+    advanceTo(world, f.next);
     const plan = arrivalPlan(world, f);
     completeArrival(world, f, plan, plan.kind === 'battle' ? resolveBattle(plan.battle, plan) : null);
   }
@@ -240,20 +245,42 @@ const lanesOf = (world) => { let m = laneCache.get(world); if (!m) laneCache.set
 /** Slowest ship's battle speed in a { designId: n } set. */
 export const fleetSpeed = (world, ships) => Math.min(...Object.keys(ships).filter((d) => ships[d] > 0).map((d) => world.designs[d].speed));
 
-/** Route for a set of ships without sending them: { ok, error?, hours, legs, speed }. */
-export function previewFleet(world, from, to, ships, useLanes = true) {
+/** Worlds a player's fleet would have to fight its way past: anything not held by them or an ally. */
+export function hostileWorlds(world, pid) {
+  const out = new Set();
+  for (const p of world.planets) if (!allied(world, p.owner, pid)) out.add(p.id);
+  return out;
+}
+
+const routeOpts = (o) => (typeof o === 'boolean' ? { lanes: o, avoid: true, owner: undefined } : { lanes: o?.lanes ?? true, avoid: o?.avoid ?? true, owner: o?.owner });
+
+/**
+ * Route for a set of ships without sending them: { ok, error?, hours, legs, speed, stops }.
+ * opts: { owner, lanes = true, avoid = true } — avoid: plan round worlds the owner's side doesn't hold (the fleet
+ * stops at every world on its route, and has to fight any defenders it finds there).
+ * stops: the worlds on the way (not the destination) that aren't yours or an ally's.
+ */
+export function previewFleet(world, from, to, ships, opts = {}) {
+  const { lanes, avoid } = routeOpts(opts);
+  let { owner } = routeOpts(opts);
   const ids = Object.keys(ships).filter((d) => ships[d] > 0);
   if (!ids.length) return { ok: false, error: 'Pick some ships to send.' };
   if (from === to) return { ok: false, error: 'They\'re already there.' };
   const slow = ids.filter((d) => world.designs[d].speed < MIN_FLEET_SPEED);
   if (slow.length) return { ok: false, error: `${world.designs[slow[0]].name} has no engines to speak of and can't leave its world.` };
   const speed = travelSpeed(fleetSpeed(world, ships));
-  const r = planRoute(world.planets, lanesOf(world), from, to, speed, useLanes);
-  return { ok: true, speed, ...r };
+  if (owner === undefined) owner = world.designs[ids[0]].owner;
+  const hostile = hostileWorlds(world, owner);
+  const r = planRoute(world.planets, lanesOf(world), from, to, speed, lanes, avoid ? hostile : null);
+  const stops = r.legs.slice(0, -1).map((l) => l.to).filter((id) => hostile.has(id));
+  return { ok: true, speed, ...r, stops };
 }
 
-/** Send ships from a world's garrison. ships: { designId: n }. Returns { ok, error?, fleet? }. */
-export function sendFleet(world, pid, from, to, ships, useLanes = true) {
+/**
+ * Send ships from a world's garrison. ships: { designId: n }; opts as previewFleet (a boolean is
+ * read as `lanes`). Returns { ok, error?, fleet? }.
+ */
+export function sendFleet(world, pid, from, to, ships, opts = {}) {
   const pl = world.players[pid], P = world.planets[from];
   if (!pl || !P || !world.planets[to]) return { ok: false, error: 'No such world or player.' };
   if (pl.eliminated) return { ok: false, error: `${pl.name} is out of the game.` };
@@ -263,20 +290,41 @@ export function sendFleet(world, pid, from, to, ships, useLanes = true) {
     if (n > (have[d] || 0)) return { ok: false, error: `Only ${have[d] || 0} ${world.designs[d]?.name ?? 'ships'} at ${P.name}.` };
   }
   const clean = Object.fromEntries(Object.entries(ships).filter(([, n]) => n > 0));
-  const plan = previewFleet(world, from, to, clean, useLanes);
+  const plan = previewFleet(world, from, to, clean, { ...routeOpts(opts), owner: pid });
   if (!plan.ok) return plan;
   for (const [d, n] of Object.entries(clean)) P.garrison.find((s) => s.owner === pid && s.design === d).n -= n;
   tidyGarrison(P);
-  const fleet = launch(world, pid, from, to, clean, plan, useLanes, false);
+  const fleet = launch(world, pid, from, to, clean, plan, false);
   const T = world.planets[to];
-  log(world, 'fleet', `${pl.name} sent ${countShips(clean)} ships from ${P.name} to ${T.name}, arriving in ${fmtHours(plan.hours)}.`, { planet: to, players: [pid] });
+  const via = plan.legs.length > 1 ? ` via ${plan.legs.length - 1} world${plan.legs.length > 2 ? 's' : ''}` : '';
+  log(world, 'fleet', `${pl.name} sent ${countShips(clean)} ships from ${P.name} to ${T.name}${via}, arriving in ${fmtHours(plan.hours)}.`, { planet: to, players: [pid] });
   return { ok: true, fleet };
 }
 
-function launch(world, owner, from, to, ships, plan, useLanes, retreat) {
-  const fleet = { id: newId(world), owner, ships, from, to, legs: plan.legs, speed: plan.speed, useLanes, retreat, depart: world.clock, arrive: world.clock + Math.round(plan.hours * HOUR_MS) };
+/**
+ * Fleets move leg by leg: `leg` is the leg in flight and `next` the game time it ends. Each leg
+ * records `at`, the time it ends, so the schedule never drifts.
+ */
+function launch(world, owner, from, to, ships, plan, retreat) {
+  let h = 0;
+  const legs = plan.legs.map((l, k) => { h += l.hours; return { ...l, at: world.clock + Math.round((k === plan.legs.length - 1 ? plan.hours : h) * HOUR_MS) }; });
+  const fleet = { id: newId(world), owner, ships, from, to, legs, leg: 0, next: legs[0].at, speed: plan.speed, retreat, depart: world.clock, arrive: legs[legs.length - 1].at };
   world.fleets.push(fleet);
   return fleet;
+}
+
+/** Bring a saved world up to date with the current rules (older saves had no per-leg stops). */
+export function upgradeWorld(world) {
+  for (const f of world.fleets) {
+    if (f.leg !== undefined) continue;
+    let h = 0;
+    f.legs = f.legs.map((l) => { h += l.hours; return { ...l, at: f.depart + Math.round(h * HOUR_MS) }; });
+    f.legs[f.legs.length - 1].at = f.arrive;
+    f.leg = f.legs.length - 1; // already under way: let it fly straight on as planned
+    f.next = f.arrive;
+  }
+  world.version = 2;
+  return world;
 }
 
 export const countShips = (ships) => Object.values(ships).reduce((s, n) => s + n, 0);
@@ -292,42 +340,53 @@ export function fmtHours(h) {
 // ---------------------------------------------------------------- arrivals
 
 /**
- * What happens when this fleet arrives (doesn't change the world):
+ * What happens when a fleet reaches the next world on its route (doesn't change the world).
+ * At its destination:
  *  { kind: 'join' }      its own or an ally's world: the ships join the garrison
- *  { kind: 'capture' }   an enemy or unclaimed world with nobody armed defending it
- *  { kind: 'battle', battle }   a Battle scenario: { designs, ships, groups, seed, maxTime }
+ *  { kind: 'capture' }   an enemy or unclaimed world with nobody defending it
+ *  { kind: 'battle', battle }   a Battle scenario: { designs, ships, groups, seed, maxTime, ... }
+ * At a world it is passing through:
+ *  { kind: 'pass' }      friendly, or nobody there to stop it: it flies on
+ *  { kind: 'battle', battle } with battle.passing = true: the defenders block its way. If it
+ *                        wins it flies on (it doesn't take the world); if not, it falls back.
  */
 export function arrivalPlan(world, fleet) {
-  const P = world.planets[fleet.to];
-  if (allied(world, fleet.owner, P.owner)) return { kind: 'join' };
+  const L = fleet.legs[fleet.leg], final = fleet.leg >= fleet.legs.length - 1;
+  const P = world.planets[L.to];
+  if (allied(world, fleet.owner, P.owner)) return { kind: final ? 'join' : 'pass' };
   const defenders = P.garrison.filter((s) => s.n > 0 && !allied(world, s.owner, fleet.owner));
-  if (!defenders.length) return { kind: 'capture' };
+  if (!defenders.length) return { kind: final ? 'capture' : 'pass' };
   const groups = [
     ...Object.entries(fleet.ships).map(([design, n]) => ({ side: 0, owner: fleet.owner, design, n })),
     ...defenders.map((s) => ({ side: 1, owner: s.owner, design: s.design, n: s.n })),
   ];
-  const battle = makeBattleScenario(groups, (id) => designOf(world, id), (world.seed * 1000003 + fleet.id) >>> 0);
+  const battle = makeBattleScenario(groups, (id) => designOf(world, id), (world.seed * 1000003 + fleet.id * 131 + fleet.leg) >>> 0);
   battle.maxTime = BATTLE_MAX_TIME;
   battle.planet = P.id;
   battle.attacker = fleet.owner;
   battle.defender = P.owner;
+  battle.passing = !final;
   return { kind: 'battle', battle };
 }
 
 /**
  * Apply an arrival. `result` is readBattle()'s output for a battle, else null.
- * Returns the log entry written.
+ * Returns the log entry written (null when a fleet just passed a world).
  */
 export function completeArrival(world, fleet, plan, result) {
-  const k = world.fleets.indexOf(fleet);
-  if (k >= 0) world.fleets.splice(k, 1);
-  const P = world.planets[fleet.to], me = playerName(world, fleet.owner);
-  let entry;
+  const L = fleet.legs[fleet.leg], final = fleet.leg >= fleet.legs.length - 1;
+  const P = world.planets[L.to], me = playerName(world, fleet.owner);
+  const drop = () => { const k = world.fleets.indexOf(fleet); if (k >= 0) world.fleets.splice(k, 1); };
+  const flyOn = () => { fleet.leg++; fleet.next = fleet.legs[fleet.leg].at; };
+  let entry = null;
+  if (plan.kind === 'pass') { flyOn(); return null; }
   if (plan.kind === 'join') {
+    drop();
     for (const [d, n] of Object.entries(fleet.ships)) addShips(P, fleet.owner, d, n);
     log(world, 'arrive', `${countShips(fleet.ships)} of ${me}'s ships ${fleet.retreat ? 'fell back to' : 'arrived at'} ${P.name}.`, { planet: P.id, players: [fleet.owner] });
   } else if (plan.kind === 'capture') {
-    capture(world, P, fleet.owner, fleet.ships, null);
+    drop();
+    entry = capture(world, P, fleet.owner, fleet.ships, null);
   } else {
     const before = { att: fleetValue(world, fleet.ships), def: 0 }, lost = { att: 0, def: 0 };
     const survivors = {};
@@ -342,28 +401,39 @@ export function completeArrival(world, fleet, plan, result) {
     }
     tidyGarrison(P);
     const att = Object.fromEntries(Object.entries(survivors).filter(([, n]) => n > 0));
+    const passing = !final;
     const battleInfo = {
       battle: {
-        id: `b${fleet.id}`, attacker: fleet.owner, defender: P.owner, defenders: [...defenderIds], won: result.attackerWon, seconds: result.seconds,
+        id: `b${newId(world)}`, attacker: fleet.owner, defender: P.owner, defenders: [...defenderIds], won: result.attackerWon, seconds: result.seconds,
+        passing, captured: result.attackerWon && !passing, target: fleet.to,
         ships: [countShips(fleet.ships), result.groups.filter((g) => g.side === 1).reduce((s, g) => s + g.n, 0)],
         survived: [result.groups.filter((g) => g.side === 0).reduce((s, g) => s + g.survived, 0), result.groups.filter((g) => g.side === 1).reduce((s, g) => s + g.survived, 0)],
         value: [before.att, before.def], lost: [lost.att, lost.def],
       },
     };
     const who = [fleet.owner, ...defenderIds];
-    if (result.attackerWon) {
+    const held = P.owner === null ? '' : ` (${playerName(world, P.owner)})`;
+    if (result.attackerWon && passing) {
+      fleet.ships = att;
+      flyOn();
+      log(world, 'battle', `${me}'s fleet was stopped at ${P.name}${held} on its way to ${world.planets[fleet.to].name}, won, and flies on with ${countShips(att)} ships.`, { planet: P.id, players: who, ...battleInfo });
+      entry = world.log[world.log.length - 1];
+    } else if (result.attackerWon) {
+      drop();
       entry = capture(world, P, fleet.owner, att, battleInfo);
     } else {
-      const backTo = retreatTarget(world, fleet);
+      drop();
+      const backTo = retreatTarget(world, fleet, P);
       const n = countShips(att);
       let tail;
       if (n && backTo !== null) {
-        const plan2 = previewFleet(world, P.id, backTo, att, true);
-        if (plan2.ok) { launch(world, fleet.owner, P.id, backTo, att, plan2, true, true); tail = ` ${n} surviving ships fall back to ${world.planets[backTo].name}.`; }
+        const plan2 = previewFleet(world, P.id, backTo, att, { owner: fleet.owner, lanes: true, avoid: true });
+        if (plan2.ok) { launch(world, fleet.owner, P.id, backTo, att, plan2, true); tail = ` ${n} surviving ships fall back to ${world.planets[backTo].name}.`; }
         else tail = ` ${n} surviving ships can't get away and are lost.`;
       } else if (n) tail = ` ${n} surviving ships have nowhere to go and are lost.`;
       else tail = ' None of the attackers survived.';
-      log(world, 'battle', `${me} attacked ${P.name}${P.owner === null ? '' : ` (${playerName(world, P.owner)})`} and was beaten off.${tail}`, { planet: P.id, players: who, ...battleInfo });
+      const what = passing ? `'s fleet was ambushed at ${P.name}${held} on its way to ${world.planets[fleet.to].name} and beaten.` : ` attacked ${P.name}${held} and was beaten off.`;
+      log(world, 'battle', `${me}${what}${tail}`, { planet: P.id, players: who, ...battleInfo });
       entry = world.log[world.log.length - 1];
     }
   }
@@ -383,15 +453,14 @@ function capture(world, P, owner, ships, battleInfo) {
   const from = old === null ? '' : ` from ${playerName(world, old)}`;
   const how = battleInfo ? 'won the battle for' : 'took';
   const ruin = yards ? ` ${yards} shipyard${yards > 1 ? 's' : ''} destroyed.` : '';
-  log(world, battleInfo ? 'battle' : 'capture', `${me} ${how} ${P.name}${from}.${ruin} +${P.income.toLocaleString()} cr/h.`, { planet: P.id, players: old === null ? [owner] : [owner, old], ...(battleInfo || {}) });
+  log(world, battleInfo ? 'battle' : 'capture', `${me} ${how} ${P.name}${from}.${ruin} +${P.income.toLocaleString()} cr/h.`, { planet: P.id, players: old === null ? [owner] : [owner, old], capture: { by: owner, from: old, yards }, ...(battleInfo || {}) });
   return world.log[world.log.length - 1];
 }
 
 /** Where beaten attackers go: where they came from if it's still friendly, else the nearest friendly world. */
-function retreatTarget(world, fleet) {
+function retreatTarget(world, fleet, here) {
   const from = world.planets[fleet.from];
-  if (from && allied(world, from.owner, fleet.owner)) return from.id;
-  const here = world.planets[fleet.to];
+  if (from && from.id !== here.id && allied(world, from.owner, fleet.owner)) return from.id;
   let best = null, bd = Infinity;
   for (const p of world.planets) {
     if (p.id === here.id || !allied(world, p.owner, fleet.owner)) continue;

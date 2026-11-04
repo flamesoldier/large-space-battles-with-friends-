@@ -23,9 +23,12 @@ export function laneMap(lanes) {
 /**
  * Fastest route from planet `from` to planet `to` at `speed` units per hour.
  * useLanes = false gives the straight normal-space flight.
+ * blocked: optional Set of planet ids the route may not pass through (they can still be `to`).
+ * Fleets stop at every world on their route, so the planner can steer round hostile ones; a
+ * straight flight always exists, so there is always a route.
  * Returns { hours, legs: [{ from, to, lane, hours }] }.
  */
-export function planRoute(planets, lanes, from, to, speed, useLanes = true) {
+export function planRoute(planets, lanes, from, to, speed, useLanes = true, blocked = null) {
   const d = (a, b) => Math.hypot(planets[a].x - planets[b].x, planets[a].y - planets[b].y);
   if (from === to) return { hours: 0, legs: [] };
   const adj = lanes instanceof Map ? lanes : laneMap(lanes);
@@ -40,6 +43,7 @@ export function planRoute(planets, lanes, from, to, speed, useLanes = true) {
     for (let i = 0; i < n; i++) if (!done[i] && best[i] < Infinity && (u < 0 || best[i] < best[u])) u = i;
     if (u < 0 || u === to) break;
     done[u] = 1;
+    if (blocked && u !== from && blocked.has(u)) continue; // can't fly on from here
     const lanesU = adj.get(u);
     for (let v = 0; v < n; v++) {
       if (done[v] || v === u) continue;

@@ -6,7 +6,7 @@ import { generateGalaxy } from '../src/world/galaxyGen.js';
 import { planRoute, fleetPosition, laneMap } from '../src/world/routes.js';
 import {
   createWorld, advanceTo, runWorld, buildShipyard, sellShipyard, quoteShipyard, sendFleet, previewFleet,
-  shipsAt, incomeOf, allied, YARD_MS, designOf,
+  shipsAt, incomeOf, allied, YARD_MS, designOf, upgradeWorld,
 } from '../src/world/world.js';
 import { readBattle } from '../src/world/battleSetup.js';
 import { Battle } from '../src/sim/battle.js';
@@ -190,6 +190,44 @@ const resolve = (scen) => {
   ok(target.garrison.reduce((s, g) => s + g.n, 0) <= militia, 'defender losses are applied');
   const back = w.fleets.find((x) => x.retreat);
   if (back) { runWorld(w, back.arrive, resolve); ok(shipsAt(P, 0)[r.yard.design] >= 1, 'survivors make it home'); }
+}
+
+// ---- fleets stop at every world on their way: defenders there can block or ambush them
+{
+  const w = createWorld({ players: [{ name: 'A' }, { name: 'B' }], seed: 11, planetsPerPlayer: 8 });
+  const home = w.players[0].home, P = w.planets[home];
+  w.players[0].credits = 1e8;
+  const yard = buildShipyard(w, 0, home, { ...makeDesign('cruiser', 5), name: 'Line' });
+  advanceTo(w, w.clock + YARD_MS * 60 + 1);
+  const did = yard.yard.design, ships = { [did]: 10 };
+  // Avoiding hostile worlds: the planner never routes through one.
+  let detours = 0, tried = 0;
+  for (const T of w.planets) {
+    if (T.id === home) continue;
+    const safe = previewFleet(w, home, T.id, ships, { owner: 0, avoid: true });
+    const fast = previewFleet(w, home, T.id, ships, { owner: 0, avoid: false });
+    ok(safe.ok && safe.stops.length === 0, 'avoiding: no hostile stops');
+    ok(safe.hours >= fast.hours - 1e-9, 'avoiding can only take longer');
+    tried++; if (fast.stops.length) detours++;
+  }
+  ok(detours > 0, `some fast routes run through hostile worlds (${detours}/${tried})`);
+  // Send a fleet the fast way through militia worlds: it must fight at the first one.
+  const T = w.planets.filter((p) => p.id !== home).map((p) => ({ p, pv: previewFleet(w, home, p.id, ships, { owner: 0, avoid: false }) }))
+    .filter((x) => x.pv.stops.length).sort((a, b) => a.pv.hours - b.pv.hours)[0];
+  const firstStop = T.pv.stops[0];
+  const f = sendFleet(w, 0, home, T.p.id, ships, { avoid: false });
+  ok(f.ok && f.fleet.legs.length > 1 && f.fleet.next < f.fleet.arrive, 'fleet has stops on the way');
+  runWorld(w, f.fleet.arrive + 1, resolve);
+  const fights = w.log.filter((e) => e.battle?.passing);
+  ok(fights.length >= 1 && fights[0].planet === firstStop, 'stopped and fought at the first hostile world on its route');
+  ok(w.planets[firstStop].owner === null, 'fighting through a world doesn\'t take it');
+  console.log(`  ${fights[0].text}`);
+  // Older saves (fleets without stops) still load and fly straight on.
+  const old = JSON.parse(JSON.stringify(w));
+  old.fleets.push({ id: 9999, owner: 0, ships: { [did]: 1 }, from: home, to: T.p.id, legs: T.pv.legs.map(({ from, to, lane, hours }) => ({ from, to, lane, hours })), speed: T.pv.speed, depart: old.clock, arrive: old.clock + Math.round(T.pv.hours * HOUR_MS) });
+  upgradeWorld(old);
+  const of = old.fleets.find((x) => x.id === 9999);
+  ok(of.leg === of.legs.length - 1 && of.next === of.arrive, 'old fleets fly straight to their target');
 }
 
 // ---- fixed defences: a ship with no engines can't leave

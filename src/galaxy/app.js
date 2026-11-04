@@ -15,11 +15,12 @@ import { mulberry32 } from '../shared/rng.js';
 import {
   createWorld, advanceTo, dueFleet, arrivalPlan, completeArrival, buildShipyard, sellShipyard, quoteShipyard,
   sendFleet, previewFleet, shipsAt, incomeOf, allied, playerName, designOf, fleetValue, countShips, fmtHours,
-  sellValue, yardListValue, YARD_MS,
+  sellValue, yardListValue, YARD_MS, upgradeWorld,
 } from '../world/world.js';
 import { readBattle } from '../world/battleSetup.js';
 import { fleetPosition } from '../world/routes.js';
 import { PlanetSprites, planetLook } from './planetArt.js';
+import { ReplayStore } from './replayStore.js';
 import { HOUR_MS, PLAYER_COLORS, NEUTRAL_COLOR, MIN_PLAYERS, MAX_PLAYERS, HYPERLANE_SPEEDUP, MIN_FLEET_SPEED } from '../world/rules.js';
 
 const $ = (id) => document.getElementById(id);
@@ -41,12 +42,12 @@ const store = {
 const WORLD_KEY = 'lsb.world.v1', UI_KEY = 'lsb.galaxy.ui.v1', LIB_KEY = 'lsb.designs.v1';
 
 let world = null;
-let ui = { me: 0, speed: 60, saved: Date.now(), mine: false };
+let ui = { me: 0, speed: 60, saved: Date.now(), mine: false, evOpen: innerWidth > 640, seen: {} };
 let sel = null; // { kind: 'planet' | 'fleet', id }
 let move = null; // { from, ships: { designId: n }, to, lanes, picking }
 let busy = false; // a battle is being resolved
 let gameTarget = 0; // game time we're catching up to
-const replays = new Map(); // battle id → { bytes, sides, computeMs }
+const replays = new ReplayStore(); // battle id → { bytes, sides, title, computeMs }, kept in IndexedDB
 
 function save() {
   if (!world) return;
@@ -187,6 +188,11 @@ function draw(now) {
   }
   if (move && move.to !== null && move.preview?.ok) {
     drawRoute(move.preview.legs, null, 'rgba(230,238,255,0.95)', 2.2);
+    for (const id of move.preview.stops) {
+      const S = world.planets[id], [sx, sy] = toScreen(S.x, S.y), rr = outerR(Math.max(3.5, planetR(S) * z)) + 7;
+      g.strokeStyle = '#ffcf5c'; g.lineWidth = 2; g.setLineDash([4, 3]);
+      g.beginPath(); g.arc(sx, sy, rr, 0, Math.PI * 2); g.stroke(); g.setLineDash([]);
+    }
     const T = world.planets[move.to], [x, y] = toScreen(T.x, T.y);
     g.font = '600 12px "JetBrains Mono", monospace'; g.textAlign = 'center';
     label(`ETA ${fmtHours(move.preview.hours)}`, x, y - outerR(planetR(T) * z) - 22, '#e6eeff');
@@ -430,7 +436,7 @@ function renderPanel(force = false) {
 }
 // What the panel shows, coarsely: rebuild only when it changes (timers update in place).
 function panelSignature() {
-  const s = [ui.me, sel?.kind, sel?.id, move ? `${move.from}>${move.to}:${move.picking}:${move.lanes}:${JSON.stringify(move.ships)}` : '', busy];
+  const s = [ui.me, sel?.kind, sel?.id, move ? `${move.from}>${move.to}:${move.picking}:${move.lanes}:${move.avoid}:${JSON.stringify(move.ships)}` : '', busy];
   if (sel?.kind === 'planet') {
     const P = world.planets[sel.id];
     s.push(P.owner, JSON.stringify(P.garrison), P.yards.map((y) => y.id).join(), Math.floor(me().credits / 500));
@@ -498,6 +504,7 @@ function movePanel(P, myShips) {
   }
   html += `</tbody></table><div class="row"><button class="small" data-act="all">All</button><button class="small" data-act="none">None</button></div>`;
   html += `<label class="check"><input type="checkbox" data-act="lanes" ${move.lanes ? 'checked' : ''}> Use hyperlanes (${HYPERLANE_SPEEDUP}× faster)</label>`;
+  html += `<label class="check" title="Fleets stop at every world on their route, and defenders at worlds you don't hold will fight them"><input type="checkbox" data-act="avoid" ${move.avoid ? 'checked' : ''}> Avoid worlds you don't hold</label>`;
   if (move.to === null) {
     html += `<div class="route">${move.picking ? '<b>Click a world on the map</b> to send them there. Esc cancels.' : 'Pick where to send them.'}${move.preview && !move.preview.ok ? `<br><span style="color:var(--bad)">${esc(move.preview.error)}</span>` : ''}</div>`;
     html += `<div class="row"><button data-act="cancel-move">Cancel</button><button class="go" data-act="pick" ${move.picking ? 'disabled' : ''}>Choose destination</button></div>`;
@@ -508,6 +515,12 @@ function movePanel(P, myShips) {
     if (pv?.ok) {
       const laneLegs = pv.legs.filter((l) => l.lane).length, spaceLegs = pv.legs.length - laneLegs;
       html += `<span class="eta">${fmtHours(pv.hours)}</span><br>${laneLegs ? `${laneLegs} hyperlane jump${laneLegs > 1 ? 's' : ''}` : 'No hyperlanes'}${spaceLegs ? `${laneLegs ? ' + ' : ', '}${spaceLegs} leg${spaceLegs > 1 ? 's' : ''} through normal space` : ''} · speed ${pv.speed.toFixed(1)} · arrives ${clockText(world.clock + pv.hours * HOUR_MS)}`;
+      const via = pv.legs.slice(0, -1).map((l) => l.to);
+      if (via.length) html += `<br>Stops at ${via.map((id) => esc(world.planets[id].name)).join(', ')} on the way.`;
+      if (pv.stops.length) {
+        const list = pv.stops.map((id) => { const S = world.planets[id], n = shipTotal(S); return `${esc(S.name)} (${esc(playerName(world, S.owner))}${n ? `, ${n} ships` : ''})`; }).join(', ');
+        html += `<br><span style="color:var(--warn)">Passes worlds you don't hold: ${list}. Any defenders there will fight this fleet; if it loses, the survivors turn back.</span>`;
+      }
     } else html += `<span style="color:var(--bad)">${esc(pv?.error || '')}</span>`;
     html += `</div><div class="row"><button data-act="cancel-move">Cancel</button><button data-act="pick">Change</button><button class="go" data-act="launch" ${pv?.ok && !busy ? '' : 'disabled'}>Launch</button></div>`;
   }
@@ -523,13 +536,15 @@ function fleetPanel(f) {
     <dl class="kv">
       <dt>From</dt><dd>${esc(F.name)}</dd>
       <dt>To</dt><dd>${esc(T.name)}</dd>
+      <dt>Next stop</dt><dd>${esc(world.planets[f.legs[f.leg].to].name)}, <span data-arrive="${f.next}"></span></dd>
       <dt>Arrives in</dt><dd data-arrive="${f.arrive}"></dd>
       <dt>Route</dt><dd>${lanes} lane / ${f.legs.length - lanes} space</dd>
       <dt>Speed</dt><dd>${f.speed.toFixed(1)}</dd>
       <dt>Value</dt><dd>${fmt(fleetValue(world, f.ships))} cr</dd>
     </dl>
     <h2>Ships</h2><table><tbody>${rows}</tbody></table>
-    <p class="hint">Fleets can't be recalled once launched. They don't stop at the worlds they pass.</p>
+    ${f.legs.length > 1 ? `<p class="hint">Route: ${[f.from, ...f.legs.map((l) => l.to)].map((id, k) => { const N = esc(world.planets[id].name); return k === f.leg + 1 ? `<b>${N}</b>` : N; }).join(' → ')}</p>` : ''}
+    <p class="hint">Fleets stop at every world on their route. Defenders at a world this player doesn't hold will fight it there. Fleets can't be recalled once launched.</p>
     <div class="row"><button data-act="goto" data-planet="${T.id}">Show destination</button></div>`;
 }
 
@@ -576,6 +591,7 @@ $('panel').addEventListener('click', (e) => {
 });
 $('panel').addEventListener('change', (e) => {
   if (e.target.dataset.act === 'lanes') { move.lanes = e.target.checked; refreshPreview(); renderPanel(true); }
+  if (e.target.dataset.act === 'avoid') { move.avoid = e.target.checked; refreshPreview(); renderPanel(true); }
 });
 $('panel').addEventListener('input', (e) => {
   const d = e.target.dataset.ship;
@@ -601,7 +617,7 @@ function startMove(from) {
   const have = shipsAt(world.planets[from], ui.me);
   const ships = {};
   for (const [d, n] of Object.entries(have)) ships[d] = world.designs[d].speed >= MIN_FLEET_SPEED ? n : 0;
-  move = { from, ships, to: null, lanes: true, picking: true, preview: null, hoverTo: null };
+  move = { from, ships, to: null, lanes: true, avoid: true, picking: true, preview: null, hoverTo: null };
   renderPanel(true);
   toast('Click a world to send the fleet there.');
 }
@@ -609,7 +625,7 @@ function cancelMove() { move = null; renderPanel(true); }
 function refreshPreview() {
   if (!move) return;
   const to = move.to;
-  move.preview = to === null ? (Object.values(move.ships).some((n) => n > 0) ? null : { ok: false, error: 'Pick some ships to send.' }) : previewFleet(world, move.from, to, move.ships, move.lanes);
+  move.preview = to === null ? (Object.values(move.ships).some((n) => n > 0) ? null : { ok: false, error: 'Pick some ships to send.' }) : previewFleet(world, move.from, to, move.ships, { owner: ui.me, lanes: move.lanes, avoid: move.avoid });
 }
 function setMoveTarget(to, commit) {
   if (!move) return;
@@ -620,7 +636,7 @@ function setMoveTarget(to, commit) {
 }
 function launchMove() {
   if (busy || !move) return;
-  const r = sendFleet(world, ui.me, move.from, move.to, move.ships, move.lanes);
+  const r = sendFleet(world, ui.me, move.from, move.to, move.ships, { lanes: move.lanes, avoid: move.avoid });
   if (!r.ok) return toast(r.error, true);
   toast(`Fleet launched: arrives at ${world.planets[move.to].name} in ${fmtHours((r.fleet.arrive - world.clock) / HOUR_MS)}.`);
   move = null;
@@ -743,9 +759,9 @@ addEventListener('message', (e) => {
 });
 
 // ------------------------------------------------------------ replays
-function watch(id) {
-  const rep = replays.get(id);
-  if (!rep) return toast('That replay isn\'t in memory any more (replays are kept until the page is closed).', true);
+async function watch(id) {
+  const rep = await replays.get(id);
+  if (!rep) return toast('That replay isn\'t saved any more: this browser keeps the last 80 battles.', true);
   if (!VIEWER_PAGE) return toast('This build has no replay viewer. Run npm run build.', true);
   const frame = $('replay-frame');
   const send = (e) => {
@@ -755,10 +771,17 @@ function watch(id) {
     frame.contentWindow.postMessage({ type: 'lsb-replay', bytes: copy.buffer, computeMs: rep.computeMs, sides: rep.sides, title: rep.title }, '*', [copy.buffer]);
   };
   addEventListener('message', send);
+  // Dialogs sit above everything, so step out of the combat log while the replay plays.
+  backToCombat = $('combat').open;
+  if (backToCombat) $('combat').close();
   $('replay-overlay').hidden = false;
   frame.srcdoc = pageDoc(VIEWER_PAGE);
 }
-$('replay-close').addEventListener('click', () => { $('replay-overlay').hidden = true; $('replay-frame').srcdoc = ''; });
+let backToCombat = false;
+$('replay-close').addEventListener('click', () => {
+  $('replay-overlay').hidden = true; $('replay-frame').srcdoc = '';
+  if (backToCombat) { backToCombat = false; renderCombat(); $('combat').showModal(); }
+});
 
 // ------------------------------------------------------------ events list
 function renderEvents() {
@@ -777,6 +800,80 @@ $('events').addEventListener('click', (e) => {
   if (li) { const P = world.planets[Number(li.dataset.planet)]; cam.x = P.x; cam.y = P.y; select({ kind: 'planet', id: P.id }); }
 });
 $('ev-mine').addEventListener('click', () => { ui.mine = !ui.mine; $('ev-mine').setAttribute('aria-pressed', String(ui.mine)); renderEvents(); store.set(UI_KEY, ui); });
+function syncEventsWin() {
+  $('events-win').classList.toggle('closed', !ui.evOpen);
+  $('ev-toggle').textContent = ui.evOpen ? 'Hide' : 'Show';
+  $('ev-toggle').setAttribute('aria-expanded', String(!!ui.evOpen));
+}
+$('ev-toggle').addEventListener('click', () => { ui.evOpen = !ui.evOpen; syncEventsWin(); store.set(UI_KEY, ui); });
+
+// ------------------------------------------------------------ combat log
+// Every battle and every world that changed hands, from the chosen player's point of view, with
+// the replay where this browser still has it.
+const isCombat = (e) => !!(e.battle || e.capture);
+function involves(e, pid) {
+  if (e.battle) return allied(world, e.battle.attacker, pid) || allied(world, e.battle.defender, pid) || (e.battle.defenders || []).some((d) => allied(world, d, pid));
+  if (e.capture) return allied(world, e.capture.by, pid) || allied(world, e.capture.from, pid);
+  return false;
+}
+/** [tone, label] for a combat entry, seen by player pid. tone: 'good' | 'bad' | ''. */
+function verdict(e, pid) {
+  if (e.battle) {
+    const B = e.battle, captured = B.captured ?? (B.won && !B.passing);
+    const att = allied(world, B.attacker, pid), def = allied(world, B.defender, pid) || (B.defenders || []).some((d) => allied(world, d, pid));
+    if (att) return B.won ? ['good', captured ? 'World taken' : 'Broke through'] : ['bad', B.passing ? 'Ambushed' : 'Repelled'];
+    if (def) return B.won ? ['bad', captured ? (B.defender === pid ? 'World lost' : 'Ally lost a world') : 'Fleet got past'] : ['good', B.passing ? 'Blocked a fleet' : 'Defended'];
+    return ['', captured ? 'World taken' : B.passing ? 'Ambush' : 'Battle'];
+  }
+  if (allied(world, e.capture.by, pid)) return ['good', 'World taken'];
+  if (allied(world, e.capture.from, pid)) return ['bad', e.capture.from === pid ? 'World lost' : 'Ally lost a world'];
+  return ['', 'World taken'];
+}
+let combatFilter = 'mine';
+function unreadCombat() {
+  const seen = ui.seen?.[ui.me] ?? 0;
+  return world.log.filter((e) => e.id > seen && isCombat(e) && involves(e, ui.me) && !(e.capture && !e.battle && allied(world, e.capture.by, ui.me))).length;
+}
+function syncCombatBadge() {
+  const n = unreadCombat(), b = $('combat-badge');
+  b.hidden = !n; b.textContent = n > 99 ? '99+' : String(n);
+  $('combat-btn').title = n ? `${n} new since you last looked` : 'Every battle and captured world, with replays';
+}
+function renderCombat() {
+  const seen = ui.seen?.[ui.me] ?? 0;
+  const items = world.log.filter((e) => isCombat(e) && (combatFilter === 'all' || involves(e, ui.me))).reverse();
+  document.querySelectorAll('[data-cfilter]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.cfilter === combatFilter)));
+  $('combat-list').innerHTML = items.map((e) => {
+    const [tone, label] = verdict(e, ui.me), P = world.planets[e.planet];
+    let nums = '';
+    if (e.battle) {
+      const B = e.battle, side = (k) => `${fmt(B.ships[k])} ships, ${fmt(B.ships[k] - B.survived[k])} lost (${fmt(B.lost[k])} cr)`;
+      nums = `${esc(playerName(world, B.attacker))}: ${side(0)} · ${B.defender === null ? 'Militia' : esc(playerName(world, B.defender))}${(B.defenders || []).length > 1 ? ' and allies' : ''}: ${side(1)} · ${B.seconds} s`;
+    } else if (e.capture?.yards) nums = `${e.capture.yards} shipyard${e.capture.yards > 1 ? 's' : ''} destroyed`;
+    const can = e.battle && replays.has(e.battle.id);
+    return `<div class="fight ${tone}${e.id > seen && involves(e, ui.me) ? ' new' : ''}">
+      <div class="fhead"><span class="res">${label}</span><span class="where">${esc(P?.name ?? '')}</span><time>${clockText(e.t)}</time></div>
+      <p>${esc(e.text)}</p>${nums ? `<div class="nums">${nums}</div>` : ''}
+      <div class="acts">${e.battle ? `<button class="small ${can ? 'go' : ''}" data-watch="${e.battle.id}" ${can ? '' : 'disabled title="This replay is no longer saved in this browser"'}>Watch</button>` : ''}<button class="small" data-planet="${e.planet}">Map</button></div>
+    </div>`;
+  }).join('') || `<p class="empty">${combatFilter === 'mine' ? 'No battles involving you yet. Battles, and worlds you take or lose, show up here.' : 'No battles yet.'}</p>`;
+}
+function openCombat() {
+  renderCombat();
+  ui.seen = { ...(ui.seen || {}), [ui.me]: world.log.length ? world.log[world.log.length - 1].id : 0 };
+  store.set(UI_KEY, ui);
+  syncCombatBadge();
+  if (!$('combat').open) $('combat').showModal();
+}
+$('combat-btn').addEventListener('click', openCombat);
+$('combat-close').addEventListener('click', () => $('combat').close());
+document.querySelectorAll('[data-cfilter]').forEach((b) => b.addEventListener('click', () => { combatFilter = b.dataset.cfilter; renderCombat(); }));
+$('combat-list').addEventListener('click', (e) => {
+  const w = e.target.closest('[data-watch]');
+  if (w && !w.disabled) return watch(w.dataset.watch);
+  const m = e.target.closest('[data-planet]');
+  if (m) { $('combat').close(); const P = world.planets[Number(m.dataset.planet)]; cam.x = P.x; cam.y = P.y; cam.zoom = Math.max(cam.zoom, 1.6); select({ kind: 'planet', id: P.id }); }
+});
 
 // ------------------------------------------------------------ top bar
 function setupTop() {
@@ -800,7 +897,7 @@ function syncSpeed() { document.querySelectorAll('[data-speed]').forEach((b) => 
 $('me').addEventListener('change', () => {
   ui.me = Number($('me').value); move = null; sel = null;
   store.set(UI_KEY, ui);
-  renderPanel(true); renderEvents(); updateTop();
+  renderPanel(true); renderEvents(); updateTop(); syncCombatBadge();
   const H = world.planets[me().home];
   if (H && H.owner === ui.me) { cam.x = H.x; cam.y = H.y; }
 });
@@ -858,7 +955,7 @@ $('ng-start').addEventListener('click', () => {
   const planets = Math.max(3, Math.min(14, Number($('ng-planets').value) || 7));
   world = createWorld({ players, seed: Math.max(1, Number($('ng-seed').value) || 1), planetsPerPlayer: planets });
   gameTarget = world.clock;
-  ui.me = 0; sel = null; move = null; replays.clear();
+  ui.me = 0; ui.seen = {}; sel = null; move = null; replays.clear();
   $('newgame').close();
   start();
   save();
@@ -874,11 +971,10 @@ async function pump(now) {
   for (let guard = 0; guard < 200; guard++) {
     const f = dueFleet(world, gameTarget);
     if (!f) break;
-    advanceTo(world, f.arrive);
+    advanceTo(world, f.next);
     const plan = arrivalPlan(world, f);
     if (plan.kind === 'battle') { await fight(f, plan); return; }
-    completeArrival(world, f, plan, null);
-    afterEvent();
+    if (completeArrival(world, f, plan, null)) afterEvent(); // null: it just flew past a world
   }
   advanceTo(world, gameTarget);
 }
@@ -889,7 +985,9 @@ async function fight(fleet, plan) {
   const B = plan.battle, P = world.planets[B.planet];
   const sides = [playerName(world, B.attacker), P.owner === null ? `${P.name} militia` : playerName(world, B.defender)];
   $('fight').hidden = false;
-  $('fight-title').innerHTML = `Battle at <b>${esc(P.name)}</b>: ${who(B.attacker)} attacks ${who(B.defender)}`;
+  $('fight-title').innerHTML = B.passing
+    ? `Ambush at <b>${esc(P.name)}</b>: ${who(B.defender)} blocks ${who(B.attacker)}'s fleet`
+    : `Battle at <b>${esc(P.name)}</b>: ${who(B.attacker)} attacks ${who(B.defender)}`;
   const b = new Battle({ designs: B.designs, ships: B.ships, seed: B.seed, maxTime: B.maxTime });
   const t0 = performance.now();
   while (!b.done) {
@@ -903,10 +1001,7 @@ async function fight(fleet, plan) {
   const result = readBattle(b, B);
   const rep = b.toReplay();
   const entry = completeArrival(world, fleet, plan, result);
-  if (entry?.battle) {
-    replays.set(entry.battle.id, { bytes: packReplay(rep.meta, rep.cols), computeMs, sides, title: `Battle of ${P.name}` });
-    while (replays.size > 16) replays.delete(replays.keys().next().value);
-  }
+  if (entry?.battle) await replays.put({ id: entry.battle.id, t: entry.t, bytes: packReplay(rep.meta, rep.cols), computeMs, sides, title: `${B.passing ? 'Ambush' : 'Battle'} of ${P.name}` });
   $('fight').hidden = true;
   busy = false;
   lastReal = performance.now(); // the clock stood still while the battle ran
@@ -918,7 +1013,8 @@ function afterEvent() {
   if (move && !Object.keys(shipsAt(world.planets[move.from], ui.me)).length) move = null;
   if (sel?.kind === 'fleet' && !world.fleets.some((f) => f.id === sel.id)) sel = null;
   setupTopIfNeeded();
-  renderEvents(); renderPanel(); updateTop();
+  renderEvents(); renderPanel(); updateTop(); syncCombatBadge();
+  if ($('combat').open) renderCombat();
   save();
 }
 let knownOut = '';
@@ -943,7 +1039,7 @@ function start() {
   resize(); fit();
   const H = world.planets[me().home];
   if (H) { cam.x = H.x * 0.5; cam.y = H.y * 0.5; }
-  renderPanel(true); renderEvents(); updateTop();
+  renderPanel(true); renderEvents(); updateTop(); syncCombatBadge(); syncEventsWin();
   $('ev-mine').setAttribute('aria-pressed', String(!!ui.mine));
 }
 
@@ -956,7 +1052,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) save(
 ui = { ...ui, ...store.get(UI_KEY, {}) };
 const saved = store.get(WORLD_KEY, null);
 if (saved?.format === 'lsb-world') {
-  world = saved;
+  world = upgradeWorld(saved);
   const away = Math.max(0, Date.now() - (ui.saved || Date.now()));
   gameTarget = world.clock + away;
   start();
@@ -966,6 +1062,8 @@ if (saved?.format === 'lsb-world') {
   openNewGame();
 }
 requestAnimationFrame((now) => { resize(); if (world) fit(); lastReal = now; loop(now); });
+// Which replays this browser still has (for the Watch buttons).
+replays.init().then(() => { if (world) { renderEvents(); if ($('combat').open) renderCombat(); } });
 
 // Small hook for debugging and automated checks.
-window.galaxy = { get world() { return world; }, get ui() { return ui; }, cam, fit, select, replays };
+window.galaxy = { get world() { return world; }, get ui() { return ui; }, cam, fit, select, replays, preview: (from, to, ships, o = {}) => previewFleet(world, from, to, ships, { owner: ui.me, avoid: false, ...o }) };

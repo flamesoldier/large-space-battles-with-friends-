@@ -183,14 +183,29 @@ economy, fleets, captures, with real battles).
 - `src/galaxy/`: the page. For now it is a **hot-seat game** saved in localStorage: a "Playing
   as" selector picks the player (online it will be the login). Speed buttons (pause, 1×, 60×,
   600×, 3,600×; 60× by default) are for testing; time with the page closed counts at 1×, like a
-  server. The clock stops while a battle is resolved (in the page, with a progress card); the
-  replay is kept in memory for the session and plays in the viewer overlay.
+  server. The clock stops while a battle is resolved (in the page, with a progress card).
+  Layout: map with a small collapsible **Events** window in its top-left corner; the right-hand
+  panel is all for the selected world (shipyards, moving ships) or fleet.
+- **Combat log** (top-bar button, with a badge for new ones): every battle and every world that
+  changed hands, from the current player's side (World taken / World lost / Defended / Repelled /
+  Broke through / Ambushed / Blocked a fleet), ships and credits lost on each side, a Watch button
+  and a Map button. Filter: Mine (you and allies) or Everyone. Replays are saved in IndexedDB
+  (`src/galaxy/replayStore.js`, newest 80) so old battles can be watched after a reload; on the
+  server they'll be replay files. The world log trims routine entries before battles/captures.
 - Map: 2–10 players, one **spawn point** (home world) each, spread evenly round a ring so starts
   are fair; ~7 worlds per player scattered between. Same seed and player count = same map.
 - **Hyperlanes**: minimum spanning tree (every world reachable) plus some non-crossing links
   between near neighbours. **Moving along a lane is 10× faster** than normal space. Fleets can fly
   straight to any world through normal space too; the planner (Dijkstra) picks the fastest mix
-  and the player can turn lanes off. Fleets don't stop at worlds they pass and can't be recalled.
+  and the player can turn lanes off. Fleets can't be recalled.
+- **Fleets stop at every world on their route** (owner's rule, so enemies can block or ambush
+  them). Passing a friendly world, or one with nobody defending it, they fly straight on. At a
+  world they don't hold with defenders there, they fight (`battle.passing`): win and they fly on
+  with the survivors (they don't take that world; only the destination is captured); lose and the
+  survivors fall back. The move panel's **"Avoid worlds you don't hold"** (on by default) plans
+  round every world not held by you or an ally (a straight flight always exists); with it off the
+  route is fastest and the panel lists the hostile stops (marked on the map) and their ships.
+  Saves from before this rule (`upgradeWorld`) let fleets already in flight fly straight on.
 - Fleet speed = slowest ship's battle top speed (blocks/s) × `TRAVEL_SCALE` (1) galaxy units per
   hour: a destroyer takes ~10 h between neighbours through space, ~1 h along a lane. Ships under
   `MIN_FLEET_SPEED` can't leave (fixed defences; hub thrusters alone give ~2.5, so rare).
@@ -216,8 +231,8 @@ economy, fleets, captures, with real battles).
   starfield is a fixed backdrop that doesn't move when you pan or zoom (owner's request).
 
 Open with the owner (placeholders now): incomes and starting credits, the crowding share,
-the 50% resale, militia strength, travel scale, whether fleets should be interceptable at the
-worlds they pass, fog of war, recalling fleets, damage carried between battles, and the battle
+the 50% resale, militia strength, travel scale, whether a fleet that wins at a world it's passing
+should also take it, fog of war, recalling fleets, damage carried between battles, and the battle
 size cap (a big late-game garrison can mean thousands of ships; the plan is waves).
 
 Still open with the owner: the exact block prices and the shipyard multiplier (placeholders
