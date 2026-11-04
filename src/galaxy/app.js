@@ -22,6 +22,7 @@ import {
   sendFleet, previewFleet, shipsAt, incomeOf, allied, playerName, designOf, fleetValue, countShips, fmtHours,
   sellValue, yardListValue, YARD_MS, HOLD_MS, upgradeWorld,
   proposeAlliance, acceptAlliance, declineAlliance, breakAlliance, proposalsFor, hasProposed,
+  isOpenSeat, freeColors,
 } from '../world/world.js';
 import { readBattle } from '../world/battleSetup.js';
 import { fleetPosition } from '../world/routes.js';
@@ -1043,6 +1044,7 @@ $('me').addEventListener('change', () => {
 });
 function updateTop() {
   const p = me();
+  if (ONLINE) $('me-name').textContent = p.name;
   $('me-swatch').style.background = p.color;
   document.documentElement.style.setProperty('--me', p.color);
   $('credits').textContent = fmt(p.credits);
@@ -1219,6 +1221,36 @@ function applyServerState(s) {
     if (!first) { if (move) refreshPreview(); afterEvent(); }
   }
   showServerBattle(s.status?.battle);
+  if (world && isOpenSeat(world, ui.me)) openClaim(); else if ($('claim').open) $('claim').close();
+}
+
+// An open seat: the player picks their name and colour the first time they log in.
+let claimColor = null;
+function openClaim() {
+  const colors = freeColors(world, ui.me);
+  if (!colors.includes(claimColor)) claimColor = colors.includes(me().color) ? me().color : colors[0];
+  $('claim-colors').innerHTML = colors.map((c) => `<button type="button" role="radio" aria-checked="${c === claimColor}" aria-label="Colour ${c}" data-color="${c}" style="background:${c}"></button>`).join('');
+  if (!$('claim').open) { $('claim').showModal(); $('claim-name').focus(); }
+}
+if (ONLINE) {
+  $('claim').addEventListener('cancel', (e) => e.preventDefault()); // has to be done before playing
+  $('claim-colors').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-color]');
+    if (!b) return;
+    claimColor = b.dataset.color;
+    for (const x of $('claim-colors').children) x.setAttribute('aria-checked', String(x === b));
+  });
+  $('claim-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    $('claim-go').disabled = true; $('claim-err').textContent = '';
+    const r = await perform({ type: 'claim', name: $('claim-name').value, color: claimColor }, () => ({ ok: false }));
+    $('claim-go').disabled = false;
+    if (!r.ok) { $('claim-err').textContent = r.error; if (world) openClaim(); return; }
+    $('claim').close();
+    toast(`Welcome, ${me().name}. Your home world is ${world.planets[me().home].name}.`);
+    const H = world.planets[me().home]; cam.x = H.x; cam.y = H.y; cam.zoom = Math.max(cam.zoom, 1.4);
+    select({ kind: 'planet', id: H.id });
+  });
 }
 /** The server's battle progress card: everyone sees when a battle is being fought out. */
 function showServerBattle(B) {

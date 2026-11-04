@@ -16,7 +16,7 @@ import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import {
   advanceTo, dueEvent, planEvent, applyEvent, upgradeWorld, sendFleet, buildShipyard, sellShipyard,
-  proposeAlliance, acceptAlliance, declineAlliance, breakAlliance, playerName,
+  proposeAlliance, acceptAlliance, declineAlliance, breakAlliance, playerName, claimPlayer,
 } from '../src/world/world.js';
 import { decodeDesign } from '../src/shared/shipStats.js';
 import { writeJsonAtomic } from './accounts.mjs';
@@ -205,6 +205,7 @@ export class Game {
         const fn = { propose: proposeAlliance, accept: acceptAlliance, decline: declineAlliance, break: breakAlliance }[a.type];
         return fn(W, pid, other);
       }
+      case 'claim': return claimPlayer(W, pid, typeof a.name === 'string' ? a.name.slice(0, 100) : '', typeof a.color === 'string' ? a.color : '');
       default: return { ok: false, error: 'Unknown action.' };
     }
   }

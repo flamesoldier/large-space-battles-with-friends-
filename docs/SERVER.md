@@ -25,9 +25,21 @@ is $5 a month, which covers a game this size. Everything below is clicks in the 
 5. **Web address**: service → *Settings* → *Networking* → *Generate Domain*. You get something like
    `large-space-battles-production.up.railway.app`. If it asks which port, type `8080`.
 6. Wait for the deploy to turn green (*Deployments* tab), then open
-   `https://<your address>/admin`, log in with the admin password, type the players' names (one per
-   line) and click **Create the game**. Copy the passwords it shows: they're shown only once.
-7. Send each friend the address `https://<your address>` and their own password, privately.
+   `https://<your address>/admin`, log in with the admin password, set the number of players and
+   click **Create the game**. Copy the passwords it shows: they're shown only once. (You can type
+   names for the first seats, e.g. your own; leave the rest empty.)
+7. Send each friend the address `https://<your address>` and one password each, privately. The
+   first time they log in they pick their own name and colour.
+
+### Your own domain name (optional)
+
+To have the game at `https://yourgame.com` instead of `….up.railway.app`: buy the name from a
+registrar (Cloudflare, Porkbun or Namecheap; usually $10–15 a year), then in Railway go to the
+service → *Settings* → *Networking* → *Custom Domain*, type the name, and add the DNS record
+Railway shows you at the registrar (on the registrar's DNS page). HTTPS for it is set up
+automatically once the record works (minutes to a few hours). Custom domains need Railway's paid
+Hobby plan, not the trial. A bare `yourgame.com` needs a registrar that supports CNAME
+flattening (Cloudflare does); `play.yourgame.com` works anywhere.
 
 From then on, every push to the repo's main branch redeploys automatically; the game carries on
 (it lives on the volume). If the site shows an error, the *Deployments* tab → *View logs* says why.
@@ -61,6 +73,12 @@ if one is lost, make a new one (below).
   even with the browser's developer tools.
 - Wrong passwords: 8 in 15 minutes from one address and that address is blocked for the rest of
   the 15 minutes. Failed and successful logins are printed in the server log.
+
+**Open seats:** a game has a number of seats (2–10). Seats you don't name are open: whoever logs
+in with that seat's password picks their name and colour once, on first login (names must differ;
+colours come from 18, minus the ones taken). Named seats keep the name you gave. An open seat
+nobody takes still has a home world and income, and others can conquer it, so make the game the
+size of the group that's actually playing.
 
 The **admin page** (`/admin`, needs `LSB_ADMIN_PASSWORD` set on the server): create the game,
 see the players, give one of them a new password (logs them out everywhere), or replace the game

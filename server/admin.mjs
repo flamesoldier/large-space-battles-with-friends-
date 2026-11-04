@@ -1,8 +1,10 @@
 // Game admin, run on the server machine:
 //
-//   npm run admin -- new-game --players "Ann,Ben,Cat,Dan" [--teams "A,A,B,B"] [--seed 42] [--worlds 7] [--force]
+//   npm run admin -- new-game --players "Ann,Ben,Cat,Dan" [--count 6] [--teams "A,A,B,B"] [--seed 42] [--worlds 7] [--force]
 //       Make a new galaxy and a password for every player. The passwords are printed once:
-//       send each friend theirs privately. (Stop the server first; --force replaces a game.)
+//       send each friend theirs privately. --count makes more seats than names (or use --count
+//       alone): players in unnamed seats pick their name and colour when they first log in.
+//       (Stop the server first; --force replaces a game.)
 //   npm run admin -- players
 //       List the players.
 //   npm run admin -- reset-password <player name or number> [--password "..."]
@@ -49,10 +51,10 @@ switch (cmd) {
   case 'new-game': {
     if (serverRunning()) die('The server is running. Stop it first, then make the new game.');
     if (gameExists(DATA) && !flags.force) die(`There is already a game in ${DATA}. Add --force to replace it (its replays are deleted too).`);
-    const names = String(flags.players || '').split(',');
+    const names = String(flags.players === true ? '' : flags.players || '').split(',');
     const teams = flags.teams ? String(flags.teams).split(',') : [];
     let made;
-    try { made = makeNewGame(DATA, { names, teams, seed: flags.seed, worlds: flags.worlds }); } catch (e) { die(`${e.message} Example: --players "Ann,Ben,Cat,Dan"`); }
+    try { made = makeNewGame(DATA, { count: flags.count, names, teams, seed: flags.seed, worlds: flags.worlds }); } catch (e) { die(`${e.message} Example: --players "Ann,Ben,Cat,Dan"`); }
     rmSync(join(DATA, 'sessions.json'), { force: true });
     const { world } = made;
     console.log(`New galaxy in ${DATA}: ${world.planets.length} worlds, seed ${world.seed}, ${world.players.length} players.`);

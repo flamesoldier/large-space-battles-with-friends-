@@ -269,6 +269,9 @@ hashes are kept). The server runs with no game too (players are told it isn't se
   they were given and plays as that player. Keeps random people out and stops players acting as
   each other. Passwords are generated (`xxxx-xxxx-xxxx`, ~59 bits), unique per player, reset
   with `npm run admin -- reset-password <name>` (logs that player out everywhere).
+- **Open seats** (owner's request): the admin sets a number of seats and may name some; unnamed
+  seats are `claimed: false` ("Player 3") and their player picks name + colour once on first login
+  (`claimPlayer` in `world.js`, `claim` action, dialog in the page). Named seats can't rename.
 - Sessions: random token in an HttpOnly, SameSite=Strict cookie, 30 days, stored hashed in
   `data/sessions.json`. **Every action takes the player from the session, never from the
   request**; keep it that way. Logins rate limited (8 wrong per 15 min per address).

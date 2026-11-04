@@ -232,6 +232,9 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
 #login button { padding: 10px; font-size: 14px; }
 #login #login-err { color: var(--bad); min-height: 1.4em; }
 #me-name { font-family: var(--display); font-weight: 600; font-size: 14px; color: var(--ink); text-transform: none; letter-spacing: 0.02em; }
+.swatches { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.swatches button { width: 34px; height: 34px; padding: 0; border-radius: 50%; border: 2px solid transparent; box-shadow: inset 0 0 0 2px rgba(0,0,0,0.35); }
+.swatches button[aria-checked="true"] { border-color: var(--signal); box-shadow: 0 0 0 2px var(--void), 0 0 0 4px var(--signal); }
 #net { font-family: var(--mono); font-size: 11.5px; color: var(--bad); border: 1px solid var(--bad); padding: 3px 7px; border-radius: 3px; }
 
 @media (max-width: 1500px) { .brand span { display: none; } .top { gap: 8px 12px; } }
@@ -357,6 +360,19 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
     <button id="replay-close" class="go">Back to galaxy</button>
   </div>
 </div>
+
+<dialog id="claim" aria-labelledby="claim-title">
+  <form id="claim-form" method="dialog">
+    <h3 id="claim-title">Welcome to the galaxy</h3>
+    <p class="hint" style="font-size:13px">You've got an empty seat. Choose the name and colour everyone will see you as. You can only pick once.</p>
+    <div class="form" style="margin-top:14px">
+      <label for="claim-name">Your name</label><input id="claim-name" type="text" maxlength="24" autocomplete="nickname" required>
+    </div>
+    <div class="swatches" id="claim-colors" role="radiogroup" aria-label="Your colour"></div>
+    <p class="hint" id="claim-err" style="color:var(--bad);min-height:1.4em"></p>
+    <div class="actions"><button class="go" id="claim-go" type="submit">Join the game</button></div>
+  </form>
+</dialog>
 
 <div id="login" hidden>
   <form id="login-form" autocomplete="on">

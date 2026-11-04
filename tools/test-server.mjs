@@ -90,8 +90,31 @@ try {
     const reset = await boss.json('POST', '/api/admin/reset-password', { player: 0 });
     ok(reset.body.passwords[0].name === 'Cat' && reset.body.passwords[0].password !== made.body.passwords[0].password, 'admin resets a password');
     ok((await cat.state()).status === 401, 'which logs that player out');
+    // ---- open seats: players pick their own name and colour, once
+    const seats = await boss.json('POST', '/api/admin/new-game', { count: 4, players: ['Cat'], replace: true });
+    ok(seats.body.ok && seats.body.passwords.length === 4 && seats.body.passwords.filter((p) => p.open).length === 3, 'a game with one named player and three open seats');
+    const catNow = seats.body.passwords[0].password, seat2 = seats.body.passwords[1].password, seat3 = seats.body.passwords[2].password;
+    const p2 = client(), p3 = client(), cat2 = client();
+    await p2.json('POST', '/api/login', { password: seat2 });
+    await p3.json('POST', '/api/login', { password: seat3 });
+    await cat2.json('POST', '/api/login', { password: catNow });
+    let w = (await p2.state()).body.world;
+    ok(w.players[1].claimed === false && w.players[0].claimed === true, 'open seats are marked until claimed');
+    ok(/already called/.test((await p2.act({ type: 'claim', name: 'cat', color: '#ff4d4d' })).body.error), 'names must be different (any case)');
+    ok(/of your own/.test((await p2.act({ type: 'claim', name: 'player 9', color: '#ff4d4d' })).body.error), 'placeholder names are refused');
+    ok(/colours shown/.test((await p2.act({ type: 'claim', name: 'Dan', color: w.players[0].color })).body.error), 'someone else\'s colour is refused');
+    ok(/colours shown/.test((await p2.act({ type: 'claim', name: 'Dan', color: 'red' })).body.error), 'made-up colours are refused');
+    let c = await p2.act({ type: 'claim', name: '  Dan <b>the</b>  Bold ', color: '#FF4D4D' });
+    ok(c.body.ok && c.body.state.world.players[1].name === 'Dan bthe/b Bold' && c.body.state.world.players[1].color === '#ff4d4d' && c.body.state.world.players[1].claimed, 'a player claims their seat (name tidied)');
+    ok(!(await p2.act({ type: 'claim', name: 'Again', color: '#4dff88' })).body.ok, 'only once');
+    ok(!(await cat2.act({ type: 'claim', name: 'Kitty', color: '#4dff88' })).body.ok, 'named players can\'t rename');
+    ok(/colours shown/.test((await p3.act({ type: 'claim', name: 'Eve', color: '#ff4d4d' })).body.error), 'a colour just taken is gone');
+    ok((await p3.act({ type: 'claim', name: 'Eve', color: '#4dff88' })).body.ok, 'the next player claims theirs');
+    const adm = (await boss.json('GET', '/api/admin/state')).body.game.players;
+    ok(adm[1].name === 'Dan bthe/b Bold' && adm[1].joined && !adm[3].joined, 'the admin page shows who has joined');
+
     const dan = client();
-    await dan.json('POST', '/api/login', { password: made.body.passwords[1].password });
+    await dan.json('POST', '/api/login', { password: catNow });
     const waiting = dan.json('GET', `/api/state?v=${(await dan.state()).body.v}`);
     const again = await boss.json('POST', '/api/admin/new-game', { players: ['Fay', 'Gus'], replace: true });
     ok(again.body.ok && again.body.game.players.length === 2, 'admin replaces the game');

@@ -193,7 +193,7 @@ function adminState() {
     game: {
       seed: W.seed, worlds: W.planets.length, day: Math.floor(W.clock / 864e5) + 1, speed: SPEED,
       winner: W.winner, replays: game.replays.size,
-      players: W.players.map((p) => ({ id: p.id, name: p.name, team: p.team, eliminated: p.eliminated, password: !!accounts.get(p.id), worlds: W.planets.filter((x) => x.owner === p.id).length })),
+      players: W.players.map((p) => ({ id: p.id, name: p.name, color: p.color, team: p.team, eliminated: p.eliminated, joined: p.claimed !== false, password: !!accounts.get(p.id), worlds: W.planets.filter((x) => x.owner === p.id).length })),
     },
   };
 }
@@ -238,8 +238,9 @@ async function handleAdmin(req, res, path, body) {
   if (path === '/api/admin/new-game') {
     if (game && body.replace !== true) return fail(req, res, 409, 'There is already a game. Tick the box to replace it.');
     let made;
-    try { made = await replaceGame({ names: body.players, teams: body.teams, seed: body.seed, worlds: body.worlds }); } catch (e) { return fail(req, res, 400, e.message); }
-    return send(req, res, 200, { ...adminState(), passwords: made.passwords.map(([id, pw]) => ({ id, name: made.world.players[id].name, password: pw })) });
+    if (body.players !== undefined && !Array.isArray(body.players)) return fail(req, res, 400, 'Bad player list.');
+    try { made = await replaceGame({ count: body.count, names: body.players, teams: Array.isArray(body.teams) ? body.teams : [], seed: body.seed, worlds: body.worlds }); } catch (e) { return fail(req, res, 400, e.message); }
+    return send(req, res, 200, { ...adminState(), passwords: made.passwords.map(([id, pw]) => ({ id, name: made.world.players[id].name, open: made.world.players[id].claimed === false, password: pw })) });
   }
   if (path === '/api/admin/reset-password') {
     if (!game) return fail(req, res, 400, 'There is no game yet.');
@@ -247,7 +248,7 @@ async function handleAdmin(req, res, path, body) {
     if (!Number.isInteger(body.player) || !p) return fail(req, res, 400, 'No such player.');
     const pw = accounts.setPassword(p.id);
     console.log(`${stamp()} Admin reset ${p.name}'s password`);
-    return send(req, res, 200, { ...adminState(), passwords: [{ id: p.id, name: p.name, password: pw }] });
+    return send(req, res, 200, { ...adminState(), passwords: [{ id: p.id, name: p.name, open: p.claimed === false, password: pw }] });
   }
   return fail(req, res, 404, 'Not found.');
 }

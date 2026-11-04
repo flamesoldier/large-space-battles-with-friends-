@@ -25,7 +25,7 @@ import {
 import { generateGalaxy } from './galaxyGen.js';
 import { planRoute, travelSpeed, laneMap } from './routes.js';
 import { makeBattleScenario } from './battleSetup.js';
-import { HOUR_MS, MIN_FLEET_SPEED, PLAYER_COLORS, MIN_PLAYERS, MAX_PLAYERS, BATTLE_MAX_TIME, BATTLE_HOLD_MIN } from './rules.js';
+import { HOUR_MS, MIN_FLEET_SPEED, PLAYER_COLORS, CHOOSABLE_COLORS, MIN_PLAYERS, MAX_PLAYERS, BATTLE_MAX_TIME, BATTLE_HOLD_MIN } from './rules.js';
 
 export const YARD_MS = SHIPYARD_INTERVAL_MIN * 60 * 1000;
 export const HOLD_MS = BATTLE_HOLD_MIN * 60 * 1000;
@@ -34,9 +34,10 @@ const LOG_KEEP = 400;
 // ---------------------------------------------------------------- creation
 
 /**
- * players: [{ name, color?, team? }] (2–10). team: '' for nobody, or any label: players with the
- * same label start the game allied (they can station ships on each other's worlds and defend
- * them together). Alliances can change later through diplomacy.
+ * players: [{ name, color?, team?, open? }] (2–10). team: '' for nobody, or any label: players with
+ * the same label start the game allied (they can station ships on each other's worlds and defend
+ * them together). Alliances can change later through diplomacy. open: an empty seat whose player
+ * picks their own name and colour when they first log in (claimPlayer).
  */
 export function createWorld({ players, seed = 1, planetsPerPlayer, clock = 0 }) {
   if (players.length < MIN_PLAYERS || players.length > MAX_PLAYERS) throw new Error(`A game needs ${MIN_PLAYERS}–${MAX_PLAYERS} players.`);
@@ -47,6 +48,7 @@ export function createWorld({ players, seed = 1, planetsPerPlayer, clock = 0 }) 
     players: players.map((p, k) => ({
       id: k, name: String(p.name || `Player ${k + 1}`).slice(0, 24), color: p.color || PLAYER_COLORS[k % PLAYER_COLORS.length],
       team: String(p.team || '').slice(0, 12), credits: STARTING_CREDITS, home: g.spawns[k], eliminated: false,
+      claimed: !p.open,
     })),
     planets: g.planets.map((p) => ({
       id: p.id, name: p.name, x: p.x, y: p.y, size: p.size, income: p.income,
@@ -667,6 +669,35 @@ export function declineAlliance(world, pid, other) {
   world.proposals = world.proposals.filter((p) => !((p.from === other && p.to === pid) || (p.from === pid && p.to === other)));
   if (world.proposals.length === had) return { ok: false, error: 'There is no proposal.' };
   log(world, 'diplomacy', `${world.players[pid].name} and ${world.players[other].name} won't be allies for now.`, { players: [pid, other], diplomacy: { kind: 'decline', a: pid, b: other } });
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------- choosing a name (online)
+
+/** Has this seat's player chosen their name yet? (Older saves have no flag: they have.) */
+export const isOpenSeat = (world, pid) => world.players[pid]?.claimed === false;
+
+/** Colours a player could pick now: the choosable ones nobody else is using. */
+export const freeColors = (world, pid) => CHOOSABLE_COLORS.filter((c) => !world.players.some((p) => p.id !== pid && p.color.toLowerCase() === c));
+
+/**
+ * A player taking an open seat picks their name and colour, once. Names: 1–24 characters,
+ * different from everyone else's. Returns { ok, error? }.
+ */
+export function claimPlayer(world, pid, name, color) {
+  const pl = world.players[pid];
+  if (!pl) return { ok: false, error: 'No such player.' };
+  if (pl.claimed !== false) return { ok: false, error: 'You already have a name.' };
+  name = String(name ?? '').replace(/[\u0000-\u001f\u007f<>]/g, '').replace(/\s+/g, ' ').trim();
+  if (!name) return { ok: false, error: 'Pick a name.' };
+  if (name.length > 24) return { ok: false, error: 'Names can be at most 24 characters.' };
+  if (world.players.some((p) => p.id !== pid && p.name.toLowerCase() === name.toLowerCase())) return { ok: false, error: `Someone is already called ${name}.` };
+  if (/^(militia|player \d+)$/i.test(name)) return { ok: false, error: 'Pick a name of your own.' };
+  color = String(color ?? '').toLowerCase();
+  if (!freeColors(world, pid).includes(color)) return { ok: false, error: 'Pick one of the colours shown.' };
+  const old = pl.name;
+  pl.name = name; pl.color = color; pl.claimed = true;
+  log(world, 'join', `${old} is now ${name}.`, { players: [pid] });
   return { ok: true };
 }
 

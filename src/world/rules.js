@@ -31,3 +31,5 @@ export const HOUR_MS = 3600 * 1000;
 // Ten easy-to-tell-apart faction colours, in the order players get them by default.
 export const PLAYER_COLORS = ['#86e8ff', '#ffb35c', '#a3f27c', '#ff6fa8', '#c59bff', '#ffe66b', '#5ce0c0', '#ff7a5c', '#7aa7ff', '#e8e8e8'];
 export const NEUTRAL_COLOR = '#6e7a8c';
+// What a player can pick from when they choose their own colour online: the ten above plus a few more.
+export const CHOOSABLE_COLORS = [...PLAYER_COLORS, '#ff4d4d', '#4dff88', '#3d7bff', '#ffa3e0', '#b8ff3d', '#ff9f1a', '#00c2c7', '#a17cff'];

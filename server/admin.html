@@ -56,6 +56,7 @@ td { padding: 8px 0; border-top: 1px solid var(--line); vertical-align: middle; 
 td.num { font-family: var(--mono); color: var(--dim); }
 td:last-child, th:last-child { text-align: right; }
 .out { opacity: 0.5; }
+.dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 8px; vertical-align: -1px; }
 #passwords { border-color: var(--ember); }
 #passwords h2 { color: var(--ember); }
 .pw { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 16px; align-items: center; font-size: 15px; }
@@ -102,13 +103,14 @@ a { color: var(--azure); }
   <section id="create" hidden>
     <h2 id="create-title">Create the game</h2>
     <form id="create-form" class="stack">
-      <label>Players: one name per line (2 to 10)
-        <textarea id="names" placeholder="Rowan&#10;Sam&#10;Alex&#10;Jo" required></textarea>
-      </label>
       <div class="grid">
+        <label>Number of players (2–10)<input id="count" type="number" min="2" max="10" value="4" required></label>
         <label>Worlds per player (3–14)<input id="worlds" type="number" min="3" max="14" value="7"></label>
-        <label>Map seed (blank = random)<input id="seed" type="number" min="1" placeholder="random"></label>
       </div>
+      <label>Names (optional): one per line, for the first seats. Leave it empty and every player picks their own name and colour the first time they log in.
+        <textarea id="names" placeholder="(empty: everyone chooses their own)"></textarea>
+      </label>
+      <label>Map seed (blank = random)<input id="seed" type="number" min="1" placeholder="random"></label>
       <label>Starting teams (optional): one letter per line, same order as the names. Same letter = start allied.
         <textarea id="teams" style="min-height:60px" placeholder="(leave empty: everyone on their own)"></textarea>
       </label>
@@ -133,7 +135,7 @@ let shown = [];
 function showPasswords(list) {
   if (!list?.length) return;
   shown = list;
-  $('pw-list').innerHTML = list.map((p) => `<span>${esc(p.name)}</span><code>${esc(p.password)}</code>`).join('');
+  $('pw-list').innerHTML = list.map((p) => `<span>${esc(p.name)}${p.open ? ' <span class="num">(picks own name)</span>' : ''}</span><code>${esc(p.password)}</code>`).join('');
   $('passwords').hidden = false;
   $('passwords').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -155,7 +157,7 @@ function render(st) {
   $('create-go').classList.toggle('danger', !!G); $('create-go').classList.toggle('go', !G);
   if (!G) return;
   $('game-kv').innerHTML = `<span>Day <b>${G.day}</b></span><span><b>${G.worlds}</b> worlds</span><span>seed <b>${G.seed}</b></span><span>speed <b>${G.speed}×</b></span><span><b>${G.replays}</b> replays</span>`;
-  $('players').innerHTML = G.players.map((p) => `<tr class="${p.eliminated ? 'out' : ''}"><td>${esc(p.name)}${p.team ? ` <span class="num">team ${esc(p.team)}</span>` : ''}${p.eliminated ? ' <span class="num">(out)</span>' : ''}</td><td class="num">${p.worlds}</td>
+  $('players').innerHTML = G.players.map((p) => `<tr class="${p.eliminated ? 'out' : ''}"><td><span class="dot" style="background:${esc(p.color)}"></span>${esc(p.name)}${p.joined ? '' : ' <span class="num">(not joined yet)</span>'}${p.team ? ` <span class="num">team ${esc(p.team)}</span>` : ''}${p.eliminated ? ' <span class="num">(out)</span>' : ''}</td><td class="num">${p.worlds}</td>
     <td><button class="small" data-reset="${p.id}">${armed === p.id ? 'Click again to confirm' : 'New password'}</button></td></tr>`).join('');
 }
 $('players').addEventListener('click', async (e) => {
@@ -175,11 +177,13 @@ $('create-form').addEventListener('submit', async (e) => {
   const lines = (s) => s.split(/\n|,/).map((x) => x.trim()).filter(Boolean);
   const players = lines($('names').value);
   const teams = $('teams').value.split('\n').map((x) => x.trim());
-  if (players.length < 2) { $('create-err').textContent = 'Write at least two player names, one per line.'; return; }
+  const count = Number($('count').value);
+  if (!(count >= 2 && count <= 10)) { $('create-err').textContent = 'A game needs 2 to 10 players.'; return; }
+  if (players.length > count) { $('create-err').textContent = `That's ${players.length} names for ${count} players: raise the number of players or remove some names.`; return; }
   const replace = !$('replace-row').hidden && $('replace').checked;
   if (!$('replace-row').hidden && !replace) { $('create-err').textContent = 'Tick the box to confirm replacing the current game.'; return; }
   $('create-go').disabled = true;
-  const r = await api('/api/admin/new-game', { players, teams, worlds: Number($('worlds').value) || 7, seed: Number($('seed').value) || undefined, replace });
+  const r = await api('/api/admin/new-game', { count, players, teams, worlds: Number($('worlds').value) || 7, seed: Number($('seed').value) || undefined, replace });
   $('create-go').disabled = false;
   if (!r.ok) { $('create-err').textContent = r.error; return; }
   $('replace').checked = false; $('names').value = ''; $('teams').value = ''; $('seed').value = '';
