@@ -16,6 +16,10 @@ export const CLASSES = {
   cruiser:    { w: [26, 32], h: [11, 13], lasers: 4, cannons: 6, missiles: 2, pd: 4,  thrustCols: 2, heavyFront: true,  armorDepth: 2 },
   battleship: { w: [44, 52], h: [17, 21], lasers: 8, cannons: 12, missiles: 4, pd: 8, lances: 1,  thrustCols: 2, heavyFront: true,  armorDepth: 2 },
   titan:      { w: [80, 90], h: [29, 33], lasers: 16, cannons: 22, missiles: 8, pd: 16, lances: 2, thrustCols: 3, heavyFront: true,  armorDepth: 3 },
+  // Super-heavy samples for the designer's templates (not in the generated test fleets).
+  dreadnought: { w: [140, 150], h: [49, 53], lasers: 34, cannons: 46, missiles: 16, pd: 34, lances: 4, thrustCols: 4, heavyFront: true, armorDepth: 4 },
+  leviathan:  { w: [260, 280], h: [91, 97], lasers: 70, cannons: 96, missiles: 32, pd: 70, lances: 8, thrustCols: 6, heavyFront: true, armorDepth: 5 },
+  colossus:   { w: [560, 600], h: [195, 205], lasers: 150, cannons: 200, missiles: 70, pd: 150, lances: 16, thrustCols: 10, heavyFront: true, armorDepth: 6 },
 };
 
 // Default combat stance odds per class for generated test designs. In the real game the
@@ -27,6 +31,9 @@ const STANCE_ODDS = {
   cruiser: [['line', 0.6], ['standoff', 0.4]],
   battleship: [['standoff', 0.7], ['line', 0.3]],
   titan: [['standoff', 1]],
+  dreadnought: [['standoff', 1]],
+  leviathan: [['standoff', 1]],
+  colossus: [['standoff', 1]],
 };
 
 export const CLASS_MIX = [
@@ -167,7 +174,7 @@ export function makeDesign(cls, seed) {
   if (w <= 13) cells[cy * w + (w - 1)] = r() < 0.5 ? BT.CANNON : BT.LASER;
 
   let roll = r(), stance = 'line';
-  for (const [st, p] of STANCE_ODDS[cls]) { if (roll < p) { stance = st; break; } roll -= p; }
+  for (const [st, p] of STANCE_ODDS[cls] || [['standoff', 1]]) { if (roll < p) { stance = st; break; } roll -= p; }
   return { name: `${cls}-${seed % 1000}`, cls, w, h, cells, hub, stance };
 }
 
@@ -186,7 +193,7 @@ export function makeScenario({ perSide = 500, seed = 1, variants = 3 } = {}) {
     }
 
   const ships = [];
-  const backOffset = { corvette: 0, frigate: 25, destroyer: 60, cruiser: 110, battleship: 180, titan: 280 };
+  const backOffset = { corvette: 0, frigate: 25, destroyer: 60, cruiser: 110, battleship: 180, titan: 280, dreadnought: 400, leviathan: 600, colossus: 1000 };
   const spanY = Math.max(500, Math.sqrt(perSide) * 55);
   for (let team = 0; team < 2; team++) {
     const counts = CLASS_MIX.map(([cls, f]) => [cls, Math.round(perSide * f)]);

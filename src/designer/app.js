@@ -68,6 +68,7 @@ function setBlock(t) {
 }
 function setTool(t) {
   tool = t;
+  canvas.style.cursor = t === 'pan' ? 'grab' : '';
   document.querySelectorAll('[data-tool]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tool === t)));
   if (t !== 'pencil' && (block === BT.LANCE || block === BT.HUB)) setBlock(BT.ARMOR);
 }
@@ -80,7 +81,7 @@ $('name').addEventListener('input', () => { ed.name = $('name').value; ed.change
 const tpl = $('template');
 tpl.add(new Option('Start from…', ''));
 tpl.add(new Option('Blank (hub only)', 'blank'));
-for (const cls of Object.keys(CLASSES)) tpl.add(new Option(`Sample ${cls}`, cls));
+for (const cls of Object.keys(CLASSES)) tpl.add(new Option(`Sample ${cls}${['dreadnought', 'leviathan', 'colossus'].includes(cls) ? ' (huge)' : ''}`, cls));
 tpl.addEventListener('change', () => {
   const v = tpl.value;
   tpl.value = '';
@@ -114,11 +115,17 @@ function toast(msg) {
 }
 
 // ------------------------------------------------------------ analysis -> stats panel
-function refresh() {
+// Analysis of a huge design can take tens of milliseconds, so while painting one it waits for
+// the end of the stroke (or a pause) instead of running every frame.
+let analysisMs = 0, analysedAt = 0;
+function refresh(force = false) {
   if (ed.version === seenVersion) return;
+  const now = performance.now();
+  if (!force && analysisMs > 20 && (drag || now - analysedAt < Math.min(1500, analysisMs * 8))) return;
   seenVersion = ed.version;
   design = ed.toDesign();
   info = analyzeDesign(design);
+  analysisMs = performance.now() - now; analysedAt = performance.now();
   dirty = true;
   const a = info;
   $('cost').textContent = fmt(a.cost);
@@ -152,7 +159,7 @@ function refresh() {
 let saveTimer = 0;
 function saveCurrent() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => store.set(CUR_KEY, encodeDesign(design)), 400);
+  saveTimer = setTimeout(() => store.set(CUR_KEY, encodeDesign(design)), 1000);
 }
 
 // ------------------------------------------------------------ drawing
@@ -169,16 +176,39 @@ const toCell = (clientX, clientY) => {
   return [Math.floor(cam.x + (clientX - r.left - r.width / 2) / cam.zoom), Math.floor(cam.y + (clientY - r.top - r.height / 2) / cam.zoom)];
 };
 
+// Whole-grid bitmap, one pixel per cell: used when zoomed far out and for the minimap.
+const bmp = document.createElement('canvas');
+bmp.width = ed.w; bmp.height = ed.h;
+const bg = bmp.getContext('2d');
+const bimg = bg.createImageData(ed.w, ed.h), bpx = new Uint32Array(bimg.data.buffer);
+const RGBA = new Uint32Array(16);
+for (const [t, hex] of Object.entries(COLOR)) {
+  const v = parseInt(hex.slice(1), 16);
+  RGBA[t] = (255 << 24) | ((v & 255) << 16) | (((v >> 8) & 255) << 8) | (v >> 16); // little-endian ABGR
+}
+let bmpVersion = -1;
+function updateBitmap() {
+  if (bmpVersion === ed.version) return;
+  bmpVersion = ed.version;
+  const cells = ed.cells;
+  for (let i = 0; i < cells.length; i++) bpx[i] = cells[i] ? RGBA[cells[i]] : 0;
+  bg.putImageData(bimg, 0, 0);
+}
+
+const paths = {};
 function draw() {
   const W = canvas.width, H = canvas.height, z = cam.zoom * dpr();
   g.clearRect(0, 0, W, H);
+  // Visible cell range: only what's on screen is drawn, however big the grid is.
+  const vx0 = Math.max(0, Math.floor(cam.x - W / 2 / z)), vx1 = Math.min(ed.w - 1, Math.ceil(cam.x + W / 2 / z));
+  const vy0 = Math.max(0, Math.floor(cam.y - H / 2 / z)), vy1 = Math.min(ed.h - 1, Math.ceil(cam.y + H / 2 / z));
   // Build area and grid lines.
   g.fillStyle = 'rgba(134,170,220,0.035)';
   g.fillRect(sx(0), sy(0), ed.w * z, ed.h * z);
-  if (z >= 6) {
+  if (z >= 6 && vx1 >= vx0 && vy1 >= vy0) {
     g.beginPath();
-    for (let x = 0; x <= ed.w; x++) { g.moveTo(sx(x) + 0.5, sy(0)); g.lineTo(sx(x) + 0.5, sy(ed.h)); }
-    for (let y = 0; y <= ed.h; y++) { g.moveTo(sx(0), sy(y) + 0.5); g.lineTo(sx(ed.w), sy(y) + 0.5); }
+    for (let x = vx0; x <= vx1 + 1; x++) { g.moveTo(sx(x) + 0.5, sy(vy0)); g.lineTo(sx(x) + 0.5, sy(vy1 + 1)); }
+    for (let y = vy0; y <= vy1 + 1; y++) { g.moveTo(sx(vx0), sy(y) + 0.5); g.lineTo(sx(vx1 + 1), sy(y) + 0.5); }
     g.strokeStyle = 'rgba(140,170,210,0.07)'; g.lineWidth = 1; g.stroke();
   }
   g.strokeStyle = 'rgba(140,170,210,0.3)'; g.lineWidth = 1;
@@ -198,26 +228,37 @@ function draw() {
     g.setLineDash([]);
   }
 
-  // Blocks.
-  const gap = z >= 8 ? Math.max(1, z * 0.06) : 0;
+  // Blocks: far out, the whole grid is one scaled bitmap; closer in, one path per block type.
   const cells = ed.cells;
-  for (let i = 0; i < cells.length; i++) {
-    const t = cells[i];
-    if (!t || t === BT.LANCE) continue;
-    const x = sx(i % ed.w), y = sy((i / ed.w) | 0);
-    g.fillStyle = COLOR[t];
-    g.fillRect(x + gap, y + gap, z - gap * 2, z - gap * 2);
-    if (z >= 7) glyph(t, x, y, z);
+  if (z < 5) {
+    updateBitmap();
+    g.imageSmoothingEnabled = false;
+    if (vx1 >= vx0 && vy1 >= vy0) g.drawImage(bmp, vx0, vy0, vx1 - vx0 + 1, vy1 - vy0 + 1, sx(vx0), sy(vy0), (vx1 - vx0 + 1) * z, (vy1 - vy0 + 1) * z);
+  } else {
+    const gap = z >= 8 ? Math.max(1, z * 0.06) : 0;
+    for (const t in COLOR) paths[t] = new Path2D();
+    for (let y = vy0; y <= vy1; y++)
+      for (let x = vx0, i = y * ed.w + vx0; x <= vx1; x++, i++) {
+        const t = cells[i];
+        if (!t) continue;
+        if (t === BT.LANCE) paths[t].rect(sx(x) - 0.5, sy(y) - 0.5, z + 1, z + 1);
+        else paths[t].rect(sx(x) + gap, sy(y) + gap, z - gap * 2, z - gap * 2);
+      }
+    for (const t in COLOR) { g.fillStyle = COLOR[t]; g.fill(paths[t]); }
+    if (z >= 7)
+      for (let y = vy0; y <= vy1; y++)
+        for (let x = vx0, i = y * ed.w + vx0; x <= vx1; x++, i++) if (cells[i] && cells[i] !== BT.LANCE) glyph(cells[i], sx(x), sy(y), z);
   }
-  // Heavy lasers: one turret per unit.
+  // Heavy lasers: one turret per unit (from the last analysis).
   if (info) {
     const ox = design.x0, oy = design.y0;
+    const visible = (x0, y0, x1, y1) => x1 + ox >= vx0 && x0 + ox <= vx1 && y1 + oy >= vy0 && y0 + oy <= vy1;
     for (const w of info.weapons) {
       if (!w.group) continue;
-      const gr = w.group, x = sx(gr.x0 + ox), y = sy(gr.y0 + oy), ww = (gr.x1 - gr.x0 + 1) * z, hh = (gr.y1 - gr.y0 + 1) * z;
-      g.fillStyle = COLOR[BT.LANCE];
-      for (const c of gr.cells) g.fillRect(sx((c % design.w) + ox) - 0.5, sy(((c / design.w) | 0) + oy) - 0.5, z + 1, z + 1);
-      if (gr.ok) {
+      const gr = w.group;
+      if (!visible(gr.x0, gr.y0, gr.x1, gr.y1)) continue;
+      const x = sx(gr.x0 + ox), y = sy(gr.y0 + oy), ww = (gr.x1 - gr.x0 + 1) * z, hh = (gr.y1 - gr.y0 + 1) * z;
+      if (gr.ok && ww > 12) {
         const cx = x + ww / 2, cy = y + hh / 2;
         g.strokeStyle = 'rgba(200,205,255,0.55)'; g.lineWidth = Math.max(1, z * 0.25);
         g.beginPath(); g.arc(cx, cy, ww * 0.32, 0, Math.PI * 2); g.stroke();
@@ -229,20 +270,22 @@ function draw() {
     }
     // Problems: loose blocks and buried weapons.
     g.fillStyle = 'rgba(255,80,80,0.45)';
-    for (const c of info.loose) g.fillRect(sx((c % design.w) + ox), sy(((c / design.w) | 0) + oy), z, z);
+    for (const c of info.loose) g.fillRect(sx((c % design.w) + ox), sy(((c / design.w) | 0) + oy), Math.max(z, 1), Math.max(z, 1));
     g.strokeStyle = '#ff6b6b'; g.lineWidth = Math.max(1.5, z * 0.12);
     for (const w of info.weapons) {
       if (!w.buried) continue;
-      const x = sx(w.x - 0.5 + ox), y = sy(w.y - 0.5 + oy), m = z * 0.22;
-      g.beginPath(); g.moveTo(x + m, y + m); g.lineTo(x + z - m, y + z - m); g.moveTo(x + z - m, y + m); g.lineTo(x + m, y + z - m); g.stroke();
+      const x = sx(w.x - 0.5 + ox), y = sy(w.y - 0.5 + oy), m = z * 0.22, zz = Math.max(z, 6);
+      g.beginPath(); g.moveTo(x + m, y + m); g.lineTo(x + zz - m, y + zz - m); g.moveTo(x + zz - m, y + m); g.lineTo(x + m, y + zz - m); g.stroke();
     }
     // Firing arcs: all of them, or just the weapon under the cursor.
     const hoverCell = hover ? ed.idx(hover[0], hover[1]) : -1;
     for (const w of info.weapons) {
       const at = ((w.y - 0.5 + oy) | 0) * ed.w + ((w.x - 0.5 + ox) | 0);
-      const mine = w.group ? w.group.cells.some((c) => ((c / design.w) | 0) + oy === hover?.[1] && (c % design.w) + ox === hover?.[0]) : at === hoverCell;
+      const mine = w.group ? hover && hover[0] >= w.group.x0 + ox && hover[0] <= w.group.x1 + ox && hover[1] >= w.group.y0 + oy && hover[1] <= w.group.y1 + oy : at === hoverCell;
       if (!showArcs && !mine) continue;
-      drawArc(w, sx(w.x + ox), sy(w.y + oy), z, mine);
+      const wx = w.x + ox, wy = w.y + oy;
+      if (!mine && (wx < vx0 - 20 || wx > vx1 + 20 || wy < vy0 - 20 || wy > vy1 + 20)) continue;
+      drawArc(w, sx(wx), sy(wy), z, mine);
     }
   }
 
@@ -263,6 +306,33 @@ function draw() {
     }
   }
 }
+
+// Minimap: the whole build area with the visible part outlined. Click or drag to jump.
+const mm = $('minimap'), mg = mm.getContext('2d');
+function mmLayout() {
+  const W = mm.width, H = mm.height, s = Math.min(W / ed.w, H / ed.h);
+  return { s, ox: (W - ed.w * s) / 2, oy: (H - ed.h * s) / 2 };
+}
+function drawMinimap() {
+  const d = Math.min(2, devicePixelRatio || 1);
+  if (mm.width !== Math.round(mm.clientWidth * d)) { mm.width = Math.round(mm.clientWidth * d); mm.height = Math.round(mm.clientHeight * d); }
+  updateBitmap();
+  const { s, ox, oy } = mmLayout();
+  mg.clearRect(0, 0, mm.width, mm.height);
+  mg.fillStyle = 'rgba(134,170,220,0.06)'; mg.fillRect(ox, oy, ed.w * s, ed.h * s);
+  mg.imageSmoothingEnabled = true; // averaging keeps thin hulls visible when shrunk
+  mg.drawImage(bmp, ox, oy, ed.w * s, ed.h * s);
+  const r = canvas.getBoundingClientRect(), vw = r.width / cam.zoom, vh = r.height / cam.zoom;
+  mg.strokeStyle = 'rgba(230,238,255,0.9)'; mg.lineWidth = d;
+  mg.strokeRect(ox + (cam.x - vw / 2) * s, oy + (cam.y - vh / 2) * s, vw * s, vh * s);
+}
+function minimapJump(e) {
+  const r = mm.getBoundingClientRect(), d = mm.width / r.width, { s, ox, oy } = mmLayout();
+  cam.x = ((e.clientX - r.left) * d - ox) / s; cam.y = ((e.clientY - r.top) * d - oy) / s;
+  clampCam(); dirty = true;
+}
+mm.addEventListener('pointerdown', (e) => { mm.setPointerCapture(e.pointerId); minimapJump(e); });
+mm.addEventListener('pointermove', (e) => { if (e.buttons) minimapJump(e); });
 
 function previewRect(x, y, w, h, t, faint) {
   const z = cam.zoom * dpr();
@@ -363,20 +433,27 @@ function zoomAt(clientX, clientY, k) {
   const r = canvas.getBoundingClientRect();
   const px = clientX - r.left - r.width / 2, py = clientY - r.top - r.height / 2;
   const wx = cam.x + px / cam.zoom, wy = cam.y + py / cam.zoom;
-  cam.zoom = Math.max(2, Math.min(48, cam.zoom * k));
+  cam.zoom = Math.max(MIN_ZOOM, Math.min(48, cam.zoom * k));
   cam.x = wx - px / cam.zoom; cam.y = wy - py / cam.zoom;
-  dirty = true;
+  clampCam(); dirty = true;
 }
+const MIN_ZOOM = 0.15;
+/** Keep the view over the build area: its centre never leaves the grid, so you can't get lost. */
+function clampCam() {
+  cam.x = Math.min(ed.w, Math.max(0, cam.x));
+  cam.y = Math.min(ed.h, Math.max(0, cam.y));
+}
+function panBy(dxPx, dyPx) { cam.x += dxPx / cam.zoom; cam.y += dyPx / cam.zoom; clampCam(); dirty = true; }
 
 function fit() {
-  refresh();
+  refresh(true);
   const r = canvas.getBoundingClientRect();
   const has = info && info.blocks > 1;
   const w = has ? design.w : 24, h = has ? design.h : 16;
   cam.x = (has ? design.x0 : ed.w / 2 - 12) + w / 2;
   cam.y = (has ? design.y0 : ed.h / 2 - 8) + h / 2;
-  cam.zoom = Math.max(2, Math.min(40, Math.min((r.width - 90) / w, (r.height - 60) / h) * 0.9));
-  dirty = true;
+  cam.zoom = Math.max(MIN_ZOOM, Math.min(40, Math.min((r.width - 90) / w, (r.height - 60) / h) * 0.9));
+  clampCam(); dirty = true;
 }
 
 // Paint along a line between two cells so fast strokes don't leave gaps.
@@ -385,7 +462,7 @@ function strokeTo(x, y, type) {
   let [x0, y0] = last;
   const dx = Math.abs(x - x0), dy = -Math.abs(y - y0), stx = x0 < x ? 1 : -1, sty = y0 < y ? 1 : -1;
   let err = dx + dy;
-  for (let n = 0; n < 512; n++) {
+  for (let n = 0; n < 8192; n++) {
     ed.paint(x0, y0, type);
     if (x0 === x && y0 === y) break;
     const e2 = 2 * err;
@@ -401,11 +478,11 @@ canvas.addEventListener('pointerdown', (e) => {
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (pointers.size === 2) {
     // Second finger: this is a pan/zoom gesture, so undo any stroke the first finger started.
-    if (drag && drag.started) ed.undo();
+    if (drag && drag.started) ed.cancelStep();
     drag = null; panning = true;
     return;
   }
-  if (e.button === 1 || spaceDown) { panning = true; return; }
+  if (e.button === 1 || spaceDown || (tool === 'pan' && e.button === 0)) { panning = true; canvas.style.cursor = 'grabbing'; return; }
   const [x, y] = toCell(e.clientX, e.clientY);
   const type = e.button === 2 ? 0 : block;
   drag = { x, y, type, started: false };
@@ -417,7 +494,7 @@ canvas.addEventListener('pointerdown', (e) => {
     else strokeTo(x, y, type);
   } else if (tool === 'fill') {
     ed.checkpoint();
-    if (!ed.fill(x, y, type)) { ed.undoStack.pop(); toast(ed.get(x, y) ? 'Nothing to fill there.' : 'Fill only works inside a closed outline.'); }
+    if (!ed.fill(x, y, type)) { ed.cancelStep(); toast(ed.get(x, y) ? 'Nothing to fill there.' : 'Fill only works inside a closed outline.'); }
     drag = null;
   }
   dirty = true;
@@ -431,10 +508,10 @@ canvas.addEventListener('pointermove', (e) => {
       const m0x = (a.x + b.x) / 2, m0y = (a.y + b.y) / 2, d0 = Math.hypot(a.x - b.x, a.y - b.y);
       p.x = e.clientX; p.y = e.clientY;
       const m1x = (a.x + b.x) / 2, m1y = (a.y + b.y) / 2, d1 = Math.hypot(a.x - b.x, a.y - b.y);
-      cam.x -= (m1x - m0x) / cam.zoom; cam.y -= (m1y - m0y) / cam.zoom;
+      panBy(-(m1x - m0x), -(m1y - m0y));
       if (d0 > 0) zoomAt(m1x, m1y, d1 / d0);
     } else {
-      cam.x -= (e.clientX - p.x) / cam.zoom; cam.y -= (e.clientY - p.y) / cam.zoom;
+      panBy(-(e.clientX - p.x), -(e.clientY - p.y));
       p.x = e.clientX; p.y = e.clientY;
     }
     dirty = true;
@@ -452,7 +529,7 @@ canvas.addEventListener('pointermove', (e) => {
 });
 const endPointer = (e) => {
   pointers.delete(e.pointerId);
-  if (panning) { if (!pointers.size) panning = false; return; }
+  if (panning) { if (!pointers.size) { panning = false; canvas.style.cursor = tool === 'pan' || spaceDown ? 'grab' : ''; } return; }
   if (drag && tool === 'rect' && !drag.started && hover) {
     ed.checkpoint();
     ed.rect(drag.x, drag.y, hover[0], hover[1], drag.type);
@@ -462,7 +539,19 @@ const endPointer = (e) => {
 canvas.addEventListener('pointerup', endPointer);
 canvas.addEventListener('pointercancel', endPointer);
 canvas.addEventListener('pointerleave', () => { if (!drag) { hover = null; $('hover').hidden = true; dirty = true; } });
-canvas.addEventListener('wheel', (e) => { e.preventDefault(); zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.0015)); }, { passive: false });
+// Scrolling moves around the design; Ctrl/Cmd + scroll (or a trackpad pinch) zooms.
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? canvas.clientHeight : 1;
+  if (e.ctrlKey || e.metaKey) { zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * unit * (e.ctrlKey && !e.metaKey && Math.abs(e.deltaY) < 50 ? 0.01 : 0.0015))); return; }
+  // Shift + wheel scrolls sideways on a plain mouse wheel.
+  const dx = e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX, dy = e.shiftKey && !e.deltaX ? 0 : e.deltaY;
+  panBy(dx * unit, dy * unit);
+}, { passive: false });
+const zoomCentre = (k) => { const r = canvas.getBoundingClientRect(); zoomAt(r.left + r.width / 2, r.top + r.height / 2, k); };
+$('zoom-in').addEventListener('click', () => zoomCentre(1.5));
+$('zoom-out').addEventListener('click', () => zoomCentre(1 / 1.5));
+$('zoom-fit').addEventListener('click', fit);
 
 addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || document.querySelector('dialog[open]')) return;
@@ -472,6 +561,14 @@ addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && k === 's') { e.preventDefault(); saveToLibrary(); return; }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.code === 'Space') { spaceDown = true; canvas.style.cursor = 'grab'; e.preventDefault(); return; }
+  const step = e.shiftKey ? 400 : 120;
+  if (e.key === 'ArrowLeft') { e.preventDefault(); return panBy(-step, 0); }
+  if (e.key === 'ArrowRight') { e.preventDefault(); return panBy(step, 0); }
+  if (e.key === 'ArrowUp') { e.preventDefault(); return panBy(0, -step); }
+  if (e.key === 'ArrowDown') { e.preventDefault(); return panBy(0, step); }
+  if (e.key === '+' || e.key === '=') return zoomCentre(1.4);
+  if (e.key === '-' || e.key === '_') return zoomCentre(1 / 1.4);
+  if (k === 'h') return setTool('pan');
   const p = PALETTE.find(([, key]) => key === k);
   if (p) return setBlock(p[0]);
   if (k === 'b') setTool('pencil');
@@ -480,7 +577,7 @@ addEventListener('keydown', (e) => {
   if (k === 'm') { ed.mirror = !ed.mirror; syncMirror(); dirty = true; }
   if (k === 'a') { showArcs = !showArcs; syncArcs(); dirty = true; }
 });
-addEventListener('keyup', (e) => { if (e.code === 'Space') { spaceDown = false; canvas.style.cursor = ''; } });
+addEventListener('keyup', (e) => { if (e.code === 'Space') { spaceDown = false; canvas.style.cursor = tool === 'pan' ? 'grab' : ''; } });
 
 // ------------------------------------------------------------ library, export, import
 function thumbnail(d) {
@@ -636,7 +733,7 @@ $('replay-close').addEventListener('click', () => {
 // ------------------------------------------------------------ start
 function loop() {
   refresh();
-  if (dirty) { dirty = false; draw(); }
+  if (dirty) { dirty = false; draw(); drawMinimap(); }
   requestAnimationFrame(loop);
 }
 addEventListener('resize', resize);
@@ -644,8 +741,8 @@ new ResizeObserver(resize).observe(canvas);
 resize();
 const saved = store.get(CUR_KEY, null);
 let restored = false;
-if (saved) { try { const d = decodeDesign(saved); if (d.cells.some((c) => c && c !== BT.HUB)) { ed.load(d); ed.undoStack.length = 0; restored = true; } } catch { /* start fresh */ } }
-if (!restored) { ed.load({ ...makeDesign('destroyer', 21), name: 'My destroyer' }); ed.undoStack.length = 0; }
+if (saved) { try { const d = decodeDesign(saved); if (d.cells.some((c) => c && c !== BT.HUB)) { ed.load(d); ed.resetHistory(); restored = true; } } catch { /* start fresh */ } }
+if (!restored) { ed.load({ ...makeDesign('destroyer', 21), name: 'My destroyer' }); ed.resetHistory(); }
 setBlock(BT.ARMOR); setTool('pencil'); syncFields();
 requestAnimationFrame(() => { resize(); fit(); loop(); });
 

@@ -225,7 +225,7 @@ export class Renderer {
     this.drawStraight(m.missile, t, vis, minW, true);
     // Detonations: 0 = missile shot down, 1 = cannon shell, 2 = heavy missile, 3 = heavy-laser block cooking off
     const E = m.expl;
-    const LIFE = [6, 8, 24, 16], BASE = [1, 1.5, 5, 2], GROW = [2.5, 5, 15, 7];
+    const LIFE = [6, 8, 24, 22], BASE = [1, 1.5, 5, 3], GROW = [2.5, 5, 15, 16];
     for (let i = lowerBound(E.t, t - 24); i < E.n && E.t[i] <= t; i++) {
       const sz = E.s[i], life = LIFE[sz] ?? 8, age = t - E.t[i];
       if (age > life || !vis(E.x[i], E.y[i], 20)) continue;

@@ -41,7 +41,7 @@ export const BLOCKS = {
 // A destroyed heavy-laser block explodes: blast damage peak * (1 - d / radius)^2 to every block
 // in range, on any ship, own and allied included (friendly fire setting ignored). Neighbouring
 // heavy-laser blocks it kills explode in turn, so one gun can chain-react.
-export const COOKOFF = { radius: 5, damage: 260 };
+export const COOKOFF = { radius: 16, damage: 300 };
 
 // Weapon behaviour. Ranges/speeds in world units (blocks) and seconds.
 export const WEAPON = {
@@ -69,7 +69,7 @@ export const WEAPON = {
 export const isWeapon = (t) => t >= BT.LASER && t <= BT.LANCE;
 
 // Hull classes come from block count (the ship designer shows which one a design falls in).
-// Limits keep every battle inside the compute budget in docs/ARCHITECTURE.md.
+// Ships can be absurdly big: a 350,000-block worldbreaker duel resolves in about 2 s.
 export const HULL_CLASSES = [
   { id: 'corvette', name: 'Corvette', maxBlocks: 40 },
   { id: 'frigate', name: 'Frigate', maxBlocks: 85 },
@@ -77,7 +77,12 @@ export const HULL_CLASSES = [
   { id: 'cruiser', name: 'Cruiser', maxBlocks: 500 },
   { id: 'battleship', name: 'Battleship', maxBlocks: 1200 },
   { id: 'titan', name: 'Titan', maxBlocks: 3000 },
+  { id: 'dreadnought', name: 'Dreadnought', maxBlocks: 10000 },
+  { id: 'leviathan', name: 'Leviathan', maxBlocks: 30000 },
+  { id: 'colossus', name: 'Colossus', maxBlocks: 120000 },
+  { id: 'worldbreaker', name: 'Worldbreaker', maxBlocks: 400000 },
 ];
 export const MAX_BLOCKS = HULL_CLASSES[HULL_CLASSES.length - 1].maxBlocks;
-// Largest grid a design may use (width along the nose axis x height).
-export const MAX_W = 96, MAX_H = 64;
+// Largest grid a design may use (width along the nose axis x height). A full-size ship is about
+// 3 MB of memory per copy in a battle (types + hit points per cell), so this is where it stops.
+export const MAX_W = 1024, MAX_H = 640;

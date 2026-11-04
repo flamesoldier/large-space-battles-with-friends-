@@ -78,6 +78,8 @@ Each tick:
    unit for the heavy laser, passing through its own blocks); the open slices are a 64-bit mask
    on the weapon. Aiming is one rotation, one `atan2` and a bit test. Masks are recomputed when
    the ship loses blocks, so armour shot away opens arcs.
+   Line of fire is incremental: each weapon remembers the cell blocking each ray, and after
+   damage only rays whose blocker died are re-cast.
    **Heavy-laser cook-off:** a destroyed heavy-laser block is queued and, after weapons fire,
    detonates with a blast that ignores friendly fire (`resolveCookoffs()`). The blast kills the
    neighbouring laser blocks, which go off in turn, so the whole unit chain-reacts.
@@ -180,11 +182,28 @@ embeds the whole viewer page into `designer.html`; "Watch replay" loads it in an
 hands it the packed replay through `postMessage`, so the viewer plays exactly what the designer
 resolved, and the designer still works as one file.
 
+## Giant ships
+
+Designs can be up to 1024 × 640 cells and 400,000 blocks. Measured on one core:
+
+| Battle | Compute for 244 s | Replay (gzip) |
+| --- | ---: | ---: |
+| 2 × 350,000-block ships, duel | 1.8 s | 0.3 MB |
+| 1 colossus (100k blocks) + 500 ships per side | 3.7 s | 2.0 MB |
+| 2 colossi + 1,000 ships per side | 8.3 s | 4.3 MB |
+
+What made this work: 32-bit block indexes in the replay, incremental line of fire, weapons
+aiming at the near side of a big target rather than its centre, more targets per big ship, and
+stance distances measured roughly hull to hull. Memory is the real limit: every ship in a
+battle has its own `types` + `hp` arrays (5 bytes per cell), so a full-size 1024 × 640 ship is
+about 3 MB per copy.
+
 ## What's next for battles
 
 In rough order:
 
 1. ~~Ship designer~~: done (`src/designer/`, see below).
+1. Ship collisions: prototype measured (see CLAUDE.md), +8% compute at 1,000 vs 1,000.
 2. Battle job runner on the server: queue, worker threads, store replays, write losses back to
    the fleets.
 3. Combat depth: a railgun that punches through several blocks, shields, reactor/power blocks, and smarter AI roles (screens, flankers, capital ships holding

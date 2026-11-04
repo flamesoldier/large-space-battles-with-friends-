@@ -6,7 +6,9 @@ import { designCost } from '../shared/shipStats.js';
 import { mulberry32 } from '../shared/rng.js';
 
 // How many copies to field by default, so a test is a proper fleet fight but stays quick.
-export const DEFAULT_COPIES = { corvette: 30, frigate: 20, destroyer: 12, cruiser: 6, battleship: 3, titan: 1 };
+export const DEFAULT_COPIES = { corvette: 30, frigate: 20, destroyer: 12, cruiser: 6, battleship: 3, titan: 1, dreadnought: 1, leviathan: 1, colossus: 1, worldbreaker: 1 };
+// The enemy fleet stops growing here, so a giant design's test stays quick in the browser.
+const MAX_ENEMY_SHIPS = 2500;
 
 /**
  * Build a Battle scenario. `opponent` is null for a generated mixed fleet, or a design to
@@ -22,7 +24,7 @@ export function makeTestScenario(design, copies, opponent = null, seed = 1) {
 
   if (opponent) {
     designs.push(opponent);
-    const n = Math.max(1, Math.round(budget / Math.max(1, designCost(opponent))));
+    const n = Math.min(MAX_ENEMY_SHIPS, Math.max(1, Math.round(budget / Math.max(1, designCost(opponent)))));
     for (let k = 0; k < n; k++) enemy.push(1);
     spent = n * designCost(opponent);
   } else {
@@ -32,7 +34,7 @@ export function makeTestScenario(design, copies, opponent = null, seed = 1) {
       designs.push(d);
       return { index: designs.length - 1, cost: designCost(d), p };
     });
-    for (let guard = 0; guard < 5000; guard++) {
+    for (let guard = 0; guard < 20000 && enemy.length < MAX_ENEMY_SHIPS; guard++) {
       const fits = pool.filter((o) => spent + o.cost <= budget * 1.02);
       if (!fits.length) break;
       // Weight by cost too, so a big budget buys some big ships instead of a swarm of corvettes.

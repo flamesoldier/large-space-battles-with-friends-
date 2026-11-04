@@ -12,7 +12,7 @@
 //  * Everything is recorded as events + low-rate transform samples (see toReplay()).
 
 import { BT, BLOCKS, WEAPON, MULTIBLOCK, COOKOFF, isWeapon } from '../shared/blocks.js';
-import { lineOfFire, binOf, binOpen } from '../shared/arcs.js';
+import { lineOfFire, updateLineOfFire, binOf, binOpen } from '../shared/arcs.js';
 import { mulberry32 } from '../shared/rng.js';
 import { Col } from '../shared/replayFormat.js';
 import { SpatialGrid } from './spatial.js';
@@ -42,6 +42,9 @@ export const STANCES = {
   escort:   { label: 'Escort',   range: (e, d) => d * 0.6 },              // screen a big friendly ship
 };
 
+// Every weapon object gets its line-of-fire fields up front (one object shape, see makeEntity).
+const arcFields = () => ({ omni: false, buried: false, m0: 0, m1: 0, ox: 0, oy: 0, bx0: 1, by0: 1, bx1: 0, by1: 0, blk: null });
+
 export class Battle {
   // maxTime: 4 minutes while testing; the plan for launch is 30 minutes so every battle resolves.
   constructor({ designs, ships, seed = 1, maxTime = 240, friendlyFire = false }) {
@@ -63,6 +66,7 @@ export class Battle {
     this.teamCy = [0, 0];
     this.grid = new SpatialGrid(32, 6144);
     this.mgrid = new SpatialGrid(64, 6144);
+    this._ax = 0; this._ay = 0;
     this.cookoffs = []; // world x, y pairs of heavy-laser blocks destroyed this tick
     this.stamp = new Int32Array(8192);
     this.stampGen = 1;
@@ -94,7 +98,7 @@ export class Battle {
       const t = e.types[i];
       if (!isWeapon(t) || MULTIBLOCK[t]) continue;
       const cd = t === BT.MISSILE ? volley + 0.15 * launcher++ : this.rng() * 2;
-      e.weapons.push({ cell: i, cells: null, type: t, lx: (i % d.w) + 0.5 - d.w / 2, ly: ((i / d.w) | 0) + 0.5 - d.h / 2, cd, omni: false, buried: false, m0: 0, m1: 0 });
+      e.weapons.push({ cell: i, cells: null, type: t, lx: (i % d.w) + 0.5 - d.w / 2, ly: ((i / d.w) | 0) + 0.5 - d.h / 2, cd, ...arcFields() });
     }
     // Multi-block weapons: each connected group of their blocks is one gun, aimed from its centre.
     const seen = new Uint8Array(e.types.length);
@@ -109,8 +113,9 @@ export class Battle {
       }
       let sx = 0, sy = 0;
       for (const c of group) { sx += (c % d.w) + 0.5 - d.w / 2; sy += ((c / d.w) | 0) + 0.5 - d.h / 2; }
-      e.weapons.push({ cell: group[0], cells: group, type: t, lx: sx / group.length, ly: sy / group.length, cd: 4 + this.rng() * 6, omni: false, buried: false, m0: 0, m1: 0 });
+      e.weapons.push({ cell: group[0], cells: group, type: t, lx: sx / group.length, ly: sy / group.length, cd: 4 + this.rng() * 6, ...arcFields() });
     }
+    for (const w of e.weapons) this.facing(e, w);
     e.track = [];
     e.t1 = 65535;
     this.refit(e);
@@ -151,7 +156,7 @@ export class Battle {
       for (const c of w.cells) if (e.hp[c] > 0) alive++;
       return alive >= w.cells.length * MULTIBLOCK[w.type].minIntact;
     });
-    for (const w of e.weapons) this.facing(e, w); // armour shot away can open new arcs
+    for (const w of e.weapons) updateLineOfFire(e.types, e.hp, e.w, e.h, w); // armour shot away can open new arcs
     // Point defence doesn't drive positioning. "Direct" range is the main gun: cannons if fitted, else lasers.
     let shortest = Infinity, longest = 0, cannon = 0, laser = 0;
     for (const w of e.weapons) {
@@ -258,6 +263,8 @@ export class Battle {
     if (e.targets.length && e.targets[0].dead) e.targets = e.targets.filter((t) => !t.dead);
     if (e.retarget > 0 && e.targets.length) return;
     e.retarget = 0.8 + this.rng() * 0.8;
+    // Big ships keep more targets, so guns all along a long hull have something to shoot at.
+    const maxT = e.radius < 40 ? 4 : Math.min(24, 4 + ((e.radius / 20) | 0));
     const best = [], bd = [];
     const fn = (o) => {
       if (o.kind !== SHIP || o.dead || o.team === e.team) return;
@@ -268,12 +275,13 @@ export class Battle {
       const d = d0 * (o.weapons.length ? 1 : 9);
       let k = best.length;
       while (k > 0 && bd[k - 1] > d) k--;
-      if (k >= 4) return;
+      if (k >= maxT) return;
       best.splice(k, 0, o); bd.splice(k, 0, d);
-      if (best.length > 4) { best.pop(); bd.pop(); }
+      if (best.length > maxT) { best.pop(); bd.pop(); }
     };
-    fn.done = (ring) => (best.length >= 4 && ring >= 1) || (best.length > 0 && ring >= 3);
-    this.grid.queryRings(e.x, e.y, 10, fn);
+    const rings = 10 + ((e.radius / 32) | 0);
+    fn.done = (ring) => (best.length >= maxT && ring >= 1 + ((e.radius / 32) | 0)) || (best.length > 0 && ring >= 3 + ((e.radius / 32) | 0));
+    this.grid.queryRings(e.x, e.y, rings, fn);
     if (!best.length) {
       // Nobody close: pick the nearest of a random sample of enemy warships and go get them.
       const pool = this.armed[1 - e.team];
@@ -309,7 +317,10 @@ export class Battle {
     if (tg && !disarmed) { tx = tg.x; ty = tg.y; }
     else if (this.armed[other].length) { tx = this.teamCx[other]; ty = this.teamCy[other]; }
     else { tx = e.x + e.c; ty = e.y + e.s; }
-    const dx = tx - e.x, dy = ty - e.y, d = Math.hypot(dx, dy);
+    const dx = tx - e.x, dy = ty - e.y;
+    // Stance distances are roughly hull to hull: a giant's guns and its target's hull are a long
+    // way from their centres. (No effect on small ships.)
+    const d = Math.max(1, Math.hypot(dx, dy) - (tg ? Math.max(0, tg.radius - 12) * 0.8 : 0) - Math.max(0, e.radius - 12) * 0.8);
     let desired = Math.atan2(dy, dx);
     if (disarmed) desired += Math.PI; // crippled: run away from the enemy fleet
     const pr = e.prefRange;
@@ -412,13 +423,23 @@ export class Battle {
       // Preferred target first, then any other target that is in range and inside this weapon's arc.
       // Missiles and heavy lasers all go for the primary target so volleys land together.
       const spreadFire = W.kind !== 'missile' && W.kind !== 'lance';
-      let tg = null;
+      let tg = null, ax = 0, ay = 0;
+      const r2 = W.range * W.range;
       for (let j = 0; j < tl; j++) {
         const o = e.targets[spreadFire ? (k + j) % tl : j];
-        if ((o.x - wx) ** 2 + (o.y - wy) ** 2 <= W.range * W.range && this.bears(e, w, wx, wy, o.x, o.y)) { tg = o; break; }
+        const d2 = (o.x - wx) ** 2 + (o.y - wy) ** 2;
+        if (d2 <= r2) {
+          if (!this.bears(e, w, wx, wy, o.x, o.y)) continue;
+          tg = o; [ax, ay] = this.aimPoint(o); break;
+        }
+        // Centre out of range, but a big ship's near side may be in range: aim at a block there.
+        if (o.radius < 12 || Math.sqrt(d2) - o.radius > W.range) continue;
+        if (this.aimInRange(o, wx, wy, r2)) {
+          ax = this._ax; ay = this._ay;
+          if (this.bears(e, w, wx, wy, ax, ay)) { tg = o; break; }
+        }
       }
       if (!tg) { w.cd = 0.2 + this.rng() * 0.2; continue; }
-      const [ax, ay] = this.aimPoint(tg);
       if (W.kind === 'lance') { w.cd = this.fireLance(e, wx, wy, ax, ay, W) ? W.cooldown : 0.5; continue; }
       // Launchers keep in step (no jitter) so a ship's missiles always leave as one volley.
       w.cd = W.kind === 'missile' ? W.cooldown : W.cooldown * (0.85 + 0.3 * this.rng());
@@ -433,6 +454,18 @@ export class Battle {
       this.addProjectile(kind, w.type, wx, wy, Math.cos(ang) * W.speed, Math.sin(ang) * W.speed,
         Math.round(W.life / DT), e.id, e.team, tg.id, W.damage, W.hp || 0, rec);
     }
+  }
+
+  /** Try a few random live blocks of a big target for one within range (sets _ax, _ay). */
+  aimInRange(tg, wx, wy, r2) {
+    for (let tries = 0; tries < 8; tries++) {
+      const ci = (this.rng() * tg.types.length) | 0;
+      if (!tg.types[ci] || tg.hp[ci] <= 0) continue;
+      const lx = (ci % tg.w) + 0.5 - tg.w / 2, ly = ((ci / tg.w) | 0) + 0.5 - tg.h / 2;
+      const x = tg.x + lx * tg.c - ly * tg.s, y = tg.y + lx * tg.s + ly * tg.c;
+      if ((x - wx) ** 2 + (y - wy) ** 2 <= r2) { this._ax = x; this._ay = y; return true; }
+    }
+    return false;
   }
 
   /** A random live block of the target, so hits spread over the hull. */
@@ -850,7 +883,7 @@ export class Battle {
   initRecorder() {
     const C = (T) => new Col(T);
     this.R = {
-      bdT: C(Uint16Array), bdEnt: C(Uint32Array), bdCell: C(Uint16Array), bdCause: C(Uint8Array),
+      bdT: C(Uint16Array), bdEnt: C(Uint32Array), bdCell: C(Uint32Array), bdCause: C(Uint8Array),
       // Shells and missiles fly straight: launch + angle + flight time (in 0.01 s) is enough.
       shotT0: C(Uint16Array), shotFlight: C(Uint16Array), shotX: C(Int16Array), shotY: C(Int16Array),
       shotAng: C(Uint16Array), shotHit: C(Uint8Array), shotTeam: C(Uint8Array), shotKind: C(Uint8Array),
@@ -860,7 +893,7 @@ export class Battle {
       chParent: C(Uint32Array), chT0: C(Uint16Array), chX: C(Float32Array), chY: C(Float32Array), chA: C(Float32Array),
       chVx: C(Float32Array), chVy: C(Float32Array), chVa: C(Float32Array),
       chMinI: C(Uint16Array), chMinJ: C(Uint16Array), chW: C(Uint16Array), chH: C(Uint16Array),
-      chC0: C(Uint32Array), chN: C(Uint32Array), chCells: C(Uint16Array),
+      chC0: C(Uint32Array), chN: C(Uint32Array), chCells: C(Uint32Array),
     };
   }
 

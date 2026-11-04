@@ -43,9 +43,9 @@ Weapons (numbers in `blocks.js`):
 - **Heavy laser**: 10×10 multi-block turret, range 450, every 20 s, 2,500-damage beam that
   burns through blocks and ships until spent (it cuts ships in half). Works while half its blocks
   survive. Holds fire if a friendly ship is first in line. **Its blocks explode when destroyed**
-  (`COOKOFF` in `blocks.js`: 260 peak damage, radius 5, ignores friendly fire, hurts its own
-  ship and allies). One destroyed block chain-reacts through the whole unit: about 160 blocks
-  of a battleship go with it (the gun plus ~60 around it).
+  (`COOKOFF` in `blocks.js`: 300 peak damage, radius 16, ignores friendly fire, hurts its own
+  ship and allies). One destroyed block chain-reacts through the whole unit: a battleship loses
+  ~43% of its blocks and an ally flying alongside loses ~260. The owner asked for it to be huge.
 - Future weapons the owner wants: bigger cannons, a medium laser.
 
 Combat rules:
@@ -57,6 +57,11 @@ Combat rules:
   shooting away armour opens arcs. The heavy laser casts its rays from the centre of its 10×10
   unit, through its own blocks. A weapon with no clear direction is buried and can't fire. Flat
   hull-mounted guns get about 90°; guns that stick out get more.
+- **Giant ships**: the owner wants ships as big as possible, "even to ridiculous levels". Hull
+  classes go past titan to dreadnought, leviathan, colossus and worldbreaker (400,000 blocks,
+  grid up to 1024 × 640). Weapons aim at the near side of a big target's hull (range is not
+  measured to its centre), big ships track up to 24 targets, and stance distances are measured
+  roughly hull to hull, so giants actually fight.
 - **Stances** chosen per design (will be a designer option): charge, brawl, line, standoff,
   escort. Escorts take limited slots around a big ship and break off to attack nearby enemies.
 - **Debris** must stay clearly visible (wrecks keep most of their colour).
@@ -75,7 +80,12 @@ Battle end:
 - The viewer is stateless: everything drawn is a pure function of time (that's what makes
   scrubbing free). Anything new in the replay should follow that pattern.
 - Projectile samples must stay contiguous per projectile (an earlier bug interleaved them).
-- Always benchmark after sim changes (`npm run bench -- 1000`); 1,000 vs 1,000 takes about 10 s.
+- Always benchmark after sim changes (`npm run bench -- 1000`); 1,000 vs 1,000 takes about 7 s.
+- Line of fire is incremental: each weapon stores the cell blocking each of its 64 rays
+  (`blk`), and `refit()` only re-casts rays whose blocker died (`updateLineOfFire`). A full
+  re-cast per hit was fine for 50 guns but not for a giant with 1,000.
+- Replay block indexes (`bdCell`, `chCells`) are 32-bit, because giant ships have more than
+  65,535 cells.
 - The demo page re-runs the sim in the browser, so results differ slightly from Node
   (`Math.sin`/`cos` aren't identical across engines). The real game records replays on the
   server, so that's fine.
@@ -111,14 +121,29 @@ designer's numbers against the sim.
   the viewer page in `designer.html`, so the replay plays in an in-page overlay (iframe +
   postMessage): the designer works as a single file, with no pop-ups.
 - Hull class comes from block count (`HULL_CLASSES` in `blocks.js`): corvette ≤ 40, frigate ≤ 85,
-  destroyer ≤ 200, cruiser ≤ 500, battleship ≤ 1,200, titan ≤ 3,000. Grid limit 96 × 64.
+  destroyer ≤ 200, cruiser ≤ 500, battleship ≤ 1,200, titan ≤ 3,000, dreadnought ≤ 10,000,
+  leviathan ≤ 30,000, colossus ≤ 120,000, worldbreaker ≤ 400,000. Grid limit 1024 × 640.
+- Built for huge grids: undo stores changed cells only; drawing culls to the visible cells and
+  switches to a one-pixel-per-cell bitmap when zoomed out (also used by the minimap); analysis
+  of a slow-to-analyse design waits for the end of a stroke. Scroll pans, Ctrl/Cmd+scroll or
+  pinch zooms, plus a Hand tool, arrow keys, +/− and a clickable minimap.
 - Validation errors block test battles (and should block shipyards): one hub, everything
   connected to it, block limit, heavy lasers as whole separate 10×10 units. Warnings: no weapons,
   buried weapons, guns with under 45° of arc, heavy-laser cook-off, no thrusters, big escorts.
 - Designs are saved cropped, in the format above; JSON export stores `cells` as base64.
 
 The test-fleet generator (`designs.js`) puts missile launchers on the skin and heavy lasers on
-the nose or hull edge, where they have a line of fire.
+the nose or hull edge, where they have a line of fire. It also makes dreadnought, leviathan and
+colossus samples for the designer's templates (not used in the generated test fleets).
+
+## Measured, not built yet: ship collisions
+
+Ships only push apart from allies in the same grid cell, and only once they overlap by half,
+so hulls pass through each other (especially enemies). A prototype where every ship's hull
+rectangle pushes out of any overlapping ship (any team, separating-axis test):
+- 1,000 vs 1,000: +8% compute; pairs overlapping by more than 3 blocks fall from ~300 to ~6.
+- 3,000 vs 3,000: +26% compute (dense blobs have many neighbours); ~1,700 to ~140.
+Block-exact collision would cost far more and isn't needed for the look. Waiting on the owner.
 
 Still open with the owner: the exact block prices and the shipyard multiplier (placeholders
 until there's an income number to balance against), and whether hull class should matter beyond

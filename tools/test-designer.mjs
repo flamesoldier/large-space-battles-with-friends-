@@ -6,7 +6,7 @@ import { makeDesign, CLASSES } from '../src/shared/designs.js';
 import { Battle } from '../src/sim/battle.js';
 import { BT } from '../src/shared/blocks.js';
 import { analyzeDesign, cropDesign, encodeDesign, decodeDesign, weaponFacing } from '../src/shared/shipStats.js';
-import { binOf, binOpen } from '../src/shared/arcs.js';
+import { binOf, binOpen, lineOfFire } from '../src/shared/arcs.js';
 import { shipyardPrice } from '../src/shared/economy.js';
 import { ShipEditor } from '../src/designer/editor.js';
 import { makeTestScenario } from '../src/designer/testBattle.js';
@@ -80,6 +80,11 @@ ed.mirror = true;
 ed.stamp(hx + 20, hy - 12); // far enough from the axis to mirror
 assert.equal(ed.cells.filter((c) => c === BT.LANCE).length, 200);
 ed.setCell(hx - 5, hy, BT.HUB); assert.equal(ed.hub(), hy * ed.w + hx - 5, 'placing a hub moves it');
+ed.undo(); assert.equal(ed.hub(), hy * ed.w + hx, 'undo moves the hub back');
+ed.redo(); assert.equal(ed.hub(), hy * ed.w + hx - 5, 'redo moves it again');
+ed.checkpoint(); ed.paint(hx + 30, hy - 20, BT.CANNON); ed.cancelStep();
+assert.equal(ed.get(hx + 30, hy - 20), 0, 'cancelled stroke leaves nothing behind');
+assert.equal(ed.get(hx + 30, hy + 20), 0, 'or its mirror');
 // Fill inside an outline, but never out into open space.
 const f = new ShipEditor(); f.mirror = false;
 const c0 = f.hub(), fx = c0 % f.w, fy = (c0 / f.w) | 0;
@@ -127,6 +132,22 @@ assert.ok(Math.abs(sc.enemyCost - sc.budget) / sc.budget < 0.1, `budgets ${sc.en
   const lost = before - e.alive, lanceLeft = [...e.types].filter((t, i) => t === BT.LANCE && e.hp[i] > 0).length;
   console.log(`cook-off: one heavy-laser block destroyed -> ${lost} of ${before} blocks of its own ship gone (${lanceLeft} laser blocks left), ally lost ${allyBefore - ally.alive}`);
   assert.ok(lost > 100 && lanceLeft < 50, 'chain reaction takes most of the gun');
+}
+
+// Incremental line-of-fire updates after damage match a full re-cast.
+{
+  const d = makeDesign('battleship', 12);
+  const b = new Battle({ designs: [d], ships: [{ design: 0, team: 0, x: 0, y: 0, a: 0 }] });
+  const e = b.ents[0];
+  let rnd = 7;
+  for (let round = 0; round < 6; round++) {
+    for (let n = 0; n < 60; n++) { rnd = (rnd * 16807) % 2147483647; const c = rnd % e.types.length; if (e.types[c] && c !== e.hub && e.types[c] !== BT.LANCE) b.damageCell(e, c, 1e6); }
+    b.refit(e);
+    for (const w of e.weapons) {
+      const fresh = lineOfFire(e.types, e.hp, e.w, e.h, w.cell, {}, w.cells);
+      assert.equal(w.m0, fresh.m0, `incremental arc (round ${round}, cell ${w.cell})`); assert.equal(w.m1, fresh.m1);
+    }
+  }
 }
 
 console.log(`designer stats match the sim for ${checked} generated designs; validation ok`);
