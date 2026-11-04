@@ -80,6 +80,11 @@ colours come from 18, minus the ones taken). Named seats keep the name you gave.
 nobody takes still has a home world and income, and others can conquer it, so make the game the
 size of the group that's actually playing.
 
+**Game speed** (admin page): pause, 1× (real time), 60×, 600× or 3600× for everyone (one galaxy,
+one clock; players see it next to the clock), and **jump ahead** 30 min to 1 day at once
+(everything due on the way happens, battles included). Saved with the game, so it survives
+restarts; `LSB_SPEED` only sets the speed a new game starts at. Put it back to 1× for real play.
+
 The **admin page** (`/admin`, needs `LSB_ADMIN_PASSWORD` set on the server): create the game,
 see the players, give one of them a new password (logs them out everywhere), or replace the game
 with a new one. Admin logins share the rate limit and last 12 hours.

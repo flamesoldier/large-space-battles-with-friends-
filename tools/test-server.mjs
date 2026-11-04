@@ -110,6 +110,22 @@ try {
     ok(!(await cat2.act({ type: 'claim', name: 'Kitty', color: '#4dff88' })).body.ok, 'named players can\'t rename');
     ok(/colours shown/.test((await p3.act({ type: 'claim', name: 'Eve', color: '#ff4d4d' })).body.error), 'a colour just taken is gone');
     ok((await p3.act({ type: 'claim', name: 'Eve', color: '#4dff88' })).body.ok, 'the next player claims theirs');
+    // ---- the admin controls the game's speed for everyone
+    ok((await p3.json('POST', '/api/admin/speed', { speed: 0 })).status === 401, 'players can\'t change the speed');
+    let sp = await boss.json('POST', '/api/admin/speed', { speed: 0 });
+    ok(sp.body.ok && sp.body.game.speed === 0, 'admin pauses the game');
+    const t0 = (await p2.state()).body;
+    await sleep(300);
+    const t1 = (await p2.state()).body;
+    ok(t0.speed === 0 && t1.gameNow === t0.gameNow, 'paused: the clock stands still');
+    const j = await boss.json('POST', '/api/admin/jump', { hours: 2 });
+    ok(j.body.ok && Math.abs(j.body.game.clock - t1.gameNow - 2 * 3600e3) < 1000, 'jump ahead moves the clock');
+    const yard2 = (await p2.state()).body.world;
+    ok(yard2.players[1].credits > t1.world.players[1].credits + 2500, 'and income arrives for the jump');
+    ok(!(await boss.json('POST', '/api/admin/jump', { hours: -1 })).body.ok && !(await boss.json('POST', '/api/admin/speed', { speed: 'fast' })).body.ok, 'bad speeds and jumps are refused');
+    sp = await boss.json('POST', '/api/admin/speed', { speed: 600 });
+    ok(sp.body.game.speed === 600 && (await p2.state()).body.speed === 600, 'players get the new speed');
+
     const adm = (await boss.json('GET', '/api/admin/state')).body.game.players;
     ok(adm[1].name === 'Dan bthe/b Bold' && adm[1].joined && !adm[3].joined, 'the admin page shows who has joined');
 

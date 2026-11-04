@@ -6,6 +6,8 @@
 // thread, and replays on disk.
 //
 // Clock: game time = anchor.clock + (now − anchor.wall) × speed. Time the server was down counts
+// (at the speed in force). The speed is the admin's to change (admin page: pause … 3600×, and
+// "jump ahead"); it is saved with the game, LSB_SPEED only sets it for a game that has none yet.
 // too, like a closed page did. Everything that changes the world runs under one lock: the tick
 // (events and battles) and player actions. While a battle resolves the world waits at the moment
 // the battle started (as the page did), and actions sent meanwhile simply wait their turn.
@@ -29,13 +31,15 @@ const index = (v, n) => (Number.isInteger(v) && v >= 0 && v < n ? v : null);
 export class Game {
   /** dir: the data folder (game.json, replays/). speed: game seconds per real second. */
   constructor({ dir, speed = 1, log = console.log }) {
-    this.dir = dir; this.speed = speed; this.log = log;
+    this.dir = dir; this.log = log;
     this.file = join(dir, 'game.json');
     this.replayDir = join(dir, 'replays');
     mkdirSync(this.replayDir, { recursive: true });
     const saved = JSON.parse(readFileSync(this.file, 'utf8'));
     this.world = upgradeWorld(saved.world);
-    this.anchor = { wall: saved.wall ?? Date.now(), clock: this.world.clock };
+    this.speed = Number.isFinite(saved.speed) ? saved.speed : speed;
+    // Older saves stored only the wall time matching world.clock.
+    this.anchor = saved.anchor ?? { wall: saved.wall ?? Date.now(), clock: this.world.clock };
     this.replays = new Set(readdirSync(this.replayDir).filter((f) => f.endsWith('.bin.gz')).map((f) => f.slice(0, -7)));
     this.version = 1; // any change worth telling clients about (world or status)
     this.worldVersion = 1; // the world itself changed
@@ -45,6 +49,23 @@ export class Game {
     this.failures = 0;
     this.stopped = false; // shutting down: stop processing events
     this.retired = false; // replaced by a new game: never write to disk again
+  }
+
+  /** Change how fast game time runs from now on (0 = paused). Doesn't move the clock. */
+  setSpeed(speed) {
+    const now = Date.now();
+    this.anchor = { wall: now, clock: this.gameNow(now) };
+    this.speed = speed;
+    this.save(); this.changed(false);
+  }
+
+  /** Move game time forward by ms at once (testing): everything due on the way happens, in order. */
+  jump(ms) {
+    return this.locked(async () => {
+      this.anchor = { wall: this.anchor.wall, clock: this.anchor.clock + ms };
+      await this.catchUp();
+      this.save(); this.changed();
+    });
   }
 
   /** Make a new game file (the admin tool does this). */
@@ -65,7 +86,7 @@ export class Game {
   save() {
     if (this.retired) return;
     // The anchor is what the clock is measured from; saving it with the world keeps time running across restarts.
-    writeJsonAtomic(this.file, { world: this.world, wall: Date.now() - (this.gameNow() - this.world.clock) / this.speed });
+    writeJsonAtomic(this.file, { world: this.world, anchor: this.anchor, speed: this.speed });
   }
 
   changed(world = true) {

@@ -48,6 +48,7 @@ button.go { background: var(--signal); color: var(--void); border-color: var(--s
 button.danger { color: var(--bad); }
 button.small { padding: 5px 9px; font-size: 11.5px; }
 button:disabled { opacity: 0.45; cursor: not-allowed; }
+button[aria-pressed="true"] { border-color: var(--azure); color: var(--azure); background: rgba(134,232,255,0.08); }
 .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .err { color: var(--bad); min-height: 1.3em; font-size: 14px; margin: 0; }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -100,6 +101,16 @@ a { color: var(--azure); }
     <p style="margin-top:14px">"New password" logs that player out everywhere and shows their new password above.</p>
   </section>
 
+  <section id="time" hidden>
+    <h2>Game speed</h2>
+    <p>How fast time runs for <b>everyone</b>: one galaxy, one clock. 1× is real time (a shipyard builds every 30 minutes). Speed it up to test, then put it back to 1× before your friends play for real. Players see the speed next to the galaxy clock.</p>
+    <div class="row" id="speeds"></div>
+    <h2 style="margin-top:20px">Jump ahead</h2>
+    <p>Skip game time forward at once. Everything due on the way happens: ships get built, fleets arrive, battles are fought (big battles take a moment each).</p>
+    <div class="row" id="jumps"></div>
+    <p class="err" id="time-err" role="alert"></p>
+  </section>
+
   <section id="create" hidden>
     <h2 id="create-title">Create the game</h2>
     <form id="create-form" class="stack">
@@ -146,17 +157,34 @@ $('pw-copy').addEventListener('click', async () => {
 });
 $('pw-done').addEventListener('click', () => { $('passwords').hidden = true; shown = []; $('pw-list').innerHTML = ''; });
 
+const SPEEDS = [[0, 'Pause'], [1, '1× (real time)'], [60, '60×'], [600, '600×'], [3600, '3600×']];
+const JUMPS = [[0.5, '30 min'], [1, '1 hour'], [6, '6 hours'], [24, '1 day']];
+$('speeds').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-speed]'); if (!b) return;
+  const r = await api('/api/admin/speed', { speed: Number(b.dataset.speed) });
+  $('time-err').textContent = r.ok ? '' : r.error; if (r.ok) render(r);
+});
+$('jumps').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-jump]'); if (!b) return;
+  for (const x of $('jumps').children) x.disabled = true;
+  $('time-err').textContent = '';
+  const r = await api('/api/admin/jump', { hours: Number(b.dataset.jump) });
+  if (r.ok) render(r); else { $('time-err').textContent = r.error; for (const x of $('jumps').children) x.disabled = false; }
+});
 let armed = null;
 function render(st) {
   $('login').hidden = true; $('logout').hidden = false; $('create').hidden = false;
   const G = st.game;
-  $('game').hidden = !G;
+  $('game').hidden = !G; $('time').hidden = !G;
   $('replace-row').hidden = !G;
   $('create-title').textContent = G ? 'Start a new game instead' : 'Create the game';
   $('create-go').textContent = G ? 'Replace with a new game' : 'Create the game';
   $('create-go').classList.toggle('danger', !!G); $('create-go').classList.toggle('go', !G);
   if (!G) return;
-  $('game-kv').innerHTML = `<span>Day <b>${G.day}</b></span><span><b>${G.worlds}</b> worlds</span><span>seed <b>${G.seed}</b></span><span>speed <b>${G.speed}×</b></span><span><b>${G.replays}</b> replays</span>`;
+  const h = G.clock / 3600e3, clock = `Day ${Math.floor(h / 24) + 1} · ${String(Math.floor(h % 24)).padStart(2, '0')}:${String(Math.floor((h * 60) % 60)).padStart(2, '0')}`;
+  $('game-kv').innerHTML = `<span><b>${clock}</b></span><span><b>${G.worlds}</b> worlds</span><span>seed <b>${G.seed}</b></span><span>speed <b>${G.speed === 0 ? 'paused' : `${G.speed}×`}</b></span><span><b>${G.replays}</b> replays</span>`;
+  $('speeds').innerHTML = SPEEDS.map(([v, l]) => `<button data-speed="${v}" aria-pressed="${v === G.speed}">${l}</button>`).join('');
+  $('jumps').innerHTML = JUMPS.map(([v, l]) => `<button data-jump="${v}">+${l}</button>`).join('');
   $('players').innerHTML = G.players.map((p) => `<tr class="${p.eliminated ? 'out' : ''}"><td><span class="dot" style="background:${esc(p.color)}"></span>${esc(p.name)}${p.joined ? '' : ' <span class="num">(not joined yet)</span>'}${p.team ? ` <span class="num">team ${esc(p.team)}</span>` : ''}${p.eliminated ? ' <span class="num">(out)</span>' : ''}</td><td class="num">${p.worlds}</td>
     <td><button class="small" data-reset="${p.id}">${armed === p.id ? 'Click again to confirm' : 'New password'}</button></td></tr>`).join('');
 }

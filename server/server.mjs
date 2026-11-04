@@ -191,7 +191,7 @@ function adminState() {
   return {
     ok: true,
     game: {
-      seed: W.seed, worlds: W.planets.length, day: Math.floor(W.clock / 864e5) + 1, speed: SPEED,
+      seed: W.seed, worlds: W.planets.length, day: Math.floor(game.gameNow() / 864e5) + 1, speed: game.speed, clock: game.gameNow(),
       winner: W.winner, replays: game.replays.size,
       players: W.players.map((p) => ({ id: p.id, name: p.name, color: p.color, team: p.team, eliminated: p.eliminated, joined: p.claimed !== false, password: !!accounts.get(p.id), worlds: W.planets.filter((x) => x.owner === p.id).length })),
     },
@@ -241,6 +241,22 @@ async function handleAdmin(req, res, path, body) {
     if (body.players !== undefined && !Array.isArray(body.players)) return fail(req, res, 400, 'Bad player list.');
     try { made = await replaceGame({ count: body.count, names: body.players, teams: Array.isArray(body.teams) ? body.teams : [], seed: body.seed, worlds: body.worlds }); } catch (e) { return fail(req, res, 400, e.message); }
     return send(req, res, 200, { ...adminState(), passwords: made.passwords.map(([id, pw]) => ({ id, name: made.world.players[id].name, open: made.world.players[id].claimed === false, password: pw })) });
+  }
+  if (path === '/api/admin/speed') {
+    if (!game) return fail(req, res, 400, 'There is no game yet.');
+    const s = body.speed;
+    if (!Number.isFinite(s) || s < 0 || s > 100000) return fail(req, res, 400, 'Bad speed.');
+    game.setSpeed(s);
+    console.log(`${stamp()} Admin set the game speed to ${s}×`);
+    return send(req, res, 200, adminState());
+  }
+  if (path === '/api/admin/jump') {
+    if (!game) return fail(req, res, 400, 'There is no game yet.');
+    const h = body.hours;
+    if (!Number.isFinite(h) || h <= 0 || h > 24 * 14) return fail(req, res, 400, 'Jump between a minute and 14 days.');
+    await game.jump(h * 3600e3);
+    console.log(`${stamp()} Admin jumped the game ${h} h ahead`);
+    return send(req, res, 200, adminState());
   }
   if (path === '/api/admin/reset-password') {
     if (!game) return fail(req, res, 400, 'There is no game yet.');
@@ -347,7 +363,7 @@ const PID_FILE = join(DATA, 'server.pid');
 server.listen(PORT, HOST, () => {
   writeFileSync(PID_FILE, String(process.pid));
   console.log(`Large Space Battles server on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
-  if (game) console.log(`  ${game.world.players.length} players, ${game.world.planets.length} worlds, speed ${SPEED}×`);
+  if (game) console.log(`  ${game.world.players.length} players, ${game.world.planets.length} worlds, speed ${game.speed}×`);
   console.log(`  data in ${DATA}${TRUST_PROXY ? ', behind a proxy' : ''}, admin page ${ADMIN_ON ? 'on (/admin)' : 'off'}`);
 });
 

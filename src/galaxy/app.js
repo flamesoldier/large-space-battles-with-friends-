@@ -1049,7 +1049,8 @@ function updateTop() {
   document.documentElement.style.setProperty('--me', p.color);
   $('credits').textContent = fmt(p.credits);
   $('income').textContent = `+${fmt(incomeOf(world, ui.me))}/h`;
-  $('clock').textContent = clockText(world.clock);
+  const sp = ONLINE ? net.state?.speed ?? 1 : 1;
+  $('clock').textContent = clockText(world.clock) + (sp === 1 ? '' : sp === 0 ? ' · paused' : ` · ${sp}×`);
   const b = $('banner');
   if (world.winner) { b.hidden = false; b.innerHTML = `<span>${world.winner.map((id) => who(id)).join(' &amp; ')} won the galaxy.</span>${ONLINE ? '' : '<button class="small" id="banner-new">New game</button>'}`; }
   else if (p.eliminated) { b.hidden = false; b.innerHTML = `<span>${esc(p.name)} has been knocked out.${ONLINE ? ' You can still watch the galaxy and its battles.' : ' Pick another player above, or start a new game.'}</span>`; }

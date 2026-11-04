@@ -272,6 +272,10 @@ hashes are kept). The server runs with no game too (players are told it isn't se
 - **Open seats** (owner's request): the admin sets a number of seats and may name some; unnamed
   seats are `claimed: false` ("Player 3") and their player picks name + colour once on first login
   (`claimPlayer` in `world.js`, `claim` action, dialog in the page). Named seats can't rename.
+- **Game speed is the admin's** (owner wanted his test speeds back online): admin page sets pause
+  / 1× / 60× / 600× / 3600× for the whole galaxy (`Game.setSpeed`, re-anchors the clock) and can
+  jump ahead (`Game.jump`). Saved in `game.json` with the clock anchor (`{ world, anchor, speed }`);
+  `LSB_SPEED` is only the default for a new game. Players see the speed next to the clock.
 - Sessions: random token in an HttpOnly, SameSite=Strict cookie, 30 days, stored hashed in
   `data/sessions.json`. **Every action takes the player from the session, never from the
   request**; keep it that way. Logins rate limited (8 wrong per 15 min per address).
