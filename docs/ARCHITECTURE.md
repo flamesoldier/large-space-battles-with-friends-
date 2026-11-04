@@ -201,6 +201,48 @@ stance distances measured roughly hull to hull. Memory is the real limit: every 
 battle has its own `types` + `hp` arrays (5 bytes per cell), so a full-size 1024 × 640 ship is
 about 3 MB per copy.
 
+## The galaxy (`src/world/`, `src/galaxy/`)
+
+The persistent world is one plain JSON object, and every rule is a pure function of it plus a
+game clock in milliseconds. Nothing in `src/world/` touches the DOM or reads the wall clock, so
+the server will run exactly this code; for now `src/galaxy/` runs it in the browser as a hot-seat
+game saved in localStorage.
+
+```
+world = { clock, seed, radius, players[], planets[], lanes[[a,b]], designs{}, fleets[], log[] }
+planet = { id, name, x, y, income, home, owner, yards[{ design, list, paid, next, built }], garrison[{ owner, design, n }] }
+fleet  = { id, owner, ships{ designId: n }, from, to, legs[{ from, to, lane, hours }], depart, arrive }
+```
+
+**Time is cheap.** Income and shipyard production are linear in time, so `advanceTo(world, t)`
+settles any gap in one pass (a shipyard that is 40 cycles behind adds 40 ships at once).
+Fleet arrivals are the only discrete events: the driver advances to each arrival in order,
+resolves it, and carries on. A server that slept for a week catches up in milliseconds plus the
+battles it owes.
+
+**Battles stay outside the rules.** `arrivalPlan()` turns a fleet arriving at a defended world
+into a Battle scenario (attacker = team 0, every defending stack = team 1, spawned in group order
+so ship k is entity k). The caller runs `src/sim/battle.js` however it likes (the page in slices
+with a progress card; the server in a worker) and hands `readBattle()`'s survivor counts to
+`completeArrival()`, which applies losses, captures the world (destroying its shipyards) or
+sends the beaten attackers home. While a battle runs, the world clock waits at the arrival time,
+so nothing can change underneath it.
+
+**Routes.** Fleets can fly straight through normal space or ride hyperlanes at 10× speed. The
+planner is Dijkstra over every world, with a normal-space edge between every pair and a lane edge
+where there is a lane, so it finds the fastest mix (fly to a lane, ride it, fly off). Under 100
+worlds this is trivial. A fleet's position is a pure function of time (`fleetPosition`), like
+everything in the replay viewer, so the map never stores fleet positions.
+
+**Map generation.** Spawn points go evenly round a ring at 72% of the radius (fair starts), other
+worlds by dart throwing with a minimum spacing. Lanes are a Euclidean minimum spanning tree (every
+world reachable, no crossings) plus a share of the short neighbour links that cross nothing and
+pass no other world. Seeded and deterministic.
+
+The page embeds the ship designer (in "shipyard mode", which shows the price at that world and
+posts the chosen design back) and the replay viewer, both as `srcdoc` iframes, so `galaxy.html`
+is still one file and the designer's library shares the page's storage.
+
 ## What's next for battles
 
 In rough order:
@@ -208,7 +250,8 @@ In rough order:
 1. ~~Ship designer~~: done (`src/designer/`, see below).
 1. ~~Ship collisions~~: on (hull rectangles, any team), about +7% compute at 1,000 vs 1,000.
 2. Battle job runner on the server: queue, worker threads, store replays, write losses back to
-   the fleets.
+   the fleets. The world side of this is ready (`arrivalPlan` / `readBattle` / `completeArrival`
+   in `src/world/`); what's missing is the server itself.
 3. Combat depth: a railgun that punches through several blocks, shields, reactor/power blocks, and smarter AI roles (screens, flankers, capital ships holding
    back).
 4. Balance. Battles currently drag on at the end with crippled stragglers; the rout and

@@ -11,7 +11,8 @@ Battles are huge (up to thousands of ships), 2D top-down, and chaotic: lasers, s
 debris everywhere, hulls breaking apart. Players never control battles directly.
 
 Build order chosen by the owner: hardest part first. Battle engine (done, being polished) →
-ship designer (first version done, being tuned) → **world, economy and fleets (next)**.
+ship designer (first version done, being tuned) → world, economy and fleets (**galaxy map: first
+version done**, runs as a hot-seat game in the browser) → server and accounts (next).
 
 ## Status: battle engine
 
@@ -92,12 +93,21 @@ Battle end:
 
 ## Economy rules the owner has set (for the world/economy phase)
 
-- Each world gives a fixed credit income into the player's **global** credit pool.
+All money numbers are in `src/shared/economy.js` (placeholders until balanced in play).
+
+- Each world gives a fixed credit income into the player's **global** credit pool. Home worlds
+  1,500 cr/h; every other world rolls a fixed 400–1,000 cr/h when the map is made.
 - Ships aren't bought one at a time. A player buys a **shipyard** on one of their worlds for one
   design; it builds that ship **for free every 30 minutes**, forever.
 - The **shipyard's price is set by the price of the ship it makes** (`src/shared/economy.js`:
   currently 10× the ship cost, so a shipyard pays for itself in 5 hours). Not yet confirmed by the owner.
 - A world can have any number of shipyards. **All of them are destroyed if an enemy takes the world.**
+- **Shipyards get dearer the more shipyards a world already has** (owner's rule, to make players
+  build on every world instead of stacking their home world): price = list price ×
+  (1 + list value of the yards already on that world / 25,000). List prices, not what was paid,
+  so it doesn't compound.
+- **Shipyards can be sold**: 50% of what was actually paid comes back.
+- Ships a shipyard builds garrison its world and defend it.
 - Every ship part has a credit cost (`cost` in `blocks.js`); a ship's price is the sum of its blocks.
   Owner's direction: **weapons and thrusters are expensive, armour and frame cheap**, to push
   players towards armoured designs. Current: frame 1, armour 3, heavy 7, thruster 20, PD 30,
@@ -156,6 +166,53 @@ draws both ends attached (`ReplayModel.beamAt`). World coordinates are only stor
 ends, so replays grew only ~2%. `aimPoint()` never returns a destroyed block (it used to fall back
 to the target's centre, often a hole), and point defence aims at a block actually within its
 30 range.
+
+## Status: galaxy map (world, economy, fleets)
+
+`npm run build` writes `dist/galaxy.html`, which has the designer and the viewer built in (it's
+the main game page now). `npm test` also runs `tools/test-world.mjs` (map generation, routes,
+economy, fleets, captures, with real battles).
+
+- `src/world/` is the game state and every rule, as **pure functions on one JSON object** plus a
+  game clock (no DOM, no wall clock) so the server can run the same code: `world.js` (players,
+  credits, shipyards, garrisons, fleets, arrivals, capture), `galaxyGen.js` (map), `routes.js`
+  (route planner, fleet position as a pure function of time), `battleSetup.js` (garrisons →
+  Battle scenario → survivor counts), `rules.js` (map, travel and battle-length numbers).
+- `src/galaxy/`: the page. For now it is a **hot-seat game** saved in localStorage: a "Playing
+  as" selector picks the player (online it will be the login). Speed buttons (pause, 1×, 60×,
+  600×, 3,600×; 60× by default) are for testing; time with the page closed counts at 1×, like a
+  server. The clock stops while a battle is resolved (in the page, with a progress card); the
+  replay is kept in memory for the session and plays in the viewer overlay.
+- Map: 2–10 players, one **spawn point** (home world) each, spread evenly round a ring so starts
+  are fair; ~7 worlds per player scattered between. Same seed and player count = same map.
+- **Hyperlanes**: minimum spanning tree (every world reachable) plus some non-crossing links
+  between near neighbours. **Moving along a lane is 10× faster** than normal space. Fleets can fly
+  straight to any world through normal space too; the planner (Dijkstra) picks the fastest mix
+  and the player can turn lanes off. Fleets don't stop at worlds they pass and can't be recalled.
+- Fleet speed = slowest ship's battle top speed (blocks/s) × `TRAVEL_SCALE` (1) galaxy units per
+  hour: a destroyer takes ~10 h between neighbours through space, ~1 h along a lane. Ships under
+  `MIN_FLEET_SPEED` can't leave (fixed defences; hub thrusters alone give ~2.5, so rare).
+- **Arrivals**: own or allied world → the ships join the garrison (allies' ships station there
+  as guests and defend it). Enemy or unclaimed world with nobody defending → captured. Otherwise
+  a battle: the fleet is team 0, every defending stack is team 1. The attacker takes the world
+  only if it still has armed ships and the defenders have none: yards destroyed, income and
+  world change hands, survivors garrison it. Otherwise attacker survivors fall back to where
+  they came from (or the nearest friendly world).
+- A ship survives a battle if it keeps its hub and a working weapon, and comes back at full
+  strength (no damage carried between battles yet).
+- **Teams**: players with the same team letter are allies. A player with no worlds, ships or
+  fleets is knocked out; when everyone left is on one team, they win.
+- Unclaimed worlds are held by **militia** (generated corvettes/frigates/destroyers worth 4 hours
+  of the world's income, `NEUTRAL_GARRISON_HOURS`), so taking one is a real battle.
+- Designs used in the world are stored in `world.designs` (owner, cost, speed, encoded cells),
+  deduplicated per player. The shipyard dialog lists the player's designs in play plus the
+  designer library; "Design a new ship…" opens the designer in shipyard mode (its "Build
+  shipyard" button shows the crowding-adjusted price and posts the design back).
+
+Open with the owner (placeholders now): incomes and starting credits, the crowding constant,
+the 50% resale, militia strength, travel scale, whether fleets should be interceptable at the
+worlds they pass, fog of war, recalling fleets, damage carried between battles, and the battle
+size cap (a big late-game garrison can mean thousands of ships; the plan is waves).
 
 Still open with the owner: the exact block prices and the shipyard multiplier (placeholders
 until there's an income number to balance against), and whether hull class should matter beyond

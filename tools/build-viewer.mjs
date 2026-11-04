@@ -1,24 +1,28 @@
 // Bundles the browser pages into self-contained HTML files:
 //   dist/viewer.html    replay viewer (resolves a demo battle in the browser, or plays one sent by the designer)
 //   dist/designer.html  ship designer
+//   dist/galaxy.html    galaxy map (world, economy, fleets), with the designer and viewer built in
 //   dist/*.artifact.html  the same pages without the <html> skeleton (for hosts that add their own)
-// Usage: node tools/build-viewer.mjs [viewer|designer]   (no argument builds both)
+// Usage: node tools/build-viewer.mjs [viewer|designer|galaxy]   (no argument builds both)
 import { build } from 'esbuild';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 
 const PAGES = {
   viewer: { entry: 'src/viewer/app.js', html: 'src/viewer/index.html', artifact: 'dist/artifact.html' },
   designer: { entry: 'src/designer/app.js', html: 'src/designer/index.html', artifact: 'dist/designer.artifact.html' },
+  galaxy: { entry: 'src/galaxy/app.js', html: 'src/galaxy/index.html', artifact: 'dist/galaxy.artifact.html' },
 };
 const only = process.argv[2];
 mkdirSync('dist', { recursive: true });
 const built = {};
-// The designer embeds the viewer page (its test battles play in an overlay), so build the viewer first.
+// The designer embeds the viewer page (its test battles play in an overlay), and the galaxy map
+// embeds both (shipyard design and battle replays), so they build in this order.
 for (const [name, p] of Object.entries(PAGES)) {
   const res = await build({
     entryPoints: [p.entry], bundle: true, format: 'esm', write: false,
     minify: true, target: 'es2020', legalComments: 'none',
-    define: name === 'designer' ? { __VIEWER_PAGE__: JSON.stringify(built.viewer) } : {},
+    define: name === 'designer' ? { __VIEWER_PAGE__: JSON.stringify(built.viewer) }
+      : name === 'galaxy' ? { __VIEWER_PAGE__: JSON.stringify(built.viewer), __DESIGNER_PAGE__: JSON.stringify(built.designer) } : {},
   });
   const js = res.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
   const page = readFileSync(p.html, 'utf8').replace('/*APP*/', () => js);

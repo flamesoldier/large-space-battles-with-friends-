@@ -241,10 +241,11 @@ if (host) {
   document.querySelector('.setup').hidden = true; // the designer resolved this battle; no demo controls
   document.querySelector('.brand b').textContent = 'Test battle';
   $('progress').hidden = false;
-  $('progress-title').textContent = 'Waiting for the test battle';
+  $('progress-title').textContent = 'Loading the replay';
   addEventListener('message', (e) => {
     if (!e.data || e.data.type !== 'lsb-replay') return;
     document.querySelectorAll('.side small').forEach((el, k) => { if (e.data.sides?.[k]) el.textContent = e.data.sides[k]; });
+    if (e.data.title) document.querySelector('.brand b').textContent = e.data.title;
     info.computeMs = e.data.computeMs || 0;
     show(new Uint8Array(e.data.bytes));
   });
