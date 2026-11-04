@@ -596,10 +596,19 @@ function launchMove() {
 }
 
 // ------------------------------------------------------------ shipyards
+let armedSell = null;
 function sellYard(planetId, yardId) {
   const P = world.planets[planetId], y = P.yards.find((x) => x.id === yardId);
   if (!y || busy) return;
-  if (!confirm(`Sell the ${world.designs[y.design].name} shipyard at ${P.name} for ${fmt(sellValue(y))} credits (${Math.round(SHIPYARD_SELL_REFUND * 100)}% of what you paid)?`)) return;
+  // Two clicks to sell (no confirm(): hosts like the artifact viewer block it).
+  if (armedSell !== yardId) {
+    armedSell = yardId;
+    const b = $('panel').querySelector(`[data-act=sell][data-yard="${yardId}"]`);
+    if (b) b.textContent = 'Click again to sell';
+    setTimeout(() => { if (armedSell === yardId) { armedSell = null; renderPanel(true); } }, 3000);
+    return;
+  }
+  armedSell = null;
   const r = sellShipyard(world, ui.me, planetId, yardId);
   if (!r.ok) return toast(r.error, true);
   toast(`Sold for ${fmt(r.refund)} credits.`);
@@ -786,6 +795,7 @@ function openNewGame() {
   if (!ngPlayers.length) for (let k = 0; k < MAX_PLAYERS; k++) ngPlayers.push({ name: world?.players[k]?.name ?? `Player ${k + 1}`, color: world?.players[k]?.color ?? PLAYER_COLORS[k], team: world?.players[k]?.team ?? '' });
   renderNgPlayers();
   $('ng-cancel').hidden = !world;
+  $('ng-warn').hidden = !world;
   $('newgame').showModal();
 }
 function renderNgPlayers() {
@@ -812,7 +822,6 @@ $('ng-start').addEventListener('click', () => {
   const players = ngPlayers.slice(0, n).map((p, k) => ({ name: p.name.trim() || `Player ${k + 1}`, color: p.color, team: p.team }));
   const teams = new Set(players.map((p, k) => p.team || `solo${k}`));
   if (teams.size < 2) return toast('Everyone is on one team: put at least one player on another side.', true);
-  if (world && !confirm('Start a new galaxy? The current game will be lost.')) return;
   const planets = Math.max(3, Math.min(14, Number($('ng-planets').value) || 7));
   world = createWorld({ players, seed: Math.max(1, Number($('ng-seed').value) || 1), planetsPerPlayer: planets });
   gameTarget = world.clock;
