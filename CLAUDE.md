@@ -11,7 +11,8 @@ Battles are huge (up to thousands of ships), 2D top-down, and chaotic: lasers, s
 debris everywhere, hulls breaking apart. Players never control battles directly.
 
 Build order chosen by the owner: hardest part first. Battle engine (done, being polished) →
-ship designer (first version done, being tuned) → **world, economy and fleets (next)**.
+ship designer (first version done, being tuned) → world, economy and fleets (**galaxy map: first
+version done**, runs as a hot-seat game in the browser) → server and accounts (next).
 
 ## Status: battle engine
 
@@ -92,12 +93,23 @@ Battle end:
 
 ## Economy rules the owner has set (for the world/economy phase)
 
-- Each world gives a fixed credit income into the player's **global** credit pool.
+All money numbers are in `src/shared/economy.js` (placeholders until balanced in play).
+
+- Each world gives a fixed credit income into the player's **global** credit pool. Home worlds
+  1,500 cr/h; every other world rolls a fixed 400–1,000 cr/h when the map is made.
 - Ships aren't bought one at a time. A player buys a **shipyard** on one of their worlds for one
   design; it builds that ship **for free every 30 minutes**, forever.
 - The **shipyard's price is set by the price of the ship it makes** (`src/shared/economy.js`:
   currently 10× the ship cost, so a shipyard pays for itself in 5 hours). Not yet confirmed by the owner.
 - A world can have any number of shipyards. **All of them are destroyed if an enemy takes the world.**
+- **Shipyards get dearer the more shipyards a world already has** (owner's rule, to make players
+  build on every world instead of stacking their home world), but only gently: each yard already
+  on a world adds 1% of its list price to the next one there (`SHIPYARD_CROWDING_SHARE`). The
+  owner's benchmark: **the 100th shipyard of the same cost on one world is about 2× the first**
+  (1.99×), whatever the ship costs. List prices, not what was paid, so it doesn't compound. (An
+  earlier version used list × (1 + value / 25,000); the owner found that far too steep.)
+- **Shipyards can be sold**: 50% of what was actually paid comes back.
+- Ships a shipyard builds garrison its world and defend it.
 - Every ship part has a credit cost (`cost` in `blocks.js`); a ship's price is the sum of its blocks.
   Owner's direction: **weapons and thrusters are expensive, armour and frame cheap**, to push
   players towards armoured designs. Current: frame 1, armour 3, heavy 7, thruster 20, PD 30,
@@ -156,6 +168,93 @@ draws both ends attached (`ReplayModel.beamAt`). World coordinates are only stor
 ends, so replays grew only ~2%. `aimPoint()` never returns a destroyed block (it used to fall back
 to the target's centre, often a hole), and point defence aims at a block actually within its
 30 range.
+
+## Status: galaxy map (world, economy, fleets)
+
+`npm run build` writes `dist/galaxy.html`, which has the designer and the viewer built in (it's
+the main game page now). `npm test` also runs `tools/test-world.mjs` (map generation, routes,
+economy, fleets, captures, with real battles).
+
+- `src/world/` is the game state and every rule, as **pure functions on one JSON object** plus a
+  game clock (no DOM, no wall clock) so the server can run the same code: `world.js` (players,
+  credits, shipyards, garrisons, fleets, arrivals, capture), `galaxyGen.js` (map), `routes.js`
+  (route planner, fleet position as a pure function of time), `battleSetup.js` (garrisons →
+  Battle scenario → survivor counts), `rules.js` (map, travel and battle-length numbers).
+- `src/galaxy/`: the page. For now it is a **hot-seat game** saved in localStorage: a "Playing
+  as" selector picks the player (online it will be the login). Speed buttons (pause, 1×, 60×,
+  600×, 3,600×; 60× by default) are for testing; time with the page closed counts at 1×, like a
+  server. The clock stops while a battle is resolved (in the page, with a progress card).
+  Layout: map with a small collapsible **Events** window in its top-left corner; the right-hand
+  panel is all for the selected world (shipyards, moving ships) or fleet.
+- **Combat log** (top-bar button, with a badge for new ones): every battle and every world that
+  changed hands, and every siege (Under attack / Attack begins / Joined attack), from the current
+  player's side (World taken / World lost / Defended / Repelled / Ambushed / Blocked a fleet),
+  ships and credits lost on each side, a Watch button and a Map button. Filter: Mine (you and allies) or Everyone. Replays are saved in IndexedDB
+  (`src/galaxy/replayStore.js`, newest 80) so old battles can be watched after a reload; on the
+  server they'll be replay files. The world log trims routine entries before battles/captures.
+- Map: 2–10 players, one **spawn point** (home world) each, spread evenly round a ring so starts
+  are fair; ~7 worlds per player scattered between. Same seed and player count = same map.
+- **Hyperlanes**: minimum spanning tree (every world reachable) plus some non-crossing links
+  between near neighbours. **Moving along a lane is 10× faster** than normal space. Fleets can fly
+  straight to any world through normal space too; the planner (Dijkstra) picks the fastest mix
+  and the player can turn lanes off. Fleets can't be recalled.
+- **Fleets stop at every world on their route** (owner's rule, so enemies can block or ambush
+  them). Passing a friendly world, or one with nobody defending it, they fly straight on. At a
+  world they don't hold with defenders there, they fight (`battle.passing`): **win and they take
+  that world** (owner's rule) and fly on with the survivors, leaving it empty; lose and the
+  survivors fall back.
+- **Battles wait 30 minutes** (`BATTLE_HOLD_MIN`, owner's rule) so reinforcements can join. A
+  fleet reaching a world it attacks (its destination, or a stop with defenders) starts a **siege**
+  (`world.sieges`): it holds there (`fleet.wait`), drawn round the world with a "Battle in N min"
+  ring. Fleets allied with the siege's leader that arrive join it; the defenders' own and allied
+  fleets join the garrison, and shipyards keep building. When the hold ends, everyone fights one
+  battle (several attacking players can be on side 0). Win: the world is taken and every fleet
+  "re-arrives" (garrisons or flies on, delayed by the wait). Lose: survivors fall back. An enemy
+  of both sides arriving starts its own siege, resolved after. A world nobody defends is still
+  only taken when the hold ends, so the owner can rush ships in.
+- The move panel's **"Avoid worlds you don't hold"** (on by default) plans
+  round every world not held by you or an ally (a straight flight always exists); with it off the
+  route is fastest and the panel lists the hostile stops (marked on the map) and their ships.
+  Saves from before this rule (`upgradeWorld`) let fleets already in flight fly straight on.
+- Fleet speed = slowest ship's battle top speed (blocks/s) × `TRAVEL_SCALE` (1) galaxy units per
+  hour: a destroyer takes ~10 h between neighbours through space, ~1 h along a lane. Ships under
+  `MIN_FLEET_SPEED` can't leave (fixed defences; hub thrusters alone give ~2.5, so rare).
+- **Arrivals**: own or allied world → the ships join the garrison (allies' ships station there
+  as guests and defend it). Otherwise a siege (above), then a battle: attackers team 0, every
+  defending stack team 1. The attackers take the world only if they still have armed ships and
+  the defenders have none: yards destroyed, income and world change hands **to the player who
+  started the siege** (owner's rule), even if allies did most of the fighting or the leader's own
+  ships all died; allies' survivors stay on as guests.
+  Otherwise attacker survivors fall back to where they came from (or the nearest friendly world).
+- A ship survives a battle if it keeps its hub and a working weapon, and comes back at full
+  strength (no damage carried between battles yet).
+- **Diplomacy** (owner's rule: alliances change during the game): every pair of players is
+  allied or enemies (`world.relations`, not transitive). Starting team letters only set who begins
+  allied. An alliance needs both sides (propose → accept; proposing back counts as accepting);
+  either side can break it alone, which sends each side's ships on the other's worlds home and
+  releases fleets waiting in a siege next to their new enemy. Diplomacy window in the top bar
+  (badge for proposals waiting for you, and a who-is-allied-with-whom grid). Allies station ships
+  on each other's worlds, defend together (stacks allied with both sides sit a battle out) and join
+  each other's sieges. **A player allied with both sides of a battle sits it out** (owner's
+  rule): their ships stay at the world idle and untouched (a fleet of theirs arriving at the
+  defender's world lands as a guest; a siege fleet that allies with the defender mid-hold drops
+  out). If the world then falls to someone they aren't allied with, their ships fly home unharmed.
+  `defendersAt()` checks every attacker, not just the leader. A player with no worlds, ships or fleets is knocked out; when someone has
+  been knocked out and everyone left is allied with everyone else, they win.
+- Unclaimed worlds are held by **militia** (generated corvettes/frigates/destroyers worth 4 hours
+  of the world's income, `NEUTRAL_GARRISON_HOURS`), so taking one is a real battle.
+- Designs used in the world are stored in `world.designs` (owner, cost, speed, encoded cells),
+  deduplicated per player. The shipyard dialog lists the player's designs in play plus the
+  designer library; "Design a new ship…" opens the designer in shipyard mode (its "Build
+  shipyard" button shows the crowding-adjusted price and posts the design back).
+- Map art is cosmetic and lives only in the page (`src/galaxy/planetArt.js`): each world gets a
+  type (rocky, desert, ice, ocean, lava, gas giant, toxic; home worlds Earth-like) from the seed
+  and its id, textured with 3D noise on a lit sphere and cached as sprites at three sizes. The
+  starfield is a fixed backdrop that doesn't move when you pan or zoom (owner's request).
+
+Open with the owner (placeholders now): incomes and starting credits, the crowding share,
+the 50% resale, militia strength, travel scale, the 30-minute hold, fog of war, recalling fleets,
+damage carried between battles, and the battle size cap (a big late-game garrison can mean thousands of ships; the plan is waves).
 
 Still open with the owner: the exact block prices and the shipyard multiplier (placeholders
 until there's an income number to balance against), and whether hull class should matter beyond

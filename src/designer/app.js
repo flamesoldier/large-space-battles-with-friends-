@@ -5,7 +5,7 @@
 import { BT, BLOCKS, WEAPON, MULTIBLOCK, HULL_CLASSES, COOKOFF } from '../shared/blocks.js';
 import { ARC_BINS, binAngle, binOpen } from '../shared/arcs.js';
 import { analyzeDesign, encodeDesign, decodeDesign, designCost, STANCE_INFO } from '../shared/shipStats.js';
-import { shipyardPrice, SHIPYARD_INTERVAL_MIN, SHIPYARD_PRICE_MULT } from '../shared/economy.js';
+import { shipyardPrice, shipyardPriceAt, crowdingSurcharge, SHIPYARD_INTERVAL_MIN, SHIPYARD_PRICE_MULT } from '../shared/economy.js';
 import { makeDesign, CLASSES } from '../shared/designs.js';
 import { Battle, DT } from '../sim/battle.js';
 import { packReplay } from '../shared/replayFormat.js';
@@ -153,6 +153,7 @@ function refresh(force = false) {
   $('issues').innerHTML = items.join('') || '<li class="ok">Ready for battle.</li>';
   $('test-btn').disabled = !a.ok;
   $('test-btn').title = a.ok ? '' : 'Fix the red issues first';
+  syncEmbed();
   saveCurrent();
 }
 
@@ -743,6 +744,38 @@ $('replay-close').addEventListener('click', () => {
   $('test').showModal();
 });
 
+// ------------------------------------------------------------ shipyard mode
+// The galaxy map opens this page in an overlay to design the ship a new shipyard will build.
+// It sends { type: 'lsb-designer-embed', planet, existing, credits, yards } (existing is the list
+// value of the shipyards already on that world, which sets the crowding surcharge); "Build shipyard" posts the design back as { type: 'lsb-design-chosen' }.
+let embed = null;
+function syncEmbed() {
+  if (!embed || !design) return;
+  const price = shipyardPriceAt(design, embed.existing || 0), extra = crowdingSurcharge(embed.existing || 0);
+  const b = $('use-design');
+  b.hidden = false;
+  b.textContent = `Build shipyard · ${fmt(price)} cr`;
+  b.disabled = !info.ok || price > embed.credits;
+  b.title = !info.ok ? 'Fix the red issues first' : price > embed.credits ? `You have ${fmt(embed.credits)} credits` : `Build a shipyard for this design at ${embed.planet}`;
+  $('yard').textContent = fmt(price);
+  $('yard-hint').textContent = extra
+    ? `At ${embed.planet}: list price ${fmt(shipyardPrice(design))} cr + ${fmt(extra)} cr for the ${embed.yards} shipyard${embed.yards === 1 ? '' : 's'} already there. Builds one ship free every ${SHIPYARD_INTERVAL_MIN} min.`
+    : `At ${embed.planet}: builds one ship free every ${SHIPYARD_INTERVAL_MIN} min until the world falls. Each shipyard on a world makes the next one there a little dearer.`;
+}
+if (window.parent !== window) {
+  addEventListener('message', (e) => {
+    if (e.source !== window.parent || e.data?.type !== 'lsb-designer-embed') return;
+    embed = e.data;
+    $('test-btn').classList.remove('go');
+    syncEmbed();
+  });
+  $('use-design').addEventListener('click', () => {
+    refresh(true);
+    if (!info.ok) return;
+    window.parent.postMessage({ type: 'lsb-design-chosen', design: encodeDesign({ ...design, name: design.name || 'Unnamed' }) }, '*');
+  });
+}
+
 // ------------------------------------------------------------ start
 function loop(now) {
   keyPan(now);
@@ -761,4 +794,5 @@ setBlock(BT.ARMOR); setTool('pencil'); syncFields();
 requestAnimationFrame((now) => { resize(); fit(); loop(now); });
 
 // Small hook for debugging and automated checks.
+if (window.parent !== window) window.parent.postMessage({ type: 'lsb-designer-ready' }, '*');
 window.shipDesigner = { editor: ed, get design() { return design; }, get info() { return info; }, cam, fit };
