@@ -7,6 +7,7 @@
 
 import { BT } from './blocks.js';
 import { mulberry32, randInt, randRange } from './rng.js';
+import { lineOfFire, openDegrees } from './arcs.js';
 
 export const CLASSES = {
   corvette:   { w: [6, 8],   h: [3, 5],   lasers: 1, cannons: 1, missiles: 0, pd: 0,  thrustCols: 1, heavyFront: false, armorDepth: 1 },
@@ -15,6 +16,10 @@ export const CLASSES = {
   cruiser:    { w: [26, 32], h: [11, 13], lasers: 4, cannons: 6, missiles: 2, pd: 4,  thrustCols: 2, heavyFront: true,  armorDepth: 2 },
   battleship: { w: [44, 52], h: [17, 21], lasers: 8, cannons: 12, missiles: 4, pd: 8, lances: 1,  thrustCols: 2, heavyFront: true,  armorDepth: 2 },
   titan:      { w: [80, 90], h: [29, 33], lasers: 16, cannons: 22, missiles: 8, pd: 16, lances: 2, thrustCols: 3, heavyFront: true,  armorDepth: 3 },
+  // Super-heavy samples for the designer's templates (not in the generated test fleets).
+  dreadnought: { w: [140, 150], h: [49, 53], lasers: 34, cannons: 46, missiles: 16, pd: 34, lances: 4, thrustCols: 4, heavyFront: true, armorDepth: 4 },
+  leviathan:  { w: [260, 280], h: [91, 97], lasers: 70, cannons: 96, missiles: 32, pd: 70, lances: 8, thrustCols: 6, heavyFront: true, armorDepth: 5 },
+  colossus:   { w: [560, 600], h: [195, 205], lasers: 150, cannons: 200, missiles: 70, pd: 150, lances: 16, thrustCols: 10, heavyFront: true, armorDepth: 6 },
 };
 
 // Default combat stance odds per class for generated test designs. In the real game the
@@ -26,6 +31,9 @@ const STANCE_ODDS = {
   cruiser: [['line', 0.6], ['standoff', 0.4]],
   battleship: [['standoff', 0.7], ['line', 0.3]],
   titan: [['standoff', 1]],
+  dreadnought: [['standoff', 1]],
+  leviathan: [['standoff', 1]],
+  colossus: [['standoff', 1]],
 };
 
 export const CLASS_MIX = [
@@ -135,28 +143,38 @@ export function makeDesign(cls, seed) {
   place(groups[0], C.lasers, BT.LASER);
   place(groups[1], C.cannons, BT.CANNON);
   place(groups[2], C.pd, BT.PD);
-  place(inner.length ? inner : skin, C.missiles, BT.MISSILE);
-  // Heavy lasers: 10x10 turrets on the centreline of the biggest ships, kept clear of the hub.
+  place(skin, C.missiles, BT.MISSILE); // on the skin: launchers need a line of fire too
+  // Heavy lasers: 10x10 units on the outside of the biggest ships, where they can see out
+  // (every weapon needs a line of fire). Try the nose first, then the top and bottom edges,
+  // and keep the first spot with a decent arc. A unit may overhang the hull a little.
+  const spots = [];
+  for (let x0 = w - 10; x0 >= C.thrustCols; x0--) spots.push([x0, Math.round(cy) - 5]);
+  for (let x0 = Math.round(w * 0.55); x0 >= C.thrustCols; x0--) { spots.push([x0, 0]); spots.push([x0, h - 10]); }
   for (let k = 0; k < (C.lances || 0); k++) {
-    const want = C.lances === 1 ? 0.68 : k === 0 ? 0.24 : 0.7;
-    for (let shift = 0; shift < w * 0.3; shift++) {
-      const x0 = Math.round(w * want) - 5 + (shift % 2 ? shift : -shift) / 2 | 0, y0 = Math.round(cy) - 5;
-      let ok = x0 >= C.thrustCols && x0 + 10 <= w && y0 >= 0 && y0 + 10 <= h;
+    for (const [x0, y0] of spots) {
+      if (x0 < 0 || y0 < 0 || x0 + 10 > w || y0 + 10 > h) continue;
+      let ok = true, inside = 0;
       for (let y = y0; ok && y < y0 + 10; y++)
         for (let x = x0; ok && x < x0 + 10; x++) {
           const t = cells[y * w + x];
-          ok = t && t !== BT.HUB && t !== BT.LANCE && Math.abs(x - hubX) > 1;
+          ok = t !== BT.HUB && t !== BT.LANCE && Math.abs(x - hubX) > 1 &&
+            // keep units apart (the sim treats touching units as one gun)
+            !(x0 > 0 && cells[y * w + x0 - 1] === BT.LANCE) && !(x0 + 10 < w && cells[y * w + x0 + 10] === BT.LANCE);
+          if (t) inside++;
         }
-      if (!ok) continue;
-      for (let y = y0; y < y0 + 10; y++) for (let x = x0; x < x0 + 10; x++) cells[y * w + x] = BT.LANCE;
-      break;
+      if (!ok || inside < 60) continue;
+      const before = cells.slice(), group = [];
+      for (let y = y0; y < y0 + 10; y++) for (let x = x0; x < x0 + 10; x++) { cells[y * w + x] = BT.LANCE; group.push(y * w + x); }
+      const f = lineOfFire(cells, null, w, h, group[0], { m0: 0, m1: 0, buried: false }, group);
+      if (openDegrees(f.m0, f.m1) >= 70) break;
+      cells.set(before);
     }
   }
   // Small ships get a nose gun.
   if (w <= 13) cells[cy * w + (w - 1)] = r() < 0.5 ? BT.CANNON : BT.LASER;
 
   let roll = r(), stance = 'line';
-  for (const [st, p] of STANCE_ODDS[cls]) { if (roll < p) { stance = st; break; } roll -= p; }
+  for (const [st, p] of STANCE_ODDS[cls] || [['standoff', 1]]) { if (roll < p) { stance = st; break; } roll -= p; }
   return { name: `${cls}-${seed % 1000}`, cls, w, h, cells, hub, stance };
 }
 
@@ -175,7 +193,7 @@ export function makeScenario({ perSide = 500, seed = 1, variants = 3 } = {}) {
     }
 
   const ships = [];
-  const backOffset = { corvette: 0, frigate: 25, destroyer: 60, cruiser: 110, battleship: 180, titan: 280 };
+  const backOffset = { corvette: 0, frigate: 25, destroyer: 60, cruiser: 110, battleship: 180, titan: 280, dreadnought: 400, leviathan: 600, colossus: 1000 };
   const spanY = Math.max(500, Math.sqrt(perSide) * 55);
   for (let team = 0; team < 2; team++) {
     const counts = CLASS_MIX.map(([cls, f]) => [cls, Math.round(perSide * f)]);

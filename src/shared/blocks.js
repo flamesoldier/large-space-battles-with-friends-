@@ -21,18 +21,27 @@ export const MULTIBLOCK = {
   [BT.LANCE]: { size: 10, minIntact: 0.5 },
 };
 
+// cost: credits per block, paid once when the design is bought (via its shipyard).
+// Structure is cheap and weapons and engines are expensive, so a good design spends most of its
+// blocks on armour and frame and a fair share of its credits on the few guns that do the work.
+// These are the only place prices live; the designer, shipyards and fleets all read them.
 export const BLOCKS = {
-  [BT.HUB]: { name: 'Hub', hp: 450, mass: 4 },
-  [BT.ARMOR]: { name: 'Armor', hp: 110, mass: 2 },
-  [BT.HEAVY]: { name: 'Heavy armor', hp: 240, mass: 4 },
-  [BT.FRAME]: { name: 'Frame', hp: 45, mass: 1 },
-  [BT.THRUSTER]: { name: 'Thruster', hp: 60, mass: 1.5, thrust: 10 },
-  [BT.LASER]: { name: 'Laser', hp: 130, mass: 2 },
-  [BT.CANNON]: { name: 'Cannon', hp: 150, mass: 3 },
-  [BT.MISSILE]: { name: 'Missile launcher', hp: 200, mass: 5 },
-  [BT.PD]: { name: 'Point defense', hp: 80, mass: 1.5 },
-  [BT.LANCE]: { name: 'Heavy laser', hp: 120, mass: 4 }, // per block; the gun is 10x10 of these
+  [BT.HUB]: { name: 'Hub', hp: 450, mass: 4, cost: 40 },
+  [BT.ARMOR]: { name: 'Armor', hp: 110, mass: 2, cost: 3 },
+  [BT.HEAVY]: { name: 'Heavy armor', hp: 240, mass: 4, cost: 7 },
+  [BT.FRAME]: { name: 'Frame', hp: 45, mass: 1, cost: 1 },
+  [BT.THRUSTER]: { name: 'Thruster', hp: 60, mass: 1.5, thrust: 10, cost: 20 },
+  [BT.LASER]: { name: 'Laser', hp: 130, mass: 2, cost: 45 },
+  [BT.CANNON]: { name: 'Cannon', hp: 150, mass: 3, cost: 60 },
+  [BT.MISSILE]: { name: 'Missile launcher', hp: 200, mass: 5, cost: 120 },
+  [BT.PD]: { name: 'Point defense', hp: 80, mass: 1.5, cost: 30 },
+  [BT.LANCE]: { name: 'Heavy laser', hp: 120, mass: 4, cost: 35 }, // per block; the gun is 10x10 of these (3,500 a gun)
 };
+
+// A destroyed heavy-laser block explodes: blast damage peak * (1 - d / radius)^2 to every block
+// in range, on any ship, own and allied included (friendly fire setting ignored). Neighbouring
+// heavy-laser blocks it kills explode in turn, so one gun can chain-react.
+export const COOKOFF = { radius: 16, damage: 300 };
 
 // Weapon behaviour. Ranges/speeds in world units (blocks) and seconds.
 export const WEAPON = {
@@ -48,15 +57,32 @@ export const WEAPON = {
   [BT.MISSILE]: { kind: 'missile', range: 700, damage: 200, cooldown: 40, speed: 20, life: 45, splash: 9, hp: 100, spread: 0.02, maxLead: 3 },
   // Point defence: shoots the nearest enemy missile in range, otherwise any enemy ship that close.
   [BT.PD]: { kind: 'pd', range: 30, damage: 6, missileDamage: 10, cooldown: 0.2 },
-  // Heavy laser: turret-mounted, fires any direction. The beam carries a damage budget and
+  // Heavy laser: a 10x10 gun that fires wherever its unit can see past the rest of the ship. The beam carries a damage budget and
   // burns through block after block (and ship after ship) until the budget is spent.
   // It holds fire if a friendly ship is the first thing in the line of fire.
   [BT.LANCE]: { kind: 'lance', range: 450, damage: 2500, cooldown: 20 },
 };
 
-// Firing arcs: a weapon faces out of whichever hull sides it is exposed on, and can only
-// fire at targets within ARC_DEG of that direction. Missile launchers and heavy lasers
-// (turrets) fire in any direction.
-export const ARC_DEG = 100;
+// Firing arcs: every weapon can fire in any direction where its shot wouldn't pass through its
+// own ship (see arcs.js). The heavy laser looks out from the centre of its 10x10 unit.
 
 export const isWeapon = (t) => t >= BT.LASER && t <= BT.LANCE;
+
+// Hull classes come from block count (the ship designer shows which one a design falls in).
+// Ships can be absurdly big: a 350,000-block worldbreaker duel resolves in about 2 s.
+export const HULL_CLASSES = [
+  { id: 'corvette', name: 'Corvette', maxBlocks: 40 },
+  { id: 'frigate', name: 'Frigate', maxBlocks: 85 },
+  { id: 'destroyer', name: 'Destroyer', maxBlocks: 200 },
+  { id: 'cruiser', name: 'Cruiser', maxBlocks: 500 },
+  { id: 'battleship', name: 'Battleship', maxBlocks: 1200 },
+  { id: 'titan', name: 'Titan', maxBlocks: 3000 },
+  { id: 'dreadnought', name: 'Dreadnought', maxBlocks: 10000 },
+  { id: 'leviathan', name: 'Leviathan', maxBlocks: 30000 },
+  { id: 'colossus', name: 'Colossus', maxBlocks: 120000 },
+  { id: 'worldbreaker', name: 'Worldbreaker', maxBlocks: 400000 },
+];
+export const MAX_BLOCKS = HULL_CLASSES[HULL_CLASSES.length - 1].maxBlocks;
+// Largest grid a design may use (width along the nose axis x height). A full-size ship is about
+// 3 MB of memory per copy in a battle (types + hit points per cell), so this is where it stops.
+export const MAX_W = 1024, MAX_H = 640;

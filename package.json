@@ -4,7 +4,10 @@
   "type": "module",
   "scripts": {
     "bench": "node tools/bench.mjs",
-    "build:viewer": "node tools/build-viewer.mjs"
+    "build": "node tools/build-viewer.mjs",
+    "build:viewer": "node tools/build-viewer.mjs viewer",
+    "build:designer": "node tools/build-viewer.mjs designer",
+    "test": "node tools/test-designer.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.24.2"

@@ -213,9 +213,10 @@ export class Renderer {
       if (L.kind[i] === 2) { this.drawLance(L, i, t, vis, minW); continue; }
       const pd = L.kind[i] === 1, life = pd ? 1.5 : 4, age = t - L.t[i];
       if (age > life) continue;
-      const x0 = L.x0[i], y0 = L.y0[i], x1 = L.x1[i], y1 = L.y1[i];
+      if (!vis((L.x0[i] + L.x1[i]) / 2, (L.y0[i] + L.y1[i]) / 2, Math.hypot(L.x1[i] - L.x0[i], L.y1[i] - L.y0[i]) / 2 + 20)) continue;
+      const B = m.beamAt(i, t, this._beam || (this._beam = { x0: 0, y0: 0, x1: 0, y1: 0 }));
+      const x0 = B.x0, y0 = B.y0, x1 = B.x1, y1 = B.y1;
       const mx = (x0 + x1) / 2, my = (y0 + y1) / 2, len = Math.hypot(x1 - x0, y1 - y0) / 2;
-      if (!vis(mx, my, len)) continue;
       const k = 1 - age / life, col = pd ? C.pd[L.team[i]] : C.beam[L.team[i]];
       g.push(mx, my, Math.atan2(y1 - y0, x1 - x0), len, Math.max(pd ? 0.16 : 0.55, minW), 4, alpha(col, k));
       if (!pd) g.push(mx, my, Math.atan2(y1 - y0, x1 - x0), len, Math.max(0.15, minW * 0.5), 4, alpha(C.beamCore, k));
@@ -223,12 +224,13 @@ export class Renderer {
     }
     this.drawStraight(m.shell, t, vis, minW, false);
     this.drawStraight(m.missile, t, vis, minW, true);
-    // Detonations: 0 = missile shot down, 1 = cannon shell, 2 = heavy missile
+    // Detonations: 0 = missile shot down, 1 = cannon shell, 2 = heavy missile, 3 = heavy-laser block cooking off
     const E = m.expl;
+    const LIFE = [6, 8, 24, 22], BASE = [1, 1.5, 5, 3], GROW = [2.5, 5, 15, 16];
     for (let i = lowerBound(E.t, t - 24); i < E.n && E.t[i] <= t; i++) {
-      const sz = E.s[i], life = sz === 2 ? 24 : sz === 1 ? 8 : 6, age = t - E.t[i];
+      const sz = E.s[i], life = LIFE[sz] ?? 8, age = t - E.t[i];
       if (age > life || !vis(E.x[i], E.y[i], 20)) continue;
-      const u = age / life, base = sz === 2 ? 5 : sz === 1 ? 1.5 : 1, grow = sz === 2 ? 15 : sz === 1 ? 5 : 2.5;
+      const u = age / life, base = BASE[sz] ?? 1.5, grow = GROW[sz] ?? 5;
       const r = base + u * grow;
       g.push(E.x[i], E.y[i], 0, r, r, 1, alpha(sz === 0 ? C.pop : C.boom, 1 - u));
       if (u < 0.3) g.push(E.x[i], E.y[i], 0, r * 0.5, r * 0.5, 1, alpha(C.boomCore, 1 - u / 0.3));

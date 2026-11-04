@@ -11,7 +11,7 @@ Battles are huge (up to thousands of ships), 2D top-down, and chaotic: lasers, s
 debris everywhere, hulls breaking apart. Players never control battles directly.
 
 Build order chosen by the owner: hardest part first. Battle engine (done, being polished) →
-**ship designer (next)** → world, economy and fleets last.
+ship designer (first version done, being tuned) → **world, economy and fleets (next)**.
 
 ## Status: battle engine
 
@@ -42,14 +42,26 @@ Weapons (numbers in `blocks.js`):
 - **Point defence**: range 30 rapid beam; shoots missiles first, close ships otherwise.
 - **Heavy laser**: 10×10 multi-block turret, range 450, every 20 s, 2,500-damage beam that
   burns through blocks and ships until spent (it cuts ships in half). Works while half its blocks
-  survive. Holds fire if a friendly ship is first in line.
+  survive. Holds fire if a friendly ship is first in line. **Its blocks explode when destroyed**
+  (`COOKOFF` in `blocks.js`: 300 peak damage, radius 16, ignores friendly fire, hurts its own
+  ship and allies). One destroyed block chain-reacts through the whole unit: a battleship loses
+  ~43% of its blocks and an ally flying alongside loses ~260. The owner asked for it to be huge.
 - Future weapons the owner wants: bigger cannons, a medium laser.
 
 Combat rules:
 - **Friendly fire off**: allied hulls still block shots but take no damage.
-- **Firing arcs**: a weapon fires only out of the hull side it is exposed on (100° arc).
-  Missile launchers and heavy lasers fire any direction. Fully buried weapons can't fire until
-  the armour around them is shot away.
+- **Firing arcs = line of fire, for every weapon** (missile launchers and heavy lasers too): a
+  weapon can fire in any direction where the shot wouldn't pass through its own ship (no fixed
+  cone, never 360°). Worked out by `src/shared/arcs.js` (64 direction slices, ray walk through
+  the ship's grid), used by both the sim and the designer, and recomputed as blocks are lost, so
+  shooting away armour opens arcs. The heavy laser casts its rays from the centre of its 10×10
+  unit, through its own blocks. A weapon with no clear direction is buried and can't fire. Flat
+  hull-mounted guns get about 90°; guns that stick out get more.
+- **Giant ships**: the owner wants ships as big as possible, "even to ridiculous levels". Hull
+  classes go past titan to dreadnought, leviathan, colossus and worldbreaker (400,000 blocks,
+  grid up to 1024 × 640). Weapons aim at the near side of a big target's hull (range is not
+  measured to its centre), big ships track up to 24 targets, and stance distances are measured
+  roughly hull to hull, so giants actually fight.
 - **Stances** chosen per design (will be a designer option): charge, brawl, line, standoff,
   escort. Escorts take limited slots around a big ship and break off to attack nearby enemies.
 - **Debris** must stay clearly visible (wrecks keep most of their colour).
@@ -68,19 +80,83 @@ Battle end:
 - The viewer is stateless: everything drawn is a pure function of time (that's what makes
   scrubbing free). Anything new in the replay should follow that pattern.
 - Projectile samples must stay contiguous per projectile (an earlier bug interleaved them).
-- Always benchmark after sim changes (`npm run bench -- 1000`); 1,000 vs 1,000 takes about 10 s.
+- Always benchmark after sim changes (`npm run bench -- 1000`); 1,000 vs 1,000 takes about 7 s.
+- Line of fire is incremental: each weapon stores the cell blocking each of its 64 rays
+  (`blk`), and `refit()` only re-casts rays whose blocker died (`updateLineOfFire`). A full
+  re-cast per hit was fine for 50 guns but not for a giant with 1,000.
+- Replay block indexes (`bdCell`, `chCells`) are 32-bit, because giant ships have more than
+  65,535 cells.
 - The demo page re-runs the sim in the browser, so results differ slightly from Node
   (`Math.sin`/`cos` aren't identical across engines). The real game records replays on the
   server, so that's fine.
 
-## Next: ship designer
+## Economy rules the owner has set (for the world/economy phase)
 
-What we know the owner wants:
-- Players build ships on a block grid around a central hub, choosing armour, frame, thrusters
-  and weapons, with the heavy laser placed as one 10×10 unit.
-- A stance picker (charge / brawl / line / standoff / escort).
-- It saves the design format above, which the battle sim already reads.
+- Each world gives a fixed credit income into the player's **global** credit pool.
+- Ships aren't bought one at a time. A player buys a **shipyard** on one of their worlds for one
+  design; it builds that ship **for free every 30 minutes**, forever.
+- The **shipyard's price is set by the price of the ship it makes** (`src/shared/economy.js`:
+  currently 10× the ship cost, so a shipyard pays for itself in 5 hours). Not yet confirmed by the owner.
+- A world can have any number of shipyards. **All of them are destroyed if an enemy takes the world.**
+- Every ship part has a credit cost (`cost` in `blocks.js`); a ship's price is the sum of its blocks.
+  Owner's direction: **weapons and thrusters are expensive, armour and frame cheap**, to push
+  players towards armoured designs. Current: frame 1, armour 3, heavy 7, thruster 20, PD 30,
+  hub 40, laser 45, cannon 60, missile 120, heavy laser 3,500 a unit.
 
-Likely needs, still to agree with the owner: validation (everything connected to the hub, hull
-class block limits, warning about buried weapons), live stats (mass, speed, turn rate, firepower,
-weapon arcs), symmetry/mirror tools, and a way to test a design in a quick battle.
+## Status: ship designer
+
+`npm run build` writes `dist/designer.html` (and `dist/viewer.html`); `npm test` checks the
+designer's numbers against the sim.
+
+- `src/shared/shipStats.js`: price, mass, speed, turn rate, firepower, weapon facing/arcs,
+  validation, crop and JSON save format. It mirrors `Battle.refit()` and shares `arcs.js` with
+  `Battle.facing()`;
+  `tools/test-designer.mjs` fails if they drift apart, so change both together.
+- `src/shared/economy.js`: shipyard price and build interval.
+- `src/designer/editor.js`: grid editing (no DOM): mirror across the hub row, whole 10×10 heavy
+  laser units, one movable hub, rectangle and fill tools, undo/redo, crop on save.
+- `src/designer/app.js`: the page. Live cost, shipyard price, hull class, stats, weapon table,
+  arcs overlay, validation list, stance picker, local library (localStorage), JSON export/import,
+  and a test battle (N copies vs an equal-cost mixed fleet or a saved design). The build embeds
+  the viewer page in `designer.html`, so the replay plays in an in-page overlay (iframe +
+  postMessage): the designer works as a single file, with no pop-ups.
+- Hull class comes from block count (`HULL_CLASSES` in `blocks.js`): corvette ≤ 40, frigate ≤ 85,
+  destroyer ≤ 200, cruiser ≤ 500, battleship ≤ 1,200, titan ≤ 3,000, dreadnought ≤ 10,000,
+  leviathan ≤ 30,000, colossus ≤ 120,000, worldbreaker ≤ 400,000. Grid limit 1024 × 640.
+- Built for huge grids: undo stores changed cells only; drawing culls to the visible cells and
+  switches to a one-pixel-per-cell bitmap when zoomed out (also used by the minimap); analysis
+  of a slow-to-analyse design waits for the end of a stroke. Owner's controls: **mouse wheel
+  zooms** (towards the cursor), **WASD / arrow keys pan** smoothly while held (Shift faster),
+  plus a Hand tool (H), Space+drag, +/− buttons and a clickable minimap. Q toggles all arcs.
+- Validation errors block test battles (and should block shipyards): one hub, everything
+  connected to it, block limit, heavy lasers as whole separate 10×10 units. Warnings: no weapons,
+  buried weapons, guns with under 45° of arc, heavy-laser cook-off, no thrusters, big escorts.
+- Designs are saved cropped, in the format above; JSON export stores `cells` as base64.
+
+The test-fleet generator (`designs.js`) puts missile launchers on the skin and heavy lasers on
+the nose or hull edge, where they have a line of fire. It also makes dreadnought, leviathan and
+colossus samples for the designer's templates (not used in the generated test fleets).
+
+## Ship collisions (on)
+
+`Battle.collide()`: each ship's hull rectangle is pushed out of any other ship's rectangle it
+overlaps (either team; separating-axis test; the lighter ship moves more). Replaced the old
+"push apart from allies in the same grid cell once half-overlapped" nudge, which let hulls pass
+through each other. Cost: about +7% at 1,000 vs 1,000 (+26% measured at 3,000 vs 3,000 in the
+prototype); pairs overlapping by more than 3 blocks went from ~300 to ~6. Rectangles, not exact
+blocks, on purpose: block-exact would cost far more. Debris doesn't collide.
+
+## Beams stay on what they hit
+
+Lasers and point-defence beams fade over 0.4 s / 0.15 s while ships keep moving, so drawn as
+fixed world lines they ended up pointing at empty space where the block had been. Each beam now
+records the ship that fired it and the entity its end sits on (`lasSrc`/`lasDst` plus local
+offsets `lasSX/SY/DX/DY`; ids are 16-bit when the battle has under 65,535 entities). The viewer
+draws both ends attached (`ReplayModel.beamAt`). World coordinates are only stored for unattached
+ends, so replays grew only ~2%. `aimPoint()` never returns a destroyed block (it used to fall back
+to the target's centre, often a hole), and point defence aims at a block actually within its
+30 range.
+
+Still open with the owner: the exact block prices and the shipyard multiplier (placeholders
+until there's an income number to balance against), and whether hull class should matter beyond
+the block limit.

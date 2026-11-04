@@ -54,7 +54,12 @@ async function resolve() {
   $('progress-detail').textContent = 'Packing replay';
   await frame();
   const rep = b.toReplay();
-  const bytes = packReplay(rep.meta, rep.cols);
+  show(packReplay(rep.meta, rep.cols));
+  $('resolve').disabled = false;
+}
+
+/** Play a packed replay (from the sim above, or handed over by the ship designer). */
+function show(bytes) {
   info.raw = bytes.length;
   info.gz = 0;
   gzipSize(bytes).then((n) => { info.gz = n; });
@@ -66,7 +71,6 @@ async function resolve() {
   cam.zoom = Math.max(cam.zoom, 2.2);
   t = 0; playing = true; setPlayIcon();
   $('progress').hidden = true;
-  $('resolve').disabled = false;
 }
 
 const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
@@ -230,7 +234,22 @@ mm.addEventListener('pointerdown', (e) => { mm.setPointerCapture(e.pointerId); m
 mm.addEventListener('pointermove', (e) => { if (e.buttons) minimapJump(e); });
 
 requestAnimationFrame(loop);
-resolve();
+// Shown by the ship designer's test battle (inside its overlay, or opened as viewer.html#replay):
+// the designer posts the packed replay.
+const host = window.parent !== window ? window.parent : location.hash === '#replay' ? window.opener : null;
+if (host) {
+  document.querySelector('.setup').hidden = true; // the designer resolved this battle; no demo controls
+  document.querySelector('.brand b').textContent = 'Test battle';
+  $('progress').hidden = false;
+  $('progress-title').textContent = 'Waiting for the test battle';
+  addEventListener('message', (e) => {
+    if (!e.data || e.data.type !== 'lsb-replay') return;
+    document.querySelectorAll('.side small').forEach((el, k) => { if (e.data.sides?.[k]) el.textContent = e.data.sides[k]; });
+    info.computeMs = e.data.computeMs || 0;
+    show(new Uint8Array(e.data.bytes));
+  });
+  host.postMessage({ type: 'lsb-viewer-ready' }, '*');
+} else resolve();
 
 // Small hook for debugging and automated screenshots.
 window.battleViewer = { get model() { return model; }, cam, seek: (v) => { t = v; playing = false; setPlayIcon(); } };
