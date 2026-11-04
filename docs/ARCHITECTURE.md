@@ -135,19 +135,22 @@ objects later changes their hidden class in V8 and made the whole sim about 40% 
 ## Measured numbers
 
 `node tools/bench.mjs <shipsPerSide> 7` on one CPU core (Node 22, single thread), using the
-generated test fleets (45% corvettes up to 0.5% titans of ~2,500 blocks each):
+generated test fleets (45% corvettes up to 0.5% titans of ~2,500 blocks each). Re-measured
+after line of fire, heavy-laser cook-off, giant-ship targeting, collisions and attached beams:
 
-| Ships | Blocks | Simulated | Compute | Replay (gzip) |
+| Ships (total) | Blocks | Simulated | Compute | Replay (gzip) |
 | ---: | ---: | ---: | ---: | ---: |
-| 400 | 45k | 126 s | 1.3 s | 0.7 MB |
-| 1,000 | 115k | 151 s | 3.3 s | 1.9 MB |
-| 2,000 | 224k | 156 s | 6.7 s | 3.7 MB |
-| 5,000 | 564k | 184 s | 22 s | 9.7 MB |
-| 10,000 | 1.12M | 184 s | 61 s | 19.4 MB |
+| 800 | 90k | 202 s | 2.9 s | 1.5 MB |
+| 2,000 | 226k | 244 s | 8.2 s | 4.4 MB |
+| 4,000 | 451k | 244 s | 21 s | 9.7 MB |
+| 10,000 | 1.13M | 244 s | 88 s | 28 MB |
 
-So a 10,000-ship battle with over a million destructible blocks resolves in about a minute on one
-core. For 4 to 10 players, a single small VPS is more than enough. Battles are independent jobs,
-so they can also run in parallel worker threads.
+Compared with the first prototype, a 10,000-ship battle went from 61 s to 88 s of compute and
+from 19 MB to 28 MB of replay. The extra compute is mostly ship collisions in dense fleets; the
+extra replay is mostly cook-off explosions, more beams and the beam attachment data. Even so, a
+10,000-ship battle with over a million destructible blocks resolves in about a minute and a
+half on one core. For 4 to 10 players, a single small VPS is more than enough. Battles are
+independent jobs, so they can also run in parallel worker threads.
 
 The bundled viewer runs the same sim in the browser for the demo (about 3× slower than Node in
 practice). In the real game the browser only downloads and plays the replay.
