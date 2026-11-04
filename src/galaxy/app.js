@@ -1242,7 +1242,7 @@ async function onlineStart() {
   try {
     if (await net.fetchState()) { $('login').hidden = true; net.poll(); return; }
   } catch { return showLogin('Can\'t reach the game server. Try again in a moment.'); }
-  showLogin();
+  showLogin(net.noGame ? 'The game hasn\'t been set up yet. Ask the organiser.' : '');
 }
 if (ONLINE) {
   $('login-form').addEventListener('submit', async (e) => {

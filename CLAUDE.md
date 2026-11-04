@@ -255,9 +255,15 @@ economy, fleets, captures, with real battles).
 
 ## Status: server and accounts (`server/`, `docs/SERVER.md`)
 
-The live game. Plain Node, no dependencies. `npm run admin -- new-game --players "A,B,C"` makes
-the galaxy and prints one password per player (once; only scrypt hashes are kept), then
+The live game. Plain Node, no dependencies (esbuild is a regular dependency so hosts can build).
 `npm run build && npm start` serves `dist/play.html` (the galaxy page built with `__ONLINE__`).
+The game is made either on the **admin page** (`/admin`, unlocked by the `LSB_ADMIN_PASSWORD`
+variable; the owner isn't a command-line user, so this is how he runs it) or with
+`npm run admin -- new-game --players "A,B,C"`; both show each player's password once (only scrypt
+hashes are kept). The server runs with no game too (players are told it isn't set up yet).
+**Hosting: Railway** (owner's choice, step-by-step in `docs/SERVER.md`): deploys from GitHub main,
+`railway.json` sets build/start/health check, a volume holds the data (found via
+`RAILWAY_VOLUME_MOUNT_PATH`), proxy trust is automatic there.
 
 - **Owner's decision: the password is the player.** No usernames: a friend types the password
   they were given and plays as that player. Keeps random people out and stops players acting as

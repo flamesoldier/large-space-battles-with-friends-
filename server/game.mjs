@@ -43,7 +43,8 @@ export class Game {
     this.watchers = new Set();
     this.queue = Promise.resolve();
     this.failures = 0;
-    this.stopped = false;
+    this.stopped = false; // shutting down: stop processing events
+    this.retired = false; // replaced by a new game: never write to disk again
   }
 
   /** Make a new game file (the admin tool does this). */
@@ -62,6 +63,7 @@ export class Game {
   }
 
   save() {
+    if (this.retired) return;
     // The anchor is what the clock is measured from; saving it with the world keeps time running across restarts.
     writeJsonAtomic(this.file, { world: this.world, wall: Date.now() - (this.gameNow() - this.world.clock) / this.speed });
   }
@@ -162,6 +164,7 @@ export class Game {
    */
   act(pid, a) {
     return this.locked(async () => {
+      if (this.retired) return { ok: false, error: 'A new game has started. Please log in again.' };
       await this.catchUp();
       const r = this.apply(pid, a ?? {});
       if (r.ok) { this.save(); this.changed(); }

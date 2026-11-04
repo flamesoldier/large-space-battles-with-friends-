@@ -44,6 +44,7 @@ export class Net {
   async fetchState() {
     const res = await fetch(`/api/state?wv=${this.wv}`, { credentials: 'same-origin' });
     if (res.status === 401) return false;
+    if (res.status === 503) { this.noGame = true; return false; } // nothing set up on the server yet
     if (!res.ok) throw new Error(`Server error (${res.status})`);
     this.take(await res.json());
     return true;

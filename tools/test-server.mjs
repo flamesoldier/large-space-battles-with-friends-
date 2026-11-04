@@ -17,7 +17,7 @@ if (!existsSync('dist/play.html')) { console.error('dist/play.html missing: run 
 const DATA = mkdtempSync(join(tmpdir(), 'lsb-test-'));
 const PORT = 20000 + Math.floor(Math.random() * 20000);
 const BASE = `http://127.0.0.1:${PORT}`;
-const env = { ...process.env, LSB_DATA: DATA, PORT: String(PORT), HOST: '127.0.0.1', LSB_SPEED: '3600', LSB_TRUST_PROXY: '1' };
+const env = { ...process.env, LSB_DATA: DATA, PORT: String(PORT), HOST: '127.0.0.1', LSB_SPEED: '3600', LSB_TRUST_PROXY: '1', LSB_ADMIN_PASSWORD: 'admin-test-password' };
 let checks = 0;
 const ok = (c, m) => { assert.ok(c, m); checks++; };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -68,8 +68,40 @@ function client() {
 }
 
 try {
-  // ---- a new game prints a password per player, unique
-  const pw = passwords(admin('new-game', '--players', 'Ann,Ben', '--seed', '7', '--worlds', '4'));
+  // ---- a fresh install: no game yet, the admin page makes one
+  await startServer();
+  {
+    const anon = client(), boss = client();
+    ok((await anon.req('GET', '/')).status === 200 && (await (await anon.req('GET', '/admin')).text()).includes('Game admin'), 'the site and the admin page are up before there is a game');
+    ok((await anon.state()).status === 503 && (await anon.json('POST', '/api/login', { password: 'abcd-efgh-jkmn' })).status === 503, 'players are told there is no game yet');
+    ok((await boss.json('GET', '/api/admin/state')).status === 401, 'admin needs a login');
+    ok((await boss.json('POST', '/api/admin/new-game', { players: ['A', 'B'] })).status === 401, 'no game creation without admin login');
+    ok((await boss.json('POST', '/api/admin/login', { password: 'admin-test-passwor' })).status === 401, 'wrong admin password refused');
+    const login = await boss.json('POST', '/api/admin/login', { password: 'admin-test-password' });
+    ok(login.body.ok && login.body.game === null && /lsb_admin=/.test(boss.cookie), 'admin logs in');
+    ok(!(await boss.json('POST', '/api/admin/new-game', { players: ['Solo'] })).body.ok, 'a game needs two players');
+    const made = await boss.json('POST', '/api/admin/new-game', { players: ['Cat', 'Dan', 'Eve'], teams: ['A', 'A', ''], worlds: 4 });
+    ok(made.body.ok && made.body.passwords.length === 3 && made.body.game.players[0].team === 'A', 'admin makes a game and gets every password');
+    ok((await boss.json('POST', '/api/admin/new-game', { players: ['X', 'Y'] })).status === 409, 'replacing a game needs confirming');
+    const cat = client();
+    ok((await cat.json('POST', '/api/login', { password: made.body.passwords[0].password })).body.name === 'Cat', 'a player logs in with the password from the admin page');
+    ok((await cat.state()).body.world.players.length === 3, 'and plays the new game');
+    ok((await cat.json('GET', '/api/admin/state')).status === 401, 'a player session is not an admin session');
+    const reset = await boss.json('POST', '/api/admin/reset-password', { player: 0 });
+    ok(reset.body.passwords[0].name === 'Cat' && reset.body.passwords[0].password !== made.body.passwords[0].password, 'admin resets a password');
+    ok((await cat.state()).status === 401, 'which logs that player out');
+    const dan = client();
+    await dan.json('POST', '/api/login', { password: made.body.passwords[1].password });
+    const waiting = dan.json('GET', `/api/state?v=${(await dan.state()).body.v}`);
+    const again = await boss.json('POST', '/api/admin/new-game', { players: ['Fay', 'Gus'], replace: true });
+    ok(again.body.ok && again.body.game.players.length === 2, 'admin replaces the game');
+    ok((await waiting).status === 401 && (await dan.state()).status === 401, 'players of the old game are sent back to the login screen');
+    ok((await dan.json('POST', '/api/login', { password: made.body.passwords[1].password })).status === 401, 'old passwords stop working');
+  }
+  await stopServer();
+
+  // ---- the command-line tool: a new game prints a password per player, unique
+  const pw = passwords(admin('new-game', '--players', 'Ann,Ben', '--seed', '7', '--worlds', '4', '--force'));
   ok(pw.Ann && pw.Ben && pw.Ann !== pw.Ben, 'every player gets their own password');
   ok(/already a game/.test((() => { try { admin('new-game', '--players', 'X,Y'); return ''; } catch (e) { return String(e.stderr); } })()), 'new-game refuses to replace a game without --force');
 

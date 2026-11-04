@@ -10,17 +10,17 @@
 //   npm run admin -- passwords
 //       New passwords for everyone (logs everyone out).
 //
-// LSB_DATA picks the data folder (default ./data).
+// LSB_DATA picks the data folder (default ./data, or the Railway volume when there is one).
+// The admin web page (/admin, with LSB_ADMIN_PASSWORD set) does the same things in a browser.
 
 import { join, resolve } from 'node:path';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
-import { createWorld } from '../src/world/world.js';
-import { MIN_PLAYERS, MAX_PLAYERS, DEFAULT_PLANETS_PER_PLAYER } from '../src/world/rules.js';
 import { Accounts } from './accounts.mjs';
-import { Game, gameExists } from './game.mjs';
+import { gameExists } from './game.mjs';
+import { makeNewGame } from './setup.mjs';
 
 const ROOT = resolve(new URL('..', import.meta.url).pathname);
-const DATA = resolve(process.env.LSB_DATA || join(ROOT, 'data'));
+const DATA = resolve(process.env.LSB_DATA || process.env.RAILWAY_VOLUME_MOUNT_PATH || join(ROOT, 'data'));
 const accounts = new Accounts(join(DATA, 'accounts.json'));
 
 const [cmd, ...rest] = process.argv.slice(2);
@@ -49,20 +49,14 @@ switch (cmd) {
   case 'new-game': {
     if (serverRunning()) die('The server is running. Stop it first, then make the new game.');
     if (gameExists(DATA) && !flags.force) die(`There is already a game in ${DATA}. Add --force to replace it (its replays are deleted too).`);
-    const names = String(flags.players || '').split(',').map((s) => s.trim()).filter(Boolean);
-    if (names.length < MIN_PLAYERS || names.length > MAX_PLAYERS) die(`Give ${MIN_PLAYERS}–${MAX_PLAYERS} player names: --players "Ann,Ben,Cat,Dan"`);
-    if (new Set(names.map((n) => n.toLowerCase())).size !== names.length) die('Player names must be different.');
-    const teams = flags.teams ? String(flags.teams).split(',').map((s) => s.trim()) : [];
-    const seed = Number(flags.seed) || 1 + Math.floor(Math.random() * 99999);
-    const planetsPerPlayer = Math.max(3, Math.min(14, Number(flags.worlds) || DEFAULT_PLANETS_PER_PLAYER));
-    const world = createWorld({ players: names.map((name, k) => ({ name, team: teams[k] || '' })), seed, planetsPerPlayer });
-    rmSync(join(DATA, 'replays'), { recursive: true, force: true });
+    const names = String(flags.players || '').split(',');
+    const teams = flags.teams ? String(flags.teams).split(',') : [];
+    let made;
+    try { made = makeNewGame(DATA, { names, teams, seed: flags.seed, worlds: flags.worlds }); } catch (e) { die(`${e.message} Example: --players "Ann,Ben,Cat,Dan"`); }
     rmSync(join(DATA, 'sessions.json'), { force: true });
-    rmSync(join(DATA, 'accounts.json'), { force: true });
-    Game.create(DATA, world);
-    const pws = world.players.map((p) => [p.id, accounts.setPassword(p.id)]);
-    console.log(`New galaxy in ${DATA}: ${world.planets.length} worlds, seed ${seed}, ${names.length} players.`);
-    printPasswords(world, pws);
+    const { world } = made;
+    console.log(`New galaxy in ${DATA}: ${world.planets.length} worlds, seed ${world.seed}, ${world.players.length} players.`);
+    printPasswords(world, made.passwords);
     console.log('Start the server with: npm start');
     break;
   }

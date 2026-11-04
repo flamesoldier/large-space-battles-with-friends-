@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Game admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root {
+  --void: #05070c; --panel: rgba(10, 15, 24, 0.94); --line: rgba(140, 170, 210, 0.18);
+  --ink: #dbe4f2; --dim: #7d8ba1; --azure: #86e8ff; --ember: #ffb35c; --bad: #ff6b6b; --signal: #e6eeff;
+  --display: "Chakra Petch", "Bahnschrift", "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0; min-height: 100vh; color: var(--ink); font-family: var(--display);
+  background: radial-gradient(ellipse at 50% 0%, rgba(70,95,170,0.16), rgba(5,7,12,0) 60%), var(--void);
+  padding: 32px 16px 64px;
+}
+main { width: min(720px, 100%); margin: 0 auto; display: grid; gap: 18px; }
+h1 { margin: 0; font-size: 22px; letter-spacing: 0.08em; text-transform: uppercase; }
+h2 { margin: 0 0 12px; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); font-weight: 600; }
+p { margin: 0 0 10px; color: var(--dim); font-size: 14px; line-height: 1.55; }
+p b { color: var(--ink); }
+section { background: var(--panel); border: 1px solid var(--line); padding: 20px; }
+label { display: grid; gap: 6px; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
+label.check { display: flex; gap: 8px; align-items: center; text-transform: none; letter-spacing: 0.02em; font-size: 14px; color: var(--ink); }
+input, textarea {
+  font: 500 15px var(--mono); color: var(--ink); background: rgba(255,255,255,0.04);
+  border: 1px solid var(--line); padding: 9px 11px; border-radius: 3px; width: 100%;
+}
+textarea { min-height: 150px; resize: vertical; line-height: 1.6; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 560px) { .grid { grid-template-columns: 1fr; } }
+.stack { display: grid; gap: 14px; }
+button {
+  font: 600 13px var(--display); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink);
+  background: rgba(255,255,255,0.05); border: 1px solid var(--line); padding: 9px 14px; border-radius: 3px; cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: var(--signal); }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--azure); outline-offset: 1px; }
+button.go { background: var(--signal); color: var(--void); border-color: var(--signal); }
+button.danger { color: var(--bad); }
+button.small { padding: 5px 9px; font-size: 11.5px; }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.err { color: var(--bad); min-height: 1.3em; font-size: 14px; margin: 0; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th { color: var(--dim); font-weight: 500; font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; text-align: left; padding: 0 0 6px; }
+td { padding: 8px 0; border-top: 1px solid var(--line); vertical-align: middle; }
+td.num { font-family: var(--mono); color: var(--dim); }
+td:last-child, th:last-child { text-align: right; }
+.out { opacity: 0.5; }
+#passwords { border-color: var(--ember); }
+#passwords h2 { color: var(--ember); }
+.pw { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 16px; align-items: center; font-size: 15px; }
+.pw code { font: 500 19px var(--mono); color: var(--azure); letter-spacing: 0.04em; user-select: all; }
+.kv { display: flex; gap: 22px; flex-wrap: wrap; font-family: var(--mono); font-size: 13px; color: var(--dim); margin-bottom: 14px; }
+.kv b { color: var(--ink); font-weight: 500; }
+a { color: var(--azure); }
+</style>
+</head>
+<body>
+<main>
+  <div class="row" style="justify-content: space-between">
+    <h1>Game admin</h1>
+    <div class="row"><a href="/">Open the game</a><button class="small" id="logout" hidden>Log out</button></div>
+  </div>
+
+  <section id="login" hidden>
+    <h2>Admin login</h2>
+    <form id="login-form" class="stack">
+      <p>Enter the admin password (the <b>LSB_ADMIN_PASSWORD</b> you set on the server).</p>
+      <input id="login-pw" type="password" autocomplete="current-password" aria-label="Admin password" required>
+      <div class="row"><button class="go" type="submit">Log in</button></div>
+      <p class="err" id="login-err" role="alert"></p>
+    </form>
+  </section>
+
+  <section id="passwords" hidden>
+    <h2>Passwords: copy them now</h2>
+    <p>These are shown <b>only once</b>. Send each friend their own password privately (a direct message, not the group chat). If one gets lost, give that player a new one below.</p>
+    <div class="pw" id="pw-list"></div>
+    <div class="row" style="margin-top:16px"><button id="pw-copy" class="go">Copy all</button><button id="pw-done">I've saved them</button></div>
+  </section>
+
+  <section id="game" hidden>
+    <h2>The game</h2>
+    <div class="kv" id="game-kv"></div>
+    <table>
+      <thead><tr><th>Player</th><th>Worlds</th><th></th></tr></thead>
+      <tbody id="players"></tbody>
+    </table>
+    <p style="margin-top:14px">"New password" logs that player out everywhere and shows their new password above.</p>
+  </section>
+
+  <section id="create" hidden>
+    <h2 id="create-title">Create the game</h2>
+    <form id="create-form" class="stack">
+      <label>Players: one name per line (2 to 10)
+        <textarea id="names" placeholder="Rowan&#10;Sam&#10;Alex&#10;Jo" required></textarea>
+      </label>
+      <div class="grid">
+        <label>Worlds per player (3–14)<input id="worlds" type="number" min="3" max="14" value="7"></label>
+        <label>Map seed (blank = random)<input id="seed" type="number" min="1" placeholder="random"></label>
+      </div>
+      <label>Starting teams (optional): one letter per line, same order as the names. Same letter = start allied.
+        <textarea id="teams" style="min-height:60px" placeholder="(leave empty: everyone on their own)"></textarea>
+      </label>
+      <label class="check" id="replace-row" hidden><input type="checkbox" id="replace" style="width:auto"> Replace the current game. Everything in it is deleted, and every player gets a new password.</label>
+      <div class="row"><button class="go" type="submit" id="create-go">Create the game</button></div>
+      <p class="err" id="create-err" role="alert"></p>
+    </form>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+async function api(path, body) {
+  const res = await fetch(path, body === undefined ? { credentials: 'same-origin' } : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), credentials: 'same-origin' });
+  let r; try { r = await res.json(); } catch { r = { ok: false, error: `Server error (${res.status})` }; }
+  r.status = res.status;
+  return r;
+}
+
+let shown = [];
+function showPasswords(list) {
+  if (!list?.length) return;
+  shown = list;
+  $('pw-list').innerHTML = list.map((p) => `<span>${esc(p.name)}</span><code>${esc(p.password)}</code>`).join('');
+  $('passwords').hidden = false;
+  $('passwords').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+$('pw-copy').addEventListener('click', async () => {
+  const text = shown.map((p) => `${p.name}: ${p.password}`).join('\n');
+  try { await navigator.clipboard.writeText(text); $('pw-copy').textContent = 'Copied'; } catch { $('pw-copy').textContent = 'Select and copy them by hand'; }
+  setTimeout(() => { $('pw-copy').textContent = 'Copy all'; }, 2500);
+});
+$('pw-done').addEventListener('click', () => { $('passwords').hidden = true; shown = []; $('pw-list').innerHTML = ''; });
+
+let armed = null;
+function render(st) {
+  $('login').hidden = true; $('logout').hidden = false; $('create').hidden = false;
+  const G = st.game;
+  $('game').hidden = !G;
+  $('replace-row').hidden = !G;
+  $('create-title').textContent = G ? 'Start a new game instead' : 'Create the game';
+  $('create-go').textContent = G ? 'Replace with a new game' : 'Create the game';
+  $('create-go').classList.toggle('danger', !!G); $('create-go').classList.toggle('go', !G);
+  if (!G) return;
+  $('game-kv').innerHTML = `<span>Day <b>${G.day}</b></span><span><b>${G.worlds}</b> worlds</span><span>seed <b>${G.seed}</b></span><span>speed <b>${G.speed}×</b></span><span><b>${G.replays}</b> replays</span>`;
+  $('players').innerHTML = G.players.map((p) => `<tr class="${p.eliminated ? 'out' : ''}"><td>${esc(p.name)}${p.team ? ` <span class="num">team ${esc(p.team)}</span>` : ''}${p.eliminated ? ' <span class="num">(out)</span>' : ''}</td><td class="num">${p.worlds}</td>
+    <td><button class="small" data-reset="${p.id}">${armed === p.id ? 'Click again to confirm' : 'New password'}</button></td></tr>`).join('');
+}
+$('players').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-reset]');
+  if (!b) return;
+  const id = Number(b.dataset.reset);
+  if (armed !== id) { armed = id; b.textContent = 'Click again to confirm'; setTimeout(() => { if (armed === id) { armed = null; b.textContent = 'New password'; } }, 4000); return; }
+  armed = null; b.disabled = true;
+  const r = await api('/api/admin/reset-password', { player: id });
+  if (!r.ok) { alert(r.error); return load(); }
+  render(r); showPasswords(r.passwords);
+});
+
+$('create-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('create-err').textContent = '';
+  const lines = (s) => s.split(/\n|,/).map((x) => x.trim()).filter(Boolean);
+  const players = lines($('names').value);
+  const teams = $('teams').value.split('\n').map((x) => x.trim());
+  if (players.length < 2) { $('create-err').textContent = 'Write at least two player names, one per line.'; return; }
+  const replace = !$('replace-row').hidden && $('replace').checked;
+  if (!$('replace-row').hidden && !replace) { $('create-err').textContent = 'Tick the box to confirm replacing the current game.'; return; }
+  $('create-go').disabled = true;
+  const r = await api('/api/admin/new-game', { players, teams, worlds: Number($('worlds').value) || 7, seed: Number($('seed').value) || undefined, replace });
+  $('create-go').disabled = false;
+  if (!r.ok) { $('create-err').textContent = r.error; return; }
+  $('replace').checked = false; $('names').value = ''; $('teams').value = ''; $('seed').value = '';
+  render(r); showPasswords(r.passwords);
+});
+
+function showLogin(msg = '') {
+  for (const id of ['game', 'create', 'passwords']) $(id).hidden = true;
+  $('logout').hidden = true; $('login').hidden = false; $('login-err').textContent = msg;
+  $('login-pw').focus();
+}
+$('login-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const r = await api('/api/admin/login', { password: $('login-pw').value });
+  if (!r.ok) return showLogin(r.error);
+  $('login-pw').value = '';
+  render(r);
+});
+$('logout').addEventListener('click', async () => { await api('/api/admin/logout', {}); showLogin(); });
+
+async function load() {
+  const r = await api('/api/admin/state');
+  if (r.ok) render(r); else showLogin(r.status === 401 ? '' : r.error);
+}
+load();
+</script>
+</body>
+</html>

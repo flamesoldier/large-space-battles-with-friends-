@@ -5,21 +5,48 @@ anyone is looking or not, battles resolved in a worker thread, and replays saved
 open the website, type their password, and play as their player. Plain Node 20+, no other
 dependencies.
 
-## Quick start (on your own computer)
+## Putting it online with Railway (no command line needed)
+
+[Railway](https://railway.com) builds the game straight from this GitHub repo, keeps it running,
+and gives it a web address with HTTPS. A new account gets a free trial; after that the Hobby plan
+is $5 a month, which covers a game this size. Everything below is clicks in the browser.
+
+1. **Sign up** at railway.com with "Login with GitHub" (the account that owns this repo).
+2. **New project**: click *New Project* → *Deploy from GitHub repo* → pick
+   `large-space-battles-with-friends-` (allow Railway to see it if it asks). It starts building;
+   the first deploy can fail or wait until steps 3–4 are done, that's fine.
+3. **Admin password**: click the new service → *Variables* tab → *New Variable*. Name
+   `LSB_ADMIN_PASSWORD`, value: a long password only you know (10+ characters; this is not a
+   player password, it unlocks the admin page). Add a second variable `PORT` = `8080`. Save
+   (Railway may ask to redeploy: say yes).
+4. **Storage**: right-click an empty spot on the project canvas (or press Ctrl/⌘+K) → *Volume* →
+   attach it to the game service, mount path `/data`. Without it, the game would be wiped every
+   time the server restarts. The server finds the volume by itself.
+5. **Web address**: service → *Settings* → *Networking* → *Generate Domain*. You get something like
+   `large-space-battles-production.up.railway.app`. If it asks which port, type `8080`.
+6. Wait for the deploy to turn green (*Deployments* tab), then open
+   `https://<your address>/admin`, log in with the admin password, type the players' names (one per
+   line) and click **Create the game**. Copy the passwords it shows: they're shown only once.
+7. Send each friend the address `https://<your address>` and their own password, privately.
+
+From then on, every push to the repo's main branch redeploys automatically; the game carries on
+(it lives on the volume). If the site shows an error, the *Deployments* tab → *View logs* says why.
+
+## On your own computer
 
 ```sh
 npm install
-npm run build                                            # writes dist/play.html (the game page)
-npm run admin -- new-game --players "Rowan,Sam,Alex,Jo"  # prints each player's password ONCE
-npm start                                                # http://localhost:8080
+npm run build                                       # writes dist/play.html (the game page)
+LSB_ADMIN_PASSWORD="a long admin password" npm start   # http://localhost:8080, admin at /admin
 ```
 
-Copy the passwords somewhere safe when they're printed and send each friend theirs privately
+Or without the admin page: `npm run admin -- new-game --players "Rowan,Sam,Alex,Jo"` prints each
+player's password once (optional: `--teams "A,A,B,B"` for who starts allied, `--seed 42` for the
+map, `--worlds 7` worlds per player), then `npm start`.
+
+Copy the passwords somewhere safe when they're shown and send each friend theirs privately
 (a direct message, not the group chat). Only hashes are stored, so they can't be shown again;
 if one is lost, make a new one (below).
-
-Optional: `--teams "A,A,B,B"` (who starts allied), `--seed 42` (the map), `--worlds 7` (worlds per
-player).
 
 ## Passwords and accounts
 
@@ -35,7 +62,11 @@ player).
 - Wrong passwords: 8 in 15 minutes from one address and that address is blocked for the rest of
   the 15 minutes. Failed and successful logins are printed in the server log.
 
-Admin commands (run on the server machine):
+The **admin page** (`/admin`, needs `LSB_ADMIN_PASSWORD` set on the server): create the game,
+see the players, give one of them a new password (logs them out everywhere), or replace the game
+with a new one. Admin logins share the rate limit and last 12 hours.
+
+The same from the command line, on the server machine:
 
 ```sh
 npm run admin -- players                         # list players
@@ -55,11 +86,12 @@ Environment variables for `npm start`:
 | --- | --- | --- |
 | `PORT` | 8080 | |
 | `HOST` | 0.0.0.0 | `127.0.0.1` when a proxy on the same machine does HTTPS |
-| `LSB_DATA` | `./data` | game, accounts, sessions, replays |
+| `LSB_DATA` | Railway volume, else `./data` | game, accounts, sessions, replays |
+| `LSB_ADMIN_PASSWORD` | (off) | turns on `/admin`; 10+ characters |
 | `LSB_SPEED` | 1 | game speed; 1 = real time (60 for a quick test) |
-| `LSB_TRUST_PROXY` | off | set to `1` behind Caddy/nginx: marks the cookie Secure and reads the client address from `X-Forwarded-For` |
+| `LSB_TRUST_PROXY` | off (on, on Railway) | set to `1` behind Caddy/nginx: marks the cookie Secure and reads the client address from `X-Forwarded-For` |
 
-## Putting it on the internet
+## Your own server instead (VPS)
 
 **Use HTTPS.** Without it, passwords and session cookies cross the network in plain text, and
 anyone on the same café Wi-Fi could log in as your friend.
@@ -98,8 +130,8 @@ a 2,000-ship battle takes about 8 s of one core) with a domain name pointed at i
 
    `sudo systemctl enable --now lsb caddy`, then open `https://galaxy.example.com`.
 
-Only open ports 80 and 443 in the firewall (not 8080). Hosts with a persistent disk (Fly.io,
-Railway, Render) work too: point `LSB_DATA` at the persistent volume, set `LSB_TRUST_PROXY=1`
+Only open ports 80 and 443 in the firewall (not 8080). Other hosts with a persistent disk
+(Fly.io, Render) work too: point `LSB_DATA` at the persistent volume, set `LSB_TRUST_PROXY=1`
 since they terminate HTTPS for you, and run a single instance (the game lives in one process).
 
 **Updating:** `git pull && npm run build`, then `sudo systemctl restart lsb`. The page is
@@ -129,6 +161,10 @@ its clock and everyone's sessions carry on across restarts, and time the server 
     design}`, `sell {planet, yard}`, `propose|accept|decline|break {player}`. Every field is
     checked; the player always comes from the session.
   - `GET /api/replay/<id>` replay bytes, with title and sides in `X-Replay-Meta`.
+  - `/admin` page and `/api/admin/{login,logout,state,new-game,reset-password}` (own cookie,
+    `lsb_admin`). A new game replaces the running one in place: the old one finishes what it's
+    doing, stops writing, and its players are sent back to the login screen.
+  - With no game yet the site still runs: players are told it isn't set up, `/admin` makes one.
   - POSTs must be JSON, from the same origin; bodies are capped at 4 MB.
 - `src/galaxy/net.js` and the `ONLINE` parts of `src/galaxy/app.js`: the page logs in, keeps its
   copy current, ticks income and shipyards forward locally between updates (pure functions of
