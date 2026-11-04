@@ -72,7 +72,11 @@ Combat rules:
 
 Battle end:
 - One side has no ships left that can still fire (disarmed hulks don't count).
-- Rout: a side under 20% of its starting ships still armed and outgunned 2:1.
+- Rout: a side under 20% of its starting ships still armed and outgunned 2:1. **The routed side
+  loses** (`battle.routed`, read by `readBattle()`): routed defenders lose the world and their
+  surviving ships flee home (`capture()` → `sendHome`). Fixed Nov 2026: a rout used to count as a
+  defender win, so 300 attackers that cut 100 defenders down to 13 were "beaten off" in ~60 s.
+  Stalemate and time limit still leave the world with its holder.
 - Disengagement: 20 s with no damage dealt anywhere, after the first 30 s.
 - Time limit: 4 minutes for testing; **30 minutes at launch** so every battle resolves.
 - The owner explicitly does not want a "mutual exhaustion" rule.

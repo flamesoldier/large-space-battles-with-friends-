@@ -58,6 +58,10 @@ export class Battle {
     this.maxTicks = Math.round(maxTime / DT);
     this.endTick = -1;
     this.done = false;
+    // Why the battle ended ('destroyed', 'rout', 'stalled', 'time') and the side that broke and ran
+    // in a rout (-1 otherwise). A routed side has lost even though some of its ships still fire.
+    this.endReason = null;
+    this.routed = -1;
     this.ents = [];
     this.byId = [];
     this.shipCount = ships.length;
@@ -236,9 +240,12 @@ export class Battle {
     const stalled = this.tick > 300 && this.now - (this.lastDamage || 0) > 200;
     // Rout: a side down to <20% of its starting ships still able to fight, and outgunned 2:1.
     const a0 = this.armed[0].length, a1 = this.armed[1].length;
-    const routed = (a0 < this.teamStart[0] * 0.2 && a1 > 2 * a0) || (a1 < this.teamStart[1] * 0.2 && a0 > 2 * a1);
-    if (this.endTick < 0 && (!a0 || !a1 || stalled || routed || this.tick >= this.maxTicks))
+    const routed = a0 && a0 < this.teamStart[0] * 0.2 && a1 > 2 * a0 ? 0 : a1 && a1 < this.teamStart[1] * 0.2 && a0 > 2 * a1 ? 1 : -1;
+    if (this.endTick < 0 && (!a0 || !a1 || stalled || routed >= 0 || this.tick >= this.maxTicks)) {
       this.endTick = this.tick + 40; // let the last missiles and debris play out
+      this.endReason = !a0 || !a1 ? 'destroyed' : routed >= 0 ? 'rout' : stalled ? 'stalled' : 'time';
+      this.routed = this.endReason === 'rout' ? routed : -1;
+    }
     if (this.endTick >= 0 && this.tick >= this.endTick) this.done = true;
     return !this.done;
   }

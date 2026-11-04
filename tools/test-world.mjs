@@ -9,7 +9,7 @@ import {
   shipsAt, incomeOf, allied, YARD_MS, HOLD_MS, designOf, upgradeWorld,
   proposeAlliance, acceptAlliance, breakAlliance, proposalsFor, dueEvent,
 } from '../src/world/world.js';
-import { readBattle } from '../src/world/battleSetup.js';
+import { readBattle, makeBattleScenario } from '../src/world/battleSetup.js';
 import { Battle } from '../src/sim/battle.js';
 import { makeDesign } from '../src/shared/designs.js';
 import { BT } from '../src/shared/blocks.js';
@@ -406,6 +406,21 @@ const resolve = (scen) => {
   const speed = w.designs[r.yard.design].speed;
   console.log(`  engine-less battleship speed: ${speed.toFixed(2)}`);
   if (speed < 0.5) ok(!sendFleet(w, 0, w.players[0].home, w.players[1].home, { [r.yard.design]: 1 }).ok, 'immobile ships stay home');
+}
+
+// ---- a routed defender loses (bug: 300 vs 100 ended by rout was recorded as a defender win)
+{
+  const d = makeDesign('destroyer', 4);
+  const scen = makeBattleScenario([{ side: 0, owner: 0, design: 'x', n: 300 }, { side: 1, owner: 1, design: 'x', n: 100 }], () => d, 7);
+  const b = new Battle({ designs: scen.designs, ships: scen.ships, seed: scen.seed });
+  b.run();
+  const r = readBattle(b, scen);
+  console.log(`  300 vs 100: ended by ${b.endReason} after ${r.seconds} s, survivors ${r.groups.map((g) => g.survived).join(' vs ')}`);
+  ok(r.attackerWon, 'the big fleet wins against 100');
+  if (b.endReason === 'rout') ok(r.routed === 1 && r.groups[1].survived > 0, 'rout: defenders broke with ships still armed');
+  const b2 = new Battle({ designs: scen.designs, ships: scen.ships.map((s) => ({ ...s, team: 1 - s.team })), seed: scen.seed });
+  b2.run();
+  ok(!readBattle(b2, { ...scen, groups: scen.groups.map((g) => ({ ...g, side: 1 - g.side })) }).attackerWon, 'a routed attacker loses');
 }
 
 console.log(`world: ${checks} checks passed`);

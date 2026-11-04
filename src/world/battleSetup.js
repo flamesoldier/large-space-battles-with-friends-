@@ -40,8 +40,10 @@ export function makeBattleScenario(groups, designOf, seed) {
 }
 
 /**
- * Read a finished Battle. Returns { attackerWon, groups: [{ ...group, survived }], seconds }.
- * The attacker wins only if it still has armed ships and the defenders have none.
+ * Read a finished Battle. Returns { attackerWon, routed, groups: [{ ...group, survived }], seconds }.
+ * The attacker wins if it still has armed ships and the defenders either have none or were routed
+ * (under 20% of their ships left and outgunned 2:1: the battle stops there, so the few defenders
+ * still armed have lost and flee). A stalemate or the time limit leaves the world with its holder.
  */
 export function readBattle(battle, scen) {
   const alive = [0, 0];
@@ -54,5 +56,7 @@ export function readBattle(battle, scen) {
     alive[g.side] += survived;
     return { ...g, survived };
   });
-  return { attackerWon: alive[0] > 0 && alive[1] === 0, groups, seconds: Math.round(battle.tick * 0.1) };
+  const routed = battle.routed ?? -1;
+  const attackerWon = alive[0] > 0 && (alive[1] === 0 || routed === 1);
+  return { attackerWon, routed, groups, seconds: Math.round(battle.tick * 0.1) };
 }

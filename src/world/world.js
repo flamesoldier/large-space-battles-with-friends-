@@ -563,17 +563,19 @@ function capture(world, P, owner, ships, battleInfo) {
   const old = P.owner, yards = P.yards.length;
   P.yards = [];
   P.owner = owner;
-  // Defenders that lost are gone (nothing armed survived). Anyone else still here who isn't on the
-  // new owner's side sat the battle out (allied with both sides): they leave for home, unharmed.
-  const others = [...new Set(P.garrison.filter((s) => s.n > 0 && !allied(world, s.owner, owner) && s.owner !== old && s.owner !== null).map((s) => s.owner))];
+  // Anyone still here who isn't on the new owner's side leaves for home: defenders that were routed
+  // (a few ships still armed when their side broke) flee, and players who sat the battle out
+  // (allied with both sides) go unharmed. Militia that survive a rout scatter and are gone.
+  const others = [...new Set(P.garrison.filter((s) => s.n > 0 && !allied(world, s.owner, owner) && s.owner !== null).map((s) => s.owner))];
   P.garrison = P.garrison.filter((s) => s.n > 0 && (allied(world, s.owner, owner) || others.includes(s.owner)));
-  for (const o of others) sendHome(world, P, o);
+  const fled = others.map((o) => sendHome(world, P, o)).filter(Boolean);
   for (const [d, n] of Object.entries(ships)) addShips(P, owner, d, n);
   const me = playerName(world, owner);
   const from = old === null ? '' : ` from ${playerName(world, old)}`;
   const how = battleInfo ? 'won the battle for' : 'took';
   const ruin = yards ? ` ${yards} shipyard${yards > 1 ? 's' : ''} destroyed.` : '';
-  log(world, battleInfo ? 'battle' : 'capture', `${me} ${how} ${P.name}${from}.${ruin} +${P.income.toLocaleString()} cr/h.`, { planet: P.id, players: old === null ? [owner] : [owner, old], capture: { by: owner, from: old, yards }, ...(battleInfo || {}) });
+  const tail = fled.length ? ` ${fled.join('; ')}.` : '';
+  log(world, battleInfo ? 'battle' : 'capture', `${me} ${how} ${P.name}${from}.${ruin} +${P.income.toLocaleString()} cr/h.${tail}`, { planet: P.id, players: old === null ? [owner] : [owner, old], capture: { by: owner, from: old, yards }, ...(battleInfo || {}) });
   return world.log[world.log.length - 1];
 }
 
