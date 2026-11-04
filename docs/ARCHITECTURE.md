@@ -272,9 +272,9 @@ In rough order:
 
 1. ~~Ship designer~~: done (`src/designer/`, see below).
 1. ~~Ship collisions~~: on (hull rectangles, any team), about +7% compute at 1,000 vs 1,000.
-2. Battle job runner on the server: queue, worker threads, store replays, write losses back to
-   the fleets. The world side of this is ready (`dueEvent` / `planEvent` / `readBattle` / `applyEvent`
-   in `src/world/`); what's missing is the server itself.
+2. ~~Battle job runner on the server~~: done (`server/game.mjs` runs battles one at a time in a
+   worker thread, in event order, and stores replays on disk; see `docs/SERVER.md`). Battles could
+   later run in parallel when they don't touch the same worlds.
 3. Combat depth: a railgun that punches through several blocks, shields, reactor/power blocks, and smarter AI roles (screens, flankers, capital ships holding
    back).
 4. Balance. Battles currently drag on at the end with crippled stragglers; the rout and

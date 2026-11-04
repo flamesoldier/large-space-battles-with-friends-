@@ -8,9 +8,15 @@
     "build:viewer": "node tools/build-viewer.mjs viewer",
     "build:designer": "node tools/build-viewer.mjs designer",
     "build:galaxy": "node tools/build-viewer.mjs galaxy",
-    "test": "node tools/test-designer.mjs && node tools/test-world.mjs"
+    "test": "node tools/test-designer.mjs && node tools/test-world.mjs && node tools/test-server.mjs",
+    "build:play": "node tools/build-viewer.mjs play",
+    "start": "node server/server.mjs",
+    "admin": "node server/admin.mjs"
   },
-  "devDependencies": {
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
     "esbuild": "^0.24.2"
   }
 }
