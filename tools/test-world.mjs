@@ -95,6 +95,15 @@ const resolve = (scen) => {
   ok(q2.mult > 1 && q2.price > shipyardPrice(corv), 'second shipyard on the same world costs more');
   const elsewhere = w.planets.find((p) => p.owner === null);
   ok(quoteShipyard(w, elsewhere.id, corv).mult === 1, 'crowding is per world');
+  // The owner's rule of thumb: on one world, the 100th shipyard of the same kind costs about 2× the first.
+  {
+    const t = createWorld({ players: [{ name: 'X' }, { name: 'Y' }], seed: 3 }), h = t.players[0].home;
+    t.players[0].credits = 1e12;
+    const first = quoteShipyard(t, h, dest).price;
+    for (let k = 0; k < 99; k++) ok(buildShipyard(t, 0, h, dest).ok, 'stack yards');
+    const hundredth = quoteShipyard(t, h, dest).price;
+    ok(Math.abs(hundredth / first - 1.99) < 0.005, `100th shipyard costs ~2× the first (${(hundredth / first).toFixed(3)}×)`);
+  }
   ok(!buildShipyard(w, 0, elsewhere.id, corv).ok, 'can\'t build on a world you don\'t hold');
   ok(!buildShipyard(w, 0, w.players[1].home, corv).ok, 'or on an ally\'s');
   const broke = buildShipyard(w, 2, w.players[2].home, { ...makeDesign('titan', 2), name: 'Big' });

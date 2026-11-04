@@ -8,7 +8,7 @@
 
 import { BT } from '../shared/blocks.js';
 import { decodeDesign, analyzeDesign, designCost } from '../shared/shipStats.js';
-import { SHIPYARD_INTERVAL_MIN, SHIPYARD_CROWDING_CR, SHIPYARD_SELL_REFUND, shipyardPrice } from '../shared/economy.js';
+import { SHIPYARD_INTERVAL_MIN, SHIPYARD_CROWDING_SHARE, SHIPYARD_SELL_REFUND, crowdingSurcharge } from '../shared/economy.js';
 import { Battle, DT } from '../sim/battle.js';
 import { packReplay } from '../shared/replayFormat.js';
 import { mulberry32 } from '../shared/rng.js';
@@ -19,6 +19,7 @@ import {
 } from '../world/world.js';
 import { readBattle } from '../world/battleSetup.js';
 import { fleetPosition } from '../world/routes.js';
+import { PlanetSprites, planetLook } from './planetArt.js';
 import { HOUR_MS, PLAYER_COLORS, NEUTRAL_COLOR, MIN_PLAYERS, MAX_PLAYERS, HYPERLANE_SPEEDUP, MIN_FLEET_SPEED } from '../world/rules.js';
 
 const $ = (id) => document.getElementById(id);
@@ -69,6 +70,8 @@ const who = (pid) => `<span class="who"><span class="swatch" style="background:$
 const me = () => world.players[ui.me];
 const shipTotal = (P) => P.garrison.reduce((s, g) => s + g.n, 0);
 const planetR = (P) => (P.home >= 0 ? 13 : 6 + P.size * 6);
+/** Screen radius just outside a world's atmosphere (owner ring), from its body radius in pixels. */
+const outerR = (r) => r * 1.22 + 3;
 
 function clockText(t) {
   const h = t / HOUR_MS, day = Math.floor(h / 24) + 1, hh = Math.floor(h % 24), mm = Math.floor((h * 60) % 60);
@@ -100,26 +103,52 @@ function zoomAt(f, sx = W / 2, sy = H / 2) {
   cam.x += wx - nx; cam.y += wy - ny;
 }
 
-// Background stars, made once per galaxy.
-let stars = [];
-function makeStars() {
-  const r = mulberry32(world.seed * 3 + 1);
-  stars = Array.from({ length: 900 }, () => ({ x: (r() - 0.5) * 2, y: (r() - 0.5) * 2, b: 0.15 + r() * 0.5, s: r() < 0.08 ? 1.6 : 1 }));
+// Background: a fixed starfield and faint nebulae, painted once per screen size. It stays put
+// while you pan and zoom (only the galaxy moves), like a distant sky.
+let sky = null, skyKey = '';
+function paintSky() {
+  const key = `${world.seed}:${Math.round(W)}x${Math.round(H)}@${dpr}`;
+  if (key === skyKey && sky) return;
+  skyKey = key;
+  sky = document.createElement('canvas');
+  sky.width = Math.max(1, Math.round(W * dpr)); sky.height = Math.max(1, Math.round(H * dpr));
+  const x = sky.getContext('2d'), r = mulberry32(world.seed * 3 + 1);
+  x.fillStyle = '#04060b'; x.fillRect(0, 0, sky.width, sky.height);
+  for (const [hue, a] of [[220, 0.07], [265, 0.05], [195, 0.045]]) {
+    const cx = r() * sky.width, cy = r() * sky.height, rad = (0.35 + r() * 0.4) * Math.max(sky.width, sky.height);
+    const gr = x.createRadialGradient(cx, cy, 0, cx, cy, rad);
+    gr.addColorStop(0, `hsla(${hue},60%,45%,${a})`); gr.addColorStop(1, `hsla(${hue},60%,45%,0)`);
+    x.fillStyle = gr; x.fillRect(0, 0, sky.width, sky.height);
+  }
+  const n = Math.round((W * H) / 900);
+  for (let k = 0; k < n; k++) {
+    const b = r(), sz = (b > 0.985 ? 1.8 : b > 0.9 ? 1.2 : 0.8) * dpr;
+    const tint = r() < 0.15 ? '255,225,190' : r() < 0.2 ? '190,210,255' : '225,232,255';
+    x.fillStyle = `rgba(${tint},${0.18 + b * b * 0.7})`;
+    x.fillRect(r() * sky.width, r() * sky.height, sz, sz);
+  }
 }
+
+// Planet art (cosmetic): a type and texture per world, rendered once and cached.
+const sprites = new PlanetSprites();
+const looks = new Map();
+function lookOf(P) {
+  let l = looks.get(P.id);
+  if (!l) looks.set(P.id, (l = planetLook(world.seed, P)));
+  return l;
+}
+function makeStars() { sprites.reset(); looks.clear(); skyKey = ''; }
 
 // ------------------------------------------------------------ drawing
 function draw(now) {
-  g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  g.fillStyle = '#05070c'; g.fillRect(0, 0, W, H);
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.fillStyle = '#04060b'; g.fillRect(0, 0, canvas.width, canvas.height);
   if (!world) return;
+  paintSky();
+  g.drawImage(sky, 0, 0);
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
   const R = world.radius, z = cam.zoom;
-
-  // Stars drift slowly with the camera (parallax), so panning feels like moving.
-  for (const s of stars) {
-    const sx = W / 2 + (s.x * R * 1.6 - cam.x * 0.3) * Math.min(z, 2) * 0.7, sy = H / 2 + (s.y * R * 1.6 - cam.y * 0.3) * Math.min(z, 2) * 0.7;
-    const px = ((sx % W) + W) % W, py = ((sy % H) + H) % H;
-    g.fillStyle = `rgba(200,215,255,${s.b})`; g.fillRect(px, py, s.s, s.s);
-  }
+  sprites.budget(12);
   // Galactic glow.
   const [cx, cy] = toScreen(0, 0);
   const glow = g.createRadialGradient(cx, cy, 0, cx, cy, R * 1.15 * z);
@@ -139,7 +168,12 @@ function draw(now) {
   g.lineCap = 'round';
   for (const [a, b] of world.lanes) {
     const A = world.planets[a], B = world.planets[b];
-    const [x1, y1] = toScreen(A.x, A.y), [x2, y2] = toScreen(B.x, B.y);
+    let [x1, y1] = toScreen(A.x, A.y), [x2, y2] = toScreen(B.x, B.y);
+    // Stop each lane at the worlds' owner rings instead of running into their atmospheres.
+    const len = Math.hypot(x2 - x1, y2 - y1), ra = outerR(Math.max(3.5, planetR(A) * z)), rb = outerR(Math.max(3.5, planetR(B) * z));
+    if (len <= ra + rb + 2) continue;
+    const ux = (x2 - x1) / len, uy = (y2 - y1) / len;
+    x1 += ux * ra; y1 += uy * ra; x2 -= ux * rb; y2 -= uy * rb;
     g.strokeStyle = 'rgba(134,232,255,0.10)'; g.lineWidth = 5; line(x1, y1, x2, y2);
     g.strokeStyle = 'rgba(134,232,255,0.42)'; g.lineWidth = 1.3; line(x1, y1, x2, y2);
   }
@@ -155,7 +189,7 @@ function draw(now) {
     drawRoute(move.preview.legs, null, 'rgba(230,238,255,0.95)', 2.2);
     const T = world.planets[move.to], [x, y] = toScreen(T.x, T.y);
     g.font = '600 12px "JetBrains Mono", monospace'; g.textAlign = 'center';
-    label(`ETA ${fmtHours(move.preview.hours)}`, x, y - planetR(T) * z - 22, '#e6eeff');
+    label(`ETA ${fmtHours(move.preview.hours)}`, x, y - outerR(planetR(T) * z) - 22, '#e6eeff');
   }
 
   // Planets.
@@ -164,31 +198,35 @@ function draw(now) {
     const [x, y] = toScreen(P.x, P.y);
     const r = Math.max(3.5, planetR(P) * z);
     if (x < -60 || y < -60 || x > W + 60 || y > H + 60) continue;
-    const col = colorOf(P.owner);
-    // Body.
-    const body = g.createRadialGradient(x - r * 0.35, y - r * 0.35, r * 0.1, x, y, r);
-    body.addColorStop(0, P.owner === null ? '#8a96a8' : mix(col, '#ffffff', 0.35)); body.addColorStop(1, P.owner === null ? '#232a36' : mix(col, '#05070c', 0.7));
-    g.fillStyle = body; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
-    // Owner ring.
-    g.strokeStyle = P.owner === null ? 'rgba(125,139,161,0.5)' : col; g.lineWidth = P.owner === null ? 1 : 2;
-    g.beginPath(); g.arc(x, y, r + 3, 0, Math.PI * 2); g.stroke();
+    const col = colorOf(P.owner), ro = outerR(r); // ro: just outside the atmosphere, where the owner ring sits
+    // Body: the world's own procedural sprite (with its halo and rings).
+    const sp = sprites.get(P.id, lookOf(P), r * 2 * dpr, now);
+    if (sp) {
+      const k = r / (sp.bodyPx / 2), C = sp.canvas.width * k;
+      g.drawImage(sp.canvas, x - C / 2, y - C / 2, C, C);
+    }
+    // Owner: a thin ring in their colour, clear of the atmosphere.
+    if (P.owner !== null) {
+      g.strokeStyle = col; g.lineWidth = 1.6;
+      g.beginPath(); g.arc(x, y, ro, 0, Math.PI * 2); g.stroke();
+    }
     // Spawn point: an extra dashed ring.
     if (P.home >= 0) {
       g.setLineDash([3, 3]); g.strokeStyle = hexA(colorOf(P.home), 0.8); g.lineWidth = 1;
-      g.beginPath(); g.arc(x, y, r + 8, 0, Math.PI * 2); g.stroke(); g.setLineDash([]);
+      g.beginPath(); g.arc(x, y, ro + 5, 0, Math.PI * 2); g.stroke(); g.setLineDash([]);
     }
     // Selection and hover.
     if ((sel?.kind === 'planet' && sel.id === P.id) || (move && move.from === P.id)) {
       g.strokeStyle = '#e6eeff'; g.lineWidth = 1.5;
       const k = 12 + Math.sin(now / 300) * 1.5;
-      bracket(x, y, r + k);
+      bracket(x, y, ro + k - 3);
     }
-    if (hover?.kind === 'planet' && hover.id === P.id) { g.strokeStyle = 'rgba(230,238,255,0.5)'; g.lineWidth = 1; g.beginPath(); g.arc(x, y, r + 12, 0, Math.PI * 2); g.stroke(); }
-    if (move?.picking && hover?.kind === 'planet' && hover.id === P.id && P.id !== move.from) { g.strokeStyle = '#e6eeff'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, r + 14, 0, Math.PI * 2); g.stroke(); }
+    if (hover?.kind === 'planet' && hover.id === P.id) { g.strokeStyle = 'rgba(230,238,255,0.5)'; g.lineWidth = 1; g.beginPath(); g.arc(x, y, ro + 9, 0, Math.PI * 2); g.stroke(); }
+    if (move?.picking && hover?.kind === 'planet' && hover.id === P.id && P.id !== move.from) { g.strokeStyle = '#e6eeff'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, ro + 11, 0, Math.PI * 2); g.stroke(); }
     // Shipyards: one pip each above the world.
     const ny = P.yards.length;
     if (ny) {
-      const shown = Math.min(ny, 8), w = 5, gap = 2, x0 = x - (shown * (w + gap) - gap) / 2, yy = y - r - 12;
+      const shown = Math.min(ny, 8), w = 5, gap = 2, x0 = x - (shown * (w + gap) - gap) / 2, yy = y - ro - 10;
       g.fillStyle = '#ffb35c';
       for (let k = 0; k < shown; k++) g.fillRect(x0 + k * (w + gap), yy, w, w);
       if (ny > shown) { g.font = '500 10px "JetBrains Mono", monospace'; g.textAlign = 'left'; g.fillText(`+${ny - shown}`, x0 + shown * (w + gap) + 1, yy + 5); }
@@ -197,12 +235,12 @@ function draw(now) {
     const n = shipTotal(P);
     if (n) {
       g.font = '600 11px "JetBrains Mono", monospace'; g.textAlign = 'left';
-      label(n >= 10000 ? `${Math.round(n / 1000)}k` : String(n), x + r + 6, y + 4, P.garrison.some((s) => s.owner !== P.owner) && P.owner !== null ? '#ffcf5c' : '#dbe4f2');
+      label(n >= 10000 ? `${Math.round(n / 1000)}k` : String(n), x + ro + 5, y + 4, P.garrison.some((s) => s.owner !== P.owner) && P.owner !== null ? '#ffcf5c' : '#dbe4f2');
     }
     // Name.
     if (showNames || P.owner === ui.me || (sel?.kind === 'planet' && sel.id === P.id)) {
       g.font = `600 ${P.home >= 0 ? 12.5 : 11.5}px "Chakra Petch", sans-serif`; g.textAlign = 'center';
-      label(P.name, x, y + r + 17, P.owner === null ? '#7d8ba1' : '#dbe4f2');
+      label(P.name, x, y + ro + (P.home >= 0 ? 20 : 14), P.owner === null ? '#7d8ba1' : '#dbe4f2');
     }
   }
 
@@ -245,11 +283,6 @@ function drawRoute(legs, pos, color, width) {
 function hexA(hex, a) {
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
-}
-function mix(a, b, t) {
-  const p = parseInt(a.slice(1), 16), q = parseInt(b.slice(1), 16);
-  const c = (s) => Math.round(((p >> s) & 255) * (1 - t) + ((q >> s) & 255) * t);
-  return `rgb(${c(16)},${c(8)},${c(0)})`;
 }
 
 // ------------------------------------------------------------ picking and input
@@ -621,10 +654,10 @@ function openYardDialog(planetId) {
   yardPlanet = planetId;
   const P = world.planets[planetId], existing = yardListValue(P);
   $('yard-title').textContent = `New shipyard at ${P.name}`;
-  const mult = 1 + existing / SHIPYARD_CROWDING_CR;
+  const extra = crowdingSurcharge(existing);
   $('yard-info').innerHTML = P.yards.length
-    ? `${P.name} already has <b>${P.yards.length}</b> shipyard${P.yards.length > 1 ? 's' : ''} worth ${fmt(existing)} cr, so a new one here costs <b>${mult.toFixed(2)}×</b> its list price. Building on your other worlds is cheaper. You have <b>${fmt(me().credits)}</b> credits.`
-    : `A shipyard costs 10× the ship it builds, and makes one every ${SHIPYARD_INTERVAL_MIN} min for free. Each extra shipyard on the same world costs more. You have <b>${fmt(me().credits)}</b> credits.`;
+    ? `${P.name} already has <b>${P.yards.length}</b> shipyard${P.yards.length > 1 ? 's' : ''} worth ${fmt(existing)} cr, so a new one here costs <b>${fmt(extra)} cr</b> more than its list price (${Math.round(SHIPYARD_CROWDING_SHARE * 100)}% of the shipyards already here). Building on your other worlds avoids that. You have <b>${fmt(me().credits)}</b> credits.`
+    : `A shipyard costs 10× the ship it builds, and makes one every ${SHIPYARD_INTERVAL_MIN} min for free. Each shipyard already on a world adds ${Math.round(SHIPYARD_CROWDING_SHARE * 100)}% of its price to the next one there. You have <b>${fmt(me().credits)}</b> credits.`;
   // Your designs already in the game, then your designer library.
   const seen = new Set(), items = [];
   for (const d of Object.values(world.designs)) {
@@ -646,7 +679,7 @@ function openYardDialog(planetId) {
     const q = quoteShipyard(world, planetId, it.design), afford = me().credits >= q.price;
     const row = document.createElement('div');
     row.className = 'design';
-    row.innerHTML = `<canvas width="96" height="48"></canvas><div><b>${esc(it.design.name)}</b><span>${esc(it.design.cls)} · ${fmt(designCost(it.design))} cr a ship · ${it.src}</span><br><span class="price">${fmt(q.price)} cr</span>${q.mult > 1.0005 ? ` <span>(list ${fmt(q.list)})</span>` : ''}</div><button class="go" ${afford ? '' : 'disabled'} title="${afford ? '' : 'Not enough credits'}">Build</button>`;
+    row.innerHTML = `<canvas width="96" height="48"></canvas><div><b>${esc(it.design.name)}</b><span>${esc(it.design.cls)} · ${fmt(designCost(it.design))} cr a ship · ${it.src}</span><br><span class="price">${fmt(q.price)} cr</span>${q.surcharge ? ` <span>(list ${fmt(q.list)} + ${fmt(q.surcharge)})</span>` : ''}</div><button class="go" ${afford ? '' : 'disabled'} title="${afford ? '' : 'Not enough credits'}">Build</button>`;
     thumb(row.querySelector('canvas'), it.design);
     row.querySelector('button').addEventListener('click', () => { if (build(planetId, it.design)) $('yard-dlg').close(); });
     list.append(row);
@@ -683,7 +716,7 @@ const pageDoc = (body) => `<!doctype html><html lang="en"><head><meta charset="u
 let designerFor = null, designerTimer = 0;
 function designerInfo() {
   const P = world.planets[designerFor];
-  return { type: 'lsb-designer-embed', planet: P.name, mult: quoteShipyard(world, P.id, { cells: new Uint8Array(0) }).mult, credits: Math.floor(me().credits), yards: P.yards.length };
+  return { type: 'lsb-designer-embed', planet: P.name, existing: yardListValue(P), credits: Math.floor(me().credits), yards: P.yards.length };
 }
 function openDesigner(planetId) {
   if (!DESIGNER_PAGE) return toast('This build has no ship designer. Run npm run build.', true);

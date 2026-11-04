@@ -19,7 +19,7 @@ import { analyzeDesign, decodeDesign, encodeDesign, designCost } from '../shared
 import { makeDesign } from '../shared/designs.js';
 import { mulberry32 } from '../shared/rng.js';
 import {
-  SHIPYARD_INTERVAL_MIN, shipyardPrice, crowdingMult, SHIPYARD_SELL_REFUND,
+  SHIPYARD_INTERVAL_MIN, shipyardPrice, crowdingSurcharge, SHIPYARD_SELL_REFUND,
   STARTING_CREDITS, NEUTRAL_GARRISON_HOURS,
 } from '../shared/economy.js';
 import { generateGalaxy } from './galaxyGen.js';
@@ -152,11 +152,11 @@ export function registerDesign(world, owner, design) {
 /** List value of every shipyard already on a world (what crowding is measured on). */
 export const yardListValue = (planet) => planet.yards.reduce((s, y) => s + y.list, 0);
 
-/** What a shipyard for this design would cost on this world right now: { list, mult, price }. */
+/** What a shipyard for this design would cost on this world right now: { list, surcharge, mult, price, existing }. */
 export function quoteShipyard(world, planetId, design) {
   const p = world.planets[planetId], existing = yardListValue(p);
-  const list = shipyardPrice(design), mult = crowdingMult(existing);
-  return { list, mult, price: Math.round(list * mult), existing };
+  const list = shipyardPrice(design), surcharge = crowdingSurcharge(existing), price = list + surcharge;
+  return { list, surcharge, mult: list ? price / list : 1, price, existing };
 }
 
 /** Buy a shipyard for `design` (a decoded design) on one of your worlds. Returns { ok, error?, yard? }. */

@@ -103,9 +103,11 @@ All money numbers are in `src/shared/economy.js` (placeholders until balanced in
   currently 10× the ship cost, so a shipyard pays for itself in 5 hours). Not yet confirmed by the owner.
 - A world can have any number of shipyards. **All of them are destroyed if an enemy takes the world.**
 - **Shipyards get dearer the more shipyards a world already has** (owner's rule, to make players
-  build on every world instead of stacking their home world): price = list price ×
-  (1 + list value of the yards already on that world / 25,000). List prices, not what was paid,
-  so it doesn't compound.
+  build on every world instead of stacking their home world), but only gently: each yard already
+  on a world adds 1% of its list price to the next one there (`SHIPYARD_CROWDING_SHARE`). The
+  owner's benchmark: **the 100th shipyard of the same cost on one world is about 2× the first**
+  (1.99×), whatever the ship costs. List prices, not what was paid, so it doesn't compound. (An
+  earlier version used list × (1 + value / 25,000); the owner found that far too steep.)
 - **Shipyards can be sold**: 50% of what was actually paid comes back.
 - Ships a shipyard builds garrison its world and defend it.
 - Every ship part has a credit cost (`cost` in `blocks.js`); a ship's price is the sum of its blocks.
@@ -208,8 +210,12 @@ economy, fleets, captures, with real battles).
   deduplicated per player. The shipyard dialog lists the player's designs in play plus the
   designer library; "Design a new ship…" opens the designer in shipyard mode (its "Build
   shipyard" button shows the crowding-adjusted price and posts the design back).
+- Map art is cosmetic and lives only in the page (`src/galaxy/planetArt.js`): each world gets a
+  type (rocky, desert, ice, ocean, lava, gas giant, toxic; home worlds Earth-like) from the seed
+  and its id, textured with 3D noise on a lit sphere and cached as sprites at three sizes. The
+  starfield is a fixed backdrop that doesn't move when you pan or zoom (owner's request).
 
-Open with the owner (placeholders now): incomes and starting credits, the crowding constant,
+Open with the owner (placeholders now): incomes and starting credits, the crowding share,
 the 50% resale, militia strength, travel scale, whether fleets should be interceptable at the
 worlds they pass, fog of war, recalling fleets, damage carried between battles, and the battle
 size cap (a big late-game garrison can mean thousands of ships; the plan is waves).

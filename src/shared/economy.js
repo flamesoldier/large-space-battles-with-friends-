@@ -5,7 +5,7 @@
 // The shipyard then builds that ship for free every SHIPYARD_INTERVAL_MIN minutes, forever,
 // until an enemy takes the world (which destroys every shipyard on it) or the owner sells it.
 // A world can hold any number of shipyards, but each one costs more than the last
-// (SHIPYARD_CROWDING_CR), to push players to build on every world they hold rather than
+// (SHIPYARD_CROWDING_SHARE), to push players to build on every world they hold rather than
 // stacking everything on their home world. So the only price a player pays is the shipyard's,
 // and it is set by the price of the ship it makes.
 
@@ -20,13 +20,13 @@ export const SHIPYARD_PRICE_MULT = 10;
 /** List price of a shipyard for this design on an empty world. */
 export const shipyardPrice = (design) => designCost(design) * SHIPYARD_PRICE_MULT;
 
-// Crowding: a shipyard costs (1 + V / SHIPYARD_CROWDING_CR) × its list price, where V is the
-// list price of all the shipyards already on that world. List prices, not what was paid, so the
-// surcharge doesn't compound. At 25,000: a second destroyer yard costs ~1.4×, and a world that
-// already holds 100,000 credits of yards charges 5× for the next one.
-export const SHIPYARD_CROWDING_CR = 25000;
-export const crowdingMult = (existingListValue) => 1 + existingListValue / SHIPYARD_CROWDING_CR;
-export const shipyardPriceAt = (design, existingListValue) => Math.round(shipyardPrice(design) * crowdingMult(existingListValue));
+// Crowding: every shipyard already on a world adds SHIPYARD_CROWDING_SHARE of its list price to
+// the price of the next one there. With 1%, a world's 100th shipyard of the same kind costs 1.99×
+// its first, whatever the ship costs. List prices, not what was paid, so it doesn't compound.
+// Measured per world, so spreading shipyards over your worlds keeps them at list price.
+export const SHIPYARD_CROWDING_SHARE = 0.01;
+export const crowdingSurcharge = (existingListValue) => Math.round(existingListValue * SHIPYARD_CROWDING_SHARE);
+export const shipyardPriceAt = (design, existingListValue) => shipyardPrice(design) + crowdingSurcharge(existingListValue);
 
 // Selling a shipyard gives back this share of what was actually paid for it.
 export const SHIPYARD_SELL_REFUND = 0.5;
