@@ -1,6 +1,8 @@
 # Large Space Battles with Friends: project context
 
-Read this first, then `docs/ARCHITECTURE.md` for how the battle engine works.
+Read this first, then `docs/ARCHITECTURE.md` for how the battle engine works and
+`docs/SERVER.md` for the online game. **Current phase: bug fixing and balance on the live game**
+(see "Working on the live game" and "Bug fixing and balance" at the end).
 
 ## The game
 
@@ -181,8 +183,9 @@ economy, fleets, captures, with real battles).
   credits, shipyards, garrisons, fleets, arrivals, capture), `galaxyGen.js` (map), `routes.js`
   (route planner, fleet position as a pure function of time), `battleSetup.js` (garrisons →
   Battle scenario → survivor counts), `rules.js` (map, travel and battle-length numbers).
-- `src/galaxy/`: the page. For now it is a **hot-seat game** saved in localStorage: a "Playing
-  as" selector picks the player (online it will be the login). Speed buttons (pause, 1×, 60×,
+- `src/galaxy/`: the page, built twice: `dist/play.html` is the online game (see the server
+  section); `dist/galaxy.html` is a **hot-seat game** saved in localStorage, still handy for quick
+  offline tests: a "Playing as" selector picks the player. Speed buttons (pause, 1×, 60×,
   600×, 3,600×; 60× by default) are for testing; time with the page closed counts at 1×, like a
   server. The clock stops while a battle is resolved (in the page, with a progress card).
   Layout: map with a small collapsible **Events** window in its top-left corner; the right-hand
@@ -279,7 +282,7 @@ hashes are kept). The server runs with no game too (players are told it isn't se
 - Sessions: random token in an HttpOnly, SameSite=Strict cookie, 30 days, stored hashed in
   `data/sessions.json`. **Every action takes the player from the session, never from the
   request**; keep it that way. Logins rate limited (8 wrong per 15 min per address).
-- `server/game.mjs`: the world runs at real time (`LSB_SPEED`), one lock for everything that
+- `server/game.mjs`: the world runs at the admin's speed (real time by default), one lock for everything that
   changes it (tick every second + player actions, each action first catches the world up), battles
   in `server/battleWorker.mjs`, replays in `data/replays/`. Time while the server is down counts.
 - The page (`ONLINE` in `src/galaxy/app.js`, `src/galaxy/net.js`): login screen, long poll for
@@ -287,7 +290,8 @@ hashes are kept). The server runs with no game too (players are told it isn't se
   `POST /api/act`, replays from `GET /api/replay/<id>`. No speed buttons, "Playing as" or new game.
 - `npm test` includes `tools/test-server.mjs` (real server on a temp folder: impersonation
   attempts, rate limit, a battle and its replay, password reset, restart).
-- Must run behind HTTPS on the internet (Caddy in `docs/SERVER.md`), with `LSB_TRUST_PROXY=1`.
+- Must run behind HTTPS on the internet. Railway provides it; for a self-hosted VPS,
+  `docs/SERVER.md` has Caddy with `LSB_TRUST_PROXY=1`.
 - Not yet: fog of war (every browser gets the whole world), designer library on the server.
 
 Open with the owner (placeholders now): incomes and starting credits, the crowding share,
@@ -297,3 +301,56 @@ damage carried between battles, and the battle size cap (a big late-game garriso
 Still open with the owner: the exact block prices and the shipyard multiplier (placeholders
 until there's an income number to balance against), and whether hull class should matter beyond
 the block limit.
+
+## Working on the live game
+
+The game is **live on Railway** and the owner and friends play it. Railway redeploys
+automatically on every push to `main` (about 2–3 minutes, roughly a minute of downtime); the
+game in progress carries on because it lives on the volume (`/data`: `game.json`,
+`accounts.json`, `sessions.json`, `replays/`).
+
+- **The owner isn't a programmer and doesn't use a command line.** Give him exact click-by-click
+  steps (Railway dashboard, the `/admin` page, the game), never terminal commands. He is in
+  Australia (Sydney time). When something breaks, ask him for the Railway logs: service →
+  *Deployments* → newest → *View logs*, pasted or as a screenshot. The server logs logins, failed
+  logins, every event and battle, admin actions, and errors with stack traces.
+- **Pushing to `main` changes the live game.** Run `npm test` (and `npm run bench -- 1000` after sim
+  changes) before pushing. Keep `dist/` built and committed (`npm run build`); Railway also builds.
+- **Never break the live save.** `game.json` is `{ world, anchor, speed }` (older: `{ world, wall }`).
+  Any change to the world format must load an existing world: add defaults in `upgradeWorld()`
+  (`src/world/world.js`) the way `sieges`, `proposals`, `relations` and `fleet.leg` were added.
+  Changing a rule number (economy, ranges) applies to the running game immediately, which is fine
+  for balance; changing map generation only affects new games.
+- **How the owner tests:** on `/admin` he sets the game speed (pause … 3600×) and jumps ahead
+  (+30 min … +1 day), and plays other seats from a private/incognito window. Remind him to set
+  1× before real play. A fresh test galaxy: "Replace the current game" on `/admin` (new passwords).
+- Locally: `npm run build && LSB_ADMIN_PASSWORD=some-long-pass LSB_SPEED=600 npm start`, then
+  http://localhost:8080/admin. `npm test` runs designer, world and server tests (~25 s).
+
+## Bug fixing and balance (next phase)
+
+Where the numbers live: block costs, hit points and every weapon number in
+`src/shared/blocks.js`; incomes, starting credits, shipyard multiplier, crowding share, resale,
+build interval, militia strength in `src/shared/economy.js`; map size, travel scale, hyperlane
+speed-up, battle length and the 30-minute hold in `src/world/rules.js`. The open questions listed
+above under the galaxy and designer sections are the owner's balance agenda; ask him before
+changing a decision listed under "Decisions the owner has made".
+
+Known issues and loose ends (not yet fixed):
+- **Open seats nobody takes** still have a home world with income and no defenders, so they are
+  free worlds for whoever reaches them first. Possible fix: an admin button that turns unclaimed
+  seats into militia worlds. The owner was told to size games to the real group for now.
+- Log entries written before a player chose their name keep the old "Player N" text.
+- **A battle that keeps crashing the worker** (e.g. out of memory on a huge battle; Railway's trial
+  has 0.5 GB) is retried every second and holds the whole game up. Needs a give-up rule
+  (resolve as a draw? split into waves?) and a message to players. Related open item: the
+  battle size cap / waves for huge late-game garrisons.
+- After the admin lowers the speed, a client's local clock can sit a little ahead of the server's
+  until the next world update (cosmetic).
+- No fog of war: every browser receives the whole world. The designer library is per browser
+  (localStorage); designs in play are on the server.
+- `npm run admin -- new-game` checks `data/server.pid` to refuse while the server runs; after an
+  unclean restart a stale pid file could block it (not used on Railway, where `/admin` is used).
+- Battle time limit is still the 4-minute testing value (`BATTLE_MAX_TIME` in `rules.js`); the
+  plan for launch is 30 minutes. Check with the owner before changing it.
+
