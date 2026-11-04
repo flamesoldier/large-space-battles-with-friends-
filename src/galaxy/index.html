@@ -220,6 +220,20 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
 .overlay > button { position: absolute; left: 50%; transform: translateX(-50%); bottom: max(78px, calc(env(safe-area-inset-bottom, 0px) + 78px)); box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
 #designer-overlay > button { left: 12px; transform: none; bottom: max(12px, env(safe-area-inset-bottom, 0px)); }
 
+/* online: login screen and connection state */
+#login {
+  position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 16px;
+  background: radial-gradient(ellipse at 50% 40%, rgba(70,95,170,0.18), rgba(5,7,12,0) 60%), var(--void);
+}
+#login form { width: min(380px, 100%); background: var(--panel); border: 1px solid var(--line); padding: 26px 24px 22px; display: grid; gap: 14px; }
+#login h1 { font-size: 22px; letter-spacing: 0.08em; text-transform: uppercase; }
+#login p { margin: 0; color: var(--dim); font-size: 13px; line-height: 1.5; }
+#login input { width: 100%; font-size: 17px; padding: 10px 12px; letter-spacing: 0.06em; }
+#login button { padding: 10px; font-size: 14px; }
+#login #login-err { color: var(--bad); min-height: 1.4em; }
+#me-name { font-family: var(--display); font-weight: 600; font-size: 14px; color: var(--ink); text-transform: none; letter-spacing: 0.02em; }
+#net { font-family: var(--mono); font-size: 11.5px; color: var(--bad); border: 1px solid var(--bad); padding: 3px 7px; border-radius: 3px; }
+
 @media (max-width: 1500px) { .brand span { display: none; } .top { gap: 8px 12px; } }
 @media (max-width: 1250px) { .readout small { letter-spacing: 0.06em; } .speed button { padding: 5px 6px; } }
 @media (max-width: 900px) {
@@ -237,7 +251,7 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
 <div id="app">
   <header class="top">
     <div class="brand"><b>Galaxy</b><span>Hold worlds, build shipyards, send fleets.</span></div>
-    <label for="me" title="Hot-seat: whose turn at the keyboard. Online, this will be your login.">Playing as <span class="swatch" id="me-swatch"></span><select id="me"></select></label>
+    <label for="me" id="me-pick" title="Hot-seat: whose turn at the keyboard. Online, this is your login.">Playing as <span class="swatch" id="me-swatch"></span><select id="me"></select><span id="me-name" hidden></span></label>
     <div class="readout"><small>Credits</small><strong id="credits">0</strong></div>
     <div class="readout"><small>Income</small><strong id="income">0</strong></div>
     <div class="grow"></div>
@@ -245,7 +259,9 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
     <div class="group speed" role="group" aria-label="Game speed" id="speed"></div>
     <button id="dip-btn" title="Allies and enemies">Diplomacy<span class="badge" id="dip-badge" hidden>0</span></button>
     <button id="combat-btn" title="Every battle and captured world, with replays">Combat log<span class="badge" id="combat-badge" hidden>0</span></button>
+    <span id="net" hidden role="status">Reconnecting…</span>
     <button id="new-btn">New game</button>
+    <button id="logout-btn" hidden title="Log out of this browser">Log out</button>
   </header>
 
   <main>
@@ -340,6 +356,16 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
     <iframe id="replay-frame" title="Battle replay"></iframe>
     <button id="replay-close" class="go">Back to galaxy</button>
   </div>
+</div>
+
+<div id="login" hidden>
+  <form id="login-form" autocomplete="on">
+    <h1>Large Space Battles</h1>
+    <p>Enter the password you were given. It tells the game which player you are.</p>
+    <input id="login-pw" type="password" name="password" autocomplete="current-password" placeholder="xxxx-xxxx-xxxx" aria-label="Password" required maxlength="200">
+    <button class="go" type="submit" id="login-go">Play</button>
+    <p id="login-err" role="alert"></p>
+  </form>
 </div>
 
 <script type="module">/*APP*/</script>

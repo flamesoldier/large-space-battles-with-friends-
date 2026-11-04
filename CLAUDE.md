@@ -12,7 +12,8 @@ debris everywhere, hulls breaking apart. Players never control battles directly.
 
 Build order chosen by the owner: hardest part first. Battle engine (done, being polished) →
 ship designer (first version done, being tuned) → world, economy and fleets (**galaxy map: first
-version done**, runs as a hot-seat game in the browser) → server and accounts (next).
+version done**) → server and accounts (**first version done**: the real game runs online, see
+`docs/SERVER.md`). The hot-seat page (`dist/galaxy.html`) still works for testing.
 
 ## Status: battle engine
 
@@ -251,6 +252,30 @@ economy, fleets, captures, with real battles).
   type (rocky, desert, ice, ocean, lava, gas giant, toxic; home worlds Earth-like) from the seed
   and its id, textured with 3D noise on a lit sphere and cached as sprites at three sizes. The
   starfield is a fixed backdrop that doesn't move when you pan or zoom (owner's request).
+
+## Status: server and accounts (`server/`, `docs/SERVER.md`)
+
+The live game. Plain Node, no dependencies. `npm run admin -- new-game --players "A,B,C"` makes
+the galaxy and prints one password per player (once; only scrypt hashes are kept), then
+`npm run build && npm start` serves `dist/play.html` (the galaxy page built with `__ONLINE__`).
+
+- **Owner's decision: the password is the player.** No usernames: a friend types the password
+  they were given and plays as that player. Keeps random people out and stops players acting as
+  each other. Passwords are generated (`xxxx-xxxx-xxxx`, ~59 bits), unique per player, reset
+  with `npm run admin -- reset-password <name>` (logs that player out everywhere).
+- Sessions: random token in an HttpOnly, SameSite=Strict cookie, 30 days, stored hashed in
+  `data/sessions.json`. **Every action takes the player from the session, never from the
+  request**; keep it that way. Logins rate limited (8 wrong per 15 min per address).
+- `server/game.mjs`: the world runs at real time (`LSB_SPEED`), one lock for everything that
+  changes it (tick every second + player actions, each action first catches the world up), battles
+  in `server/battleWorker.mjs`, replays in `data/replays/`. Time while the server is down counts.
+- The page (`ONLINE` in `src/galaxy/app.js`, `src/galaxy/net.js`): login screen, long poll for
+  updates (world sent only when changed), income ticks locally between updates, actions go to
+  `POST /api/act`, replays from `GET /api/replay/<id>`. No speed buttons, "Playing as" or new game.
+- `npm test` includes `tools/test-server.mjs` (real server on a temp folder: impersonation
+  attempts, rate limit, a battle and its replay, password reset, restart).
+- Must run behind HTTPS on the internet (Caddy in `docs/SERVER.md`), with `LSB_TRUST_PROXY=1`.
+- Not yet: fog of war (every browser gets the whole world), designer library on the server.
 
 Open with the owner (placeholders now): incomes and starting credits, the crowding share,
 the 50% resale, militia strength, travel scale, the 30-minute hold, fog of war, recalling fleets,

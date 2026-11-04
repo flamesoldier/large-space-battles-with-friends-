@@ -5,9 +5,14 @@
 // Time: the world has its own clock. While the page is open it runs at the chosen speed (60× by
 // default, so a 30-minute shipyard cycle takes 30 s); time spent with the page closed counts at
 // 1×, as it will on the server. The clock stops while a battle is being resolved.
+//
+// Online (dist/play.html, built with __ONLINE__): the game server (server/) owns the world and
+// its clock. You log in with your password, the page keeps a copy of the world up to date
+// (net.js), shows time passing between updates, and sends your actions to the server, which
+// applies them as the logged-in player. No speed buttons, no "Playing as", no new game.
 
 import { BT } from '../shared/blocks.js';
-import { decodeDesign, analyzeDesign, designCost } from '../shared/shipStats.js';
+import { decodeDesign, encodeDesign, analyzeDesign, designCost } from '../shared/shipStats.js';
 import { SHIPYARD_INTERVAL_MIN, SHIPYARD_CROWDING_SHARE, SHIPYARD_SELL_REFUND, crowdingSurcharge } from '../shared/economy.js';
 import { Battle, DT } from '../sim/battle.js';
 import { packReplay } from '../shared/replayFormat.js';
@@ -22,8 +27,12 @@ import { readBattle } from '../world/battleSetup.js';
 import { fleetPosition } from '../world/routes.js';
 import { PlanetSprites, planetLook } from './planetArt.js';
 import { ReplayStore } from './replayStore.js';
+import { Net } from './net.js';
 import { HOUR_MS, PLAYER_COLORS, NEUTRAL_COLOR, MIN_PLAYERS, MAX_PLAYERS, HYPERLANE_SPEEDUP, MIN_FLEET_SPEED } from '../world/rules.js';
 
+/* global __ONLINE__ */
+const ONLINE = typeof __ONLINE__ !== 'undefined' && __ONLINE__;
+const net = ONLINE ? new Net() : null;
 const $ = (id) => document.getElementById(id);
 const fmt = (n) => Math.floor(n).toLocaleString();
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -48,10 +57,12 @@ let sel = null; // { kind: 'planet' | 'fleet', id }
 let move = null; // { from, ships: { designId: n }, to, lanes, picking }
 let busy = false; // a battle is being resolved
 let gameTarget = 0; // game time we're catching up to
-const replays = new ReplayStore(); // battle id → { bytes, sides, title, computeMs }, kept in IndexedDB
+const replays = new ReplayStore(); // battle id → { bytes, sides, title, computeMs }, kept in IndexedDB (hot-seat)
+const hasReplay = (id) => (ONLINE ? !!net.state?.replays.includes(id) : replays.has(id));
 
 function save() {
   if (!world) return;
+  if (ONLINE) { store.set(UI_KEY, ui); return; } // the server keeps the world
   ui.saved = Date.now();
   if (!store.set(WORLD_KEY, world)) toast('Couldn\'t save the game: browser storage is full or unavailable.', true);
   store.set(UI_KEY, ui);
@@ -681,11 +692,24 @@ function setMoveTarget(to, commit) {
   refreshPreview();
   if (commit) renderPanel(true);
 }
-function launchMove() {
+/**
+ * Do an action: hot-seat runs the world function here; online sends it to the server, which runs
+ * the same function as the logged-in player and sends back the new world.
+ */
+let acting = false;
+async function perform(action, local) {
+  if (!ONLINE) return local();
+  if (acting) return { ok: false, error: 'Still sending your last order…' };
+  acting = true;
+  try { return await net.act(action); } finally { acting = false; }
+}
+
+async function launchMove() {
   if (busy || !move) return;
-  const r = sendFleet(world, ui.me, move.from, move.to, move.ships, { lanes: move.lanes, avoid: move.avoid });
+  const { from, to, ships, lanes, avoid } = move;
+  const r = await perform({ type: 'fleet', from, to, ships, lanes, avoid }, () => sendFleet(world, ui.me, from, to, ships, { lanes, avoid }));
   if (!r.ok) return toast(r.error, true);
-  toast(`Fleet launched: arrives at ${world.planets[move.to].name} in ${fmtHours((r.fleet.arrive - world.clock) / HOUR_MS)}.`);
+  toast(`Fleet launched: arrives at ${world.planets[to].name} in ${fmtHours((r.fleet.arrive - world.clock) / HOUR_MS)}.`);
   move = null;
   select({ kind: 'fleet', id: r.fleet.id });
   save(); renderEvents();
@@ -693,7 +717,7 @@ function launchMove() {
 
 // ------------------------------------------------------------ shipyards
 let armedSell = null;
-function sellYard(planetId, yardId) {
+async function sellYard(planetId, yardId) {
   const P = world.planets[planetId], y = P.yards.find((x) => x.id === yardId);
   if (!y || busy) return;
   // Two clicks to sell (no confirm(): hosts like the artifact viewer block it).
@@ -705,7 +729,7 @@ function sellYard(planetId, yardId) {
     return;
   }
   armedSell = null;
-  const r = sellShipyard(world, ui.me, planetId, yardId);
+  const r = await perform({ type: 'sell', planet: planetId, yard: yardId }, () => sellShipyard(world, ui.me, planetId, yardId));
   if (!r.ok) return toast(r.error, true);
   toast(`Sold for ${fmt(r.refund)} credits.`);
   save(); renderPanel(true); renderEvents(); updateTop();
@@ -744,7 +768,10 @@ function openYardDialog(planetId) {
     row.className = 'design';
     row.innerHTML = `<canvas width="96" height="48"></canvas><div><b>${esc(it.design.name)}</b><span>${esc(it.design.cls)} · ${fmt(designCost(it.design))} cr a ship · ${it.src}</span><br><span class="price">${fmt(q.price)} cr</span>${q.surcharge ? ` <span>(list ${fmt(q.list)} + ${fmt(q.surcharge)})</span>` : ''}</div><button class="go" ${afford ? '' : 'disabled'} title="${afford ? '' : 'Not enough credits'}">Build</button>`;
     thumb(row.querySelector('canvas'), it.design);
-    row.querySelector('button').addEventListener('click', () => { if (build(planetId, it.design)) $('yard-dlg').close(); });
+    row.querySelector('button').addEventListener('click', async (e) => {
+      e.currentTarget.disabled = true;
+      if (await build(planetId, it.design)) $('yard-dlg').close(); else e.currentTarget.disabled = false;
+    });
     list.append(row);
   }
   $('yard-dlg').showModal();
@@ -752,8 +779,8 @@ function openYardDialog(planetId) {
 $('yard-cancel').addEventListener('click', () => $('yard-dlg').close());
 $('yard-design').addEventListener('click', () => { $('yard-dlg').close(); openDesigner(yardPlanet); });
 
-function build(planetId, design) {
-  const r = buildShipyard(world, ui.me, planetId, design);
+async function build(planetId, design) {
+  const r = await perform({ type: 'build', planet: planetId, design: encodeDesign(design) }, () => buildShipyard(world, ui.me, planetId, design));
   if (!r.ok) { toast(r.error, true); return false; }
   toast(`Shipyard built at ${world.planets[planetId].name}: first ${world.designs[r.yard.design].name} in ${SHIPYARD_INTERVAL_MIN} min.`);
   save(); renderPanel(true); renderEvents(); updateTop();
@@ -801,14 +828,15 @@ addEventListener('message', (e) => {
   if (e.data?.type === 'lsb-design-chosen') {
     let d;
     try { d = decodeDesign(e.data.design); } catch (err) { return toast(err.message, true); }
-    if (build(designerFor, d)) closeDesigner();
+    build(designerFor, d).then((ok) => { if (ok) closeDesigner(); });
   }
 });
 
 // ------------------------------------------------------------ replays
 async function watch(id) {
-  const rep = await replays.get(id);
-  if (!rep) return toast('That replay isn\'t saved any more: this browser keeps the last 80 battles.', true);
+  if (ONLINE) toast('Loading the replay…');
+  const rep = ONLINE ? await net.replay(id) : await replays.get(id);
+  if (!rep) return toast(ONLINE ? 'Couldn\'t load that replay from the server.' : 'That replay isn\'t saved any more: this browser keeps the last 80 battles.', true);
   if (!VIEWER_PAGE) return toast('This build has no replay viewer. Run npm run build.', true);
   const frame = $('replay-frame');
   const send = (e) => {
@@ -836,7 +864,7 @@ function renderEvents() {
   const items = world.log.filter((e) => !ui.mine || (e.players || []).some((p) => allied(world, p, ui.me))).slice(-120).reverse();
   list.innerHTML = items.map((e) => {
     const c = colorOf(e.players?.[0]);
-    const btn = e.battle && replays.has(e.battle.id) ? `<button class="small" data-watch="${e.battle.id}">Watch</button>` : '';
+    const btn = e.battle && hasReplay(e.battle.id) ? `<button class="small" data-watch="${e.battle.id}">Watch</button>` : '';
     return `<li class="${e.kind}" style="${e.kind === 'battle' ? '' : `border-left-color:${hexA(c, 0.6)}`}" ${e.planet !== undefined ? `data-planet="${e.planet}"` : ''}><span>${esc(e.text)}</span>${btn}<time>${clockText(e.t)}</time></li>`;
   }).join('') || '<li><span class="hint">Nothing yet.</span></li>';
 }
@@ -886,19 +914,15 @@ function syncDipBadge() {
 }
 $('dip-btn').addEventListener('click', () => { armedBreak = null; renderDiplomacy(); $('diplomacy').showModal(); });
 $('dip-close').addEventListener('click', () => $('diplomacy').close());
-$('dip-list').addEventListener('click', (e) => {
+$('dip-list').addEventListener('click', async (e) => {
   const b = e.target.closest('[data-dip]');
   if (!b || busy) return;
   const other = Number(b.dataset.p), act = b.dataset.dip;
-  let r;
-  if (act === 'propose') r = proposeAlliance(world, ui.me, other);
-  else if (act === 'accept') r = acceptAlliance(world, ui.me, other);
-  else if (act === 'decline') r = declineAlliance(world, ui.me, other);
-  else if (act === 'break') {
-    if (armedBreak !== other) { armedBreak = other; renderDiplomacy(); setTimeout(() => { if (armedBreak === other) { armedBreak = null; if ($('diplomacy').open) renderDiplomacy(); } }, 3000); return; }
-    armedBreak = null;
-    r = breakAlliance(world, ui.me, other);
-  }
+  if (act === 'break' && armedBreak !== other) { armedBreak = other; renderDiplomacy(); setTimeout(() => { if (armedBreak === other) { armedBreak = null; if ($('diplomacy').open) renderDiplomacy(); } }, 3000); return; }
+  armedBreak = null;
+  const fn = { propose: proposeAlliance, accept: acceptAlliance, decline: declineAlliance, break: breakAlliance }[act];
+  if (!fn) return;
+  const r = await perform({ type: act, player: other }, () => fn(world, ui.me, other));
   if (!r.ok) return toast(r.error, true);
   const name = world.players[other].name;
   toast(act === 'propose' ? (r.allied ? `You and ${name} are now allies.` : `Alliance proposed. ${name} has to accept it.`)
@@ -958,11 +982,11 @@ function renderCombat() {
       const att = (B.attackers || [B.attacker]).map((a) => esc(playerName(world, a))).join(' + ');
       nums = `${att}: ${side(0)} · ${B.defender === null ? 'Militia' : esc(playerName(world, B.defender))}${(B.defenders || []).length > 1 ? ' and allies' : ''}: ${side(1)} · ${B.seconds} s`;
     } else if (e.capture?.yards) nums = `${e.capture.yards} shipyard${e.capture.yards > 1 ? 's' : ''} destroyed`;
-    const can = e.battle && replays.has(e.battle.id);
+    const can = e.battle && hasReplay(e.battle.id);
     return `<div class="fight ${tone}${e.id > seen && involves(e, ui.me) ? ' new' : ''}">
       <div class="fhead"><span class="res">${label}</span><span class="where">${esc(P?.name ?? '')}</span><time>${clockText(e.t)}</time></div>
       <p>${esc(e.text)}</p>${nums ? `<div class="nums">${nums}</div>` : ''}
-      <div class="acts">${e.battle ? `<button class="small ${can ? 'go' : ''}" data-watch="${e.battle.id}" ${can ? '' : 'disabled title="This replay is no longer saved in this browser"'}>Watch</button>` : ''}<button class="small" data-planet="${e.planet}">Map</button></div>
+      <div class="acts">${e.battle ? `<button class="small ${can ? 'go' : ''}" data-watch="${e.battle.id}" ${can ? '' : `disabled title="${ONLINE ? 'No replay for this battle' : 'This replay is no longer saved in this browser'}"`}>Watch</button>` : ''}<button class="small" data-planet="${e.planet}">Map</button></div>
     </div>`;
   }).join('') || `<p class="empty">${combatFilter === 'mine' ? 'No battles involving you yet. Battles, and worlds you take or lose, show up here.' : 'No battles yet.'}</p>`;
 }
@@ -985,6 +1009,13 @@ $('combat-list').addEventListener('click', (e) => {
 
 // ------------------------------------------------------------ top bar
 function setupTop() {
+  if (ONLINE) {
+    // You are who you logged in as: no picking players, no time controls, no new game.
+    $('me').hidden = true; $('me-name').hidden = false; $('me-name').textContent = me().name;
+    $('me-pick').title = 'You, as logged in';
+    $('speed').hidden = true; $('new-btn').hidden = true; $('logout-btn').hidden = false;
+    return;
+  }
   const sel = $('me');
   sel.innerHTML = '';
   world.players.forEach((p) => sel.add(new Option(`${p.name}${p.eliminated ? ' (out)' : ''}`, String(p.id))));
@@ -1018,8 +1049,8 @@ function updateTop() {
   $('income').textContent = `+${fmt(incomeOf(world, ui.me))}/h`;
   $('clock').textContent = clockText(world.clock);
   const b = $('banner');
-  if (world.winner) { b.hidden = false; b.innerHTML = `<span>${world.winner.map((id) => who(id)).join(' &amp; ')} won the galaxy.</span><button class="small" id="banner-new">New game</button>`; }
-  else if (p.eliminated) { b.hidden = false; b.innerHTML = `<span>${esc(p.name)} has been knocked out. Pick another player above, or start a new game.</span>`; }
+  if (world.winner) { b.hidden = false; b.innerHTML = `<span>${world.winner.map((id) => who(id)).join(' &amp; ')} won the galaxy.</span>${ONLINE ? '' : '<button class="small" id="banner-new">New game</button>'}`; }
+  else if (p.eliminated) { b.hidden = false; b.innerHTML = `<span>${esc(p.name)} has been knocked out.${ONLINE ? ' You can still watch the galaxy and its battles.' : ' Pick another player above, or start a new game.'}</span>`; }
   else b.hidden = true;
 }
 $('banner').addEventListener('click', (e) => { if (e.target.id === 'banner-new') openNewGame(); });
@@ -1074,6 +1105,12 @@ $('ng-start').addEventListener('click', () => {
 let lastReal = performance.now();
 async function pump(now) {
   const dt = Math.min(1000, now - lastReal); lastReal = now;
+  if (ONLINE) {
+    // The server runs events and battles; between its updates, income and shipyards tick on here
+    // (pure functions of time), so the numbers move smoothly.
+    if (world && net.state) advanceTo(world, Math.max(world.clock, net.gameNow()));
+    return;
+  }
   if (busy || !world) return;
   gameTarget = Math.max(gameTarget, world.clock) + dt * ui.speed;
   // Events in order; most resolve on the spot, battles run over several frames.
@@ -1163,10 +1200,74 @@ new ResizeObserver(resize).observe(canvas);
 addEventListener('beforeunload', save);
 document.addEventListener('visibilitychange', () => { if (document.hidden) save(); else lastReal = performance.now(); });
 
+// ------------------------------------------------------------ online: login and server updates
+// A new copy of the world from the server. Keep what the player is doing (selection, a fleet
+// being planned) as long as it still makes sense, and tell them about things that happened to them.
+function applyServerState(s) {
+  $('net').hidden = !!s; // no snapshot = the connection dropped (net.js keeps retrying)
+  if (!s) return;
+  if (s.world) {
+    const first = !world, lastSeen = world?.log.length ? world.log[world.log.length - 1].id : Infinity;
+    world = s.world;
+    ui.me = s.me;
+    if (first) start();
+    else for (const e of world.log) {
+      if (e.id <= lastSeen) continue;
+      if ((e.battle || e.capture) && involves(e, ui.me)) toast(e.text, verdict(e, ui.me)[0] === 'bad');
+      else if (e.siege && allied(world, e.siege.against, ui.me)) toast(e.text, true);
+    }
+    if (!first) { if (move) refreshPreview(); afterEvent(); }
+  }
+  showServerBattle(s.status?.battle);
+}
+/** The server's battle progress card: everyone sees when a battle is being fought out. */
+function showServerBattle(B) {
+  $('fight').hidden = !B || !world;
+  if (!B || !world) return;
+  const P = world.planets[B.planet], att = B.attackers.map((a) => who(a)).join(' + ');
+  $('fight-title').innerHTML = B.passing ? `Ambush at <b>${esc(P.name)}</b>: ${who(B.defender)} blocks ${att}` : `Battle at <b>${esc(P.name)}</b>: ${att} ${B.attackers.length > 1 ? 'attack' : 'attacks'} ${who(B.defender)}`;
+  $('fight-status').textContent = `Being fought out on the server · ${B.seconds} s simulated · ${B.alive[0]} vs ${B.alive[1]} ships`;
+  $('fight-bar').style.width = `${Math.round(B.frac * 100)}%`;
+}
+
+function showLogin(msg = '') {
+  $('login').hidden = false;
+  $('login-err').textContent = msg;
+  $('login-go').disabled = false;
+  setTimeout(() => $('login-pw').focus(), 0);
+}
+async function onlineStart() {
+  net.onState = applyServerState;
+  net.onLoggedOut = () => { location.reload(); };
+  try {
+    if (await net.fetchState()) { $('login').hidden = true; net.poll(); return; }
+  } catch { return showLogin('Can\'t reach the game server. Try again in a moment.'); }
+  showLogin();
+}
+if (ONLINE) {
+  $('login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const pw = $('login-pw').value;
+    if (!pw.trim()) return;
+    $('login-go').disabled = true; $('login-err').textContent = '';
+    let r;
+    try { r = await net.login(pw); } catch { r = { ok: false, error: 'Can\'t reach the game server.' }; }
+    if (!r.ok) return showLogin(r.error || 'That didn\'t work.');
+    $('login-pw').value = '';
+    try { await net.fetchState(); } catch { return showLogin('Logged in, but couldn\'t load the game. Reload the page.'); }
+    $('login').hidden = true;
+    net.poll();
+  });
+  $('logout-btn').addEventListener('click', async () => { await net.logout(); location.reload(); });
+}
+
 // Load the saved game; time spent away counts at 1× (as it will on the server).
 ui = { ...ui, ...store.get(UI_KEY, {}) };
-const saved = store.get(WORLD_KEY, null);
-if (saved?.format === 'lsb-world') {
+const saved = ONLINE ? null : store.get(WORLD_KEY, null);
+if (ONLINE) {
+  resize();
+  onlineStart();
+} else if (saved?.format === 'lsb-world') {
   world = upgradeWorld(saved);
   const away = Math.max(0, Date.now() - (ui.saved || Date.now()));
   gameTarget = world.clock + away;
@@ -1178,7 +1279,7 @@ if (saved?.format === 'lsb-world') {
 }
 requestAnimationFrame((now) => { resize(); if (world) fit(); lastReal = now; loop(now); });
 // Which replays this browser still has (for the Watch buttons).
-replays.init().then(() => { if (world) { renderEvents(); if ($('combat').open) renderCombat(); } });
+if (!ONLINE) replays.init().then(() => { if (world) { renderEvents(); if ($('combat').open) renderCombat(); } });
 
 // Small hook for debugging and automated checks.
 window.galaxy = { get world() { return world; }, get ui() { return ui; }, cam, fit, select, replays, preview: (from, to, ships, o = {}) => previewFleet(world, from, to, ships, { owner: ui.me, avoid: false, ...o }) };
