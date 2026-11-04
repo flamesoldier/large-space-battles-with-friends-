@@ -516,11 +516,12 @@ function planetPanel(P) {
     const fl = sg.fleets.map((id) => world.fleets.find((f) => f.id === id)).filter(Boolean);
     const byOwner = new Map();
     for (const f of fl) byOwner.set(f.owner, (byOwner.get(f.owner) || 0) + countShips(f.ships));
-    const defs = defendersAt(world, P, sg.leader).reduce((a, d) => a + d.n, 0);
+    const defs = defendersAt(world, P, [...byOwner.keys()].filter((o) => !allied(world, o, P.owner))).reduce((a, d) => a + d.n, 0);
+    const idle = P.garrison.filter((x) => x.n > 0 && x.owner !== P.owner && !defendersAt(world, P, [...byOwner.keys()]).includes(x)).reduce((a, d) => a + d.n, 0);
     const meAtt = allied(world, sg.leader, ui.me), meDef = allied(world, P.owner, ui.me);
     html += `<div class="route siege"><b>Battle in <span data-arrive="${sg.startsAt}"></span></b><br>
       Attacking: ${[...byOwner].map(([o, n]) => `${who(o)} ${fmt(n)} ships`).join(', ')}<br>
-      Defending: ${fmt(defs)} ships${P.owner === null ? ' (militia)' : ''}<br>
+      Defending: ${fmt(defs)} ships${P.owner === null ? ' (militia)' : ''}${idle ? ` · ${fmt(idle)} sitting out (allied with both sides)` : ''}<br>
       <span class="hint">${meAtt ? 'Send more ships here before then and they join the attack.' : meDef ? 'Send ships here before then and they join the defence. Shipyards here keep building too.' : 'Both sides can still send reinforcements.'}</span></div>`;
   }
 

@@ -222,8 +222,9 @@ economy, fleets, captures, with real battles).
 - **Arrivals**: own or allied world → the ships join the garrison (allies' ships station there
   as guests and defend it). Otherwise a siege (above), then a battle: attackers team 0, every
   defending stack team 1. The attackers take the world only if they still have armed ships and
-  the defenders have none: yards destroyed, income and world change hands (to the siege leader,
-  or the ally with the most ships left if the leader lost all of theirs), survivors garrison it.
+  the defenders have none: yards destroyed, income and world change hands **to the player who
+  started the siege** (owner's rule), even if allies did most of the fighting or the leader's own
+  ships all died; allies' survivors stay on as guests.
   Otherwise attacker survivors fall back to where they came from (or the nearest friendly world).
 - A ship survives a battle if it keeps its hub and a working weapon, and comes back at full
   strength (no damage carried between battles yet).
@@ -234,7 +235,11 @@ economy, fleets, captures, with real battles).
   releases fleets waiting in a siege next to their new enemy. Diplomacy window in the top bar
   (badge for proposals waiting for you, and a who-is-allied-with-whom grid). Allies station ships
   on each other's worlds, defend together (stacks allied with both sides sit a battle out) and join
-  each other's sieges. A player with no worlds, ships or fleets is knocked out; when someone has
+  each other's sieges. **A player allied with both sides of a battle sits it out** (owner's
+  rule): their ships stay at the world idle and untouched (a fleet of theirs arriving at the
+  defender's world lands as a guest; a siege fleet that allies with the defender mid-hold drops
+  out). If the world then falls to someone they aren't allied with, their ships fly home unharmed.
+  `defendersAt()` checks every attacker, not just the leader. A player with no worlds, ships or fleets is knocked out; when someone has
   been knocked out and everyone left is allied with everyone else, they win.
 - Unclaimed worlds are held by **militia** (generated corvettes/frigates/destroyers worth 4 hours
   of the world's income, `NEUTRAL_GARRISON_HOURS`), so taking one is a real battle.

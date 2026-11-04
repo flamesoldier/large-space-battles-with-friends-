@@ -18,6 +18,7 @@ import { STARTING_CREDITS, HOME_INCOME, SHIPYARD_SELL_REFUND, shipyardPrice } fr
 import { HOUR_MS, HYPERLANE_SPEEDUP, MAX_PLAYERS, PLANET_SPACING } from '../src/world/rules.js';
 
 let checks = 0;
+const countShipsT = (o) => Object.values(o).reduce((a, n) => a + n, 0);
 const ok = (c, m) => { assert.ok(c, m); checks++; };
 
 // ---- galaxy generation, for every player count
@@ -289,6 +290,72 @@ const resolve = (scen) => {
   ok(b3.battle.attackers.includes(ann.id) && b3.battle.attackers.includes(bo.id) && b3.battle.ships[0] === 16, 'Ann and Bo fought on the same side');
   if (b3.battle.won) ok(allied(w, cyHome.owner, ann.id) && cyHome.garrison.every((s) => s.owner === ann.id || s.owner === bo.id), 'the allies hold the world together');
   console.log(`  joint attack: ${b3.text}`);
+}
+
+// ---- owner's rules: an ally of both sides sits out; the world goes to whoever started the siege
+{
+  // A and C are allies; B is allied with both A and C. Cy... here: A attacks D, B is D's ally too.
+  const w = createWorld({ players: [{ name: 'A' }, { name: 'B' }, { name: 'C' }, { name: 'D' }], seed: 33 });
+  const [A, B, C, D] = w.players.map((p) => p.id);
+  for (const [x, y] of [[A, C], [B, A], [B, D]]) { proposeAlliance(w, x, y); acceptAlliance(w, y, x); }
+  ok(allied(w, A, C) && allied(w, B, A) && allied(w, B, D) && !allied(w, A, D) && !allied(w, C, D), 'A+C, B+A, B+D; A and D enemies');
+  const dd = { ...makeDesign('destroyer', 8), name: 'Wall' };
+  const ids = w.players.map((p) => { p.credits = 1e8; return buildShipyard(w, p.id, p.home, { ...dd, name: `Wall ${p.name}` }).yard.design; });
+  for (const P of w.planets) for (const y of P.yards) y.next = Infinity;
+  const T = w.planets[w.players[D].home];
+  const stage = w.planets.filter((p) => p.home < 0).sort((p, q) => Math.hypot(p.x - T.x, p.y - T.y) - Math.hypot(q.x - T.x, q.y - T.y))[0];
+  // D's world: D's own ships plus B's guests (B is D's ally... and A's).
+  T.garrison = [{ owner: D, design: ids[D], n: 6 }, { owner: B, design: ids[B], n: 5 }];
+  // A leads with a single destroyer; ally C brings the real fleet ten minutes later; B also sends ships.
+  stage.owner = A; stage.garrison = [{ owner: A, design: ids[A], n: 1 }, { owner: C, design: ids[C], n: 20 }, { owner: B, design: ids[B], n: 3 }];
+  const straight = { lanes: false };
+  const fa = sendFleet(w, A, stage.id, T.id, { [ids[A]]: 1 }, straight);
+  runWorld(w, w.clock + 10 * 60000, resolve);
+  const fc = sendFleet(w, C, stage.id, T.id, { [ids[C]]: 20 }, straight);
+  const fb = sendFleet(w, B, stage.id, T.id, { [ids[B]]: 3 }, straight);
+  ok(fa.ok && fc.ok && fb.ok, 'A, C and B send fleets');
+  runWorld(w, fc.fleet.arrive, resolve);
+  const sg = w.sieges.find((x) => x.planet === T.id);
+  ok(sg.leader === A && sg.fleets.length === 2, 'A leads the siege; C joins it');
+  ok(shipsAt(T, B)[ids[B]] === 5 + 3, 'B, allied with D, lands as a guest at D\'s world instead of attacking');
+  runWorld(w, sg.startsAt + 1, resolve);
+  const bt = w.log.filter((e) => e.battle && e.planet === T.id).at(-1);
+  ok(!bt.battle.defenders.includes(B) && !bt.battle.attackers.includes(B), 'B (allied with both sides) took no part in the battle');
+  ok(bt.battle.ships[1] === 6, `only D's 6 ships defended (${bt.battle.ships[1]})`);
+  if (bt.battle.won) {
+    ok(T.owner === A, `the world goes to A, who started the siege, though C did the fighting (owner ${T.owner})`);
+    ok(shipsAt(T, B)[ids[B]] === 8, 'B\'s 8 ships are still there, untouched (A is B\'s ally, so they stay as guests)');
+    ok((shipsAt(T, C)[ids[C]] || 0) > 0, 'C\'s survivors stay as A\'s guests');
+  }
+  console.log(`  ${bt.text}`);
+}
+
+// ---- a neutral guest (allied with the defender and an attacker, not the leader) leaves unharmed when the world falls
+{
+  const w = createWorld({ players: [{ name: 'A' }, { name: 'B' }, { name: 'C' }, { name: 'D' }], seed: 34 });
+  const [A, B, C, D] = w.players.map((p) => p.id);
+  for (const [x, y] of [[A, C], [B, C], [B, D]]) { proposeAlliance(w, x, y); acceptAlliance(w, y, x); }
+  ok(!allied(w, A, B) && allied(w, B, C) && allied(w, B, D), 'B is allied with C (attacker) and D (defender), not A (leader)');
+  const dd = { ...makeDesign('destroyer', 8), name: 'Wall' };
+  const ids = w.players.map((p) => { p.credits = 1e8; return buildShipyard(w, p.id, p.home, { ...dd, name: `Wall ${p.name}` }).yard.design; });
+  for (const P of w.planets) for (const y of P.yards) y.next = Infinity;
+  const T = w.planets[w.players[D].home];
+  T.garrison = [{ owner: D, design: ids[D], n: 3 }, { owner: B, design: ids[B], n: 4 }];
+  const stage = w.planets.filter((p) => p.home < 0).sort((p, q) => Math.hypot(p.x - T.x, p.y - T.y) - Math.hypot(q.x - T.x, q.y - T.y))[0];
+  stage.owner = A; stage.garrison = [{ owner: A, design: ids[A], n: 4 }, { owner: C, design: ids[C], n: 20 }];
+  const fa = sendFleet(w, A, stage.id, T.id, { [ids[A]]: 4 }, { lanes: false });
+  const fc = sendFleet(w, C, stage.id, T.id, { [ids[C]]: 20 }, { lanes: false });
+  ok(fa.ok && fc.ok, 'A attacks with C');
+  runWorld(w, fc.fleet.arrive + HOLD_MS + 1, resolve);
+  const bt = w.log.filter((e) => e.battle && e.planet === T.id).at(-1);
+  ok(bt.battle.ships[1] === 3 && !bt.battle.defenders.includes(B), 'B\'s guests sat it out (allied with attacker C)');
+  if (bt.battle.won) {
+    ok(T.owner === A, 'A takes the world');
+    ok(!shipsAt(T, B)[ids[B]], 'B\'s ships leave the world (B isn\'t allied with the new owner)');
+    const home = w.fleets.find((f) => f.owner === B);
+    ok(home && countShipsT(home.ships) === 4, 'all 4 of B\'s ships fly home unharmed');
+    console.log(`  neutral guest: ${bt.text} B's 4 ships fly home.`);
+  }
 }
 
 // ---- diplomacy: alliances form and break during the game
