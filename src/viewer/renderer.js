@@ -87,6 +87,60 @@ function blockPalette(team, dead) {
   return p.map((c) => (c ? rgba(dead ? shade(c, k) : c) : 0));
 }
 const PAL = [[blockPalette(0, false), blockPalette(1, false)], [blockPalette(0, true), blockPalette(1, true)]];
+
+// Player colours (owner's request: ships are always drawn in their player's colour). A "look" is
+// every colour one ship needs, built from one accent colour and cached per colour.
+const mixHex = (a, b, k) => {
+  const x = parseInt(a.slice(1), 16), y = parseInt(b.slice(1), 16);
+  const ch = (s) => Math.round(((x >> s) & 255) * (1 - k) + ((y >> s) & 255) * k).toString(16).padStart(2, '0');
+  return '#' + ch(16) + ch(8) + ch(0);
+};
+const LOOKS = new Map();
+function lookFor(hex) {
+  hex = String(hex).toLowerCase();
+  if (!/^#[0-9a-f]{6}$/.test(hex)) return null;
+  let L = LOOKS.get(hex);
+  if (L) return L;
+  const armor = shade(mixHex(hex, '#6b7280', 0.35), 0.72);
+  const T = { armor, heavy: shade(armor, 0.72), frame: shade(mixHex(hex, '#b8c0cc', 0.5), 0.85), hub: hex };
+  const make = (dead) => {
+    const p = [];
+    p[BT.HUB] = T.hub; p[BT.ARMOR] = T.armor; p[BT.HEAVY] = T.heavy; p[BT.FRAME] = T.frame;
+    p[BT.THRUSTER] = '#3d434f'; p[BT.LASER] = mixHex(hex, '#ffffff', 0.75); p[BT.CANNON] = '#9aa1ab'; p[BT.MISSILE] = '#b9b16c';
+    p[BT.PD] = shade(mixHex(hex, '#ffffff', 0.3), 0.9); p[BT.LANCE] = shade(mixHex(hex, '#40404a', 0.5), 0.9);
+    return p.map((c) => (c ? rgba(dead ? shade(c, 0.7) : c) : 0));
+  };
+  L = { pal: [make(false), make(true)], lod: rgba(hex), engine: rgba(hex, 150), accent: hex };
+  LOOKS.set(hex, L);
+  return L;
+}
+const DEFAULT_SIDES = TEAM.map((T) => T.accent), DEFAULT_ENGINE = ['#58b8ff', '#ff8a3d'];
+
+/**
+ * Colour a replay's ships by player: meta.colors ([start, n, colour] per group of ships) when the
+ * replay has it, else sideColors ([attacker, defender]) for every ship on that side, else the
+ * usual azure/ember. Effects (beams, missiles) take their side's colour. Returns the two side colours.
+ */
+export function applyColors(model, sideColors) {
+  const sides = [0, 1].map((t) => sideColors?.[t] || null);
+  const byShip = new Array(model.meta.shipCount).fill(null);
+  for (const [start, n, col] of model.meta.colors || []) for (let k = start; k < start + n && k < byShip.length; k++) byShip[k] = col;
+  // A side with no colour given takes the colour of its first ship (the leader's group comes first).
+  for (let t = 0; t < 2; t++) if (!sides[t]) for (let k = 0; k < byShip.length; k++) if (byShip[k] && model.ents[k].team === t) { sides[t] = byShip[k]; break; }
+  for (let k = 0; k < model.ents.length; k++) {
+    const e = model.ents[k];
+    e.look = e.parent ? e.parent.look : lookFor(byShip[k] || sides[e.team] || '') || null;
+  }
+  const out = [0, 1].map((t) => (lookFor(sides[t] || '') ? sides[t] : DEFAULT_SIDES[t]));
+  for (let t = 0; t < 2; t++) {
+    const custom = out[t] !== DEFAULT_SIDES[t];
+    C.beam[t] = rgba(custom ? out[t] : TEAM[t].beam, 255); C.mGlow[t] = C.beam[t];
+    C.mTip[t] = rgba(out[t]); C.lod[t] = rgba(out[t]);
+    C.engine[t] = rgba(custom ? out[t] : DEFAULT_ENGINE[t], 150);
+    C.pd[t] = rgba(custom ? mixHex(out[t], '#ffffff', 0.6) : ['#bff3ff', '#ffd0b8'][t], 255);
+  }
+  return out;
+}
 const alpha2 = (col, k) => (col & 0xffffff) | ((Math.max(0, Math.min(1, k)) * 255) << 24);
 const C = {
   tracer: rgba('#ffe7a6', 230), impact: rgba('#ffc46b', 255), spark: rgba('#ff9d47', 255), sparkHot: rgba('#fff1c4', 255),
@@ -161,10 +215,10 @@ export class Renderer {
       if (lod) {
         // Far zoom: one quad per ship, debris as faint specks.
         if (dead) { if (e.size > 2) solid.push(tr.x, tr.y, tr.a, Math.max(e.w * 0.35, px), Math.max(e.h * 0.35, px), 3, C.lodDead); }
-        else solid.push(tr.x, tr.y, tr.a, Math.max(e.w * 0.45, px * 1.2), Math.max(e.h * 0.32, px * 1.2), 3, C.lod[e.team]);
+        else solid.push(tr.x, tr.y, tr.a, Math.max(e.w * 0.45, px * 1.2), Math.max(e.h * 0.32, px * 1.2), 3, e.look ? e.look.lod : C.lod[e.team]);
         continue;
       }
-      const c = Math.cos(tr.a), s = Math.sin(tr.a), pal = PAL[dead ? 1 : 0][e.team];
+      const c = Math.cos(tr.a), s = Math.sin(tr.a), pal = e.look ? e.look.pal[dead ? 1 : 0] : PAL[dead ? 1 : 0][e.team];
       const lx = e.lx, ly = e.ly, ty = e.type, de = e.death;
       for (let i = 0; i < lx.length; i++) {
         if (de[i] <= t) continue;
@@ -174,7 +228,7 @@ export class Renderer {
       if (!dead) {
         // engine glow behind the stern
         const r = e.w * 0.5 + 0.8;
-        glow.push(tr.x - c * r, tr.y - s * r, tr.a, Math.max(1.6, e.h * 0.18), Math.max(1.2, e.h * 0.22), 1, C.engine[e.team]);
+        glow.push(tr.x - c * r, tr.y - s * r, tr.a, Math.max(1.6, e.h * 0.18), Math.max(1.2, e.h * 0.22), 1, e.look ? e.look.engine : C.engine[e.team]);
       } else if (t - e.t0 < 14) {
         const k = 1 - (t - e.t0) / 14;
         glow.push(tr.x, tr.y, 0, e.radius * 1.3, e.radius * 1.3, 1, (C.hotChunk & 0xffffff) | ((k * 170) << 24));

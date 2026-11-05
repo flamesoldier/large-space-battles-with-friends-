@@ -4,7 +4,7 @@
 
 import { parentPort } from 'node:worker_threads';
 import { Battle, DT } from '../src/sim/battle.js';
-import { readBattle } from '../src/world/battleSetup.js';
+import { readBattle, shipColors } from '../src/world/battleSetup.js';
 import { packReplay } from '../src/shared/replayFormat.js';
 
 parentPort.on('message', ({ scenario }) => {
@@ -22,6 +22,7 @@ parentPort.on('message', ({ scenario }) => {
     }
     const result = readBattle(b, scenario);
     const rep = b.toReplay();
+    rep.meta.colors = shipColors(scenario);
     const bytes = packReplay(rep.meta, rep.cols);
     parentPort.postMessage({ type: 'done', result, bytes, computeMs: Math.round(performance.now() - t0) }, [bytes.buffer]);
   } catch (err) {

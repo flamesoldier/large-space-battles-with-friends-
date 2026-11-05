@@ -25,7 +25,7 @@ import {
 import { generateGalaxy } from './galaxyGen.js';
 import { planRoute, travelSpeed, laneMap } from './routes.js';
 import { makeBattleScenario } from './battleSetup.js';
-import { HOUR_MS, MIN_FLEET_SPEED, PLAYER_COLORS, CHOOSABLE_COLORS, MIN_PLAYERS, MAX_PLAYERS, BATTLE_MAX_TIME, BATTLE_HOLD_MIN } from './rules.js';
+import { HOUR_MS, MIN_FLEET_SPEED, NEUTRAL_COLOR, PLAYER_COLORS, CHOOSABLE_COLORS, MIN_PLAYERS, MAX_PLAYERS, BATTLE_MAX_TIME, BATTLE_HOLD_MIN } from './rules.js';
 
 export const YARD_MS = SHIPYARD_INTERVAL_MIN * 60 * 1000;
 export const HOLD_MS = BATTLE_HOLD_MIN * 60 * 1000;
@@ -431,6 +431,8 @@ export function planEvent(world, ev) {
     ...fleets.flatMap((f) => Object.entries(f.ships).map(([design, n]) => ({ side: 0, owner: f.owner, design, n, fleet: f.id }))),
     ...defenders.map((d) => ({ side: 1, owner: d.owner, design: d.design, n: d.n })),
   ];
+  // Each ship is drawn in its owner's colour in the replay (owner's request).
+  for (const g of groups) g.color = g.owner === null ? NEUTRAL_COLOR : world.players[g.owner]?.color || null;
   const battle = makeBattleScenario(groups, (id) => designOf(world, id), (world.seed * 1000003 + s.id * 131) >>> 0);
   Object.assign(battle, {
     maxTime: BATTLE_MAX_TIME, planet: P.id, attacker: s.leader, defender: P.owner,

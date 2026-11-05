@@ -28,6 +28,8 @@ const PALETTE = [
 const WEAPON_ORDER = [BT.LASER, BT.CANNON, BT.PD, BT.MISSILE, BT.LANCE];
 
 const ed = new ShipEditor();
+// block: the selected palette block (0 = eraser), or null when nothing is selected (owner's request:
+// right-clicking an empty cell deselects, so a stray left click doesn't paint).
 let block = BT.ARMOR, tool = 'pencil', showArcs = false;
 let design = null, info = null, seenVersion = -1;
 const canvas = $('grid'), g = canvas.getContext('2d');
@@ -290,13 +292,15 @@ function draw() {
     }
   }
 
-  // Cursor preview.
-  if (hover && !panning) {
+  // Cursor preview (none when no block is selected, unless erasing a rectangle with a right drag).
+  if (hover && !panning && (block !== null || drag)) {
     const [hx, hy] = hover;
     if (drag && tool === 'rect') {
       const x0 = Math.min(drag.x, hx), y0 = Math.min(drag.y, hy), x1 = Math.max(drag.x, hx), y1 = Math.max(drag.y, hy);
       previewRect(x0, y0, x1 - x0 + 1, y1 - y0 + 1, drag.type);
       if (ed.mirror) { const my0 = ed.mirrorY(y1), my1 = ed.mirrorY(y0); previewRect(x0, my0, x1 - x0 + 1, my1 - my0 + 1, drag.type, true); }
+    } else if (block === null) {
+      // right drag with nothing selected: nothing to preview until the rectangle starts
     } else if (block === BT.LANCE) {
       const [x0, y0] = ShipEditor.stampOrigin(hx, hy);
       previewRect(x0, y0, 10, 10, BT.LANCE);
@@ -485,6 +489,14 @@ canvas.addEventListener('pointerdown', (e) => {
   }
   if (e.button === 1 || spaceDown || (tool === 'pan' && e.button === 0)) { panning = true; canvas.style.cursor = 'grabbing'; return; }
   const [x, y] = toCell(e.clientX, e.clientY);
+  if (e.button === 2 && !ed.get(x, y)) {
+    // Right-click on an empty cell deselects the block. A right drag that leaves this cell still
+    // erases (pointermove starts the stroke), and with the rectangle tool still erases a rectangle.
+    drag = { x, y, type: 0, started: false, deselect: true };
+    last = null;
+    return;
+  }
+  if (e.button !== 2 && block === null) { toast('No block selected: pick one from the palette (or press 1–0).'); return; }
   const type = e.button === 2 ? 0 : block;
   drag = { x, y, type, started: false };
   last = null;
@@ -525,12 +537,18 @@ canvas.addEventListener('pointermove', (e) => {
     const el = $('hover');
     el.hidden = x < 0 || y < 0 || x >= ed.w || y >= ed.h;
     if (!el.hidden) el.textContent = describe(x, y);
+    if (drag?.deselect && (x !== drag.x || y !== drag.y)) {
+      drag.deselect = false;
+      if (tool === 'pencil') { ed.checkpoint(); drag.started = true; strokeTo(drag.x, drag.y, 0); }
+      else if (tool !== 'rect') drag = null;
+    }
     if (drag && drag.started && !drag.once && tool === 'pencil') strokeTo(x, y, drag.type);
   }
 });
 const endPointer = (e) => {
   pointers.delete(e.pointerId);
   if (panning) { if (!pointers.size) { panning = false; canvas.style.cursor = tool === 'pan' || spaceDown ? 'grab' : ''; } return; }
+  if (drag?.deselect) { setBlock(null); toast('Block deselected. Pick one from the palette (or press 1–0) to build again.'); drag = null; last = null; dirty = true; return; }
   if (drag && tool === 'rect' && !drag.started && hover) {
     ed.checkpoint();
     ed.rect(drag.x, drag.y, hover[0], hover[1], drag.type);
@@ -587,6 +605,7 @@ addEventListener('keydown', (e) => {
   if (k === 'f') setTool('fill');
   if (k === 'm') { ed.mirror = !ed.mirror; syncMirror(); dirty = true; }
   if (k === 'q') { showArcs = !showArcs; syncArcs(); dirty = true; }
+  if (e.key === 'Escape' && block !== null) setBlock(null);
 });
 addEventListener('keyup', (e) => {
   held.delete(e.key.toLowerCase()); fast = e.shiftKey;

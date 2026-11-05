@@ -39,6 +39,11 @@ export function makeBattleScenario(groups, designOf, seed) {
   return { designs, ships, groups: out, seed };
 }
 
+/** For the replay: [start, n, colour] per group, so the viewer draws each ship in its owner's colour. */
+export function shipColors(scen) {
+  return scen.groups.filter((g) => g.color).map((g) => [g.start, g.n, g.color]);
+}
+
 /**
  * Read a finished Battle. Returns { attackerWon, routed, groups: [{ ...group, survived }], seconds }.
  * The attacker wins if it still has armed ships and the defenders either have none or were routed

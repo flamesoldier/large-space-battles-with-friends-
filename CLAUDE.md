@@ -79,6 +79,13 @@ Combat rules:
 - **Stances** chosen per design (will be a designer option): charge, brawl, line, standoff,
   escort. Escorts take limited slots around a big ship and break off to attack nearby enemies.
 - **Debris** must stay clearly visible (wrecks keep most of their colour).
+- **Ships are drawn in their player's colour** in replays (owner, Nov 2026), militia in
+  `NEUTRAL_COLOR`. `planEvent` puts `color` on each group, the worker / hot-seat page write
+  `meta.colors` = `[start, n, colour]` per group (`shipColors()` in `battleSetup.js`), and the
+  viewer's `applyColors()` (`renderer.js`) builds a palette per colour; debris keeps its ship's.
+  Beams, missiles and the strength graph use each side's leading colour. Older replays get side
+  colours from the combat log entry (`sideColors` in the `lsb-replay` message); designer test
+  battles keep azure/ember.
 
 Battle end:
 - One side has no ships left that can still fire (disarmed hulks don't count).
@@ -157,6 +164,11 @@ designer's numbers against the sim.
   of a slow-to-analyse design waits for the end of a stroke. Owner's controls: **mouse wheel
   zooms** (towards the cursor), **WASD / arrow keys pan** smoothly while held (Shift faster),
   plus a Hand tool (H), Space+drag, +/− buttons and a clickable minimap. Q toggles all arcs.
+  **Right-click an empty cell (or Esc) deselects the block** (owner, Nov 2026: `block === null`,
+  left clicks then do nothing); right-click/drag on blocks still erases, and a right drag that
+  starts on an empty cell still erases once it moves. Opened from the galaxy, the designer sits
+  under a top bar with a prominent "← Back to galaxy" button (`.overlay-bar`; the old button
+  overlapped the help text and was easy to miss).
 - Validation errors block test battles (and should block shipyards): one hub, everything
   connected to it, block limit, heavy lasers as whole separate 10×10 units. Warnings: no weapons,
   buried weapons, guns with under 45° of arc, heavy-laser cook-off, no thrusters, big escorts.

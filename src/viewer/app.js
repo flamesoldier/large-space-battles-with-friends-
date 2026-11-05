@@ -5,7 +5,7 @@ import { makeScenario } from '../shared/designs.js';
 import { Battle, DT } from '../sim/battle.js';
 import { packReplay } from '../shared/replayFormat.js';
 import { ReplayModel } from './model.js';
-import { Renderer, TEAM } from './renderer.js';
+import { Renderer, TEAM, applyColors } from './renderer.js';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('view');
@@ -59,11 +59,14 @@ async function resolve() {
 }
 
 /** Play a packed replay (from the sim above, or handed over by the ship designer). */
+let sideCol = TEAM.map((T) => T.accent), pendingSides = null;
 function show(bytes) {
   info.raw = bytes.length;
   info.gz = 0;
   gzipSize(bytes).then((n) => { info.gz = n; });
   model = new ReplayModel(bytes); // load from the packed bytes, exactly like a downloaded replay
+  sideCol = applyColors(model, pendingSides);
+  for (const k of [0, 1]) { $(`meter${k}`).style.background = sideCol[k]; $(`alive${k}`).style.color = sideCol[k]; }
   $('scrub').max = model.ticks;
   drawStrength();
   // Open close enough to see individual blocks, centred on the line of contact.
@@ -138,7 +141,7 @@ function drawStrength() {
   const max = Math.max(model.startCount[0], model.startCount[1]);
   const n = model.strength[0].length;
   [0, 1].forEach((team) => {
-    const col = TEAM[team].accent;
+    const col = sideCol[team];
     g.beginPath();
     for (let k = 0; k < n; k++) {
       const x = (k / (n - 1)) * W, y = H - (model.strength[team][k] / max) * (H - 4 * dpr) - 2 * dpr;
@@ -212,11 +215,10 @@ function drawMinimap() {
   if (mm.width !== mm.clientWidth * dpr) { mm.width = mm.clientWidth * dpr; mm.height = mm.clientHeight * dpr; }
   const { cx, cy, s } = mmScale(), W = mm.width, H = mm.height;
   mg.clearRect(0, 0, W, H);
-  const cols = TEAM.map((T) => T.accent);
   for (const e of model.ents) {
     if (e.kind !== 0 || t >= e.t1) continue;
     model.transform(e, t, tr);
-    mg.fillStyle = cols[e.team];
+    mg.fillStyle = e.look ? e.look.accent : sideCol[e.team];
     const sz = Math.max(1.2 * dpr, e.radius * s * 0.8);
     mg.fillRect(W / 2 + (tr.x - cx) * s - sz / 2, H / 2 + (tr.y - cy) * s - sz / 2, sz, sz);
   }
@@ -247,6 +249,7 @@ if (host) {
     document.querySelectorAll('.side small').forEach((el, k) => { if (e.data.sides?.[k]) el.textContent = e.data.sides[k]; });
     if (e.data.title) document.querySelector('.brand b').textContent = e.data.title;
     info.computeMs = e.data.computeMs || 0;
+    pendingSides = e.data.sideColors || null;
     show(new Uint8Array(e.data.bytes));
   });
   host.postMessage({ type: 'lsb-viewer-ready' }, '*');

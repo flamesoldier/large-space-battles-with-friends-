@@ -24,7 +24,7 @@ import {
   proposeAlliance, acceptAlliance, declineAlliance, breakAlliance, proposalsFor, hasProposed,
   isOpenSeat, freeColors,
 } from '../world/world.js';
-import { readBattle } from '../world/battleSetup.js';
+import { readBattle, shipColors } from '../world/battleSetup.js';
 import { fleetPosition } from '../world/routes.js';
 import { PlanetSprites, planetLook } from './planetArt.js';
 import { ReplayStore } from './replayStore.js';
@@ -816,6 +816,7 @@ function designerInfo() {
 function openDesigner(planetId) {
   if (!DESIGNER_PAGE) return toast('This build has no ship designer. Run npm run build.', true);
   designerFor = planetId;
+  $('designer-for').textContent = `Designing a ship for a new shipyard at ${world.planets[planetId].name}. Nothing is spent until you press Build shipyard.`;
   $('designer-overlay').hidden = false;
   $('designer-frame').srcdoc = pageDoc(DESIGNER_PAGE);
   clearInterval(designerTimer);
@@ -848,7 +849,10 @@ async function watch(id) {
     if (e.source !== frame.contentWindow || e.data?.type !== 'lsb-viewer-ready') return;
     removeEventListener('message', send);
     const copy = rep.bytes.slice();
-    frame.contentWindow.postMessage({ type: 'lsb-replay', bytes: copy.buffer, computeMs: rep.computeMs, sides: rep.sides, title: rep.title }, '*', [copy.buffer]);
+    // Side colours for replays recorded before ships carried their owner's colour.
+    const B = world.log.find((x) => x.battle?.id === id)?.battle;
+    const sideColors = B ? [colorOf(B.attacker), colorOf(B.defender)] : null;
+    frame.contentWindow.postMessage({ type: 'lsb-replay', bytes: copy.buffer, computeMs: rep.computeMs, sides: rep.sides, title: rep.title, sideColors }, '*', [copy.buffer]);
   };
   addEventListener('message', send);
   // Dialogs sit above everything, so step out of the combat log while the replay plays.
@@ -1159,6 +1163,7 @@ async function fight(ev, plan) {
   const computeMs = performance.now() - t0;
   const result = readBattle(b, B);
   const rep = b.toReplay();
+  rep.meta.colors = shipColors(B);
   const entry = applyEvent(world, ev, plan, result);
   if (entry?.battle) await replays.put({ id: entry.battle.id, t: entry.t, bytes: packReplay(rep.meta, rep.cols), computeMs, sides, title: `${B.passing ? 'Ambush' : 'Battle'} of ${P.name}` });
   $('fight').hidden = true;

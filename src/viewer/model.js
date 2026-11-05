@@ -55,7 +55,7 @@ export class ReplayModel {
   }
 
   makeEnt(kind, team, w, h) {
-    const e = { kind, team, w, h, radius: Math.hypot(w, h) / 2, map: new Int32Array(w * h).fill(-1), tmp: [], sv0: 0, svN: 0 };
+    const e = { kind, team, w, h, parent: null, look: null, radius: Math.hypot(w, h) / 2, map: new Int32Array(w * h).fill(-1), tmp: [], sv0: 0, svN: 0 };
     this.ents.push(e);
     return e;
   }
@@ -80,6 +80,7 @@ export class ReplayModel {
       const pd = this.designs[parent.design];
       const cw = c.chW[k], ch = c.chH[k], minI = c.chMinI[k], minJ = c.chMinJ[k];
       const e = this.makeEnt(1, parent.team, cw, ch);
+      e.parent = parent;
       e.t0 = c.chT0[k];
       e.x0 = c.chX[k]; e.y0 = c.chY[k]; e.a0 = c.chA[k];
       e.vx = c.chVx[k]; e.vy = c.chVy[k]; e.va = c.chVa[k];
