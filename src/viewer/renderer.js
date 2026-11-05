@@ -227,9 +227,16 @@ export class Renderer {
         blocks++;
       }
       if (!dead) {
-        // engine glow behind the stern
-        const r = e.w * 0.5 + 0.8;
-        glow.push(tr.x - c * r, tr.y - s * r, tr.a, Math.max(1.6, e.h * 0.18), Math.max(1.2, e.h * 0.22), 1, e.look ? e.look.engine : C.engine[e.team]);
+        // A flame on each working thruster with open space behind it (nose is local +x, so
+        // flames point to -x). Length flickers per thruster as a pure function of time.
+        const eng = e.look ? e.look.engine : C.engine[e.team], th = e.thr, tb = e.thrBehind;
+        for (let k = 0; th && k < th.length; k++) {
+          const i = th[k], b = tb[k];
+          if (de[i] <= t || (b >= 0 && de[b] > t)) continue;
+          const len = 0.9 + 0.25 * Math.sin(t * 1.9 + k * 2.3) + 0.15 * Math.sin(t * 4.7 + k);
+          const fx = lx[i] - 0.5 - len, fy = ly[i];
+          glow.push(tr.x + fx * c - fy * s, tr.y + fx * s + fy * c, tr.a, len + 0.2, 0.55, 1, eng);
+        }
       } else if (t - e.t0 < 14) {
         const k = 1 - (t - e.t0) / 14;
         glow.push(tr.x, tr.y, 0, e.radius * 1.3, e.radius * 1.3, 1, (C.hotChunk & 0xffffff) | ((k * 170) << 24));

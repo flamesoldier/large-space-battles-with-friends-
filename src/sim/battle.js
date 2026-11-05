@@ -642,7 +642,8 @@ export class Battle {
       ex = x0 + (x1 - x0) * this.hitT; ey = y0 + (y1 - y0) * this.hitT;
       if (this.canDamage(this.hitE, e.team)) this.damageCell(this.hitE, this.hitCell, damage);
     }
-    this.recBeam(x0, y0, ex, ey, e.team, kind, hit ? 1 : 0, e, hit ? this.hitE : e);
+    // A miss ends in empty space: a fixed world point (pinning it to the shooter swung it round as the shooter turned).
+    this.recBeam(x0, y0, ex, ey, e.team, kind, hit ? 1 : 0, e, hit ? this.hitE : null);
   }
 
   /**
@@ -669,7 +670,10 @@ export class Battle {
       if (budget <= 0) { ex = hx; ey = hy; break; }
       sx = hx; sy = hy;
     }
-    this.recBeam(x0, y0, ex, ey, e.team, 0, last ? 1 : 0, e, budget <= 0 && last ? last : e);
+    // The end sits on whatever stopped the beam; if it burned through everything, it ends in
+    // empty space at a fixed world point. (It used to be pinned to the shooter there, so the far
+    // end swung round with the shooter's turn: lasers looked as if they retargeted wildly.)
+    this.recBeam(x0, y0, ex, ey, e.team, 0, last ? 1 : 0, e, budget <= 0 && last ? last : null);
     return true;
   }
 

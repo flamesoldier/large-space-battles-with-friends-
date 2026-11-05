@@ -5,6 +5,7 @@
 // Time is measured in sim ticks (float).
 
 import { unpackReplay } from '../shared/replayFormat.js';
+import { BT } from '../shared/blocks.js';
 
 export function lowerBound(arr, v, n = arr.length) {
   let lo = 0, hi = n;
@@ -55,7 +56,7 @@ export class ReplayModel {
   }
 
   makeEnt(kind, team, w, h) {
-    const e = { kind, team, w, h, parent: null, look: null, radius: Math.hypot(w, h) / 2, map: new Int32Array(w * h).fill(-1), tmp: [], sv0: 0, svN: 0 };
+    const e = { kind, team, w, h, parent: null, look: null, radius: Math.hypot(w, h) / 2, map: new Int32Array(w * h).fill(-1), tmp: [], sv0: 0, svN: 0, thr: null, thrBehind: null };
     this.ents.push(e);
     return e;
   }
@@ -135,6 +136,18 @@ export class ReplayModel {
       const cs = Math.cos(tr.a), sn = Math.sin(tr.a);
       sp.push(t, tr.x + e.lx[li] * cs - e.ly[li] * sn, tr.y + e.lx[li] * sn + e.ly[li] * cs,
         (tr.x - tr2.x) / this.dt, (tr.y - tr2.y) / this.dt, k, e.type[li]);
+    }
+    // Thrusters of each ship, with the block directly behind each one (toward the stern), so the
+    // renderer can draw a flame on every working thruster that has open space behind it.
+    for (const e of this.ents) {
+      if (e.kind !== 0) continue;
+      const thr = [], behind = [];
+      for (let g = 0; g < e.map.length; g++) {
+        const li = e.map[g];
+        if (li < 0 || e.type[li] !== BT.THRUSTER) continue;
+        thr.push(li); behind.push(g % e.w > 0 ? e.map[g - 1] : -1);
+      }
+      e.thr = Int32Array.from(thr); e.thrBehind = Int32Array.from(behind);
     }
     for (const e of this.ents) e.map = null;
     this.spark = new Float32Array(sp);

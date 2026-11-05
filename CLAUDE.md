@@ -36,8 +36,9 @@ Cell (i, j) is index `j*w + i`; column `w-1` is the nose (local +x is forward).
 ## Decisions the owner has made (keep these)
 
 Weapons (numbers in `blocks.js`):
-- **Laser**: long range (340), always hits, every ~10 s. Since Nov 2026 (owner's request: "penetrate
-  like the heavy laser, to a lesser degree", then "even more damage, maybe 400, every 10 s") the
+- **Laser**: long range (340), always hits, every ~15 s. Since Nov 2026 (owner's request: "penetrate
+  like the heavy laser, to a lesser degree", then "even more damage, maybe 400, every 10 s", then
+  15 s) the
   beam carries 400 damage that burns through blocks until spent: about three armour blocks,
   often into a second ship. Holds fire if a friendly ship is first in line. Drawn as a slim
   team-coloured bolt with an impact flash (kept slim so it can't be mistaken for a heavy laser).
@@ -181,6 +182,9 @@ The test-fleet generator (`designs.js`) puts missile launchers on the skin and h
 the nose or hull edge, where they have a line of fire. It also makes dreadnought, leviathan and
 colossus samples for the designer's templates (not used in the generated test fleets).
 
+- **Engine flames are per thruster** (owner, Nov 2026): the viewer draws a flickering flame
+  behind each working thruster block with open space behind it (`e.thr`/`e.thrBehind` in
+  `ReplayModel`), instead of one glow behind the whole ship.
 - **Hubs are fragile** (60 hp, was 450; owner, Nov 2026): bare hubs with everything shot off
   were floating around the battlefield. A hit hub breaks the whole ship apart.
 
@@ -217,7 +221,10 @@ fixed world lines they ended up pointing at empty space where the block had been
 records the ship that fired it and the entity its end sits on (`lasSrc`/`lasDst` plus local
 offsets `lasSX/SY/DX/DY`; ids are 16-bit when the battle has under 65,535 entities). The viewer
 draws both ends attached (`ReplayModel.beamAt`). World coordinates are only stored for unattached
-ends, so replays grew only ~2%. `aimPoint()` never returns a destroyed block (it used to fall back
+ends, so replays grew only ~2%. A beam that ends in empty space (a miss, or a laser that burned
+through everything) has its far end fixed in the world (`dst` none). It used to be pinned to the
+shooter, so the end swung round as the shooter turned and lasers looked as if they retargeted
+wildly (13% of laser shots, fixed Nov 2026). `aimPoint()` never returns a destroyed block (it used to fall back
 to the target's centre, often a hole), and point defence aims at a block actually within its
 30 range.
 

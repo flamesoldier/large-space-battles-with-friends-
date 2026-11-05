@@ -48,7 +48,7 @@ export const WEAPON = {
   // Instant beam, never misses what it's aimed at, slow to recharge. Like a small heavy laser,
   // the beam carries a damage budget and burns through block after block until it's spent
   // (about three armour blocks, or a heavy armour block and the one behind it).
-  [BT.LASER]: { kind: 'laser', range: 340, damage: 400, cooldown: 10 },
+  [BT.LASER]: { kind: 'laser', range: 340, damage: 400, cooldown: 15 },
   // Slow shell that flies dead straight (aimed with lead at firing), small blast on impact.
   // life covers range / speed (5.8 s) plus room for lead on a target moving away.
   [BT.CANNON]: { kind: 'shell', range: 260, damage: 75, cooldown: 2.0, speed: 45, life: 7, splash: 1.6, spread: 0.05 },
