@@ -193,7 +193,9 @@ economy, fleets, captures, with real battles).
   600×, 3,600×; 60× by default) are for testing; time with the page closed counts at 1×, like a
   server. The clock stops while a battle is resolved (in the page, with a progress card).
   Layout: map with a small collapsible **Events** window in its top-left corner; the right-hand
-  panel is all for the selected world (shipyards, moving ships) or fleet.
+  panel is all for the selected world or fleet. In the world panel the ships and move controls
+  come first and the **Shipyards** section sits below them, collapsible (owner's request: yards
+  were pushing the move controls down; `ui.yardsOpen` is remembered, Build stays in the header).
 - **Combat log** (top-bar button, with a badge for new ones): every battle and every world that
   changed hands, and every siege (Under attack / Attack begins / Joined attack), from the current
   player's side (World taken / World lost / Defended / Repelled / Ambushed / Blocked a fleet),

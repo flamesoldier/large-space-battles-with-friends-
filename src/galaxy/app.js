@@ -512,17 +512,6 @@ function planetPanel(P) {
       <dt>Shipyards</dt><dd>${P.yards.length}${P.yards.length ? ` (${fmt(yardListValue(P))} cr)` : ''}</dd>
     </dl>`;
 
-  // Shipyards.
-  if (mine || P.yards.length) {
-    html += `<h2>Shipyards ${mine ? `<button class="small go" data-act="yard" ${busy || me().eliminated ? 'disabled' : ''}>Build</button>` : ''}</h2>`;
-    if (!P.yards.length) html += `<p class="hint">None yet. A shipyard builds one ship of its design every ${SHIPYARD_INTERVAL_MIN} min, for free, forever, and the ships guard this world.</p>`;
-    for (const y of P.yards) {
-      const d = world.designs[y.design];
-      html += `<div class="yard"><b>${esc(d.name)}</b>${mine ? `<button class="small danger" data-act="sell" data-yard="${y.id}" ${busy ? 'disabled' : ''} title="Sell for ${Math.round(SHIPYARD_SELL_REFUND * 100)}% of what you paid">Sell +${fmt(sellValue(y))}</button>` : ''}
-        <span>${esc(d.cls)} · next in <span data-next="${y.next}"></span> · ${fmt(y.built)} built${mine ? ` · paid ${fmt(y.paid)}` : ''}</span></div>`;
-    }
-  }
-
   // Sieges: who is attacking, and when the battle starts.
   for (const sg of siegeAt(world, P.id)) {
     const fl = sg.fleets.map((id) => world.fleets.find((f) => f.id === id)).filter(Boolean);
@@ -544,6 +533,20 @@ function planetPanel(P) {
     else html += movePanel(P, myShips);
   }
   if (!friendly && !haveShips) html += `<p class="hint">${P.owner === null ? 'Unclaimed: held by militia.' : 'Enemy world.'} Send a fleet here and win the battle to take it: every shipyard on it is destroyed and its income becomes yours.</p>`;
+  // Shipyards: below the ships so they don't push the move controls down; collapsible (the
+  // choice is remembered in ui.yardsOpen). The Build button stays in the header either way.
+  if (mine || P.yards.length) {
+    const open = ui.yardsOpen !== false;
+    html += `<h2><button class="fold" data-act="fold-yards" aria-expanded="${open}">${open ? '▾' : '▸'} Shipyards (${P.yards.length})</button>${mine ? `<button class="small go" data-act="yard" ${busy || me().eliminated ? 'disabled' : ''}>Build</button>` : ''}</h2>`;
+    if (open) {
+      if (!P.yards.length) html += `<p class="hint">None yet. A shipyard builds one ship of its design every ${SHIPYARD_INTERVAL_MIN} min, for free, forever, and the ships guard this world.</p>`;
+      for (const y of P.yards) {
+        const d = world.designs[y.design];
+        html += `<div class="yard"><b>${esc(d.name)}</b>${mine ? `<button class="small danger" data-act="sell" data-yard="${y.id}" ${busy ? 'disabled' : ''} title="Sell for ${Math.round(SHIPYARD_SELL_REFUND * 100)}% of what you paid">Sell +${fmt(sellValue(y))}</button>` : ''}
+        <span>${esc(d.cls)} · next in <span data-next="${y.next}"></span> · ${fmt(y.built)} built${mine ? ` · paid ${fmt(y.paid)}` : ''}</span></div>`;
+      }
+    }
+  }
   return html;
 }
 
@@ -638,6 +641,7 @@ $('panel').addEventListener('click', (e) => {
   if (act === 'goto') { const P = world.planets[Number(b.dataset.planet)]; cam.x = P.x; cam.y = P.y; cam.zoom = Math.max(cam.zoom, 1.6); select({ kind: 'planet', id: P.id }); }
   else if (act === 'fleet') select({ kind: 'fleet', id: Number(b.dataset.fleet) });
   else if (act === 'yard') openYardDialog(sel.id);
+  else if (act === 'fold-yards') { ui.yardsOpen = ui.yardsOpen === false; store.set(UI_KEY, ui); renderPanel(true); }
   else if (act === 'sell') sellYard(sel.id, b.dataset.yard);
   else if (act === 'move') startMove(sel.id);
   else if (act === 'all' || act === 'none') {

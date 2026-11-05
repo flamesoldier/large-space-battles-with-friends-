@@ -118,6 +118,9 @@ aside { grid-area: side; background: var(--panel); border-left: 1px solid var(--
 .badge { display: inline-block; min-width: 16px; padding: 0 4px; border-radius: 8px; background: var(--ember); color: var(--void); font: 600 10.5px/16px var(--mono); text-align: center; margin-left: 6px; letter-spacing: 0; }
 h2 { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); font-weight: 600; margin: 16px 0 8px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 h2:first-child { margin-top: 0; }
+h2 .fold { all: unset; cursor: pointer; font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; padding: 2px 0; }
+h2 .fold:hover, h2 .fold:focus-visible { color: var(--ink); }
+h2 .fold:focus-visible { outline: 1px solid currentColor; outline-offset: 2px; }
 h1 { font-size: 19px; margin: 0; letter-spacing: 0.03em; display: flex; align-items: center; gap: 8px; }
 .sub { color: var(--dim); font-size: 12.5px; margin-top: 3px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .tag { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; border: 1px solid var(--line); padding: 1px 5px; border-radius: 2px; color: var(--dim); }
