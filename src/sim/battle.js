@@ -474,10 +474,14 @@ export class Battle {
         }
       }
       if (!tg) { w.cd = 0.2 + this.rng() * 0.2; continue; }
-      if (W.kind === 'lance') { w.cd = this.fireLance(e, wx, wy, ax, ay, W) ? W.cooldown : 0.5; continue; }
+      if (W.kind === 'lance') {
+        if (this.lanceAim(e, w, wx, wy, W, ax, ay)) { ax = this._ax; ay = this._ay; }
+        w.cd = this.fireLance(e, wx, wy, ax, ay, W) ? W.cooldown : 0.5;
+        continue;
+      }
       // Launchers keep in step (no jitter) so a ship's missiles always leave as one volley.
       w.cd = W.kind === 'missile' ? W.cooldown : W.cooldown * (0.85 + 0.3 * this.rng());
-      if (W.kind === 'laser') { this.fireBeam(e, wx, wy, ax, ay, W.range, W.damage, 0); continue; }
+      if (W.kind === 'laser') { if (!this.fireLaser(e, wx, wy, ax, ay, W)) w.cd = 0.3; continue; }
       // Shells and missiles are unguided: aimed with lead at launch, then fly dead straight.
       // Lead is capped: a heavy missile can take 30 s to arrive, and leading a manoeuvring ship
       // that far ahead sent volleys sideways or even backwards. Past maxLead, aim where it is.
@@ -573,6 +577,34 @@ export class Battle {
       if (this.canDamage(this.hitE, e.team)) this.damageCell(this.hitE, this.hitCell, damage);
     }
     this.recBeam(x0, y0, ex, ey, e.team, kind, hit ? 1 : 0, e, hit ? this.hitE : e);
+  }
+
+  /**
+   * Laser: a smaller cousin of the heavy laser. The beam carries a damage budget and burns
+   * through blocks (and on into whatever is behind) until it is spent. Holds fire (returns
+   * false) if a friendly ship is first in line, so a slow-recharging shot isn't wasted.
+   * Sweeps from hit to hit rather than scanning the whole line, since the budget is small.
+   */
+  fireLaser(e, x0, y0, ax, ay, W) {
+    const dx = ax - x0, dy = ay - y0, d = Math.hypot(dx, dy) || 1;
+    const x1 = x0 + (dx / d) * W.range, y1 = y0 + (dy / d) * W.range;
+    let sx = x0, sy = y0, budget = W.damage, last = null, ex = x1, ey = y1;
+    for (let guard = 0; guard < 48; guard++) {
+      if (!this.sweep(sx, sy, x1, y1, e.id)) break;
+      const o = this.hitE, cell = this.hitCell, t = this.hitT;
+      const hx = sx + (x1 - sx) * t, hy = sy + (y1 - sy) * t;
+      if (!this.canDamage(o, e.team)) {
+        if (!last) return false; // a friend is first in line: wait
+        ex = hx; ey = hy; last = o; budget = 0; break; // a friendly hull stops the beam
+      }
+      const hp = o.hp[cell], dmg = Math.min(hp, budget);
+      this.damageCell(o, cell, dmg);
+      budget -= dmg; last = o;
+      if (budget <= 0) { ex = hx; ey = hy; break; }
+      sx = hx; sy = hy;
+    }
+    this.recBeam(x0, y0, ex, ey, e.team, 0, last ? 1 : 0, e, budget <= 0 && last ? last : e);
+    return true;
   }
 
   /**
@@ -784,18 +816,78 @@ export class Battle {
   }
 
   /**
-   * Heavy laser: a beam with a damage budget that burns through every block on its line,
-   * ship after ship, until the budget is spent. Holds fire (returns false) if the first
-   * thing in the line of fire is a friendly ship.
+   * Heavy laser aiming: try a few blocks on each target in range and pick the line that crosses
+   * the most enemy ships (none if a friendly ship comes first), so one shot cuts through a whole
+   * row of ships. Hull circles, not blocks: it's only choosing a direction. Sets _ax/_ay; false keeps
+   * the default aim.
+   */
+  lanceAim(e, w, wx, wy, W, ax0, ay0) {
+    const r2 = W.range * W.range, cand = this._lanceCand || (this._lanceCand = []);
+    cand.length = 0;
+    cand.push(ax0, ay0);
+    for (let j = 0; j < e.targets.length && cand.length < 24; j++) {
+      const o = e.targets[j];
+      for (let tries = 0; tries < 2; tries++) {
+        const [x, y] = this.aimPoint(o);
+        if ((x - wx) ** 2 + (y - wy) ** 2 <= r2 && this.bears(e, w, wx, wy, x, y)) cand.push(x, y);
+      }
+    }
+    let best = -1, bestN = 0;
+    for (let k = 0; k < cand.length; k += 2) {
+      const n = this.lanceCount(e, wx, wy, cand[k], cand[k + 1], W.range);
+      if (n > bestN) { bestN = n; best = k; }
+    }
+    if (best < 0) return false;
+    this._ax = cand[best]; this._ay = cand[best + 1];
+    return true;
+  }
+
+  /** Enemy ships whose hull circle the beam line crosses before the first friendly ship. */
+  lanceCount(e, x0, y0, ax, ay, range) {
+    const dx = ax - x0, dy = ay - y0, d = Math.hypot(dx, dy) || 1;
+    const x1 = x0 + (dx / d) * range, y1 = y0 + (dy / d) * range;
+    const g = this.grid, q = ++g.qid, n = g.n;
+    const gx0 = g.cx(Math.min(x0, x1)), gx1 = g.cx(Math.max(x0, x1)), gy0 = g.cx(Math.min(y0, y1)), gy1 = g.cx(Math.max(y0, y1));
+    const sdx = x1 - x0, sdy = y1 - y0, len2 = sdx * sdx + sdy * sdy;
+    let friendT = 2;
+    const ts = this._lanceTs || (this._lanceTs = []);
+    ts.length = 0;
+    for (let cy = gy0; cy <= gy1; cy++)
+      for (let cx = gx0; cx <= gx1; cx++) {
+        const c = cy * n + cx, s = g.start[c], m = g.count[c];
+        for (let k = 0; k < m; k++) {
+          const o = g.ents[g.items[s + k]];
+          if (o._q === q) continue;
+          o._q = q;
+          if (o.dead || o.retired || o === e || o.kind !== SHIP) continue;
+          const t = ((o.x - x0) * sdx + (o.y - y0) * sdy) / len2;
+          if (t < 0 || t > 1) continue;
+          // Through the middle half of the hull: a graze doesn't cut anything in half.
+          const rr = o.radius * 0.5;
+          if ((x0 + sdx * t - o.x) ** 2 + (y0 + sdy * t - o.y) ** 2 > rr * rr) continue;
+          if (o.team === e.team) { if (t < friendT) friendT = t; } else ts.push(t);
+        }
+      }
+    let first = 2;
+    for (const t of ts) if (t < first) first = t;
+    return friendT < first ? 0 : ts.length;
+  }
+
+  /**
+   * Heavy laser: a beam several blocks wide with a damage budget that burns through every block
+   * on its line, ship after ship, until the budget is spent. Allied hulls further along the
+   * line are passed through unharmed (otherwise escorts around the gun ship stopped most
+   * shots), but it holds fire (returns false) if the first thing in the line is a friendly ship.
    */
   fireLance(e, x0, y0, ax, ay, W) {
     const dx = ax - x0, dy = ay - y0, d = Math.hypot(dx, dy) || 1;
     const x1 = x0 + (dx / d) * W.range, y1 = y0 + (dy / d) * W.range;
     if (this.sweep(x0, y0, x1, y1, e.id) && this.hitE.kind === SHIP && this.hitE.team === e.team) return false;
     const hits = [];
-    const g = this.grid, q = ++g.qid, n = g.n;
-    const gx0 = g.cx(Math.min(x0, x1)), gx1 = g.cx(Math.max(x0, x1)), gy0 = g.cx(Math.min(y0, y1)), gy1 = g.cx(Math.max(y0, y1));
+    const hw = ((W.width || 1) - 1) >> 1, g = this.grid, q = ++g.qid, n = g.n, pad = hw + 1;
+    const gx0 = g.cx(Math.min(x0, x1) - pad), gx1 = g.cx(Math.max(x0, x1) + pad), gy0 = g.cx(Math.min(y0, y1) - pad), gy1 = g.cx(Math.max(y0, y1) + pad);
     const sdx = x1 - x0, sdy = y1 - y0, len2 = sdx * sdx + sdy * sdy;
+    const px = -dy / d, py = dx / d; // unit perpendicular, for the beam's width
     for (let cy = gy0; cy <= gy1; cy++)
       for (let cx = gx0; cx <= gx1; cx++) {
         const c = cy * n + cx, s = g.start[c], m = g.count[c];
@@ -806,8 +898,11 @@ export class Battle {
           if (o.dead || o.retired || o === e) continue;
           let t = ((o.x - x0) * sdx + (o.y - y0) * sdy) / len2;
           t = t < 0 ? 0 : t > 1 ? 1 : t;
-          if ((x0 + sdx * t - o.x) ** 2 + (y0 + sdy * t - o.y) ** 2 > o.radius * o.radius) continue;
-          this.raycastAll(o, x0, y0, x1, y1, hits);
+          const rr = o.radius + pad;
+          if ((x0 + sdx * t - o.x) ** 2 + (y0 + sdy * t - o.y) ** 2 > rr * rr) continue;
+          // The beam is several blocks wide: parallel rays, one block apart.
+          for (let r = -hw; r <= hw; r++)
+            this.raycastAll(o, x0 + px * r, y0 + py * r, x1 + px * r, y1 + py * r, hits);
         }
       }
     hits.sort((a, b) => a.t - b.t);
@@ -815,7 +910,7 @@ export class Battle {
     for (const h of hits) {
       const o = h.e, hp = o.hp[h.cell];
       if (hp <= 0) continue;
-      if (!this.canDamage(o, e.team)) { endT = h.t; break; } // a friendly hull stops the beam
+      if (!this.canDamage(o, e.team)) continue; // passes harmlessly through allied hulls
       const dmg = Math.min(hp, budget);
       this.damageCell(o, h.cell, dmg);
       budget -= dmg;

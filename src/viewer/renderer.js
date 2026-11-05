@@ -211,16 +211,30 @@ export class Renderer {
     const L = m.laser;
     for (let i = lowerBound(L.t, t - 10); i < L.n && L.t[i] <= t; i++) {
       if (L.kind[i] === 2) { this.drawLance(L, i, t, vis, minW); continue; }
-      const pd = L.kind[i] === 1, life = pd ? 1.5 : 4, age = t - L.t[i];
+      const pd = L.kind[i] === 1, life = pd ? 1.5 : 7, age = t - L.t[i];
       if (age > life) continue;
       if (!vis((L.x0[i] + L.x1[i]) / 2, (L.y0[i] + L.y1[i]) / 2, Math.hypot(L.x1[i] - L.x0[i], L.y1[i] - L.y0[i]) / 2 + 20)) continue;
       const B = m.beamAt(i, t, this._beam || (this._beam = { x0: 0, y0: 0, x1: 0, y1: 0 }));
       const x0 = B.x0, y0 = B.y0, x1 = B.x1, y1 = B.y1;
       const mx = (x0 + x1) / 2, my = (y0 + y1) / 2, len = Math.hypot(x1 - x0, y1 - y0) / 2;
-      const k = 1 - age / life, col = pd ? C.pd[L.team[i]] : C.beam[L.team[i]];
-      g.push(mx, my, Math.atan2(y1 - y0, x1 - x0), len, Math.max(pd ? 0.16 : 0.55, minW), 4, alpha(col, k));
-      if (!pd) g.push(mx, my, Math.atan2(y1 - y0, x1 - x0), len, Math.max(0.15, minW * 0.5), 4, alpha(C.beamCore, k));
-      if (L.hit[i]) { const r = pd ? 0.7 : 1.8; g.push(x1, y1, 0, Math.max(r, minW * 2), Math.max(r, minW * 2), 1, alpha(col, k)); }
+      const col = pd ? C.pd[L.team[i]] : C.beam[L.team[i]], a = Math.atan2(y1 - y0, x1 - x0);
+      if (pd) {
+        const k = 1 - age / life;
+        g.push(mx, my, a, len, Math.max(0.16, minW), 4, alpha(col, k));
+        if (L.hit[i]) g.push(x1, y1, 0, Math.max(0.7, minW * 2), Math.max(0.7, minW * 2), 1, alpha(col, k));
+        continue;
+      }
+      // Laser: a heavy bolt. Full strength for 0.2 s, then fades; soft glow, coloured body,
+      // white core, and a flash where it burns into the hull.
+      const k = age < 2 ? 1 : 1 - (age - 2) / (life - 2);
+      g.push(mx, my, a, len, Math.max(2.2, minW * 3), 4, alpha(C.mGlow[L.team[i]], 0.3 * k));
+      g.push(mx, my, a, len, Math.max(0.95, minW * 1.3), 4, alpha(col, k));
+      g.push(mx, my, a, len, Math.max(0.35, minW * 0.6), 4, alpha(C.beamCore, k));
+      if (L.hit[i]) {
+        const r = 2.4 + (age / life) * 2.2;
+        g.push(x1, y1, 0, Math.max(r, minW * 3), Math.max(r, minW * 3), 1, alpha(col, k));
+        if (age < 3) g.push(x1, y1, 0, Math.max(1.2, minW * 1.5), Math.max(1.2, minW * 1.5), 1, alpha(C.beamCore, 1 - age / 3));
+      }
     }
     this.drawStraight(m.shell, t, vis, minW, false);
     this.drawStraight(m.missile, t, vis, minW, true);

@@ -56,7 +56,9 @@ Each tick:
    their target slam into whatever is behind it. With friendly fire off (the default) allied
    hulls still stop the round but take no damage; this costs nothing extra.
 4. **Weapons fire.** Four weapon blocks:
-   - *Laser*: instant beam, range 260, low damage, slow recharge. The reliable chip damage.
+   - *Laser*: instant beam, range 340, every ~6 s. It carries 160 damage and burns through
+     blocks until that is spent (about one armour block and a bit). Holds fire if a friendly
+     ship is first in line.
    - *Cannon*: slow shell (range 170) fired with lead, then flies dead straight. Visible trail,
      small blast. Main damage.
    - *Missile launcher*: huge, slow, unguided heavy missile (range 700) aimed with lead, flying
@@ -65,10 +67,11 @@ Each tick:
      `200 × (1 − d/9)²`: one missile craters a hull, a volley tears it apart. All launchers on a
      ship share one 40 s timer and fire together as a rippling volley at the same target.
      Lead is capped at 3 s so slow missiles don't get aimed far off at manoeuvring ships.
-   - *Heavy laser*: a 10×10 multi-block turret (fires in any direction) that keeps working while
-     half its blocks survive. Range 450, every 20 s. The beam carries 2,500 damage and burns
-     through block after block, ship after ship, until that is spent, so it can cut ships in
-     half. It holds fire if a friendly ship is first in the line of fire.
+   - *Heavy laser*: a 10×10 multi-block turret that keeps working while half its blocks
+     survive. Range 650, every 20 s. The beam is 5 blocks wide (parallel rays) and carries
+     25,000 damage, burning through block after block, ship after ship, until that is spent, so
+     one shot cuts several ships in half. It aims along the line crossing the most enemy hulls,
+     passes through allied hulls unharmed, and holds fire if a friendly ship is first in line.
    - *Point defence*: range 30 rapid beam. Shoots the nearest enemy missile first (found via a
      second small grid of live missiles), otherwise any enemy ship that close.
    Every weapon aims at a random block of its target so damage spreads over the hull.

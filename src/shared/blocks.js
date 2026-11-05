@@ -8,7 +8,7 @@ export const BT = {
   HEAVY: 3, // heavy armour
   FRAME: 4, // light internal structure
   THRUSTER: 5,
-  LASER: 6, // long-range beam: always hits, low damage
+  LASER: 6, // long-range beam: always hits, slow, burns through a block or two
   CANNON: 7, // slow straight-flying shells with a bright trail: the main damage dealer
   MISSILE: 8, // huge, slow, long-range missiles that can be shot down
   PD: 9, // point defence: short-range rapid laser, kills missiles, also hits close ships
@@ -45,8 +45,10 @@ export const COOKOFF = { radius: 16, damage: 300 };
 
 // Weapon behaviour. Ranges/speeds in world units (blocks) and seconds.
 export const WEAPON = {
-  // Instant beam, never misses what it's aimed at, but slow to recharge.
-  [BT.LASER]: { kind: 'laser', range: 260, damage: 32, cooldown: 2.6 },
+  // Instant beam, never misses what it's aimed at, slow to recharge. Like a small heavy laser,
+  // the beam carries a damage budget and burns through block after block until it's spent
+  // (about one armour block and a bit, or a few frame blocks).
+  [BT.LASER]: { kind: 'laser', range: 340, damage: 160, cooldown: 6 },
   // Slow shell that flies dead straight (aimed with lead at firing), small blast on impact.
   [BT.CANNON]: { kind: 'shell', range: 200, damage: 75, cooldown: 2.0, speed: 45, life: 5.5, splash: 1.6, spread: 0.05 },
   // Heavy missile: unguided, crawls across the map in a straight line, flies over friendly
@@ -60,7 +62,8 @@ export const WEAPON = {
   // Heavy laser: a 10x10 gun that fires wherever its unit can see past the rest of the ship. The beam carries a damage budget and
   // burns through block after block (and ship after ship) until the budget is spent.
   // It holds fire if a friendly ship is the first thing in the line of fire.
-  [BT.LANCE]: { kind: 'lance', range: 450, damage: 2500, cooldown: 20 },
+  // width: the beam burns a channel this many blocks wide, so it cuts ships clean through.
+  [BT.LANCE]: { kind: 'lance', range: 650, damage: 25000, cooldown: 20, width: 5 },
 };
 
 // Firing arcs: every weapon can fire in any direction where its shot wouldn't pass through its

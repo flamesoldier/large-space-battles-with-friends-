@@ -36,7 +36,10 @@ Cell (i, j) is index `j*w + i`; column `w-1` is the nose (local +x is forward).
 ## Decisions the owner has made (keep these)
 
 Weapons (numbers in `blocks.js`):
-- **Laser**: long range (260), always hits, low damage, slow recharge.
+- **Laser**: long range (340), always hits, every ~6 s. Since Nov 2026 (owner's request: "penetrate
+  like the heavy laser, to a lesser degree") the beam carries 160 damage that burns through blocks
+  until spent: about one armour block and a bit, or a few frame blocks, sometimes into a second
+  ship. Holds fire if a friendly ship is first in line. Drawn as a thick bolt with an impact flash.
 - **Cannon**: slow visible shell with a bright trail, aimed with lead, then flies dead straight.
   The main damage dealer. Range 200.
 - **Missile launcher**: huge, slow, unguided missile, range 700, flies over friendly ships,
@@ -44,16 +47,20 @@ Weapons (numbers in `blocks.js`):
   9 blocks with damage `200 × (1 − d/9)²`: one missile craters, a volley tears ships apart.
   All launchers on one ship fire together as a volley. Lead is capped at 3 s.
 - **Point defence**: range 30 rapid beam; shoots missiles first, close ships otherwise.
-- **Heavy laser**: 10×10 multi-block turret, range 450, every 20 s, 2,500-damage beam that
-  burns through blocks and ships until spent (it cuts ships in half). Works while half its blocks
-  survive. Holds fire if a friendly ship is first in line. **Its blocks explode when destroyed**
+- **Heavy laser**: 10×10 multi-block turret, range 650, every 20 s, 25,000-damage beam **5 blocks
+  wide** that burns through blocks and ships until spent. Owner's goal (Nov 2026): **several ships
+  cut in half by one shot.** It aims along the line through the most enemy ships (`lanceAim`), and
+  **passes harmlessly through allied hulls** further along the line (an exception to the
+  friendly-fire rule below: escorts round the gun ship used to stop most shots). Holds fire if a
+  friendly ship is first in line. Measured at 600 vs 600: ~4 enemy ships hit and 2–3 cut apart or
+  destroyed per shot, up to 7. Works while half its blocks survive. **Its blocks explode when destroyed**
   (`COOKOFF` in `blocks.js`: 300 peak damage, radius 16, ignores friendly fire, hurts its own
   ship and allies). One destroyed block chain-reacts through the whole unit: a battleship loses
   ~43% of its blocks and an ally flying alongside loses ~260. The owner asked for it to be huge.
 - Future weapons the owner wants: bigger cannons, a medium laser.
 
 Combat rules:
-- **Friendly fire off**: allied hulls still block shots but take no damage.
+- **Friendly fire off**: allied hulls still block shots but take no damage (except the heavy laser, which passes through them).
 - **Firing arcs = line of fire, for every weapon** (missile launchers and heavy lasers too): a
   weapon can fire in any direction where the shot wouldn't pass through its own ship (no fixed
   cone, never 360°). Worked out by `src/shared/arcs.js` (64 direction slices, ray walk through
