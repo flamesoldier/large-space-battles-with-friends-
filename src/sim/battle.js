@@ -33,7 +33,9 @@ const q16 = (v) => { const r = Math.round(v * EV_Q); return r > 32767 ? 32767 : 
 const qAng = (a) => Math.round((wrapAngle(a) / TWO_PI) * 65536) & 0xffff;
 const wrapAngle = (a) => a - TWO_PI * Math.floor((a + Math.PI) / TWO_PI);
 const SHIP = 0, CHUNK = 1;
-const CHUNK_RETIRE_TICKS = 600; // after 60 s debris stops being hittable and solid (still drawn by viewer)
+// Debris stays hittable and solid for the whole battle (owner: debris is part of the fight).
+// The retire mechanism is kept as a cap that can be set if very long battles ever get slow.
+const CHUNK_RETIRE_TICKS = Infinity;
 const K_KINETIC = 0, K_SHELL = 1, K_MISSILE = 2;
 const NONE = 0xffffffff; // 'no entity' in replay id columns
 
@@ -146,6 +148,8 @@ export class Battle {
       _threatTick: -1, _threats: [], _gx0: 0, _gx1: 0, _gy0: 0, _gy1: 0,
       design: 0, hub: -1, stance: 'line', orbit: 1, targets: [], retarget: 0, weapons: [], track: null, t1: 65535,
       escortCount: 0, slot: 0, parent: -1, shoved: false, shoveRec: -1000,
+      // Collision box: centre (local) and half size, shrunk to the live blocks as they are lost.
+      bcx: 0, bcy: 0, bhw: w / 2, bhh: h / 2,
       mass: 1, maxSpeed: 0, turn: 0, agility: 0, prefRange: 60, ward: null,
     };
     this.byId.push(e);
@@ -154,15 +158,33 @@ export class Battle {
     return e;
   }
 
+  /** Collision box from the live blocks' cell bounds (x0..x1, y0..y1 inclusive). */
+  setBox(e, x0, x1, y0, y1) {
+    if (x1 < 0) return;
+    e.bhw = (x1 - x0 + 1) / 2; e.bhh = (y1 - y0 + 1) / 2;
+    e.bcx = (x0 + x1 + 1) / 2 - e.w / 2; e.bcy = (y0 + y1 + 1) / 2 - e.h / 2;
+  }
+
+  /** Shrink a wreck's collision box after it loses blocks. */
+  fitChunkBox(e) {
+    let x0 = e.w, x1 = -1, y0 = e.h, y1 = -1;
+    for (let i = 0, x = 0, y = 0; i < e.types.length; i++, x === e.w - 1 ? (x = 0, y++) : x++)
+      if (e.types[i] && e.hp[i] > 0) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    this.setBox(e, x0, x1, y0, y1);
+  }
+
   /** Recompute mobility and weapon list after blocks are lost. */
   refit(e) {
     let mass = 0, thrust = 0, range = 0;
-    for (let i = 0; i < e.types.length; i++) {
+    let x0 = e.w, x1 = -1, y0 = e.h, y1 = -1;
+    for (let i = 0, x = 0, y = 0; i < e.types.length; i++, x === e.w - 1 ? (x = 0, y++) : x++) {
       const t = e.types[i];
       if (!t || e.hp[i] <= 0) continue;
       mass += BLOCKS[t].mass;
       if (t === BT.THRUSTER) thrust += BLOCKS[t].thrust;
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
     }
+    this.setBox(e, x0, x1, y0, y1);
     e.weapons = e.weapons.filter((w) => {
       if (!w.cells) return e.hp[w.cell] > 0;
       let alive = 0;
@@ -380,31 +402,36 @@ export class Battle {
    * out of any other ship's or wreck's rectangle it overlaps (either team), using a
    * separating-axis test on the 4 box axes. The lighter one gets shoved more; a wreck is shoved
    * here too, since debris has no move() of its own. Rectangles, not exact blocks: cheap and it
-   * stops the visible overlap. Exceptions: a wreck never collides with the ship it broke off
-   * from (the damaged ship keeps its full rectangle, so every piece would start inside it), and
-   * debris doesn't collide with other debris (pieces of one break-up start overlapping).
+   * stops the visible overlap. Boxes shrink to the blocks still there (`setBox`), so nothing
+   * bumps into the empty space where half a ship used to be. A piece that breaks off still
+   * overlapping its ship's box passes through that ship only until the two have drifted clear,
+   * then collides with it like any other wreck. Debris doesn't collide with other debris
+   * (pieces of one break-up start overlapping).
    */
   collide(e) {
     const R = e.radius, near = this._near;
     near.length = 0;
     this.grid.queryBox(e.x - R, e.y - R, e.x + R, e.y + R, this._collect);
-    const ehw = e.w / 2, ehh = e.h / 2;
+    const ehw = e.bhw, ehh = e.bhh;
+    const ex = e.x + e.bcx * e.c - e.bcy * e.s, ey = e.y + e.bcx * e.s + e.bcy * e.c;
     for (let n = 0; n < near.length; n++) {
       const o = near[n];
-      if (o === e || o.dead || o.retired || (o.kind === CHUNK && o.parent === e.id)) continue;
-      const dx = o.x - e.x, dy = o.y - e.y;
-      if (dx * dx + dy * dy > (R + o.radius) ** 2) continue;
+      if (o === e || o.dead || o.retired) continue;
+      const own = o.kind === CHUNK && o.parent === e.id; // broke off this ship: ignore until clear of it
+      const dx = o.x + o.bcx * o.c - o.bcy * o.s - ex, dy = o.y + o.bcx * o.s + o.bcy * o.c - ey;
+      if (dx * dx + dy * dy > (R + o.radius) ** 2) { if (own) o.parent = -1; continue; }
       // Separating axes: e's forward and side, then o's. Keep the one with the least overlap.
       let best = Infinity, bx = 0, by = 0;
       for (let k = 0; k < 4; k++) {
         const ux = k === 0 ? e.c : k === 1 ? -e.s : k === 2 ? o.c : -o.s;
         const uy = k === 0 ? e.s : k === 1 ? e.c : k === 2 ? o.s : o.c;
         const re = ehw * Math.abs(e.c * ux + e.s * uy) + ehh * Math.abs(-e.s * ux + e.c * uy);
-        const ro = (o.w / 2) * Math.abs(o.c * ux + o.s * uy) + (o.h / 2) * Math.abs(-o.s * ux + o.c * uy);
+        const ro = o.bhw * Math.abs(o.c * ux + o.s * uy) + o.bhh * Math.abs(-o.s * ux + o.c * uy);
         const dist = dx * ux + dy * uy, pen = re + ro - Math.abs(dist);
         if (pen <= 0) { best = 0; break; }
         if (pen < best) { best = pen; bx = dist > 0 ? -ux : ux; by = dist > 0 ? -uy : uy; }
       }
+      if (own) { if (best <= 0) o.parent = -1; continue; }
       if (best <= 0) continue;
       const pen = Math.min(best, 4), share = o.mass / (o.mass + e.mass); // the lighter one gets shoved more
       const push = pen * share;
@@ -955,7 +982,8 @@ export class Battle {
       budget -= dmg;
       if (budget <= 0) { endT = h.t; break; }
     }
-    this.recBeam(x0, y0, x0 + sdx * endT, y0 + sdy * endT, e.team, 2, hits.length ? 1 : 0);
+    // Start attached to the gun ship (the viewer draws a charge-up there), far end fixed in space.
+    this.recBeam(x0, y0, x0 + sdx * endT, y0 + sdy * endT, e.team, 2, hits.length ? 1 : 0, e, null);
     return true;
   }
 
@@ -1005,7 +1033,7 @@ export class Battle {
       const e = this.ents[k];
       if (!e.dirty || e.dead) continue;
       e.dirty = false;
-      if (e.kind === CHUNK) { if (e.alive <= 0) e.dead = true; continue; }
+      if (e.kind === CHUNK) { if (e.alive <= 0) e.dead = true; else this.fitChunkBox(e); continue; }
       if (e.hubDead || e.alive <= 0) { this.destroyShip(e); continue; }
       // Anything no longer connected to the hub breaks off as a debris chunk.
       const seen = this.flood(e, e.hub);

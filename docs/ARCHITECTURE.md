@@ -33,7 +33,7 @@ server and to the viewer.
 | **10 ticks per simulated second** | Plenty for ships that turn and drift. Weapons use exact sweeps, so nothing tunnels through at this rate. |
 | **No rigid-body physics** | Ships steer with simple kinematics. Hull rectangles push out of each other and out of wrecks (separating-axis test, no bounce or spin). Debris drifts at constant velocity and spin until a ship shoves it. |
 | **Turrets fire freely** | Weapon blocks don't need line of sight out of their own hull. Shots still hit anything in their path, which is where friendly fire comes from. |
-| **Debris retires after 60 s** | Old chunks stop being hit-testable and solid (they keep drifting in the replay). This caps the cost of long battles. |
+| **Debris never retires** | Wrecks stay hit-testable and solid for the whole battle (owner's choice). `CHUNK_RETIRE_TICKS` can cap it if very long battles ever get slow. |
 
 ## Simulation (`src/sim/battle.js`)
 

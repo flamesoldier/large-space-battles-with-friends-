@@ -39,8 +39,8 @@ Weapons (numbers in `blocks.js`):
 - **Laser**: long range (340), always hits, every ~10 s. Since Nov 2026 (owner's request: "penetrate
   like the heavy laser, to a lesser degree", then "even more damage, maybe 400, every 10 s") the
   beam carries 400 damage that burns through blocks until spent: about three armour blocks,
-  often into a second ship. Holds fire if a friendly ship is first in line. Drawn as a thick bolt
-  with an impact flash.
+  often into a second ship. Holds fire if a friendly ship is first in line. Drawn as a slim
+  team-coloured bolt with an impact flash (kept slim so it can't be mistaken for a heavy laser).
 - **Cannon**: slow visible shell with a bright trail, aimed with lead, then flies dead straight.
   The main damage dealer. Range 260 (owner, Nov 2026; shell life 7 s so shells reach it).
 - **Missile launcher**: huge, slow, unguided missile, range 700, flies over friendly ships,
@@ -51,7 +51,10 @@ Weapons (numbers in `blocks.js`):
 - **Point defence**: range 30 rapid beam; shoots missiles first, close ships otherwise.
 - **Heavy laser**: 10×10 multi-block turret, range 650, every 20 s, 25,000-damage beam **1 block
   wide** (owner: a thin cut slices off bigger pieces; `width` in `blocks.js`, was briefly 5) that
-  burns through blocks and ships until spent. Owner's goal (Nov 2026): **several ships
+  burns through blocks and ships until spent. Drawn to be unmistakable (owner found it hard to
+  tell from a laser): a 0.6 s charge-up glow at the gun before it fires (the beam's start is
+  attached to the gun ship, so the viewer knows where), then a huge flickering white-hot beam held
+  for 0.5 s and fading over 1.6 s, with big muzzle and impact flares. Owner's goal (Nov 2026): **several ships
   cut in half by one shot.** It aims along the line through the most enemy ships (`lanceAim`), and
   **passes harmlessly through allied hulls** further along the line (an exception to the
   friendly-fire rule below: escorts round the gun ship used to stop most shots). Holds fire if a
@@ -184,7 +187,9 @@ colossus samples for the designer's templates (not used in the generated test fl
 ## Ship collisions (on)
 
 `Battle.collide()`: each ship's hull rectangle is pushed out of any other ship's or **wreck's**
-rectangle it overlaps (either team; separating-axis test; the lighter one moves more). Replaced the old
+rectangle it overlaps (either team; separating-axis test; the lighter one moves more). The
+rectangle is the box round the blocks **still there** (`setBox`, refreshed in `refit()` and for
+wrecks when they lose blocks), so nothing bumps into the empty space where half a ship was. Replaced the old
 "push apart from allies in the same grid cell once half-overlapped" nudge, which let hulls pass
 through each other. Cost: about +7% at 1,000 vs 1,000 (+26% measured at 3,000 vs 3,000 in the
 prototype); pairs overlapping by more than 3 blocks went from ~300 to ~6. Rectangles, not exact
@@ -192,10 +197,14 @@ blocks, on purpose: block-exact would cost far more.
 
 **Debris collides with ships too** (owner, Nov 2026: "debris should be part of the battle"): a
 ship and a wreck push each other apart by the same rule, so ships plough through light debris
-and bounce off big wreck halves. Not collided: a wreck with the ship it broke off from (that ship
-keeps its full original rectangle, so every piece would start inside it) and debris with other
-debris (pieces of one break-up start overlapping). Debris stays solid and hittable for 60 s
-(`CHUNK_RETIRE_TICKS`, was 25 s; no measurable cost). Pushed debris is re-recorded in the replay
+and bounce off big wreck halves. A wreck collides with the ship it broke off from too (owner
+didn't like them passing through): only while a piece still overlaps that ship's box right after
+breaking off is it let through, until the two are clear (`chunk.parent`, cleared in `collide()`);
+measured at 600 vs 600, median 0.2 s, 90% within 2.6 s. Debris doesn't collide with other debris
+(pieces of one break-up start overlapping). **Debris stays solid and hittable for the whole
+battle** (owner, Nov 2026; `CHUNK_RETIRE_TICKS = Infinity`, was 25 s then 60 s). Battles end on
+their own long before the limit (1,000 vs 1,000: 183 s, at most ~1,400 pieces of debris, ~6 ms a
+tick), so this costs little. Pushed debris is re-recorded in the replay
 (`sv*` columns, at most every `SHOVE_EVERY` = 3 ticks per piece, Int16 positions/velocities), and
 the viewer drifts from the last record and blends into the next one (`ReplayModel.transform`):
 mean error 0.01 blocks against the sim. Replays from before this have no `sv*` columns and play
