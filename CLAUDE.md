@@ -36,24 +36,27 @@ Cell (i, j) is index `j*w + i`; column `w-1` is the nose (local +x is forward).
 ## Decisions the owner has made (keep these)
 
 Weapons (numbers in `blocks.js`):
-- **Laser**: long range (340), always hits, every ~6 s. Since Nov 2026 (owner's request: "penetrate
-  like the heavy laser, to a lesser degree") the beam carries 160 damage that burns through blocks
-  until spent: about one armour block and a bit, or a few frame blocks, sometimes into a second
-  ship. Holds fire if a friendly ship is first in line. Drawn as a thick bolt with an impact flash.
+- **Laser**: long range (340), always hits, every ~10 s. Since Nov 2026 (owner's request: "penetrate
+  like the heavy laser, to a lesser degree", then "even more damage, maybe 400, every 10 s") the
+  beam carries 400 damage that burns through blocks until spent: about three armour blocks,
+  often into a second ship. Holds fire if a friendly ship is first in line. Drawn as a thick bolt
+  with an impact flash.
 - **Cannon**: slow visible shell with a bright trail, aimed with lead, then flies dead straight.
-  The main damage dealer. Range 200.
+  The main damage dealer. Range 260 (owner, Nov 2026; shell life 7 s so shells reach it).
 - **Missile launcher**: huge, slow, unguided missile, range 700, flies over friendly ships,
-  100 hp so point defence can shoot it down, fires every 40 s. Blast hits everything within
-  9 blocks with damage `200 × (1 − d/9)²`: one missile craters, a volley tears ships apart.
+  100 hp so point defence can shoot it down, fires every 30 s (owner, Nov 2026: was 40 s, blast
+  lowered to compensate). Blast hits everything within
+  9 blocks with damage `150 × (1 − d/9)²`: one missile craters, a volley tears ships apart.
   All launchers on one ship fire together as a volley. Lead is capped at 3 s.
 - **Point defence**: range 30 rapid beam; shoots missiles first, close ships otherwise.
-- **Heavy laser**: 10×10 multi-block turret, range 650, every 20 s, 25,000-damage beam **5 blocks
-  wide** that burns through blocks and ships until spent. Owner's goal (Nov 2026): **several ships
+- **Heavy laser**: 10×10 multi-block turret, range 650, every 20 s, 25,000-damage beam **1 block
+  wide** (owner: a thin cut slices off bigger pieces; `width` in `blocks.js`, was briefly 5) that
+  burns through blocks and ships until spent. Owner's goal (Nov 2026): **several ships
   cut in half by one shot.** It aims along the line through the most enemy ships (`lanceAim`), and
   **passes harmlessly through allied hulls** further along the line (an exception to the
   friendly-fire rule below: escorts round the gun ship used to stop most shots). Holds fire if a
-  friendly ship is first in line. Measured at 600 vs 600: ~4 enemy ships hit and 2–3 cut apart or
-  destroyed per shot, up to 7. Works while half its blocks survive. **Its blocks explode when destroyed**
+  friendly ship is first in line. Measured at 600 vs 600: ~3 enemy ships hit and ~2 cut apart or
+  destroyed per shot, up to 6. Works while half its blocks survive. **Its blocks explode when destroyed**
   (`COOKOFF` in `blocks.js`: 300 peak damage, radius 16, ignores friendly fire, hurts its own
   ship and allies). One destroyed block chain-reacts through the whole unit: a battleship loses
   ~43% of its blocks and an ally flying alongside loses ~260. The owner asked for it to be huge.
@@ -163,14 +166,28 @@ The test-fleet generator (`designs.js`) puts missile launchers on the skin and h
 the nose or hull edge, where they have a line of fire. It also makes dreadnought, leviathan and
 colossus samples for the designer's templates (not used in the generated test fleets).
 
+- **Hubs are fragile** (60 hp, was 450; owner, Nov 2026): bare hubs with everything shot off
+  were floating around the battlefield. A hit hub breaks the whole ship apart.
+
 ## Ship collisions (on)
 
-`Battle.collide()`: each ship's hull rectangle is pushed out of any other ship's rectangle it
-overlaps (either team; separating-axis test; the lighter ship moves more). Replaced the old
+`Battle.collide()`: each ship's hull rectangle is pushed out of any other ship's or **wreck's**
+rectangle it overlaps (either team; separating-axis test; the lighter one moves more). Replaced the old
 "push apart from allies in the same grid cell once half-overlapped" nudge, which let hulls pass
 through each other. Cost: about +7% at 1,000 vs 1,000 (+26% measured at 3,000 vs 3,000 in the
 prototype); pairs overlapping by more than 3 blocks went from ~300 to ~6. Rectangles, not exact
-blocks, on purpose: block-exact would cost far more. Debris doesn't collide.
+blocks, on purpose: block-exact would cost far more.
+
+**Debris collides with ships too** (owner, Nov 2026: "debris should be part of the battle"): a
+ship and a wreck push each other apart by the same rule, so ships plough through light debris
+and bounce off big wreck halves. Not collided: a wreck with the ship it broke off from (that ship
+keeps its full original rectangle, so every piece would start inside it) and debris with other
+debris (pieces of one break-up start overlapping). Debris stays solid and hittable for 60 s
+(`CHUNK_RETIRE_TICKS`, was 25 s; no measurable cost). Pushed debris is re-recorded in the replay
+(`sv*` columns, at most every `SHOVE_EVERY` = 3 ticks per piece, Int16 positions/velocities), and
+the viewer drifts from the last record and blends into the next one (`ReplayModel.transform`):
+mean error 0.01 blocks against the sim. Replays from before this have no `sv*` columns and play
+as before.
 
 ## Beams stay on what they hit
 

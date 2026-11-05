@@ -19,16 +19,21 @@ import { SpatialGrid } from './spatial.js';
 
 export const DT = 0.1; // 10 ticks per simulated second
 export const TRACK_EVERY = 4; // ship transform sample every 0.4 s (viewer uses spline interpolation)
+// Debris shoved by a ship is re-recorded at most this often (ticks). The viewer blends into each
+// record over this window, so pushed debris is drawn where the sim had it.
+export const SHOVE_EVERY = 3;
 export const MISSILE_EVERY = 3; // missile position sample every 0.3 s
 export const POS_Q = 4; // position quantisation: 1/4 block
 const TWO_PI = Math.PI * 2;
 const ANG_Q = 2048 / Math.PI; // 4096 steps per turn
 export const EV_Q = 4; // event positions stored as Int16 in 1/4 block (±8191 blocks)
+const VEL_Q = 64; // shoved-debris velocities stored as Int16 in 1/64 block per second
+const qVel = (v) => { const r = Math.round(v * VEL_Q); return r > 32767 ? 32767 : r < -32768 ? -32768 : r; };
 const q16 = (v) => { const r = Math.round(v * EV_Q); return r > 32767 ? 32767 : r < -32768 ? -32768 : r; };
 const qAng = (a) => Math.round((wrapAngle(a) / TWO_PI) * 65536) & 0xffff;
 const wrapAngle = (a) => a - TWO_PI * Math.floor((a + Math.PI) / TWO_PI);
 const SHIP = 0, CHUNK = 1;
-const CHUNK_RETIRE_TICKS = 250; // after 25 s debris stops being hittable (still drawn by viewer)
+const CHUNK_RETIRE_TICKS = 600; // after 60 s debris stops being hittable and solid (still drawn by viewer)
 const K_KINETIC = 0, K_SHELL = 1, K_MISSILE = 2;
 const NONE = 0xffffffff; // 'no entity' in replay id columns
 
@@ -74,6 +79,7 @@ export class Battle {
     this._ax = 0; this._ay = 0;
     this._near = []; // collision candidates, reused every call
     this._collect = (o) => { this._near.push(o); };
+    this.shoved = []; // debris pushed by ships since its last shove record
     this.cookoffs = []; // world x, y pairs of heavy-laser blocks destroyed this tick
     this.stamp = new Int32Array(8192);
     this.stampGen = 1;
@@ -139,7 +145,7 @@ export class Battle {
       // adding fields later makes V8 deoptimise every entity access (measured ~40% slower).
       _threatTick: -1, _threats: [], _gx0: 0, _gx1: 0, _gy0: 0, _gy1: 0,
       design: 0, hub: -1, stance: 'line', orbit: 1, targets: [], retarget: 0, weapons: [], track: null, t1: 65535,
-      escortCount: 0, slot: 0,
+      escortCount: 0, slot: 0, parent: -1, shoved: false, shoveRec: -1000,
       mass: 1, maxSpeed: 0, turn: 0, agility: 0, prefRange: 60, ward: null,
     };
     this.byId.push(e);
@@ -218,6 +224,7 @@ export class Battle {
         if (this.now - e.t0 > CHUNK_RETIRE_TICKS) e.retired = true;
       }
     }
+    this.recordShoves();
     this.ents = this.ents.filter((e) => !e.dead && !e.retired);
     this.grid.build(this.ents);
 
@@ -369,10 +376,13 @@ export class Battle {
   }
 
   /**
-   * Ships don't fly through each other: each ship's hull rectangle is pushed out of any other
-   * ship's rectangle it overlaps (either team), using a separating-axis test on the 4 box axes.
-   * The lighter ship gets shoved more. Rectangles, not exact blocks: cheap (about +8% at
-   * 1,000 vs 1,000) and it stops the visible overlap. Debris is not collided.
+   * Ships don't fly through each other or through debris: each ship's hull rectangle is pushed
+   * out of any other ship's or wreck's rectangle it overlaps (either team), using a
+   * separating-axis test on the 4 box axes. The lighter one gets shoved more; a wreck is shoved
+   * here too, since debris has no move() of its own. Rectangles, not exact blocks: cheap and it
+   * stops the visible overlap. Exceptions: a wreck never collides with the ship it broke off
+   * from (the damaged ship keeps its full rectangle, so every piece would start inside it), and
+   * debris doesn't collide with other debris (pieces of one break-up start overlapping).
    */
   collide(e) {
     const R = e.radius, near = this._near;
@@ -381,7 +391,7 @@ export class Battle {
     const ehw = e.w / 2, ehh = e.h / 2;
     for (let n = 0; n < near.length; n++) {
       const o = near[n];
-      if (o === e || o.kind !== SHIP || o.dead) continue;
+      if (o === e || o.dead || o.retired || (o.kind === CHUNK && o.parent === e.id)) continue;
       const dx = o.x - e.x, dy = o.y - e.y;
       if (dx * dx + dy * dy > (R + o.radius) ** 2) continue;
       // Separating axes: e's forward and side, then o's. Keep the one with the least overlap.
@@ -396,10 +406,39 @@ export class Battle {
         if (pen < best) { best = pen; bx = dist > 0 ? -ux : ux; by = dist > 0 ? -uy : uy; }
       }
       if (best <= 0) continue;
-      const push = Math.min(best, 4) * (o.mass / (o.mass + e.mass)); // the lighter ship gets shoved more
+      const pen = Math.min(best, 4), share = o.mass / (o.mass + e.mass); // the lighter one gets shoved more
+      const push = pen * share;
       e.x += bx * push * 0.5; e.y += by * push * 0.5; // positional correction
       e.vx += bx * push * 2; e.vy += by * push * 2; // and a nudge so they steer apart
+      if (o.kind === CHUNK) {
+        const op = pen - push; // the wreck takes the rest, the other way
+        o.x -= bx * op * 0.5; o.y -= by * op * 0.5;
+        o.vx -= bx * op * 2; o.vy -= by * op * 2;
+        if (!o.shoved) { o.shoved = true; this.shoved.push(o); }
+      }
     }
+  }
+
+  /**
+   * Re-record debris that ships have pushed, so the viewer draws it where it really is (debris
+   * otherwise drifts in a straight line from where it broke off). At most every SHOVE_EVERY
+   * ticks per piece; the last record after a contact ends carries its final drift.
+   */
+  recordShoves() {
+    const L = this.shoved, R = this.R;
+    let k = 0;
+    for (let i = 0; i < L.length; i++) {
+      const o = L[i];
+      if (o.dead || o.retired) { o.shoved = false; continue; }
+      if (this.now - o.shoveRec < SHOVE_EVERY) { L[k++] = o; continue; }
+      R.svT.push(this.now); R.svEnt.push(o.id);
+      R.svX.push(q16(o.x)); R.svY.push(q16(o.y)); R.svVx.push(qVel(o.vx)); R.svVy.push(qVel(o.vy));
+      // Carry on from the stored (rounded) state, so sim and replay don't drift apart.
+      o.x = R.svX.a[R.svX.n - 1] / EV_Q; o.y = R.svY.a[R.svY.n - 1] / EV_Q;
+      o.vx = R.svVx.a[R.svVx.n - 1] / VEL_Q; o.vy = R.svVy.a[R.svVy.n - 1] / VEL_Q;
+      o.shoveRec = this.now; o.shoved = false;
+    }
+    L.length = k;
   }
 
   // ---------------------------------------------------------------- weapons
@@ -1010,14 +1049,18 @@ export class Battle {
     const cw = maxI - minI + 1, ch = maxJ - minJ + 1;
     const lcx = (minI + maxI + 1) / 2 - pw / 2, lcy = (minJ + maxJ + 1) / 2 - p.h / 2;
     const e = this.makeEntity(CHUNK, p.team, cw, ch, new Uint8Array(cw * ch));
+    e.parent = p.id;
+    let mass = 0;
     for (const idx of cells) {
       const ci = (((idx / pw) | 0) - minJ) * cw + ((idx % pw) - minI);
+      mass += BLOCKS[p.types[idx]].mass;
       e.types[ci] = p.types[idx];
       e.hp[ci] = p.hp[idx];
       e.alive++;
       p.types[idx] = 0; p.hp[idx] = 0; p.alive--;
       this.recBlockDeath(p.id, idx, 1);
     }
+    e.mass = Math.max(1, mass);
     e.x = p.x + lcx * p.c - lcy * p.s;
     e.y = p.y + lcx * p.s + lcy * p.c;
     e.a = p.a; e.c = p.c; e.s = p.s;
@@ -1050,6 +1093,9 @@ export class Battle {
       chVx: C(Float32Array), chVy: C(Float32Array), chVa: C(Float32Array),
       chMinI: C(Uint16Array), chMinJ: C(Uint16Array), chW: C(Uint16Array), chH: C(Uint16Array),
       chC0: C(Uint32Array), chN: C(Uint32Array), chCells: C(Uint32Array),
+      // Debris pushed by ships: from tick svT the piece is at svX/svY drifting at svVx/svVy.
+      // Positions in 1/EV_Q block, velocities in 1/VEL_Q block per second.
+      svT: C(Uint16Array), svEnt: C(Uint32Array), svX: C(Int16Array), svY: C(Int16Array), svVx: C(Int16Array), svVy: C(Int16Array),
     };
   }
 
@@ -1103,7 +1149,7 @@ export class Battle {
     if (this.byId.length < 0xffff)
       for (const k of ['lasSrc', 'lasDst']) cols[k] = Uint16Array.from(cols[k], (v) => (v === NONE ? 0xffff : v));
     const meta = {
-      version: 1, friendlyFire: this.friendlyFire, trackTotal: total, evQ: EV_Q, dt: DT, trackEvery: TRACK_EVERY, missileEvery: MISSILE_EVERY, posQ: POS_Q, angQ: ANG_Q,
+      version: 1, friendlyFire: this.friendlyFire, trackTotal: total, evQ: EV_Q, dt: DT, trackEvery: TRACK_EVERY, shoveEvery: SHOVE_EVERY, velQ: VEL_Q, missileEvery: MISSILE_EVERY, posQ: POS_Q, angQ: ANG_Q,
       ticks: this.tick, shipCount: S, chunkCount: this.byId.length - S,
       shotSpeed: [WEAPON[BT.CANNON].speed, WEAPON[BT.MISSILE].speed],
       designs: this.designs.map((d) => ({ name: d.name, cls: d.cls, stance: d.stance, w: d.w, h: d.h, hub: d.hub, cells: Array.from(d.cells) })),

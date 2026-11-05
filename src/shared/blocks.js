@@ -26,7 +26,7 @@ export const MULTIBLOCK = {
 // blocks on armour and frame and a fair share of its credits on the few guns that do the work.
 // These are the only place prices live; the designer, shipyards and fleets all read them.
 export const BLOCKS = {
-  [BT.HUB]: { name: 'Hub', hp: 450, mass: 4, cost: 40 },
+  [BT.HUB]: { name: 'Hub', hp: 60, mass: 4, cost: 40 }, // fragile on purpose (owner): a hit hub and the ship falls apart
   [BT.ARMOR]: { name: 'Armor', hp: 110, mass: 2, cost: 3 },
   [BT.HEAVY]: { name: 'Heavy armor', hp: 240, mass: 4, cost: 7 },
   [BT.FRAME]: { name: 'Frame', hp: 45, mass: 1, cost: 1 },
@@ -47,23 +47,25 @@ export const COOKOFF = { radius: 16, damage: 300 };
 export const WEAPON = {
   // Instant beam, never misses what it's aimed at, slow to recharge. Like a small heavy laser,
   // the beam carries a damage budget and burns through block after block until it's spent
-  // (about one armour block and a bit, or a few frame blocks).
-  [BT.LASER]: { kind: 'laser', range: 340, damage: 160, cooldown: 6 },
+  // (about three armour blocks, or a heavy armour block and the one behind it).
+  [BT.LASER]: { kind: 'laser', range: 340, damage: 400, cooldown: 10 },
   // Slow shell that flies dead straight (aimed with lead at firing), small blast on impact.
-  [BT.CANNON]: { kind: 'shell', range: 200, damage: 75, cooldown: 2.0, speed: 45, life: 5.5, splash: 1.6, spread: 0.05 },
+  // life covers range / speed (5.8 s) plus room for lead on a target moving away.
+  [BT.CANNON]: { kind: 'shell', range: 260, damage: 75, cooldown: 2.0, speed: 45, life: 7, splash: 1.6, spread: 0.05 },
   // Heavy missile: unguided, crawls across the map in a straight line, flies over friendly
   // ships, devastating blast. Has hit points, so point defence can shoot it down on the way in.
   // Blast damage falls off with distance: peak * (1 - d / splash)^2, applied to every ship
   // (and wreck) in the radius. One missile cratres a hull; a volley tears it apart.
   // All launchers on a ship fire together as a rippling volley at the same target.
-  [BT.MISSILE]: { kind: 'missile', range: 700, damage: 200, cooldown: 40, speed: 20, life: 45, splash: 9, hp: 100, spread: 0.02, maxLead: 3 },
+  [BT.MISSILE]: { kind: 'missile', range: 700, damage: 150, cooldown: 30, speed: 20, life: 45, splash: 9, hp: 100, spread: 0.02, maxLead: 3 },
   // Point defence: shoots the nearest enemy missile in range, otherwise any enemy ship that close.
   [BT.PD]: { kind: 'pd', range: 30, damage: 6, missileDamage: 10, cooldown: 0.2 },
   // Heavy laser: a 10x10 gun that fires wherever its unit can see past the rest of the ship. The beam carries a damage budget and
   // burns through block after block (and ship after ship) until the budget is spent.
   // It holds fire if a friendly ship is the first thing in the line of fire.
-  // width: the beam burns a channel this many blocks wide, so it cuts ships clean through.
-  [BT.LANCE]: { kind: 'lance', range: 650, damage: 25000, cooldown: 20, width: 5 },
+  // width: the beam burns a channel this many blocks wide (odd). The owner wants 1: a thin cut
+  // slices off bigger pieces of ship than a wide one that vaporises them.
+  [BT.LANCE]: { kind: 'lance', range: 650, damage: 25000, cooldown: 20, width: 1 },
 };
 
 // Firing arcs: every weapon can fire in any direction where its shot wouldn't pass through its

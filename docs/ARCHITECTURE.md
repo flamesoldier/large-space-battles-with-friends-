@@ -31,9 +31,9 @@ server and to the viewer.
 | **2D, top-down** | Cuts every cost (collision, rendering, AI, replay size) by an order of magnitude versus 3D. Reads clearly at fleet scale, like Cosmoteer or Reassembly. |
 | **Ships are grids of blocks** (1 block = 1 unit) | A hit test is a walk through a small grid instead of a mesh test. Damage, breakage and debris all fall out of the grid naturally. |
 | **10 ticks per simulated second** | Plenty for ships that turn and drift. Weapons use exact sweeps, so nothing tunnels through at this rate. |
-| **No rigid-body physics** | Ships steer with simple kinematics. Hull rectangles push out of each other (separating-axis test, no bounce or spin). Debris drifts at constant velocity and spin. |
+| **No rigid-body physics** | Ships steer with simple kinematics. Hull rectangles push out of each other and out of wrecks (separating-axis test, no bounce or spin). Debris drifts at constant velocity and spin until a ship shoves it. |
 | **Turrets fire freely** | Weapon blocks don't need line of sight out of their own hull. Shots still hit anything in their path, which is where friendly fire comes from. |
-| **Debris retires after 25 s** | Old chunks stop being hit-testable (they keep drifting in the replay). This caps the cost of long battles. |
+| **Debris retires after 60 s** | Old chunks stop being hit-testable and solid (they keep drifting in the replay). This caps the cost of long battles. |
 
 ## Simulation (`src/sim/battle.js`)
 
@@ -56,20 +56,20 @@ Each tick:
    their target slam into whatever is behind it. With friendly fire off (the default) allied
    hulls still stop the round but take no damage; this costs nothing extra.
 4. **Weapons fire.** Four weapon blocks:
-   - *Laser*: instant beam, range 340, every ~6 s. It carries 160 damage and burns through
-     blocks until that is spent (about one armour block and a bit). Holds fire if a friendly
-     ship is first in line.
-   - *Cannon*: slow shell (range 170) fired with lead, then flies dead straight. Visible trail,
+   - *Laser*: instant beam, range 340, every ~10 s. It carries 400 damage and burns through
+     blocks until that is spent (about three armour blocks). Holds fire if a friendly ship is
+     first in line.
+   - *Cannon*: slow shell (range 260) fired with lead, then flies dead straight. Visible trail,
      small blast. Main damage.
    - *Missile launcher*: huge, slow, unguided heavy missile (range 700) aimed with lead, flying
      dead straight over friendly ships. 100 hit points, so point defence can shoot it down. Its
      blast hits every ship and wreck within 9 blocks, with damage falling off as
-     `200 × (1 − d/9)²`: one missile craters a hull, a volley tears it apart. All launchers on a
-     ship share one 40 s timer and fire together as a rippling volley at the same target.
+     `150 × (1 − d/9)²`: one missile craters a hull, a volley tears it apart. All launchers on a
+     ship share one 30 s timer and fire together as a rippling volley at the same target.
      Lead is capped at 3 s so slow missiles don't get aimed far off at manoeuvring ships.
    - *Heavy laser*: a 10×10 multi-block turret that keeps working while half its blocks
-     survive. Range 650, every 20 s. The beam is 5 blocks wide (parallel rays) and carries
-     25,000 damage, burning through block after block, ship after ship, until that is spent, so
+     survive. Range 650, every 20 s. The beam is 1 block wide (a `width` setting casts parallel
+     rays for a wider one) and carries 25,000 damage, burning through block after block, ship after ship, until that is spent, so
      one shot cuts several ships in half. It aims along the line crossing the most enemy hulls,
      passes through allied hulls unharmed, and holds fire if a friendly ship is first in line.
    - *Point defence*: range 30 rapid beam. Shoots the nearest enemy missile first (found via a
@@ -103,7 +103,7 @@ What gets recorded, and what deliberately does not:
 | Ship movement | position + angle every 0.4 s, second-order delta encoded, 1/4-block precision | Catmull-Rom spline |
 | Cannon shells, heavy missiles | launch time, point, angle, flight time, kind | straight line, pure function of time |
 | Laser and point-defence beams | time, kind, shooter id + local origin, hit entity id + local end (world origin/angle/length only for unattached ends) | fade out, both ends following their ships |
-| Debris chunks | spawn position, velocity, spin, which blocks | `x0 + v·t`, nothing per frame |
+| Debris chunks | spawn position, velocity, spin, which blocks; a new position + velocity when a ship shoves it | `x0 + v·t` from the last record, blended into the next |
 | Block destroyed | time, entity, cell | "is this block alive at t?" check, plus sparks |
 | Sparks, fireballs, glows | **not stored** | seeded hashes of the event id |
 

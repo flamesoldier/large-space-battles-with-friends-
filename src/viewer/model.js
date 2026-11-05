@@ -55,7 +55,7 @@ export class ReplayModel {
   }
 
   makeEnt(kind, team, w, h) {
-    const e = { kind, team, w, h, radius: Math.hypot(w, h) / 2, map: new Int32Array(w * h).fill(-1), tmp: [] };
+    const e = { kind, team, w, h, radius: Math.hypot(w, h) / 2, map: new Int32Array(w * h).fill(-1), tmp: [], sv0: 0, svN: 0 };
     this.ents.push(e);
     return e;
   }
@@ -90,6 +90,27 @@ export class ReplayModel {
         this.addCell(e, ci, pd.cells[pi]);
       }
       this.finishEnt(e);
+    }
+    this.decodeShoves(meta, c);
+  }
+
+  /**
+   * Debris pushed by ships (replays from before debris collided have none). Each piece's records
+   * are gathered in time order: from record k it drifts from svX/svY at svVx/svVy.
+   */
+  decodeShoves(meta, c) {
+    const n = c.svT ? c.svT.length : 0;
+    this.shoveEvery = meta.shoveEvery || 3;
+    const pq = meta.evQ, vq = meta.velQ || 64;
+    const order = new Uint32Array(n);
+    for (let i = 0; i < n; i++) order[i] = i;
+    order.sort((a, b) => c.svEnt[a] - c.svEnt[b] || c.svT[a] - c.svT[b]);
+    this.sv = { t: new Float32Array(n), x: new Float32Array(n), y: new Float32Array(n), vx: new Float32Array(n), vy: new Float32Array(n) };
+    for (let k = 0; k < n; k++) {
+      const i = order[k], e = this.ents[c.svEnt[i]];
+      this.sv.t[k] = c.svT[i]; this.sv.x[k] = c.svX[i] / pq; this.sv.y[k] = c.svY[i] / pq; this.sv.vx[k] = c.svVx[i] / vq; this.sv.vy[k] = c.svVy[i] / vq;
+      if (!e.svN) e.sv0 = k;
+      e.svN++;
     }
   }
 
@@ -198,7 +219,25 @@ export class ReplayModel {
   transform(e, t, out) {
     if (e.kind === 1) {
       const s = (t - e.t0) * this.dt;
-      out.x = e.x0 + e.vx * s; out.y = e.y0 + e.vy * s; out.a = e.a0 + e.va * s;
+      out.a = e.a0 + e.va * s;
+      if (!e.svN) { out.x = e.x0 + e.vx * s; out.y = e.y0 + e.vy * s; return out; }
+      // Pushed debris: drift from the last record before t, and in the few ticks before the
+      // next record blend into it (the push happened in that window), so motion stays smooth.
+      const S = this.sv, b = e.sv0, n = e.svN;
+      let lo = -1, hi = n - 1;
+      while (lo < hi) { const m = (lo + hi + 1) >> 1; if (S.t[b + m] <= t) lo = m; else hi = m - 1; }
+      let tk, x, y, vx, vy;
+      if (lo < 0) { tk = e.t0; x = e.x0; y = e.y0; vx = e.vx; vy = e.vy; }
+      else { const k = b + lo; tk = S.t[k]; x = S.x[k]; y = S.y[k]; vx = S.vx[k]; vy = S.vy[k]; }
+      const d = (t - tk) * this.dt;
+      out.x = x + vx * d; out.y = y + vy * d;
+      if (lo + 1 < n) {
+        const k = b + lo + 1, w = this.shoveEvery, u = 1 - (S.t[k] - t) / w;
+        if (u > 0) {
+          const f = u * u * (3 - 2 * u), dn = (S.t[k] - tk) * this.dt;
+          out.x += (S.x[k] - (x + vx * dn)) * f; out.y += (S.y[k] - (y + vy * dn)) * f;
+        }
+      }
       return out;
     }
     const n = e.n, f = Math.max(0, t / this.TE);
