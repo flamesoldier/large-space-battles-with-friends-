@@ -33,6 +33,7 @@ const q16 = (v) => { const r = Math.round(v * EV_Q); return r > 32767 ? 32767 : 
 const qAng = (a) => Math.round((wrapAngle(a) / TWO_PI) * 65536) & 0xffff;
 const wrapAngle = (a) => a - TWO_PI * Math.floor((a + Math.PI) / TWO_PI);
 const SHIP = 0, CHUNK = 1;
+export const MAX_TEAMS = 16; // sides in one battle (players plus militia); fr[] is indexed (a << 4) | b
 // Debris stays hittable and solid for the whole battle (owner: debris is part of the fight).
 // The retire mechanism is kept as a cap that can be set if very long battles ever get slow.
 const CHUNK_RETIRE_TICKS = Infinity;
@@ -55,7 +56,10 @@ const arcFields = () => ({ omni: false, buried: false, m0: 0, m1: 0, ox: 0, oy: 
 
 export class Battle {
   // maxTime: 4 minutes while testing; the plan for launch is 30 minutes so every battle resolves.
-  constructor({ designs, ships, seed = 1, maxTime = 240, friendlyFire = false }) {
+  // teams: how many sides (each player in a free-for-all is its own side, up to MAX_TEAMS).
+  // hostile(a, b): whether sides a and b fight; by default every side fights every other side.
+  // Sides that don't fight each other are allies: their shots don't hurt each other.
+  constructor({ designs, ships, seed = 1, maxTime = 240, friendlyFire = false, teams = 2, hostile = null }) {
     // friendlyFire off: allied hulls still block shots (rounds stop on them), they just take no damage.
     this.friendlyFire = friendlyFire;
     this.designs = designs;
@@ -72,10 +76,26 @@ export class Battle {
     this.ents = [];
     this.byId = [];
     this.shipCount = ships.length;
-    this.teamAlive = [0, 0];
-    this.teamStart = [0, 0];
-    this.teamCx = [0, 0];
-    this.teamCy = [0, 0];
+    // Sides. fr[(a << 4) | b] is 1 when a and b are friends (the same side, or allies).
+    this.nT = Math.max(2, Math.min(MAX_TEAMS, teams | 0));
+    for (const sp of ships) if (sp.team >= this.nT) this.nT = Math.min(MAX_TEAMS, sp.team + 1);
+    const nT = this.nT;
+    this.fr = new Uint8Array(MAX_TEAMS * MAX_TEAMS);
+    this.foes = [];
+    for (let a = 0; a < nT; a++) {
+      this.foes.push([]);
+      for (let b = 0; b < nT; b++) {
+        const foe = a !== b && (hostile ? !!hostile(a, b) : true);
+        this.fr[(a << 4) | b] = foe ? 0 : 1;
+        if (foe) this.foes[a].push(b);
+      }
+    }
+    this.routedTeams = new Uint8Array(nT); // sides that broke and are running
+    this.teamAlive = new Array(nT).fill(0);
+    this.teamStart = new Array(nT).fill(0);
+    this.foeCx = new Array(nT).fill(0); // centre of each side's armed enemies
+    this.foeCy = new Array(nT).fill(0);
+    this.foeArmed = [];
     this.grid = new SpatialGrid(32, 6144);
     this.mgrid = new SpatialGrid(64, 6144);
     this._ax = 0; this._ay = 0;
@@ -267,13 +287,32 @@ export class Battle {
     // End when a side has no warships left, when the fleets have disengaged (20 s with no
     // damage dealt), or at the time limit.
     const stalled = this.tick > 300 && this.now - (this.lastDamage || 0) > 200;
-    // Rout: a side down to <20% of its starting ships still able to fight, and outgunned 2:1.
-    const a0 = this.armed[0].length, a1 = this.armed[1].length;
-    const routed = a0 && a0 < this.teamStart[0] * 0.2 && a1 > 2 * a0 ? 0 : a1 && a1 < this.teamStart[1] * 0.2 && a0 > 2 * a1 ? 1 : -1;
-    if (this.endTick < 0 && (!a0 || !a1 || stalled || routed >= 0 || this.tick >= this.maxTicks)) {
+    // Rout: a side down to <20% of its starting ships still able to fight, and outgunned 2:1 by
+    // its enemies together (against it plus its allies). It breaks and runs (its ships flee like disarmed hulks and no longer
+    // count as holding the field); the others fight on if any of them are still enemies.
+    let newRout = -1;
+    if (this.endTick < 0) {
+      const nT = this.nT, armed = this.armed, R = this.routedTeams;
+      for (let t = 0; t < nT; t++) {
+        const a = armed[t].length;
+        if (!a || R[t]) continue;
+        if (a >= this.teamStart[t] * 0.2) continue;
+        // Outgunned 2:1: its enemies against it and its allies together (a small allied
+        // contingent doesn't run while its friends are winning).
+        let foes = 0, friends = 0;
+        for (let o = 0; o < nT; o++) if (!R[o]) { if (this.fr[(t << 4) | o]) friends += armed[o].length; else foes += armed[o].length; }
+        if (foes > 2 * friends) { R[t] = 1; if (newRout < 0) newRout = t; if (this.routed < 0) this.routed = t; }
+      }
+    }
+    // The battle is over when no two sides still in the fight are enemies.
+    let fighting = false;
+    for (let t = 0; t < this.nT && !fighting; t++) {
+      if (!this.armed[t].length || this.routedTeams[t]) continue;
+      for (const o of this.foes[t]) if (this.armed[o].length && !this.routedTeams[o]) { fighting = true; break; }
+    }
+    if (this.endTick < 0 && (!fighting || stalled || this.tick >= this.maxTicks)) {
       this.endTick = this.tick + 40; // let the last missiles and debris play out
-      this.endReason = !a0 || !a1 ? 'destroyed' : routed >= 0 ? 'rout' : stalled ? 'stalled' : 'time';
-      this.routed = this.endReason === 'rout' ? routed : -1;
+      this.endReason = !fighting ? (newRout >= 0 ? 'rout' : 'destroyed') : stalled ? 'stalled' : 'time';
     }
     if (this.endTick >= 0 && this.tick >= this.endTick) this.done = true;
     return !this.done;
@@ -286,13 +325,19 @@ export class Battle {
 
   teamStats() {
     // Only armed ships count: disarmed hulks retreat and no longer hold the field.
-    const sx = [0, 0], sy = [0, 0];
-    this.armed = [[], []];
+    const nT = this.nT, sx = new Array(nT).fill(0), sy = new Array(nT).fill(0);
+    this.armed = [];
+    for (let t = 0; t < nT; t++) this.armed.push([]);
     for (const e of this.ents)
       if (e.kind === SHIP && !e.dead && e.weapons.length) { sx[e.team] += e.x; sy[e.team] += e.y; this.armed[e.team].push(e); }
-    for (let t = 0; t < 2; t++) {
-      const n = this.armed[t].length;
-      if (n) { this.teamCx[t] = sx[t] / n; this.teamCy[t] = sy[t] / n; }
+    // Each side's enemies: one list (the other side's, with two sides) and their centre.
+    for (let t = 0; t < nT; t++) {
+      const foes = this.foes[t];
+      let pool, x = 0, y = 0;
+      if (foes.length === 1) { pool = this.armed[foes[0]]; x = sx[foes[0]]; y = sy[foes[0]]; }
+      else { pool = []; for (const o of foes) { for (const e of this.armed[o]) pool.push(e); x += sx[o]; y += sy[o]; } }
+      this.foeArmed[t] = pool;
+      if (pool.length) { this.foeCx[t] = x / pool.length; this.foeCy[t] = y / pool.length; }
     }
   }
 
@@ -304,14 +349,16 @@ export class Battle {
     e.retarget = 0.8 + this.rng() * 0.8;
     // Big ships keep more targets, so guns all along a long hull have something to shoot at.
     const maxT = e.radius < 40 ? 4 : Math.min(24, 4 + ((e.radius / 20) | 0));
-    const best = [], bd = [];
+    const best = [], bd = [], fr = this.fr.subarray(e.team << 4, (e.team << 4) + 16);
     const fn = (o) => {
-      if (o.kind !== SHIP || o.dead || o.team === e.team) return;
-      // Ships that can still shoot back come first. Disarmed hulks are only finished off when
-      // they're close, so nobody chases a fleeing wreck across the map while the fight goes on.
+      if (o.kind !== SHIP || o.dead || fr[o.team]) return;
+      // Ships that can still shoot back come first. Disarmed hulks (and ships of a side that has
+      // broken and run) are only finished off when they're close, so nobody chases a fleeing
+      // wreck across the map while the fight goes on.
       const d0 = (o.x - e.x) ** 2 + (o.y - e.y) ** 2;
-      if (!o.weapons.length && d0 > 150 * 150) return;
-      const d = d0 * (o.weapons.length ? 1 : 9);
+      const threat = o.weapons.length && !this.routedTeams[o.team];
+      if (!threat && d0 > 150 * 150) return;
+      const d = d0 * (threat ? 1 : 9);
       let k = best.length;
       while (k > 0 && bd[k - 1] > d) k--;
       if (k >= maxT) return;
@@ -323,7 +370,7 @@ export class Battle {
     this.grid.queryRings(e.x, e.y, rings, fn);
     if (!best.length) {
       // Nobody close: pick the nearest of a random sample of enemy warships and go get them.
-      const pool = this.armed[1 - e.team];
+      const pool = this.foeArmed[e.team];
       for (let k = 0; k < Math.min(16, pool.length); k++) fn(pool[(this.rng() * pool.length) | 0]);
     }
     e.targets = best;
@@ -337,7 +384,7 @@ export class Battle {
    */
   pickWard(e) {
     let best = null, bestScore = Infinity;
-    for (const o of this.armed[e.team]) {
+    for (let t = 0; t < this.nT; t++) if (this.fr[(e.team << 4) | t]) for (const o of this.armed[t]) {
       if (o === e || o.mass <= e.mass * 3 || o.escortCount >= Math.max(2, Math.round(o.radius / 6))) continue;
       const d2 = (o.x - e.x) ** 2 + (o.y - e.y) ** 2;
       if (d2 > 500 * 500) continue;
@@ -351,10 +398,9 @@ export class Battle {
   move(e) {
     const tg = e.targets[0];
     let tx, ty;
-    const other = 1 - e.team;
-    const disarmed = !e.weapons.length;
+    const disarmed = !e.weapons.length || this.routedTeams[e.team] === 1; // routed sides run too
     if (tg && !disarmed) { tx = tg.x; ty = tg.y; }
-    else if (this.armed[other].length) { tx = this.teamCx[other]; ty = this.teamCy[other]; }
+    else if (this.foeArmed[e.team].length) { tx = this.foeCx[e.team]; ty = this.foeCy[e.team]; }
     else { tx = e.x + e.c; ty = e.y + e.s; }
     const dx = tx - e.x, dy = ty - e.y;
     // Stance distances are roughly hull to hull: a giant's guns and its target's hull are a long
@@ -369,7 +415,7 @@ export class Battle {
     if (ward && tg && (tg.x - ward.x) ** 2 + (tg.y - ward.y) ** 2 < 250 * 250) ward = null;
     if (ward && !disarmed) {
       // Hold station between the ward and the enemy, engaging whatever comes in range.
-      const ex = tg ? tg.x - ward.x : this.teamCx[other] - ward.x, ey = tg ? tg.y - ward.y : this.teamCy[other] - ward.y;
+      const ex = tg ? tg.x - ward.x : this.foeCx[e.team] - ward.x, ey = tg ? tg.y - ward.y : this.foeCy[e.team] - ward.y;
       // Each escort has its own slot on an arc out in front of the ward, toward the enemy.
       const cap = Math.max(2, Math.round(ward.radius / 6));
       const ang = Math.atan2(ey, ex) + ((e.slot % cap) / (cap - 1) - 0.5) * 2.2;
@@ -604,7 +650,7 @@ export class Battle {
       e._threatTick = this.now;
       const list = e._threats, R = e.radius + r;
       list.length = 0;
-      if (this.mobjs.length) this.mgrid.queryBox(e.x - R, e.y - R, e.x + R, e.y + R, (o) => { if (P.team[o.i] !== e.team) list.push(o.i); });
+      if (this.mobjs.length) this.mgrid.queryBox(e.x - R, e.y - R, e.x + R, e.y + R, (o) => { if (!this.fr[(e.team << 4) | P.team[o.i]]) list.push(o.i); });
     }
     for (const i of e._threats) {
       if (P.hp[i] <= 0) continue;
@@ -765,7 +811,7 @@ export class Battle {
           const e = ents[g.items[s + k]];
           if (e._q === q) continue;
           e._q = q;
-          if (e.dead || e.retired || e.id === ownerId || (e.team === skipTeam && e.kind === SHIP)) continue;
+          if (e.dead || e.retired || e.id === ownerId || (skipTeam >= 0 && e.kind === SHIP && this.fr[(skipTeam << 4) | e.team])) continue;
           // Bounding circle vs segment.
           let t = ((e.x - x0) * sdx + (e.y - y0) * sdy) / len2;
           t = t < 0 ? 0 : t > 1 ? 1 : t;
@@ -822,7 +868,7 @@ export class Battle {
 
   /** Shots always stop on whatever they hit; with friendly fire off, allied ships just shrug it off. */
   canDamage(target, team) {
-    return this.friendlyFire || target.kind !== SHIP || target.team !== team;
+    return this.friendlyFire || target.kind !== SHIP || !this.fr[(team << 4) | target.team];
   }
 
   damageCell(e, i, dmg) {
@@ -935,7 +981,7 @@ export class Battle {
           // Through the middle half of the hull: a graze doesn't cut anything in half.
           const rr = o.radius * 0.5;
           if ((x0 + sdx * t - o.x) ** 2 + (y0 + sdy * t - o.y) ** 2 > rr * rr) continue;
-          if (o.team === e.team) { if (t < friendT) friendT = t; } else ts.push(t);
+          if (this.fr[(e.team << 4) | o.team]) { if (t < friendT) friendT = t; } else ts.push(t);
         }
       }
     let first = 2;
@@ -952,7 +998,7 @@ export class Battle {
   fireLance(e, x0, y0, ax, ay, W) {
     const dx = ax - x0, dy = ay - y0, d = Math.hypot(dx, dy) || 1;
     const x1 = x0 + (dx / d) * W.range, y1 = y0 + (dy / d) * W.range;
-    if (this.sweep(x0, y0, x1, y1, e.id) && this.hitE.kind === SHIP && this.hitE.team === e.team) return false;
+    if (this.sweep(x0, y0, x1, y1, e.id) && this.hitE.kind === SHIP && this.fr[(e.team << 4) | this.hitE.team]) return false;
     const hits = [];
     const hw = ((W.width || 1) - 1) >> 1, g = this.grid, q = ++g.qid, n = g.n, pad = hw + 1;
     const gx0 = g.cx(Math.min(x0, x1) - pad), gx1 = g.cx(Math.max(x0, x1) + pad), gy0 = g.cx(Math.min(y0, y1) - pad), gy1 = g.cx(Math.max(y0, y1) + pad);
@@ -1185,7 +1231,7 @@ export class Battle {
       ticks: this.tick, shipCount: S, chunkCount: this.byId.length - S,
       shotSpeed: [WEAPON[BT.CANNON].speed, WEAPON[BT.MISSILE].speed],
       designs: this.designs.map((d) => ({ name: d.name, cls: d.cls, stance: d.stance, w: d.w, h: d.h, hub: d.hub, cells: Array.from(d.cells) })),
-      survivors: [...this.teamAlive],
+      survivors: [...this.teamAlive], teams: this.nT,
     };
     return { meta, cols };
   }

@@ -59,14 +59,25 @@ async function resolve() {
 }
 
 /** Play a packed replay (from the sim above, or handed over by the ship designer). */
-let sideCol = TEAM.map((T) => T.accent), pendingSides = null;
+let sideCol = TEAM.map((T) => T.accent), pendingSides = null, pendingNames = null;
+
+/** One header block per side (two by default; free-for-all battles have more). */
+function buildSides(n, names) {
+  const box = document.querySelector('.sides');
+  if (n === 2 && !names) return;
+  const old = [...box.querySelectorAll('.side small')].map((el) => el.textContent);
+  box.classList.toggle('many', n > 3);
+  box.innerHTML = Array.from({ length: n }, (_, k) => `<div class="side"><small></small><strong id="alive${k}">0</strong><em>ships</em><div class="meter"><i id="meter${k}"></i></div></div>`).join('');
+  box.querySelectorAll('.side small').forEach((el, k) => { el.textContent = names?.[k] ?? old[k] ?? `Side ${k + 1}`; });
+}
 function show(bytes) {
   info.raw = bytes.length;
   info.gz = 0;
   gzipSize(bytes).then((n) => { info.gz = n; });
   model = new ReplayModel(bytes); // load from the packed bytes, exactly like a downloaded replay
+  buildSides(model.teams, pendingNames);
   sideCol = applyColors(model, pendingSides);
-  for (const k of [0, 1]) { $(`meter${k}`).style.background = sideCol[k]; $(`alive${k}`).style.color = sideCol[k]; }
+  for (let k = 0; k < model.teams; k++) { $(`meter${k}`).style.background = sideCol[k]; $(`alive${k}`).style.color = sideCol[k]; }
   $('scrub').max = model.ticks;
   drawStrength();
   // Open close enough to see individual blocks, centred on the line of contact.
@@ -118,8 +129,8 @@ const mb = (n) => (n ? `${(n / 1e6).toFixed(2)} MB` : '…');
 
 function updateHud() {
   const sec = Math.min(model.strength[0].length - 1, Math.floor(t * DT));
-  for (const team of [0, 1]) {
-    const alive = model.strength[team][sec], start = model.startCount[team];
+  for (let team = 0; team < model.teams; team++) {
+    const alive = model.strength[team][sec], start = model.startCount[team] || 1;
     $(`alive${team}`).textContent = `${alive.toLocaleString()}`;
     $(`meter${team}`).style.width = `${(alive / start) * 100}%`;
   }
@@ -138,9 +149,9 @@ function drawStrength() {
   c.width = c.clientWidth * dpr; c.height = c.clientHeight * dpr;
   const g = c.getContext('2d'), W = c.width, H = c.height;
   g.clearRect(0, 0, W, H);
-  const max = Math.max(model.startCount[0], model.startCount[1]);
+  const max = Math.max(1, ...model.startCount);
   const n = model.strength[0].length;
-  [0, 1].forEach((team) => {
+  model.startCount.forEach((_, team) => {
     const col = sideCol[team];
     g.beginPath();
     for (let k = 0; k < n; k++) {
@@ -250,6 +261,7 @@ if (host) {
     if (e.data.title) document.querySelector('.brand b').textContent = e.data.title;
     info.computeMs = e.data.computeMs || 0;
     pendingSides = e.data.sideColors || null;
+    pendingNames = Array.isArray(e.data.teams) && e.data.teams.length ? e.data.teams : null;
     show(new Uint8Array(e.data.bytes));
   });
   host.postMessage({ type: 'lsb-viewer-ready' }, '*');

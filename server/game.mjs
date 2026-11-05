@@ -157,6 +157,8 @@ export class Game {
     const meta = {
       sides: [attackers.map((a) => playerName(this.world, a)).join(' + '), B.defender === null ? `${P.name} militia` : playerName(this.world, B.defender)],
       title: `${B.passing ? 'Ambush' : 'Battle'} of ${P.name}`,
+      // one name per battle side (a free-for-all has a side per player)
+      teams: B.owners ? B.owners.map((o) => (o === null ? 'Militia' : playerName(this.world, o))) : null,
       computeMs: rep.computeMs,
     };
     const id = entry.battle.id;

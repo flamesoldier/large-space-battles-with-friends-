@@ -122,17 +122,18 @@ const DEFAULT_SIDES = TEAM.map((T) => T.accent), DEFAULT_ENGINE = ['#58b8ff', '#
  * usual azure/ember. Effects (beams, missiles) take their side's colour. Returns the two side colours.
  */
 export function applyColors(model, sideColors) {
-  const sides = [0, 1].map((t) => sideColors?.[t] || null);
+  const nT = model.teams || 2;
+  const sides = Array.from({ length: nT }, (_, t) => sideColors?.[t] || null);
   const byShip = new Array(model.meta.shipCount).fill(null);
   for (const [start, n, col] of model.meta.colors || []) for (let k = start; k < start + n && k < byShip.length; k++) byShip[k] = col;
   // A side with no colour given takes the colour of its first ship (the leader's group comes first).
-  for (let t = 0; t < 2; t++) if (!sides[t]) for (let k = 0; k < byShip.length; k++) if (byShip[k] && model.ents[k].team === t) { sides[t] = byShip[k]; break; }
+  for (let t = 0; t < nT; t++) if (!sides[t]) for (let k = 0; k < byShip.length; k++) if (byShip[k] && model.ents[k].team === t) { sides[t] = byShip[k]; break; }
   for (let k = 0; k < model.ents.length; k++) {
     const e = model.ents[k];
     e.look = e.parent ? e.parent.look : lookFor(byShip[k] || sides[e.team] || '') || null;
   }
-  const out = [0, 1].map((t) => (lookFor(sides[t] || '') ? sides[t] : DEFAULT_SIDES[t]));
-  for (let t = 0; t < 2; t++) {
+  const out = sides.map((c, t) => (lookFor(c || '') ? c : DEFAULT_SIDES[t] || '#9aa4b4'));
+  for (let t = 0; t < nT; t++) {
     const custom = out[t] !== DEFAULT_SIDES[t];
     C.beam[t] = rgba(custom ? out[t] : TEAM[t].beam, 255); C.mGlow[t] = C.beam[t];
     C.mTip[t] = rgba(out[t]); C.lod[t] = rgba(out[t]);

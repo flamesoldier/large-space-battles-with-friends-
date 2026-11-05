@@ -13,30 +13,54 @@
 import { mulberry32 } from '../shared/rng.js';
 
 /**
- * groups: [{ side: 0 | 1, owner, design (world design id), n }]
+ * groups: [{ side: 0 | 1, team?, owner, design (world design id), n }]
  * designOf(id) → decoded design.
- * Returns { designs, ships, groups (with start), seed }.
+ * opts (free-for-all, optional): { teams, campOf: camp index per team, camps } where camp 0 holds
+ * the world and the others are attackers coming in from round it (allies share a camp). Without
+ * opts, team = side and side 0 attacks side 1, as before.
+ * Returns { designs, ships, groups (with start), seed, teams }.
  */
-export function makeBattleScenario(groups, designOf, seed) {
+export function makeBattleScenario(groups, designOf, seed, opts = null) {
   const r = mulberry32(seed * 7703 + 11);
   const designs = [], index = new Map();
   const out = [], ships = [];
   for (const g of groups) {
     if (g.n <= 0) continue;
     if (!index.has(g.design)) { index.set(g.design, designs.length); designs.push(designOf(g.design)); }
-    out.push({ ...g, start: ships.length });
-    for (let k = 0; k < g.n; k++) ships.push({ design: index.get(g.design), team: g.side });
+    const team = g.team ?? g.side;
+    out.push({ ...g, team, start: ships.length });
+    for (let k = 0; k < g.n; k++) ships.push({ design: index.get(g.design), team });
   }
-  // Positions: each side spread over a band that grows with its size (as in the designer's test).
-  for (const team of [0, 1]) {
-    const list = ships.filter((s) => s.team === team);
-    const dir = team === 0 ? 1 : -1, spanY = Math.max(160, Math.sqrt(list.length) * 45);
+  // Camps: where each team starts. Two sides: attackers (camp 1) on the left, defenders (camp 0)
+  // on the right. More: the attacking camps spread evenly round the world, at the same distance.
+  const nCamps = opts ? Math.max(1, opts.camps) : 2;
+  const campOf = (team) => (opts ? opts.campOf[team] : team === 0 ? 1 : 0);
+  const order = [];
+  for (let c = 1; c < nCamps; c++) order.push(c);
+  order.push(0); // same draw order as before for two sides: attackers first
+  for (const camp of order) {
+    const list = ships.filter((s) => campOf(s.team) === camp);
+    if (!list.length) continue;
+    // Camp direction from the world: camp 0 at angle 0 (right), the others round the circle.
+    const phi = nCamps <= 1 ? 0 : (2 * Math.PI * camp) / nCamps;
+    const c = Math.cos(phi), sn = Math.sin(phi);
+    const spanY = Math.max(160, Math.sqrt(list.length) * 45);
     for (const s of list) {
       const d = designs[s.design], depth = Math.hypot(d.w, d.h) * 0.6 + r() * (30 + Math.sqrt(list.length) * 10);
-      s.x = -dir * (220 + depth); s.y = (r() - 0.5) * spanY; s.a = team === 0 ? 0 : Math.PI;
+      const along = 220 + depth, across = (r() - 0.5) * spanY;
+      const k = c < 0 ? -1 : 1; // spread sideways (same layout as before for two sides)
+      s.x = c * along - k * sn * across; s.y = sn * along + k * c * across;
+      s.a = (phi + Math.PI) % (2 * Math.PI); // facing the world
     }
   }
-  return { designs, ships, groups: out, seed };
+  return { designs, ships, groups: out, seed, teams: opts ? opts.teams : 2 };
+}
+
+/** Battle options for a scenario: how many sides and which pairs fight (scen.hostile: [[a, b], ...]). */
+export function battleOptions(scen) {
+  if (!scen.hostile) return { teams: scen.teams || 2 };
+  const set = new Set(scen.hostile.map(([a, b]) => `${a}|${b}`));
+  return { teams: scen.teams, hostile: (a, b) => set.has(a < b ? `${a}|${b}` : `${b}|${a}`) };
 }
 
 /** For the replay: [start, n, colour] per group, so the viewer draws each ship in its owner's colour. */
@@ -46,22 +70,23 @@ export function shipColors(scen) {
 
 /**
  * Read a finished Battle. Returns { attackerWon, routed, groups: [{ ...group, survived }], seconds }.
- * The attacker wins if it still has armed ships and the defenders either have none or were routed
- * (under 20% of their ships left and outgunned 2:1: the battle stops there, so the few defenders
- * still armed have lost and flee). A stalemate or the time limit leaves the world with its holder.
+ * routed[team] is 1 for each side that broke and ran (its survivors flee: it doesn't hold the
+ * field). attackerWon is the two-sided answer (side 0 still holds, side 1 doesn't); the world
+ * rules work out free-for-all winners from groups and routed.
  */
 export function readBattle(battle, scen) {
-  const alive = [0, 0];
+  const nT = battle.nT || 2, alive = new Array(nT).fill(0);
   const groups = scen.groups.map((g) => {
     let survived = 0;
     for (let k = g.start; k < g.start + g.n; k++) {
       const e = battle.byId[k];
       if (!e.dead && e.weapons.length) survived++;
     }
-    alive[g.side] += survived;
+    alive[g.team ?? g.side] += survived;
     return { ...g, survived };
   });
-  const routed = battle.routed ?? -1;
-  const attackerWon = alive[0] > 0 && (alive[1] === 0 || routed === 1);
+  const routed = Array.from(battle.routedTeams || [], Number);
+  const holds = (side) => groups.some((g) => g.side === side && g.survived > 0 && !routed[g.team ?? g.side]);
+  const attackerWon = holds(0) && !holds(1);
   return { attackerWon, routed, groups, seconds: Math.round(battle.tick * 0.1) };
 }

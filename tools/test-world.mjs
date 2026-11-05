@@ -7,9 +7,11 @@ import { planRoute, fleetPosition, laneMap } from '../src/world/routes.js';
 import {
   createWorld, advanceTo, runWorld, buildShipyard, sellShipyard, quoteShipyard, sendFleet, previewFleet,
   shipsAt, incomeOf, allied, YARD_MS, HOLD_MS, designOf, upgradeWorld,
-  proposeAlliance, acceptAlliance, breakAlliance, proposalsFor, dueEvent,
+  proposeAlliance, acceptAlliance, breakAlliance, proposalsFor, dueEvent, siegeAt,
 } from '../src/world/world.js';
-import { readBattle, makeBattleScenario } from '../src/world/battleSetup.js';
+import { writeFileSync } from 'node:fs';
+import { packReplay } from '../src/shared/replayFormat.js';
+import { readBattle, makeBattleScenario, battleOptions, shipColors } from '../src/world/battleSetup.js';
 import { Battle } from '../src/sim/battle.js';
 import { makeDesign } from '../src/shared/designs.js';
 import { BT } from '../src/shared/blocks.js';
@@ -72,8 +74,10 @@ for (let n = 2; n <= MAX_PLAYERS; n++)
 }
 
 // ---- economy
+let lastBattle = null;
 const resolve = (scen) => {
-  const b = new Battle({ designs: scen.designs, ships: scen.ships, seed: scen.seed, maxTime: scen.maxTime });
+  const b = new Battle({ designs: scen.designs, ships: scen.ships, seed: scen.seed, maxTime: scen.maxTime, ...battleOptions(scen) });
+  lastBattle = { b, scen };
   b.run();
   return readBattle(b, scen);
 };
@@ -320,12 +324,14 @@ const resolve = (scen) => {
   ok(shipsAt(T, B)[ids[B]] === 5 + 3, 'B, allied with D, lands as a guest at D\'s world instead of attacking');
   runWorld(w, sg.startsAt + 1, resolve);
   const bt = w.log.filter((e) => e.battle && e.planet === T.id).at(-1);
-  ok(!bt.battle.defenders.includes(B) && !bt.battle.attackers.includes(B), 'B (allied with both sides) took no part in the battle');
-  ok(bt.battle.ships[1] === 6, `only D's 6 ships defended (${bt.battle.ships[1]})`);
+  // Free-for-all (Nov 2026): B is allied with A and D but at war with C, so B fights C (only C),
+  // on the owner's side of the summary.
+  ok(bt.battle.defenders.includes(B) && !bt.battle.attackers.includes(B), 'B (at war with C) fought, on D\'s side');
+  ok(bt.battle.ships[1] === 6 + 8, `D's 6 and B's 8 ships were on the world's side (${bt.battle.ships[1]})`);
+  ok(bt.battle.players.length === 4, 'four sides: A, C, B and D');
   if (bt.battle.won) {
-    ok(T.owner === A, `the world goes to A, who started the siege, though C did the fighting (owner ${T.owner})`);
-    ok(shipsAt(T, B)[ids[B]] === 8, 'B\'s 8 ships are still there, untouched (A is B\'s ally, so they stay as guests)');
-    ok((shipsAt(T, C)[ids[C]] || 0) > 0, 'C\'s survivors stay as A\'s guests');
+    const aLived = bt.battle.players.find((q) => q.id === A).survived > 0;
+    ok(T.owner === (aLived ? A : C), `the world goes to A if A's ship survived, else C (owner ${T.owner})`);
   }
   console.log(`  ${bt.text}`);
 }
@@ -348,14 +354,15 @@ const resolve = (scen) => {
   ok(fa.ok && fc.ok, 'A attacks with C');
   runWorld(w, fc.fleet.arrive + HOLD_MS + 1, resolve);
   const bt = w.log.filter((e) => e.battle && e.planet === T.id).at(-1);
-  ok(bt.battle.ships[1] === 3 && !bt.battle.defenders.includes(B), 'B\'s guests sat it out (allied with attacker C)');
+  // Free-for-all: B is at war with A, so B's guests fight A (and only A), on D's side.
+  ok(bt.battle.ships[1] === 3 + 4 && bt.battle.defenders.includes(B), 'B\'s guests fought A, on D\'s side');
   if (bt.battle.won) {
-    ok(T.owner === A, 'A takes the world');
-    ok(!shipsAt(T, B)[ids[B]], 'B\'s ships leave the world (B isn\'t allied with the new owner)');
-    const home = w.fleets.find((f) => f.owner === B);
-    ok(home && countShipsT(home.ships) === 4, 'all 4 of B\'s ships fly home unharmed');
-    console.log(`  neutral guest: ${bt.text} B's 4 ships fly home.`);
+    const aLived = bt.battle.players.find((q) => q.id === A).survived > 0;
+    ok(T.owner === (aLived ? A : C), 'A takes the world if A survived, else C');
+    if (T.owner === A) ok(!shipsAt(T, B)[ids[B]], 'B\'s survivors leave (B is at war with the new owner)');
+    else ok(!w.fleets.some((f) => f.owner === B && !f.retreat) , 'B (allied with C) is not driven off by C');
   }
+  console.log(`  neutral guest: ${bt.text}`);
 }
 
 // ---- diplomacy: alliances form and break during the game
@@ -417,10 +424,82 @@ const resolve = (scen) => {
   const r = readBattle(b, scen);
   console.log(`  300 vs 100: ended by ${b.endReason} after ${r.seconds} s, survivors ${r.groups.map((g) => g.survived).join(' vs ')}`);
   ok(r.attackerWon, 'the big fleet wins against 100');
-  if (b.endReason === 'rout') ok(r.routed === 1 && r.groups[1].survived > 0, 'rout: defenders broke with ships still armed');
+  if (b.endReason === 'rout') ok(r.routed[1] === 1 && r.groups[1].survived > 0, 'rout: defenders broke with ships still armed');
   const b2 = new Battle({ designs: scen.designs, ships: scen.ships.map((s) => ({ ...s, team: 1 - s.team })), seed: scen.seed });
   b2.run();
-  ok(!readBattle(b2, { ...scen, groups: scen.groups.map((g) => ({ ...g, side: 1 - g.side })) }).attackerWon, 'a routed attacker loses');
+  ok(!readBattle(b2, { ...scen, groups: scen.groups.map((g) => ({ ...g, side: 1 - g.side, team: 1 - g.team })) }).attackerWon, 'a routed attacker loses');
+}
+
+// ---- free-for-all (owner, Nov 2026): ten players with a messy mixture of alliances at one world
+{
+  const names = ['Ann', 'Bo', 'Cy', 'Di', 'Ed', 'Flo', 'Gus', 'Hal', 'Ivy', 'Jo'];
+  const w = createWorld({ players: names.map((name) => ({ name })), seed: 77 });
+  const ids = w.players.map((p) => p.id), [A, , , , , , , , , J] = ids;
+  // Messy alliances (not transitive), plus Jo, who is allied with everyone and should sit it out.
+  const pairs = [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [0, 8], [8, 4], [2, 6]];
+  for (const [x, y] of pairs) { proposeAlliance(w, x, y); acceptAlliance(w, y, x); }
+  for (const x of ids) if (x !== J) { proposeAlliance(w, x, J); acceptAlliance(w, J, x); }
+  ok(allied(w, 0, 1) && allied(w, 1, 2) && !allied(w, 0, 2), 'messy: Ann+Bo, Bo+Cy, but Ann and Cy at war');
+  const des = ids.map((k) => { w.players[k].credits = 1e8; return buildShipyard(w, k, w.players[k].home, { ...makeDesign('destroyer', 10), name: `Ship ${names[k]}` }).yard.design; });
+  for (const P of w.planets) for (const y of P.yards) y.next = Infinity;
+  // The target: Ann's home, held by Ann; everyone else comes from one staging world at the same time.
+  const T = w.planets[w.players[A].home];
+  T.garrison = [{ owner: A, design: des[A], n: 12 }];
+  const stage = w.planets.filter((p) => p.home < 0).sort((p, q) => Math.hypot(p.x - T.x, p.y - T.y) - Math.hypot(q.x - T.x, q.y - T.y))[0];
+  stage.owner = J; stage.garrison = ids.filter((k) => k !== A).map((k) => ({ owner: k, design: des[k], n: 10 }));
+  const sent = ids.filter((k) => k !== A).map((k) => sendFleet(w, k, stage.id, T.id, { [des[k]]: 10 }, { lanes: false }));
+  ok(sent.every((r) => r.ok), 'nine fleets launched at Ann\'s world');
+  // Players allied with Ann land in her garrison; everyone else joins ONE siege.
+  runWorld(w, Math.max(...sent.map((r) => r.fleet.arrive)), resolve);
+  const sieges = siegeAt(w, T.id);
+  ok(sieges.length === 1, `one siege at the world (${sieges.length})`);
+  const sg = sieges[0];
+  const garrisoned = ids.filter((k) => k !== A && allied(w, k, A));
+  ok(garrisoned.every((k) => shipsAt(T, k)[des[k]] === 10), 'Ann\'s allies landed in her garrison');
+  ok(sg.fleets.length === ids.filter((k) => !allied(w, k, A)).length, 'every fleet at war with Ann is in the siege');
+  runWorld(w, sg.startsAt + 1, resolve);
+  const bt = w.log.filter((e) => e.battle && e.planet === T.id).at(-1)?.battle;
+  ok(bt, 'one battle was fought');
+  const fought = bt.players.map((q) => q.id);
+  ok(!fought.includes(J), 'Jo (allied with everyone) sat it out');
+  ok(fought.length === 9, `nine sides fought (${fought.length})`);
+  // Allies never hurt each other: check every hit in the battle was between enemies.
+  const { b: BB, scen } = lastBattle;
+  ok(BB.nT === 9, 'nine sides in the engine');
+  const owners = scen.owners;
+  for (let a = 0; a < owners.length; a++) for (let c = 0; c < owners.length; c++)
+    if (a !== c) ok(!BB.fr[(a << 4) | c] === (owners[a] !== owners[c] && !allied(w, owners[a], owners[c])), 'engine friends = allies');
+  // Who holds the world follows the owner's rule.
+  const holds = (q) => q.survived > 0 && !q.routed;
+  const defends = (o) => o === A || allied(w, o, A);
+  const kept = bt.players.some((q) => holds(q) && defends(q.id));
+  let expect = A;
+  if (!kept) {
+    const cands = bt.players.filter((q) => holds(q) && !defends(q.id));
+    expect = cands.some((q) => q.id === sg.leader) ? sg.leader : cands.sort((p, q) => q.survived - p.survived || p.id - q.id)[0]?.id ?? A;
+  }
+  ok(T.owner === expect, `the world went by the rule (owner ${names[T.owner]}, expected ${names[expect]})`);
+  ok(!w.fleets.some((f) => f.wait === sg.id), 'nobody is left waiting in the finished siege');
+  ok(!w.sieges.some((x) => x.planet === T.id) || w.sieges.find((x) => x.planet === T.id).id !== sg.id, 'the siege is over');
+  // Jo's ships: untouched, either at the world (allied with the holder) or on their way.
+  const joAt = shipsAt(T, J)[des[J]] || 0, joFly = w.fleets.filter((f) => f.owner === J).reduce((a, f) => a + countShipsT(f.ships), 0);
+  ok(joAt + joFly === 10, `all 10 of Jo's ships are safe (${joAt} at the world, ${joFly} flying)`);
+  console.log(`  free-for-all: ${w.log.filter((e) => e.battle && e.planet === T.id).at(-1).text}`);
+  console.log(`  sides: ${bt.players.map((q) => `${names[q.id]} ${q.survived}/${q.ships}${q.routed ? ' (ran)' : ''}`).join(', ')}`);
+  if (process.env.SAVE_REPLAY) {
+    const rep = BB.toReplay(); rep.meta.colors = shipColors(scen);
+    writeFileSync(process.env.SAVE_REPLAY, packReplay(rep.meta, rep.cols));
+    writeFileSync(process.env.SAVE_REPLAY + '.json', JSON.stringify({ teams: owners.map((o) => names[o]) }));
+  }
+}
+
+// ---- a fleet only passing a siege world stops only if someone there is its enemy; old saves merge sieges
+{
+  const w = createWorld({ players: [{ name: 'A' }, { name: 'B' }, { name: 'C' }], seed: 9 });
+  const fake = { id: 900, planet: 3, leader: 0, fleets: [], startsAt: 5000, against: null };
+  w.sieges.push({ ...fake }, { ...fake, id: 901, leader: 1, startsAt: 4000 });
+  upgradeWorld(w);
+  ok(w.sieges.filter((x) => x.planet === 3).length === 1 && w.sieges[0].id === 901, 'old saves: two sieges at one world merge into the earliest');
 }
 
 console.log(`world: ${checks} checks passed`);

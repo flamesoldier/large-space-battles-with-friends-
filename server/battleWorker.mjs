@@ -4,20 +4,29 @@
 
 import { parentPort } from 'node:worker_threads';
 import { Battle, DT } from '../src/sim/battle.js';
-import { readBattle, shipColors } from '../src/world/battleSetup.js';
+import { readBattle, shipColors, battleOptions } from '../src/world/battleSetup.js';
 import { packReplay } from '../src/shared/replayFormat.js';
+
+// Ships left on each side of the summary (0 attackers, 1 the world's side), for the progress bar.
+function sideAlive(b, scen) {
+  const out = [0, 0];
+  const sideOf = [];
+  for (const g of scen.groups) sideOf[g.team ?? g.side] = g.side;
+  b.teamAlive.forEach((n, t) => { out[sideOf[t] ?? 0] += n; });
+  return out;
+}
 
 parentPort.on('message', ({ scenario }) => {
   try {
     const t0 = performance.now();
-    const b = new Battle({ designs: scenario.designs, ships: scenario.ships, seed: scenario.seed, maxTime: scenario.maxTime });
+    const b = new Battle({ designs: scenario.designs, ships: scenario.ships, seed: scenario.seed, maxTime: scenario.maxTime, ...battleOptions(scenario) });
     let lastNote = 0;
     while (!b.done) {
       b.step();
       const now = performance.now();
       if (now - lastNote > 500) {
         lastNote = now;
-        parentPort.postMessage({ type: 'progress', seconds: Math.round(b.tick * DT), frac: Math.min(1, b.tick / b.maxTicks), alive: [b.teamAlive[0], b.teamAlive[1]] });
+        parentPort.postMessage({ type: 'progress', seconds: Math.round(b.tick * DT), frac: Math.min(1, b.tick / b.maxTicks), alive: sideAlive(b, scenario) });
       }
     }
     const result = readBattle(b, scenario);

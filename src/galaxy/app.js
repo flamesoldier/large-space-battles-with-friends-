@@ -18,13 +18,13 @@ import { Battle, DT } from '../sim/battle.js';
 import { packReplay } from '../shared/replayFormat.js';
 import { mulberry32 } from '../shared/rng.js';
 import {
-  createWorld, advanceTo, dueEvent, planEvent, applyEvent, siegeAt, defendersAt, buildShipyard, sellShipyard, quoteShipyard,
+  createWorld, advanceTo, dueEvent, planEvent, applyEvent, siegeAt, siegeParties, hostile, defendersAt, buildShipyard, sellShipyard, quoteShipyard,
   sendFleet, previewFleet, shipsAt, incomeOf, allied, playerName, designOf, fleetValue, countShips, fmtHours,
   sellValue, yardListValue, YARD_MS, HOLD_MS, upgradeWorld,
   proposeAlliance, acceptAlliance, declineAlliance, breakAlliance, proposalsFor, hasProposed,
   isOpenSeat, freeColors,
 } from '../world/world.js';
-import { readBattle, shipColors } from '../world/battleSetup.js';
+import { readBattle, shipColors, battleOptions } from '../world/battleSetup.js';
 import { fleetPosition } from '../world/routes.js';
 import { PlanetSprites, planetLook } from './planetArt.js';
 import { ReplayStore } from './replayStore.js';
@@ -476,7 +476,7 @@ function panelSignature() {
   const s = [ui.me, sel?.kind, sel?.id, move ? `${move.from}>${move.to}:${move.picking}:${move.lanes}:${move.avoid}:${JSON.stringify(move.ships)}` : '', busy];
   if (sel?.kind === 'planet') {
     const P = world.planets[sel.id];
-    s.push(P.owner, JSON.stringify(P.garrison), P.yards.map((y) => y.id).join(), Math.floor(me().credits / 500), JSON.stringify(siegeAt(world, P.id).map((x) => x.fleets)));
+    s.push(P.owner, JSON.stringify(P.garrison), P.yards.map((y) => y.id).join(), Math.floor(me().credits / 500), JSON.stringify(siegeAt(world, P.id).map((x) => x.fleets)), JSON.stringify(world.relations));
   } else if (sel?.kind === 'fleet') s.push(world.fleets.length, world.fleets.find((f) => f.id === sel.id)?.wait, world.fleets.find((f) => f.id === sel.id)?.leg);
   else s.push(world.log.length, Object.keys(world.relations).join(), world.planets.map((p) => p.owner).join(), world.fleets.length, world.planets.reduce((a, p) => a + shipTotal(p), 0));
   return s.join('|');
@@ -512,18 +512,17 @@ function planetPanel(P) {
       <dt>Shipyards</dt><dd>${P.yards.length}${P.yards.length ? ` (${fmt(yardListValue(P))} cr)` : ''}</dd>
     </dl>`;
 
-  // Sieges: who is attacking, and when the battle starts.
+  // Siege: everyone at the world, and whether they'll fight when the battle starts (free-for-all:
+  // each player fights the players they're at war with; anyone with no enemy here sits it out).
   for (const sg of siegeAt(world, P.id)) {
-    const fl = sg.fleets.map((id) => world.fleets.find((f) => f.id === id)).filter(Boolean);
-    const byOwner = new Map();
-    for (const f of fl) byOwner.set(f.owner, (byOwner.get(f.owner) || 0) + countShips(f.ships));
-    const defs = defendersAt(world, P, [...byOwner.keys()].filter((o) => !allied(world, o, P.owner))).reduce((a, d) => a + d.n, 0);
-    const idle = P.garrison.filter((x) => x.n > 0 && x.owner !== P.owner && !defendersAt(world, P, [...byOwner.keys()]).includes(x)).reduce((a, d) => a + d.n, 0);
-    const meAtt = allied(world, sg.leader, ui.me), meDef = allied(world, P.owner, ui.me);
-    html += `<div class="route siege"><b>Battle in <span data-arrive="${sg.startsAt}"></span></b><br>
-      Attacking: ${[...byOwner].map(([o, n]) => `${who(o)} ${fmt(n)} ships`).join(', ')}<br>
-      Defending: ${fmt(defs)} ships${P.owner === null ? ' (militia)' : ''}${idle ? ` · ${fmt(idle)} sitting out (allied with both sides)` : ''}<br>
-      <span class="hint">${meAtt ? 'Send more ships here before then and they join the attack.' : meDef ? 'Send ships here before then and they join the defence. Shipyards here keep building too.' : 'Both sides can still send reinforcements.'}</span></div>`;
+    const parties = siegeParties(world, sg);
+    const role = (q) => (!q.enemy ? 'no enemies here: sits out unless one arrives'
+      : (P.owner === null ? q.owner === null : q.owner === P.owner || allied(world, q.owner, P.owner)) ? 'defending' : 'attacking');
+    const rows = parties.map((q) => `${q.owner === null ? 'Militia' : who(q.owner)} ${fmt(q.ships)} ships <span class="hint">· ${role(q)}</span>`).join('<br>');
+    const mine = parties.find((q) => q.owner === ui.me);
+    const foes = mine ? parties.filter((q) => q.owner !== ui.me && hostile(world, q.owner, ui.me)).map((q) => (q.owner === null ? 'militia' : esc(playerName(world, q.owner)))) : [];
+    html += `<div class="route siege"><b>Battle in <span data-arrive="${sg.startsAt}"></span></b><br>${rows}<br>
+      <span class="hint">${mine ? (foes.length ? `You'll fight ${foes.join(', ')}. ` : 'Nobody here is your enemy right now. ') : ''}Everyone here fights everyone they're at war with, in one battle. Ships sent here before then join in${allied(world, P.owner, ui.me) ? ', and shipyards here keep building' : ''}.</span></div>`;
   }
 
   // Ships, and moving them.
@@ -852,7 +851,7 @@ async function watch(id) {
     // Side colours for replays recorded before ships carried their owner's colour.
     const B = world.log.find((x) => x.battle?.id === id)?.battle;
     const sideColors = B ? [colorOf(B.attacker), colorOf(B.defender)] : null;
-    frame.contentWindow.postMessage({ type: 'lsb-replay', bytes: copy.buffer, computeMs: rep.computeMs, sides: rep.sides, title: rep.title, sideColors }, '*', [copy.buffer]);
+    frame.contentWindow.postMessage({ type: 'lsb-replay', bytes: copy.buffer, computeMs: rep.computeMs, sides: rep.sides, teams: rep.teams, title: rep.title, sideColors }, '*', [copy.buffer]);
   };
   addEventListener('message', send);
   // Dialogs sit above everything, so step out of the combat log while the replay plays.
@@ -953,6 +952,16 @@ function involves(e, pid) {
 function verdict(e, pid) {
   if (e.battle) {
     const B = e.battle, captured = B.captured ?? (B.won && !B.passing);
+    if (B.players) {
+      // Free-for-all battles (Nov 2026): judged by who ended up holding the world.
+      const mine = (x) => allied(world, x, pid), took = B.won ? B.winner : null;
+      if (took !== null && mine(took)) return ['good', 'World taken'];
+      if (took !== null && B.defender === pid) return ['bad', 'World lost'];
+      if (took !== null && mine(B.defender)) return ['bad', 'Ally lost a world'];
+      if (took === null && mine(B.defender) && B.players.some((q) => q.side === 1 && mine(q.id))) return ['good', B.passing ? 'Blocked a fleet' : 'Defended'];
+      if (B.players.some((q) => mine(q.id))) return ['bad', B.passing ? 'Ambushed' : 'Repelled'];
+      return ['', took !== null ? 'World taken' : 'Battle'];
+    }
     const att = [B.attacker, ...(B.attackers || [])].some((x) => allied(world, x, pid)), def = allied(world, B.defender, pid) || (B.defenders || []).some((d) => allied(world, d, pid));
     if (att) return B.won ? ['good', captured ? 'World taken' : 'Broke through'] : ['bad', B.passing ? 'Ambushed' : 'Repelled'];
     if (def) return B.won ? ['bad', captured ? (B.defender === pid ? 'World lost' : 'Ally lost a world') : 'Fleet got past'] : ['good', B.passing ? 'Blocked a fleet' : 'Defended'];
@@ -989,7 +998,9 @@ function renderCombat() {
     if (e.battle) {
       const B = e.battle, side = (k) => `${fmt(B.ships[k])} ships, ${fmt(B.ships[k] - B.survived[k])} lost (${fmt(B.lost[k])} cr)`;
       const att = (B.attackers || [B.attacker]).map((a) => esc(playerName(world, a))).join(' + ');
-      nums = `${att}: ${side(0)} · ${B.defender === null ? 'Militia' : esc(playerName(world, B.defender))}${(B.defenders || []).length > 1 ? ' and allies' : ''}: ${side(1)} · ${B.seconds} s`;
+      nums = B.players && B.players.length > 2
+        ? `${B.players.map((q) => `${q.id === null ? 'Militia' : esc(playerName(world, q.id))}: ${fmt(q.ships)} ships, ${fmt(q.ships - q.survived)} lost`).join(' · ')} · ${B.seconds} s`
+        : `${att}: ${side(0)} · ${B.defender === null ? 'Militia' : esc(playerName(world, B.defender))}${(B.defenders || []).length > 1 ? ' and allies' : ''}: ${side(1)} · ${B.seconds} s`;
     } else if (e.capture?.yards) nums = `${e.capture.yards} shipyard${e.capture.yards > 1 ? 's' : ''} destroyed`;
     const can = e.battle && hasReplay(e.battle.id);
     return `<div class="fight ${tone}${e.id > seen && involves(e, ui.me) ? ' new' : ''}">
@@ -1140,6 +1151,9 @@ async function pump(now) {
   advanceTo(world, gameTarget);
 }
 
+/** Each battle side's name, for the replay viewer (one side per player in a free-for-all). */
+const teamNames = (B) => B.owners?.map((o) => (o === null ? 'Militia' : playerName(world, o))) || null;
+
 async function fight(ev, plan) {
   busy = true;
   renderPanel(true);
@@ -1151,12 +1165,12 @@ async function fight(ev, plan) {
   $('fight-title').innerHTML = B.passing
     ? `Ambush at <b>${esc(P.name)}</b>: ${who(B.defender)} blocks ${attHtml}`
     : `Battle at <b>${esc(P.name)}</b>: ${attHtml} ${attackers.length > 1 ? 'attack' : 'attacks'} ${who(B.defender)}`;
-  const b = new Battle({ designs: B.designs, ships: B.ships, seed: B.seed, maxTime: B.maxTime });
+  const b = new Battle({ designs: B.designs, ships: B.ships, seed: B.seed, maxTime: B.maxTime, ...battleOptions(B) });
   const t0 = performance.now();
   while (!b.done) {
     const end = performance.now() + 30;
     while (!b.done && performance.now() < end) b.step();
-    $('fight-status').textContent = `${(b.tick * DT).toFixed(0)} s simulated · ${b.teamAlive[0]} vs ${b.teamAlive[1]} ships`;
+    $('fight-status').textContent = `${(b.tick * DT).toFixed(0)} s simulated · ${b.teamAlive.join(' vs ')} ships`;
     $('fight-bar').style.width = `${Math.min(100, (b.tick / b.maxTicks) * 100)}%`;
     await new Promise((r) => requestAnimationFrame(r));
   }
@@ -1165,7 +1179,7 @@ async function fight(ev, plan) {
   const rep = b.toReplay();
   rep.meta.colors = shipColors(B);
   const entry = applyEvent(world, ev, plan, result);
-  if (entry?.battle) await replays.put({ id: entry.battle.id, t: entry.t, bytes: packReplay(rep.meta, rep.cols), computeMs, sides, title: `${B.passing ? 'Ambush' : 'Battle'} of ${P.name}` });
+  if (entry?.battle) await replays.put({ id: entry.battle.id, t: entry.t, bytes: packReplay(rep.meta, rep.cols), computeMs, sides, teams: teamNames(B), title: `${B.passing ? 'Ambush' : 'Battle'} of ${P.name}` });
   $('fight').hidden = true;
   busy = false;
   lastReal = performance.now(); // the clock stood still while the battle ran

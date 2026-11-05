@@ -286,14 +286,16 @@ export class ReplayModel {
   /** Ships remaining per team, once per simulated second, for the timeline graph. */
   computeStrength() {
     const secs = Math.ceil(this.ticks * this.dt) + 1, per = Math.round(1 / this.dt);
-    const s = [new Float32Array(secs), new Float32Array(secs)];
+    this.teams = Math.max(2, this.meta.teams || 2); // sides (free-for-all battles have more than two)
+    const s = [];
+    for (let t = 0; t < this.teams; t++) s.push(new Float32Array(secs));
     for (const e of this.ents) {
       if (e.kind !== 0) continue;
       const end = e.t1 === Infinity ? secs : Math.min(secs, Math.ceil(e.t1 / per));
       for (let k = 0; k < end; k++) s[e.team][k]++;
     }
     this.strength = s;
-    this.startCount = [s[0][0], s[1][0]];
+    this.startCount = s.map((x) => x[0]);
   }
 }
 

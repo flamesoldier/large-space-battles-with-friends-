@@ -345,6 +345,15 @@ export function upgradeWorld(world) {
   }
   for (const f of world.fleets) if (f.wait === undefined) f.wait = null;
   world.sieges ??= [];
+  // One siege per world (Nov 2026, free-for-all battles): merge any extra sieges at a world into
+  // the one that started first.
+  world.sieges.sort((a, b) => a.startsAt - b.startsAt || a.id - b.id);
+  for (const sg of [...world.sieges]) {
+    const first = world.sieges.find((x) => x.planet === sg.planet);
+    if (first === sg) continue;
+    for (const id of sg.fleets) { const f = world.fleets.find((x) => x.id === id); if (f) f.wait = first.id; if (!first.fleets.includes(id)) first.fleets.push(id); }
+    world.sieges.splice(world.sieges.indexOf(sg), 1);
+  }
   world.proposals ??= [];
   if (!world.relations) {
     world.relations = {};
@@ -368,25 +377,29 @@ export function fmtHours(h) {
 //
 // A fleet stops at every world on its route. At its own or an ally's world it joins the garrison
 // (its destination) or flies on. At any other world:
-//  - if a siege is already under way there, led by an ally, it joins that siege;
-//  - if this is its destination, or there are defenders, it starts a siege;
+//  - if a siege is under way there, it joins it (its destination), or stops for it if anyone there
+//    is its enemy (a world it is passing);
+//  - else if this is its destination, or there are defenders, it starts a siege;
 //  - otherwise (passing a world nobody defends) it flies on.
-// A siege holds for BATTLE_HOLD_MIN, so both sides can bring reinforcements: allied fleets that
-// arrive join the attack, and the defenders' own and allied fleets join the garrison (as does
-// anything their shipyards build). Then everyone there fights one battle. If the attackers win
-// they take the world (even a world they were only passing: owner's rule), every shipyard on it is
-// destroyed, and each fleet carries on as if it had just arrived (garrisoning it, or flying on).
-// If they lose, the survivors fall back.
+// There is at most one siege per world. It holds for BATTLE_HOLD_MIN, so everyone can bring
+// reinforcements (the owner's and allies' fleets join the garrison, and shipyards keep building).
+//
+// When the hold ends, everyone at the world fights ONE free-for-all battle (owner's rule, Nov
+// 2026): each player is their own side and shoots only the players they are at war with, so any
+// mixture of alliances works. Players with no enemy there sit it out, untouched. Who gets the
+// world (owner's rule):
+//  - the owner keeps it if the owner or an ally that fought still has armed ships (not routed);
+//  - otherwise the player who started the siege takes it, if they still have armed ships there;
+//  - otherwise the surviving attacker with the most ships left.
+// The winner's allies stay on as guests; everyone else who fought against the winner falls back.
+// Taking a world destroys its shipyards, even a world the fleet was only passing.
 //
 // Fleets that leave a siege are "released": they arrive again at that world, and whatever is true
-// now (who owns it, who is allied with whom) decides what they do. That one rule covers winning,
-// alliances changing during a hold, and a siege with nobody left to fight.
+// now (who owns it, who is allied with whom) decides what they do (garrison it, fly on, ...).
 
 /**
  * Ships at P that would fight an attack by `attackers` (a player id or a list): the owner's own
- * and allied ships, minus any player allied with one of the attackers. Alliances are only between
- * two players, so a player allied with both sides sits the battle out (owner's rule): their ships
- * stay at the world, idle and untouched.
+ * and allied ships, minus any player allied with one of the attackers (they would sit it out).
  */
 export function defendersAt(world, P, attackers) {
   const att = Array.isArray(attackers) ? attackers : [attackers];
@@ -394,49 +407,95 @@ export function defendersAt(world, P, attackers) {
     && (P.owner === null ? s.owner === null : s.owner === P.owner || allied(world, s.owner, P.owner)));
 }
 
-/** A siege's fleets split into those that fight and those that sit out (allied with the world's owner). */
-function siegeSides(world, s) {
-  const P = world.planets[s.planet], all = siegeFleets(world, s);
-  const fighting = all.filter((f) => !allied(world, f.owner, P.owner));
-  return { fighting, idle: all.filter((f) => !fighting.includes(f)), attackers: [...new Set(fighting.map((f) => f.owner))] };
-}
+/** Are two parties (player ids, null = militia) at war? */
+export const hostile = (world, a, b) => a !== b && !allied(world, a, b);
 
 export const siegeAt = (world, planetId) => world.sieges.filter((s) => s.planet === planetId);
 const siegeFleets = (world, s) => s.fleets.map((id) => world.fleets.find((f) => f.id === id)).filter(Boolean);
 
+/** Is anyone at P (garrison or siege fleets) at war with `who`? */
+function enemyHere(world, P, who) {
+  if (P.garrison.some((g) => g.n > 0 && hostile(world, g.owner, who))) return true;
+  return siegeAt(world, P.id).some((s) => siegeFleets(world, s).some((f) => hostile(world, f.owner, who)));
+}
+
+/**
+ * Everyone at a siege's world, by player (null = militia): { owner, fleets, stacks, ships, enemy }.
+ * `enemy` is whether anyone else there is at war with them. Those with no enemy sit the battle out.
+ * Order: the world's garrison first (owner, then guests), then siege fleets in arrival order.
+ */
+export function siegeParties(world, s) {
+  const P = world.planets[s.planet], by = new Map();
+  const party = (o) => { if (!by.has(o)) by.set(o, { owner: o, fleets: [], stacks: [], ships: 0, enemy: false }); return by.get(o); };
+  for (const g of P.garrison) if (g.n > 0) { const q = party(g.owner); q.stacks.push(g); q.ships += g.n; }
+  for (const f of siegeFleets(world, s)) { const n = countShips(f.ships); if (!n) continue; const q = party(f.owner); q.fleets.push(f); q.ships += n; }
+  const list = [...by.values()];
+  for (const a of list) a.enemy = list.some((b) => hostile(world, a.owner, b.owner));
+  return list;
+}
+
+/** Who takes a world: the siege's leader if among `cands` (player ids), else the one with most ships (`ships(id)`). */
+function pickWinner(world, s, cands, ships) {
+  if (!cands.length) return null;
+  if (cands.includes(s.leader)) return s.leader;
+  return [...cands].sort((a, b) => ships(b) - ships(a) || a - b)[0];
+}
+
 /**
  * What an event will do (doesn't change the world):
  *  fleet:  { kind: 'join' | 'pass' | 'hold' | 'siege' }   join a garrison / fly on / join a siege / start one
- *  siege:  { kind: 'release' }   nothing to fight any more (owner now allied): everyone re-arrives
- *          { kind: 'capture' }   nobody left defending: the attackers take it
- *          { kind: 'battle', battle }  a Battle scenario (attackers team 0, defenders team 1)
+ *  siege:  { kind: 'release' }   nobody there is at war with anyone: everyone re-arrives
+ *          { kind: 'capture', winner }   nobody defending, and the attackers are all allies: the winner takes it
+ *          { kind: 'battle', battle }  a Battle scenario: one side per player who has an enemy there
  */
 export function planEvent(world, ev) {
   if (ev.kind === 'fleet') {
     const f = ev.fleet, L = f.legs[f.leg], final = f.leg >= f.legs.length - 1, P = world.planets[L.to];
     if (allied(world, f.owner, P.owner)) return { kind: final ? 'join' : 'pass' };
-    const s = siegeAt(world, P.id).find((x) => allied(world, x.leader, f.owner));
-    if (s) return { kind: 'hold', siege: s.id };
+    const s = siegeAt(world, P.id)[0];
+    if (s) return final || enemyHere(world, P, f.owner) ? { kind: 'hold', siege: s.id } : { kind: 'pass' };
     if (final || defendersAt(world, P, f.owner).length) return { kind: 'siege' };
     return { kind: 'pass' };
   }
   const s = ev.siege, P = world.planets[s.planet];
-  if (allied(world, s.leader, P.owner)) return { kind: 'release' };
-  // Only fleets not allied with the world's owner fight; only defenders allied with none of them fight back.
-  const { fighting: fleets, attackers } = siegeSides(world, s);
-  const defenders = defendersAt(world, P, attackers);
-  if (!fleets.length) return { kind: 'release' };
-  if (!defenders.length) return { kind: 'capture' };
-  const groups = [
-    ...fleets.flatMap((f) => Object.entries(f.ships).map(([design, n]) => ({ side: 0, owner: f.owner, design, n, fleet: f.id }))),
-    ...defenders.map((d) => ({ side: 1, owner: d.owner, design: d.design, n: d.n })),
-  ];
-  // Each ship is drawn in its owner's colour in the replay (owner's request).
-  for (const g of groups) g.color = g.owner === null ? NEUTRAL_COLOR : world.players[g.owner]?.color || null;
-  const battle = makeBattleScenario(groups, (id) => designOf(world, id), (world.seed * 1000003 + s.id * 131) >>> 0);
+  const parties = siegeParties(world, s), fighters = parties.filter((q) => q.enemy);
+  if (!fighters.length) {
+    // Nobody to fight. Fleets at war with the owner (who has no ships here) take the world.
+    const cands = parties.filter((q) => q.fleets.length && !allied(world, q.owner, P.owner)).map((q) => q.owner);
+    const winner = pickWinner(world, s, cands, (o) => parties.find((q) => q.owner === o).ships);
+    return winner === null ? { kind: 'release' } : { kind: 'capture', winner };
+  }
+  // One battle side (team) per fighting player. Side 0/1 is only for the log's summary: the
+  // owner's side (owner, its allies, militia) is 1, everyone else 0.
+  const defends = (o) => (P.owner === null ? o === null : o === P.owner || allied(world, o, P.owner));
+  const groups = [];
+  fighters.forEach((q, team) => {
+    const side = defends(q.owner) ? 1 : 0;
+    const color = q.owner === null ? NEUTRAL_COLOR : world.players[q.owner]?.color || null;
+    for (const g of q.stacks) groups.push({ team, side, owner: q.owner, design: g.design, n: g.n, garrison: true, color });
+    for (const f of q.fleets) for (const [design, n] of Object.entries(f.ships)) if (n > 0) groups.push({ team, side, owner: q.owner, design, n, fleet: f.id, color });
+  });
+  // Starting positions: the owner's side holds the world; attackers come in from around it, each
+  // group of mutual allies together (see makeBattleScenario).
+  const owners = fighters.map((q) => q.owner);
+  const camps = [], campOf = new Array(fighters.length);
+  const defCamp = [];
+  fighters.forEach((q, t) => { if (defends(q.owner)) { defCamp.push(t); campOf[t] = 0; } });
+  camps.push(defCamp);
+  fighters.forEach((q, t) => {
+    if (defends(q.owner)) return;
+    let c = camps.findIndex((m, k) => k > 0 && m.every((u) => allied(world, owners[u], q.owner)));
+    if (c < 0) { c = camps.length; camps.push([]); }
+    camps[c].push(t); campOf[t] = c;
+  });
+  const battle = makeBattleScenario(groups, (id) => designOf(world, id), (world.seed * 1000003 + s.id * 131) >>> 0,
+    { teams: fighters.length, campOf, camps: camps.length });
+  const attackers = owners.filter((o) => !defends(o));
   Object.assign(battle, {
-    maxTime: BATTLE_MAX_TIME, planet: P.id, attacker: s.leader, defender: P.owner,
-    attackers, passing: fleets.every((f) => f.leg < f.legs.length - 1),
+    maxTime: BATTLE_MAX_TIME, planet: P.id, attacker: s.leader, defender: P.owner, attackers, owners, camps: camps.length,
+    // hostile pairs as a list of [a, b] team indexes (plain data, so it can go to a worker)
+    hostile: owners.flatMap((a, i) => owners.map((b, j) => (i < j && hostile(world, a, b) ? [i, j] : null)).filter(Boolean)),
+    passing: fighters.filter((q) => !defends(q.owner)).every((q) => q.fleets.every((f) => f.leg < f.legs.length - 1)),
   });
   return { kind: 'battle', battle };
 }
@@ -468,8 +527,9 @@ function fleetArrives(world, f, plan) {
     const s = world.sieges.find((x) => x.id === plan.siege);
     s.fleets.push(f.id);
     f.wait = s.id; f.next = Infinity;
-    log(world, 'siege', `${countShips(f.ships)} of ${me}'s ships joined the attack on ${P.name}${owner}. The battle starts ${clockIn(world, s.startsAt)}.`,
-      { planet: P.id, players: [f.owner, P.owner].filter((x) => x !== null), siege: { by: s.leader, against: P.owner, startsAt: s.startsAt, join: true } });
+    const how = allied(world, f.owner, s.leader) ? 'joined the attack on' : 'arrived at';
+    log(world, 'siege', `${countShips(f.ships)} of ${me}'s ships ${how} ${P.name}${owner}, where a battle starts ${clockIn(world, s.startsAt)}.`,
+      { planet: P.id, players: [f.owner, s.leader, P.owner].filter((x) => x !== null), siege: { by: s.leader, against: P.owner, startsAt: s.startsAt, join: true } });
     return lastLog(world);
   }
   // A new siege.
@@ -477,7 +537,7 @@ function fleetArrives(world, f, plan) {
   world.sieges.push(s);
   f.wait = s.id; f.next = Infinity;
   const why = f.leg < f.legs.length - 1 ? ` on its way to ${world.planets[f.to].name}` : '';
-  log(world, 'siege', `${me}'s fleet (${countShips(f.ships)} ships) reached the ${held}world ${P.name}${owner}${why}. The battle starts in ${startsIn}: both sides can still send reinforcements.`,
+  log(world, 'siege', `${me}'s fleet (${countShips(f.ships)} ships) reached the ${held}world ${P.name}${owner}${why}. The battle starts in ${startsIn}: everyone can still send ships.`,
     { planet: P.id, players: [f.owner, P.owner].filter((x) => x !== null), siege: { by: f.owner, against: P.owner, startsAt: s.startsAt } });
   return lastLog(world);
 }
@@ -495,67 +555,100 @@ function release(world, f) {
 
 function dropFleet(world, f) { const k = world.fleets.indexOf(f); if (k >= 0) world.fleets.splice(k, 1); }
 
+/** Send a beaten fleet back where it came from (or the nearest friendly world). Returns a phrase for the log. */
+function fallBack(world, f, P) {
+  dropFleet(world, f);
+  const n = countShips(f.ships);
+  if (!n) return null;
+  const back = retreatTarget(world, f, P);
+  const pv = back === null ? null : previewFleet(world, P.id, back, f.ships, { owner: f.owner, lanes: true, avoid: true });
+  const ships = `${n} of ${playerName(world, f.owner)}'s ships`, one = n === 1;
+  if (pv?.ok) { launch(world, f.owner, P.id, back, f.ships, pv, true); return `${ships} ${one ? 'falls' : 'fall'} back to ${world.planets[back].name}`; }
+  return `${ships} ${one ? 'has' : 'have'} nowhere to go and ${one ? 'is' : 'are'} lost`;
+}
+
+const listNames = (world, ids) => {
+  const n = ids.map((id) => playerName(world, id));
+  return n.length <= 1 ? n.join('') : `${n.slice(0, -1).join(', ')} and ${n[n.length - 1]}`;
+};
+
 function siegeEnds(world, s, plan, result) {
+  const P = world.planets[s.planet];
+  const parties = siegeParties(world, s), all = siegeFleets(world, s);
   world.sieges.splice(world.sieges.indexOf(s), 1);
-  const P = world.planets[s.planet], { fighting: fleets, idle } = siegeSides(world, s);
-  // Anyone who sat it out arrives again afterwards (an ally of the owner joins its garrison).
-  const releaseIdle = () => { for (const f of idle) release(world, f); };
-  if (plan.kind === 'release') { for (const f of [...fleets, ...idle]) release(world, f); return null; }
+  if (plan.kind === 'release') { for (const f of all) release(world, f); return null; }
   if (plan.kind === 'capture') {
-    const entry = capture(world, P, s.leader, {}, null);
-    for (const f of fleets) release(world, f);
-    releaseIdle();
+    const entry = capture(world, P, plan.winner, {}, null);
+    for (const f of all) release(world, f); // the winner and its allies garrison it or fly on
     return entry;
   }
-  // A battle. Apply the defenders' losses, then each attacking fleet's.
+  // A battle. Apply everyone's losses.
+  const B = plan.battle, owners = B.owners;
   const lost = [0, 0], value = [0, 0], ships = [0, 0], survived = [0, 0];
-  const defenderIds = new Set();
-  const byFleet = new Map(fleets.map((f) => [f.id, {}]));
+  const per = owners.map((o, t) => ({ id: o, side: 0, ships: 0, survived: 0, lost: 0, value: 0, routed: !!result.routed?.[t] }));
+  const byFleet = new Map();
+  const fought = new Set();
   for (const g of result.groups) {
-    const cost = world.designs[g.design].cost;
+    const cost = world.designs[g.design].cost, q = per[g.team];
+    q.side = g.side; q.ships += g.n; q.survived += g.survived; q.value += g.n * cost; q.lost += (g.n - g.survived) * cost;
     value[g.side] += g.n * cost; lost[g.side] += (g.n - g.survived) * cost; ships[g.side] += g.n; survived[g.side] += g.survived;
-    if (g.side === 0) { const m = byFleet.get(g.fleet); if (m && g.survived) m[g.design] = (m[g.design] || 0) + g.survived; continue; }
-    if (g.owner !== null) defenderIds.add(g.owner);
-    const st = P.garrison.find((x) => x.owner === g.owner && x.design === g.design);
-    if (st) st.n = Math.max(0, st.n - (g.n - g.survived));
+    if (g.fleet !== undefined) {
+      fought.add(g.fleet);
+      if (!byFleet.has(g.fleet)) byFleet.set(g.fleet, {});
+      if (g.survived) { const m = byFleet.get(g.fleet); m[g.design] = (m[g.design] || 0) + g.survived; }
+    } else {
+      const st = P.garrison.find((x) => x.owner === g.owner && x.design === g.design);
+      if (st) st.n = Math.max(0, st.n - (g.n - g.survived));
+    }
   }
   tidyGarrison(P);
-  for (const f of fleets) f.ships = byFleet.get(f.id);
-  const attackers = [...new Set(fleets.map((f) => f.owner))];
-  const passing = fleets.every((f) => f.leg < f.legs.length - 1);
+  for (const f of all) if (byFleet.has(f.id)) f.ships = byFleet.get(f.id);
+  // Who holds the field: armed survivors of a side that didn't rout.
+  const holds = (q) => q.survived > 0 && !q.routed;
+  const defends = (o) => (P.owner === null ? o === null : o === P.owner || allied(world, o, P.owner));
+  const kept = per.some((q) => holds(q) && defends(q.id));
+  const cands = kept ? [] : per.filter((q) => holds(q) && !defends(q.id)).map((q) => q.id);
+  const winner = pickWinner(world, s, cands, (o) => per.find((q) => q.id === o).survived);
+  const won = winner !== null;
+  const attackers = per.filter((q) => !defends(q.id)).map((q) => q.id);
+  const defenders = per.filter((q) => defends(q.id) && q.id !== null).map((q) => q.id);
+  const passing = B.passing;
   const battle = {
-    id: `b${newId(world)}`, attacker: s.leader, attackers, defender: P.owner, defenders: [...defenderIds], won: result.attackerWon,
-    passing, captured: result.attackerWon, seconds: result.seconds, ships, survived, value, lost, target: P.id,
+    id: `b${newId(world)}`, attacker: won ? winner : s.leader, leader: s.leader, attackers, defender: P.owner, defenders, won,
+    winner, passing, captured: won, seconds: result.seconds, ships, survived, value, lost, target: P.id, players: per,
+    camps: B.camps || 2,
   };
-  const who = [...attackers, ...defenderIds];
-  const allies = attackers.length > 1 ? ` and ${attackers.filter((a) => a !== s.leader).map((a) => playerName(world, a)).join(', ')}` : '';
-  const defAllies = [...defenderIds].filter((d) => d !== P.owner);
-  const helped = defAllies.length ? `, helped by ${defAllies.map((d) => playerName(world, d)).join(', ')}` : '';
-  const owner = P.owner === null ? ' (militia)' : ` (${playerName(world, P.owner)}${helped})`;
+  const who = [...new Set(per.map((q) => q.id).filter((x) => x !== null))];
+  const ownerTxt = P.owner === null ? ' (militia)' : ` (${playerName(world, P.owner)})`;
+  // "N-way" counts groups of allies that fought each other, not players.
+  const way = (B.camps || 2) > 2 ? ` in a ${B.camps}-way battle` : '';
+  const sitOut = parties.filter((q) => !q.enemy && q.owner !== null).map((q) => q.owner);
+  const sat = sitOut.length ? ` ${listNames(world, sitOut)} sat it out.` : '';
+  const tails = [];
   let entry;
-  if (result.attackerWon) {
-    // The world goes to whoever started the siege (owner's rule), even if allies did the fighting
-    // or the leader's own ships were all lost. Allies' survivors stay on as guests.
-    entry = capture(world, P, s.leader, {}, { battle });
-    entry.text = `${playerName(world, s.leader)}${allies} won the battle for ${P.name}${owner}. ${entry.text.split('. ').slice(1).join('. ')}`.replace(/\s+$/, '');
-    for (const f of fleets) { if (countShips(f.ships)) release(world, f); else dropFleet(world, f); }
-    releaseIdle();
+  if (won) {
+    entry = capture(world, P, winner, {}, { battle });
+    const foes = per.map((q) => q.id).filter((o) => o !== B.defender && hostile(world, o, winner));
+    const vs = foes.length && per.length > 2 ? `, also fighting ${listNames(world, foes)}` : '';
+    entry.text = `${playerName(world, winner)} won the battle for ${P.name}${ownerTxt}${way}${vs}. ${entry.text.split('. ').slice(1).join('. ')}`.replace(/\s+$/, '');
+  }
+  // Fleets: the winner's side (or, if the owner held, the owner's side) garrisons or flies on;
+  // everyone who fought against them falls back. Fleets that sat it out arrive again.
+  for (const f of all) {
+    if (!fought.has(f.id)) { release(world, f); continue; }
+    const friend = won ? allied(world, f.owner, winner) : defends(f.owner);
+    if (friend && countShips(f.ships)) release(world, f);
+    else if (friend) dropFleet(world, f);
+    else { const t = fallBack(world, f, P); if (t) tails.push(t); }
+  }
+  if (won) {
+    if (tails.length) entry.text += ` ${tails.join('; ')}.`;
+    entry.text += sat;
   } else {
-    const tails = [];
-    for (const f of fleets) {
-      dropFleet(world, f);
-      const n = countShips(f.ships);
-      if (!n) continue;
-      const back = retreatTarget(world, f, P);
-      const pv = back === null ? null : previewFleet(world, P.id, back, f.ships, { owner: f.owner, lanes: true, avoid: true });
-      const ships = `${n} of ${playerName(world, f.owner)}'s ships`, one = n === 1;
-      if (pv?.ok) { launch(world, f.owner, P.id, back, f.ships, pv, true); tails.push(`${ships} ${one ? 'falls' : 'fall'} back to ${world.planets[back].name}`); }
-      else tails.push(`${ships} ${one ? 'has' : 'have'} nowhere to go and ${one ? 'is' : 'are'} lost`);
-    }
     const tail = tails.length ? ` ${tails.join('; ')}.` : ' None of the attackers survived.';
-    log(world, 'battle', `${playerName(world, s.leader)}${allies} attacked ${P.name}${owner} and ${attackers.length > 1 ? 'were' : 'was'} beaten off.${tail}`, { planet: P.id, players: who, battle });
+    const by = listNames(world, attackers);
+    log(world, 'battle', `${by} attacked ${P.name}${ownerTxt}${way} and ${attackers.length > 1 ? 'were' : 'was'} beaten off.${tail}${sat}`, { planet: P.id, players: who, battle });
     entry = lastLog(world);
-    releaseIdle();
   }
   return entry;
 }
@@ -593,7 +686,8 @@ function sendHome(world, P, guest) {
   const mobile = Object.fromEntries(Object.entries(ships).filter(([d]) => world.designs[d].speed >= MIN_FLEET_SPEED));
   const pv = back === null || !countShips(mobile) ? null : previewFleet(world, P.id, back, mobile, { owner: guest, lanes: true, avoid: true });
   if (pv?.ok) launch(world, guest, P.id, back, mobile, pv, true);
-  return `${countShips(ships)} of ${world.players[guest].name}'s ships ${pv?.ok ? 'leave' : 'are stranded and lost at'} ${P.name}`;
+  const n = countShips(ships), one = n === 1;
+  return `${n} of ${world.players[guest].name}'s ships ${pv?.ok ? (one ? 'leaves' : 'leave') : one ? 'is stranded and lost at' : 'are stranded and lost at'} ${P.name}`;
 }
 
 /** Where beaten attackers go: where they came from if it's still friendly, else the nearest friendly world. */
@@ -630,8 +724,7 @@ function checkPlayers(world) {
 // Every pair of players is either allied or enemies, and it can change at any time. Starting
 // teams only set who begins allied. An alliance needs both sides: one proposes, the other accepts.
 // Either side can end it alone. When an alliance ends, each side's ships stationed on the other's
-// worlds are sent home, and fleets waiting in a siege next to their new enemy are released to
-// arrive again under the new terms.
+// worlds are sent home. Fleets waiting in a siege stay: sides are decided when the battle starts.
 
 const pairKey = (a, b) => (a < b ? `${a}|${b}` : `${b}|${a}`);
 
@@ -718,14 +811,7 @@ export function breakAlliance(world, pid, other) {
       if (msg) sentHome.push(msg);
     }
   }
-  // Fleets waiting in a siege whose leader is now an enemy arrive again under the new terms.
-  for (const s of world.sieges) {
-    for (const f of siegeFleets(world, s)) {
-      if (allied(world, f.owner, s.leader)) continue;
-      s.fleets = s.fleets.filter((id) => id !== f.id);
-      release(world, f);
-    }
-  }
+  // Fleets waiting in a siege stay: who fights whom is worked out when the battle starts.
   const tail = sentHome.length ? ` ${sentHome.join('; ')}.` : '';
   log(world, 'diplomacy', `${world.players[pid].name} broke the alliance with ${world.players[other].name}. They are enemies now.${tail}`, { players: [pid, other], diplomacy: { kind: 'break', a: pid, b: other } });
   checkPlayers(world);

@@ -91,10 +91,21 @@ Combat rules:
   colours from the combat log entry (`sideColors` in the `lsb-replay` message); designer test
   battles keep azure/ember.
 
+**Free-for-all battles** (owner, Nov 2026: "so much fun"): a battle has any number of sides
+(`teams`, up to `MAX_TEAMS` = 16) and a who-fights-whom table (`hostile(a, b)`; `fr[(a << 4) | b]`
+is 1 for friends). In the galaxy every player is their own side and shoots only the players they
+are at war with, so any mixture of pairwise alliances works. Default is two sides at war, so the
+designer, bench and old code paths behave as before (same speed; 1,000 vs 1,000 results within
+noise). Targets, the enemy centre ships head for, missiles flying over friends, point defence,
+heavy-laser holds and escorts (who may guard an ally's ship) all go through `fr`.
+
 Battle end:
-- One side has no ships left that can still fire (disarmed hulks don't count).
-- Rout: a side under 20% of its starting ships still armed and outgunned 2:1. **The routed side
-  loses** (`battle.routed`, read by `readBattle()`): routed defenders lose the world and their
+- No two sides still in the fight are enemies (a side with no armed ships, or that routed, is out).
+- Rout: a side under 20% of its starting ships still armed and outgunned 2:1 by its enemies,
+  counted against it **plus its allies** (so a small allied contingent doesn't run while its
+  friends are winning). A routed side breaks and runs (its ships flee like disarmed hulks and no
+  longer hold the field; `battle.routedTeams`); the others fight on if any are still enemies.
+  **The routed side loses** (`battle.routed`, read by `readBattle()`): routed defenders lose the world and their
   surviving ships flee home (`capture()` → `sendHome`). Fixed Nov 2026: a rout used to count as a
   defender win, so 300 attackers that cut 100 defenders down to 13 were "beaten off" in ~60 s.
   Stalemate and time limit still leave the world with its holder.
@@ -267,13 +278,25 @@ economy, fleets, captures, with real battles).
   survivors fall back.
 - **Battles wait 30 minutes** (`BATTLE_HOLD_MIN`, owner's rule) so reinforcements can join. A
   fleet reaching a world it attacks (its destination, or a stop with defenders) starts a **siege**
-  (`world.sieges`): it holds there (`fleet.wait`), drawn round the world with a "Battle in N min"
-  ring. Fleets allied with the siege's leader that arrive join it; the defenders' own and allied
-  fleets join the garrison, and shipyards keep building. When the hold ends, everyone fights one
-  battle (several attacking players can be on side 0). Win: the world is taken and every fleet
-  "re-arrives" (garrisons or flies on, delayed by the wait). Lose: survivors fall back. An enemy
-  of both sides arriving starts its own siege, resolved after. A world nobody defends is still
-  only taken when the hold ends, so the owner can rush ships in.
+  (`world.sieges`, **at most one per world**): it holds there (`fleet.wait`), drawn round the world
+  with a "Battle in N min" ring. **Every** later fleet whose destination it is joins that siege,
+  whoever it's allied with (owner's rule: even if everyone there is currently allied, in case an
+  enemy turns up); a fleet only passing stops for it only if someone there is its enemy. The
+  owner's and allies' fleets join the garrison, and shipyards keep building. When the hold ends,
+  **everyone there fights one free-for-all battle** (`planEvent` → `siegeParties()`): one side per
+  player, and **players with no enemy there sit it out**, untouched and not simulated. Starting
+  positions: the owner's side holds the world, attackers come in from round it, each group of
+  mutual allies together (`camps` in `makeBattleScenario`; two camps = the old left/right layout).
+  **Who gets the world** (owner's rule): the owner keeps it if the owner or an ally that fought
+  still has armed ships that didn't rout; otherwise the player who started the siege, if they still
+  hold the field; otherwise the surviving attacker with the most ships left. The winner's allies
+  stay as guests; everyone who fought against the winner falls back. If no one is left holding,
+  the owner keeps it. Win: every fleet on the winner's side "re-arrives" (garrisons or flies on,
+  delayed by the wait). A world nobody defends is still only taken when the hold ends, so the
+  owner can rush ships in. Old saves with several sieges at one world are merged into the first
+  (`upgradeWorld`). Battle log entries carry `players` (per side: ships, survived, lost, routed),
+  `winner` and `camps` ("N-way" in the text counts groups of allies, not players); the summary
+  `ships/survived/lost` [0, 1] are attackers vs the world's side, as before.
 - The move panel's **"Avoid worlds you don't hold"** (on by default) plans
   round every world not held by you or an ally (a straight flight always exists); with it off the
   route is fastest and the panel lists the hostile stops (marked on the map) and their ships.
@@ -282,26 +305,22 @@ economy, fleets, captures, with real battles).
   hour: a destroyer takes ~10 h between neighbours through space, ~1 h along a lane. Ships under
   `MIN_FLEET_SPEED` can't leave (fixed defences; hub thrusters alone give ~2.5, so rare).
 - **Arrivals**: own or allied world → the ships join the garrison (allies' ships station there
-  as guests and defend it). Otherwise a siege (above), then a battle: attackers team 0, every
-  defending stack team 1. The attackers take the world only if they still have armed ships and
-  the defenders have none: yards destroyed, income and world change hands **to the player who
-  started the siege** (owner's rule), even if allies did most of the fighting or the leader's own
-  ships all died; allies' survivors stay on as guests.
-  Otherwise attacker survivors fall back to where they came from (or the nearest friendly world).
+  as guests and defend it). Otherwise a siege and a free-for-all battle (above). Taking a world:
+  yards destroyed, income and world change hands to the winner by the rule above. Beaten fleets
+  fall back to where they came from (or the nearest friendly world).
 - A ship survives a battle if it keeps its hub and a working weapon, and comes back at full
   strength (no damage carried between battles yet).
 - **Diplomacy** (owner's rule: alliances change during the game): every pair of players is
   allied or enemies (`world.relations`, not transitive). Starting team letters only set who begins
   allied. An alliance needs both sides (propose → accept; proposing back counts as accepting);
-  either side can break it alone, which sends each side's ships on the other's worlds home and
-  releases fleets waiting in a siege next to their new enemy. Diplomacy window in the top bar
+  either side can break it alone, which sends each side's ships on the other's worlds home. Diplomacy window in the top bar
   (badge for proposals waiting for you, and a who-is-allied-with-whom grid). Allies station ships
-  on each other's worlds, defend together (stacks allied with both sides sit a battle out) and join
-  each other's sieges. **A player allied with both sides of a battle sits it out** (owner's
-  rule): their ships stay at the world idle and untouched (a fleet of theirs arriving at the
-  defender's world lands as a guest; a siege fleet that allies with the defender mid-hold drops
-  out). If the world then falls to someone they aren't allied with, their ships fly home unharmed.
-  `defendersAt()` checks every attacker, not just the leader. A player with no worlds, ships or fleets is knocked out; when someone has
+  on each other's worlds, defend together and join
+  each other's sieges. **A player with no enemy at a battle sits it out** (owner's rule; replaced
+  "allied with both sides sits out" with free-for-all battles): their ships stay at the world idle
+  and untouched. If the world then falls to someone they aren't allied with, their ships fly home
+  unharmed. Alliance changes during a hold need no special handling: who fights whom is worked out
+  when the battle starts. A player with no worlds, ships or fleets is knocked out; when someone has
   been knocked out and everyone left is allied with everyone else, they win.
 - Unclaimed worlds are held by **militia** (generated corvettes/frigates/destroyers worth 4 hours
   of the world's income, `NEUTRAL_GARRISON_HOURS`), so taking one is a real battle.
