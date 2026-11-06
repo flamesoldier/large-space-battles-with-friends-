@@ -144,6 +144,7 @@ export function applyColors(model, sideColors) {
 }
 const LANCE_CHARGE = 6, LANCE_LIFE = 16; // heavy laser: charge-up and beam life, in ticks
 const alpha2 = (col, k) => (col & 0xffffff) | ((Math.max(0, Math.min(1, k)) * 255) << 24);
+const fadeCol = (col, k) => (col & 0xffffff) | ((((col >>> 24) * Math.max(0, Math.min(1, k))) | 0) << 24); // scales the colour's own alpha
 const C = {
   tracer: rgba('#ffe7a6', 230), impact: rgba('#ffc46b', 255), spark: rgba('#ff9d47', 255), sparkHot: rgba('#fff1c4', 255),
   missile: rgba('#ffffff', 255), trail: rgba('#ff8a3d', 200), boom: rgba('#ff9b45', 255), boomCore: rgba('#fff4d6', 255),
@@ -388,9 +389,15 @@ export class Renderer {
       const x = S.x[i] + vx * age, y = S.y[i] + vy * age;
       if (!vis(x, y, heavy ? 40 : 6)) continue;
       const a = Math.atan2(vy, vx), c = Math.cos(a), s = Math.sin(a);
+      // A shot that ran out of flight time (hit 0) fades over its last 2 s instead of vanishing.
+      const fade = S.hit[i] ? 1 : Math.min(1, (S.t1[i] - t) / 20);
       if (!heavy) {
-        g.push(x - c * 3, y - s * 3, a, 3.2, Math.max(0.45, minW), 2, C.trail);
-        g.push(x, y, 0, Math.max(0.7, minW * 1.5), Math.max(0.7, minW * 1.5), 1, C.missile);
+        g.push(x - c * 3, y - s * 3, a, 3.2, Math.max(0.45, minW), 2, fade < 1 ? fadeCol(C.trail, fade) : C.trail);
+        g.push(x, y, 0, Math.max(0.7, minW * 1.5), Math.max(0.7, minW * 1.5), 1, fade < 1 ? fadeCol(C.missile, fade) : C.missile);
+        continue;
+      }
+      if (fade < 1) { // burnt-out missile: just a fading glow
+        g.push(x, y, 0, Math.max(3, minW * 4), Math.max(3, minW * 4), 1, alpha2(C.mGlow[S.team[i]], 0.5 * fade));
         continue;
       }
       // Heavy missile: solid body, hot exhaust plume, and a smoke trail back toward the launcher.

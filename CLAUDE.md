@@ -43,7 +43,9 @@ Weapons (numbers in `blocks.js`):
   often into a second ship. Holds fire if a friendly ship is first in line. Drawn as a slim
   team-coloured bolt with an impact flash (kept slim so it can't be mistaken for a heavy laser).
 - **Cannon**: slow visible shell with a bright trail, aimed with lead, then flies dead straight.
-  The main damage dealer. Range 260 (owner, Nov 2026; shell life 7 s so shells reach it).
+  The main damage dealer. Range 260 (owner, Nov 2026). **Shells fly 30 s and missiles 90 s**
+  (owner: misses mustn't vanish mid-battle; were 7 s / 45 s), so misses fly on past the fight and
+  can still hit something; a shot that does run out fades over its last 2 s in the viewer.
 - **Missile launcher**: huge, slow, unguided missile, range 700, flies over friendly ships,
   100 hp so point defence can shoot it down, fires every 30 s (owner, Nov 2026: was 40 s, blast
   lowered to compensate). Blast hits everything within
@@ -259,7 +261,10 @@ ship and a wreck push each other apart by the same rule, so ships plough through
 and bounce off big wreck halves. A wreck collides with the ship it broke off from too (owner
 didn't like them passing through): only while a piece still overlaps that ship's box right after
 breaking off is it let through, until the two are clear (`chunk.parent`, cleared in `collide()`);
-measured at 600 vs 600, median 0.2 s, 90% within 2.6 s. Debris doesn't collide with other debris
+measured at 600 vs 600, median 0.2 s, 90% within 2.6 s. **Since Nov 2026 it is pushed out of its
+ship while it overlaps** (owner: debris sitting over its ship looked gross): the piece alone drifts
+out along the shortest way at up to `OWN_CLEAR_SPEED` (6) + depth/2 blocks/s faster than the ship.
+At 400 vs 400: 99% clear within 1.2 s (was 8.3 s), longest 2.6 s (was 64 s). Debris doesn't collide with other debris
 (pieces of one break-up start overlapping). **Debris stays solid and hittable for the whole
 battle** (owner, Nov 2026; `CHUNK_RETIRE_TICKS = Infinity`, was 25 s then 60 s). Battles end on
 their own long before the limit (1,000 vs 1,000: 183 s, at most ~1,400 pieces of debris, ~6 ms a

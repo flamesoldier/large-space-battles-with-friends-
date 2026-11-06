@@ -50,14 +50,15 @@ export const WEAPON = {
   // (about three armour blocks, or a heavy armour block and the one behind it).
   [BT.LASER]: { kind: 'laser', range: 340, damage: 400, cooldown: 15 },
   // Slow shell that flies dead straight (aimed with lead at firing), small blast on impact.
-  // life covers range / speed (5.8 s) plus room for lead on a target moving away.
-  [BT.CANNON]: { kind: 'shell', range: 260, damage: 75, cooldown: 2.0, speed: 45, life: 7, splash: 1.6, spread: 0.05 },
+  // life: owner (Nov 2026) doesn't want misses to vanish mid-battle, so a shell flies on for 30 s
+  // (1,350 blocks, well past the fight) and can still hit something far behind its target.
+  [BT.CANNON]: { kind: 'shell', range: 260, damage: 75, cooldown: 2.0, speed: 45, life: 30, splash: 1.6, spread: 0.05 },
   // Heavy missile: unguided, crawls across the map in a straight line, flies over friendly
   // ships, devastating blast. Has hit points, so point defence can shoot it down on the way in.
   // Blast damage falls off with distance: peak * (1 - d / splash)^2, applied to every ship
   // (and wreck) in the radius. One missile cratres a hull; a volley tears it apart.
   // All launchers on a ship fire together as a rippling volley at the same target.
-  [BT.MISSILE]: { kind: 'missile', range: 700, damage: 150, cooldown: 30, speed: 20, life: 45, splash: 9, hp: 100, spread: 0.02, maxLead: 3 },
+  [BT.MISSILE]: { kind: 'missile', range: 700, damage: 150, cooldown: 30, speed: 20, life: 90, splash: 9, hp: 100, spread: 0.02, maxLead: 3 }, // life was 45: misses fly on 1,800 blocks
   // Point defence: shoots the nearest enemy missile in range, otherwise any enemy ship that close.
   [BT.PD]: { kind: 'pd', range: 30, damage: 32, missileDamage: 25, cooldown: 0.2 }, // owner: super close range, high dps (damage was 6, then 24; missileDamage was 10)
   // Heavy laser: a 10x10 gun that fires wherever its unit can see past the rest of the ship. The beam carries a damage budget and

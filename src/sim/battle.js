@@ -41,6 +41,8 @@ const K_KINETIC = 0, K_SHELL = 1, K_MISSILE = 2;
 // Spacing between ships (see Battle.spacing): hull gap they try to keep, how hard it bends
 // their heading and slides them sideways, and how often it's refreshed.
 const SPACING_GAP = 25, SPACING_TURN = 3, SPACING_SLIDE = 1, SPACING_EVERY = 5;
+// Debris still over the ship it broke off from is pushed out at up to this speed (blocks/s).
+const OWN_CLEAR_SPEED = 6;
 const NONE = 0xffffffff; // 'no entity' in replay id columns
 
 // Combat stances, chosen per ship design. range(e, direct, shortest, longest, far, near) -> preferred distance.
@@ -601,7 +603,20 @@ export class Battle {
         if (pen <= 0) { best = 0; break; }
         if (pen < best) { best = pen; bx = dist > 0 ? -ux : ux; by = dist > 0 ? -uy : uy; }
       }
-      if (own) { if (best <= 0) o.parent = -1; continue; }
+      if (own) {
+        if (best <= 0) { o.parent = -1; continue; }
+        // Still over the ship it broke off from (owner: debris sitting on its own ship looks
+        // gross): push the piece out along the shortest way, without knocking the ship. It
+        // drifts clear at up to OWN_CLEAR_SPEED faster than the ship, and is still let through
+        // the hull meanwhile, so it never jams against it.
+        // Deeper inside a big hull, faster out.
+        const ux = -bx, uy = -by, rel = (o.vx - e.vx) * ux + (o.vy - e.vy) * uy, want = OWN_CLEAR_SPEED + best * 0.5;
+        if (rel < want) { const dv = Math.min(want - rel, 1.5); o.vx += ux * dv; o.vy += uy * dv; }
+        const sh = Math.min(best, 4) * 0.15;
+        o.x += ux * sh; o.y += uy * sh;
+        if (!o.shoved) { o.shoved = true; this.shoved.push(o); }
+        continue;
+      }
       if (best <= 0) continue;
       const pen = Math.min(best, 4), share = o.mass / (o.mass + e.mass); // the lighter one gets shoved more
       const push = pen * share;
