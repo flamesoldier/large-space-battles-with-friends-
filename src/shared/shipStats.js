@@ -140,7 +140,7 @@ export function analyzeDesign(d) {
   if (hubs === 1) for (let i = 0; i < cells.length; i++) if (cells[i] && !linked[i]) loose.push(i);
   if (loose.length) errors.push(`${loose.length} block${loose.length > 1 ? 's are' : ' is'} not connected to the hub.`);
   const badGroups = groups.filter((g) => !g.ok);
-  if (badGroups.length) errors.push('Heavy lasers must be whole 10×10 units, not touching each other.');
+  if (badGroups.length) errors.push('Plasma cannons must be whole 10×10 units, not touching each other.');
 
   if (!weapons.length) warnings.push('No weapons: the ship counts as a disarmed hulk in battle.');
   else if (!weapons.some((x) => x.type !== BT.PD)) warnings.push('Only point defence: it can only hit things within 30.');
@@ -149,7 +149,7 @@ export function analyzeDesign(d) {
   const narrow = weapons.filter((x) => !x.omni && !x.buried && x.arcDeg < 45);
   if (narrow.length) warnings.push(`${narrow.length} weapon${narrow.length > 1 ? 's have' : ' has'} a firing arc under 45°. Guns that stick out of the hull can cover more.`);
   if (!thrust && blocks > 1) warnings.push('No thrusters: the ship crawls on hub jets (2.5 speed).');
-  if (groups.length) warnings.push(`Heavy-laser blocks explode when destroyed and chain-react, wrecking everything within about ${COOKOFF.radius} blocks of the gun, your own ship included. Armour it well.`);
+  if (groups.length) warnings.push(`Plasma cannon blocks explode when destroyed and chain-react, wrecking everything within about ${COOKOFF.radius} blocks of the gun, your own ship included. Armour it well.`);
   if (d.stance === 'escort' && cls && cls.id !== 'corvette' && cls.id !== 'frigate' && cls.id !== 'destroyer')
     warnings.push('Escorts only screen ships 3× their mass, so big escorts rarely find a ship to guard.');
 

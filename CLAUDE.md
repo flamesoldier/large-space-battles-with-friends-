@@ -57,24 +57,30 @@ Weapons (numbers in `blocks.js`):
 - AI (Nov 2026): missile launchers aim at the biggest ship in range (all launchers on a ship
   agree, so volleys still land together), and a ship whose only guns are missiles sets its
   stance distance from missile range (it used to fall back to 60 and dive in).
-- **Heavy laser**: 10×10 multi-block turret, range 650, every 20 s, 25,000-damage beam **1 block
-  wide** (owner: a thin cut slices off bigger pieces; `width` in `blocks.js`, was briefly 5) that
-  burns through blocks and ships until spent. Drawn to be unmistakable (owner found it hard to
-  tell from a laser): a 0.6 s charge-up glow at the gun before it fires (the beam's start is
-  attached to the gun ship, so the viewer knows where), then a huge flickering white-hot beam held
-  for 0.5 s and fading over 1.6 s, with big muzzle and impact flares. Owner's goal (Nov 2026): **several ships
-  cut in half by one shot.** It aims along the line through the most enemy ships (`lanceAim`), and
-  **passes harmlessly through allied hulls** further along the line (an exception to the
-  friendly-fire rule below: escorts round the gun ship used to stop most shots). Holds fire if a
-  friendly ship is first in line. Measured at 600 vs 600: ~3 enemy ships hit and ~2 cut apart or
-  destroyed per shot, up to 6. Works while half its blocks survive. **Its blocks explode when destroyed**
-  (`COOKOFF` in `blocks.js`: 300 peak damage, radius 16, ignores friendly fire, hurts its own
-  ship and allies). One destroyed block chain-reacts through the whole unit: a battleship loses
-  ~43% of its blocks and an ally flying alongside loses ~260. The owner asked for it to be huge.
+- **Plasma cannon** (block `BT.LANCE`, weapon kind `'lance'` in code; **was the heavy laser**
+  until Nov 2026, when the owner asked for it to be a projectile "to make its destructiveness more
+  obvious and cool"): 10×10 multi-block turret, range 650, every 20 s, a 25,000-damage budget,
+  1 block wide. Now a **big glowing blue bolt with a long trail** (`K_PLASMA`, replay shot kind 2,
+  `drawPlasma` in `renderer.js`; blue for every side) flying at **60 blocks/s** (cannon shells:
+  45), aimed with lead (cap 6 s), life 30 s. Each tick `plasmaStep()` burns every live block on
+  the segment it crosses, in order, ship after ship, until the budget is spent, then a big blue
+  blast (explosion size 5); a blue burst (size 4) each time it breaks into a new hull. **Friendly
+  fire on** (owner: "something that powerful has got to carve through friendly ships and enemies
+  alike"): it damages allies and wrecks too, never its own gun ship. Aiming (`lanceAim` /
+  `lanceCount`): the line through the most enemy ships, each ally on the line counting −2; holds
+  fire if a friend is first in line or allies outweigh enemies, checked along the real led
+  direction. `LANCE_ALLY_MARGIN` (0) widens the ally check: at 0, about 1 shot in 3 hits an ally
+  first and ~4 enemies are killed per ally; at 5 allies are almost never hit but it holds fire
+  far more and kills ~40% fewer. Measured at 600 vs 600 (2 seeds): ~2.2 enemy ships hit and ~1.4
+  destroyed or broken per shot, ~0.4 allies destroyed. Keeps a 0.6 s blue charge-up glow at the
+  gun before it fires and a muzzle flash. Old replays still draw the old white beam (beam kind 2).
+  **Its blocks explode when destroyed** (`COOKOFF` in `blocks.js`: 300 peak damage, radius 16,
+  ignores friendly fire, hurts its own ship and allies). One destroyed block chain-reacts through
+  the whole unit: a battleship loses ~43% of its blocks and an ally flying alongside loses ~260.
 - Future weapons the owner wants: bigger cannons, a medium laser.
 
 Combat rules:
-- **Friendly fire off**: allied hulls still block shots but take no damage (except the heavy laser, which passes through them).
+- **Friendly fire off**: allied hulls still block shots but take no damage (except the plasma cannon, which carves through allies too, and cook-offs).
 - **Firing arcs = line of fire, for every weapon** (missile launchers and heavy lasers too): a
   weapon can fire in any direction where the shot wouldn't pass through its own ship (no fixed
   cone, never 360°). Worked out by `src/shared/arcs.js` (64 direction slices, ray walk through

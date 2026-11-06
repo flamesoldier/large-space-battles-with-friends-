@@ -153,6 +153,8 @@ const C = {
   mBody: rgba('#c9ccd3'), mTip: TEAM.map((t) => rgba(t.accent)), mFlame: rgba('#ffb04a', 255),
   mGlow: TEAM.map((t) => rgba(t.beam, 255)), smoke: rgba('#9a8f86', 255),
   lod: TEAM.map((t) => rgba(t.accent)), lodDead: rgba('#7a7c86'), hotChunk: rgba('#ff7a2e', 255),
+  // Plasma cannon: blue whatever the side (owner: "blue with a trail, that would look like plasma").
+  plGlow: rgba('#2f7dff', 255), plBody: rgba('#6fd2ff', 255), plCore: rgba('#f4fcff', 255), plTrail: rgba('#3fa0ff', 220),
 };
 
 export class Renderer {
@@ -305,16 +307,19 @@ export class Renderer {
     }
     this.drawStraight(m.shell, t, vis, minW, false);
     this.drawStraight(m.missile, t, vis, minW, true);
-    // Detonations: 0 = missile shot down, 1 = cannon shell, 2 = heavy missile, 3 = heavy-laser block cooking off
+    if (m.plasma) this.drawPlasma(m.plasma, t, vis, minW);
+    // Detonations: 0 = missile shot down, 1 = cannon shell, 2 = heavy missile, 3 = heavy-laser block cooking off,
+    // 4 = plasma bolt bursting into a hull, 5 = plasma bolt's final blast (both blue)
     const E = m.expl;
-    const LIFE = [6, 8, 24, 22], BASE = [1, 1.5, 5, 3], GROW = [2.5, 5, 15, 16];
+    const LIFE = [6, 8, 24, 22, 12, 24], BASE = [1, 1.5, 5, 3, 3, 6], GROW = [2.5, 5, 15, 16, 9, 20];
     for (let i = lowerBound(E.t, t - 24); i < E.n && E.t[i] <= t; i++) {
       const sz = E.s[i], life = LIFE[sz] ?? 8, age = t - E.t[i];
       if (age > life || !vis(E.x[i], E.y[i], 20)) continue;
       const u = age / life, base = BASE[sz] ?? 1.5, grow = GROW[sz] ?? 5;
       const r = base + u * grow;
-      g.push(E.x[i], E.y[i], 0, r, r, 1, alpha(sz === 0 ? C.pop : C.boom, 1 - u));
-      if (u < 0.3) g.push(E.x[i], E.y[i], 0, r * 0.5, r * 0.5, 1, alpha(C.boomCore, 1 - u / 0.3));
+      const pl = sz >= 4;
+      g.push(E.x[i], E.y[i], 0, r, r, 1, alpha(sz === 0 ? C.pop : pl ? C.plGlow : C.boom, 1 - u));
+      if (u < 0.3) g.push(E.x[i], E.y[i], 0, r * 0.5, r * 0.5, 1, alpha(pl ? C.plCore : C.boomCore, 1 - u / 0.3));
     }
     // Block destruction sparks: 3 fragments each, positions are pure functions of age
     const sp = m.spark, sT = m.sparkT, life = 14;
@@ -377,6 +382,45 @@ export class Renderer {
     if (L.hit[i]) {
       g.push(x1, y1, 0, r * 1.4, r * 1.4, 1, alpha2(C.boom, f));
       g.push(x1, y1, 0, r * 0.6, r * 0.6, 1, alpha2(C.boomCore, f * flick));
+    }
+  }
+
+  /**
+   * Plasma cannon bolts: a 0.6 s blue charge-up glow at the gun before launch, a muzzle flash,
+   * then a big flickering blue-white bolt with a long trail, flying dead straight (position is
+   * launch + velocity * age). It carves on through hulls (blue bursts are recorded as explosions).
+   */
+  drawPlasma(S, t, vis, minW) {
+    const g = this.glow, CH = 6;
+    for (let i = lowerBound(S.t0, t - S.maxFlight - 1); i < S.n && S.t0[i] <= t + CH; i++) {
+      const age = t - S.t0[i];
+      if (age < 0) { // charging
+        const e = (1 + age / CH) ** 2;
+        if (!vis(S.x[i], S.y[i], 20)) continue;
+        g.push(S.x[i], S.y[i], 0, Math.max(2 + 8 * e, minW * 4), Math.max(2 + 8 * e, minW * 4), 1, alpha2(C.plGlow, 0.6 * e));
+        g.push(S.x[i], S.y[i], 0, Math.max(0.8 + 2.5 * e, minW * 2), Math.max(0.8 + 2.5 * e, minW * 2), 1, alpha2(C.plCore, e));
+        continue;
+      }
+      if (t > S.t1[i]) continue;
+      if (age < 5 && vis(S.x[i], S.y[i], 20)) { // muzzle flash
+        const f = 1 - age / 5;
+        g.push(S.x[i], S.y[i], 0, 6 + 6 * f, 6 + 6 * f, 1, alpha2(C.plGlow, 0.7 * f));
+        g.push(S.x[i], S.y[i], 0, 3 * f + 0.5, 3 * f + 0.5, 1, alpha2(C.plCore, f));
+      }
+      const vx = S.vx[i], vy = S.vy[i], x = S.x[i] + vx * age, y = S.y[i] + vy * age;
+      if (!vis(x, y, 40)) continue;
+      const fade = S.hit[i] ? 1 : Math.min(1, (S.t1[i] - t) / 20);
+      const a = Math.atan2(vy, vx), c = Math.cos(a), s = Math.sin(a);
+      const flick = 0.85 + 0.15 * Math.sin(t * 3.1 + i * 2.3);
+      const trail = Math.min(age * Math.hypot(vx, vy), 70) / 2;
+      if (trail > 0.5) {
+        g.push(x - c * trail, y - s * trail, a, trail, Math.max(5, minW * 5), 2, alpha2(C.plGlow, 0.45 * fade));
+        g.push(x - c * trail, y - s * trail, a, trail, Math.max(2, minW * 2), 2, fadeCol(C.plTrail, fade));
+      }
+      const R = Math.max(12, minW * 12) * flick;
+      g.push(x, y, 0, R, R, 1, alpha2(C.plGlow, 0.6 * fade));
+      g.push(x, y, 0, Math.max(4.5, minW * 5), Math.max(4.5, minW * 5), 1, alpha2(C.plBody, fade));
+      g.push(x, y, 0, Math.max(2, minW * 2.5), Math.max(2, minW * 2.5), 1, alpha2(C.plCore, fade));
     }
   }
 

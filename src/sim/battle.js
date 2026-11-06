@@ -37,12 +37,14 @@ export const MAX_TEAMS = 16; // sides in one battle (players plus militia); fr[]
 // Debris stays hittable and solid for the whole battle (owner: debris is part of the fight).
 // The retire mechanism is kept as a cap that can be set if very long battles ever get slow.
 const CHUNK_RETIRE_TICKS = Infinity;
-const K_KINETIC = 0, K_SHELL = 1, K_MISSILE = 2;
+const K_KINETIC = 0, K_SHELL = 1, K_MISSILE = 2, K_PLASMA = 3;
 // Spacing between ships (see Battle.spacing): hull gap they try to keep, how hard it bends
 // their heading and slides them sideways, and how often it's refreshed.
 const SPACING_GAP = 25, SPACING_TURN = 3, SPACING_SLIDE = 1, SPACING_EVERY = 5;
 // Debris still over the ship it broke off from is pushed out at up to this speed (blocks/s).
 const OWN_CLEAR_SPEED = 6;
+// Plasma cannon aiming: an ally within this many blocks of the line counts as in the way.
+const LANCE_ALLY_MARGIN = 0; // 0: ~1 in 3 shots hits an ally first, 4 enemies killed per ally (owner wants friendly fire); 5: almost never, but it holds fire far more
 const NONE = 0xffffffff; // 'no entity' in replay id columns
 
 // Combat stances, chosen per ship design. range(e, direct, shortest, longest, far, near) -> preferred distance.
@@ -736,7 +738,7 @@ export class Battle {
       if (!tg) { w.cd = 0.2 + this.rng() * 0.2; continue; }
       if (W.kind === 'lance') {
         if (this.lanceAim(e, w, wx, wy, W, ax, ay)) { ax = this._ax; ay = this._ay; }
-        w.cd = this.fireLance(e, wx, wy, ax, ay, W) ? W.cooldown : 0.5;
+        w.cd = this.firePlasma(e, wx, wy, ax, ay, tg, W) ? W.cooldown : 0.5;
         continue;
       }
       // Launchers keep in step (no jitter) so a ship's missiles always leave as one volley.
@@ -903,6 +905,14 @@ export class Battle {
         continue;
       }
       const x0 = P.x[i], y0 = P.y[i], x1 = x0 + P.vx[i] * DT, y1 = y0 + P.vy[i] * DT;
+      if (kind === K_PLASMA) {
+        if (this.plasmaStep(i, x0, y0, x1, y1)) {
+          this.shotEnd(rec, this.now - 1 + this.hitT, 1);
+          this.recExplosion(this._ax, this._ay, 5); // 5: the spent bolt's final blast
+          this.removeProjectile(i--);
+          continue;
+        }
+      } else {
       // Heavy missiles fly over their own side's ships; everything else stops on whatever it meets.
       const hit = this.sweep(x0, y0, x1, y1, P.owner[i], kind === K_MISSILE ? P.team[i] : -1);
       if (hit) {
@@ -914,6 +924,7 @@ export class Battle {
         this.recExplosion(hx, hy, kind === K_MISSILE ? 2 : 1);
         this.removeProjectile(i--);
         continue;
+      }
       }
       P.x[i] = x1; P.y[i] = y1;
       if (--P.life[i] <= 0) {
@@ -930,7 +941,7 @@ export class Battle {
     const R = this.R;
     const rec = R.shotT0.push(this.now);
     R.shotFlight.push(0); R.shotX.push(q16(x)); R.shotY.push(q16(y)); R.shotAng.push(qAng(ang));
-    R.shotHit.push(0); R.shotTeam.push(team); R.shotKind.push(kind === K_MISSILE ? 1 : 0);
+    R.shotHit.push(0); R.shotTeam.push(team); R.shotKind.push(kind === K_MISSILE ? 1 : kind === K_PLASMA ? 2 : 0);
     return rec;
   }
   /** hit: 0 expired, 1 hit something, 2 shot down by point defence. */
@@ -1113,7 +1124,7 @@ export class Battle {
     const g = this.grid, q = ++g.qid, n = g.n;
     const gx0 = g.cx(Math.min(x0, x1)), gx1 = g.cx(Math.max(x0, x1)), gy0 = g.cx(Math.min(y0, y1)), gy1 = g.cx(Math.max(y0, y1));
     const sdx = x1 - x0, sdy = y1 - y0, len2 = sdx * sdx + sdy * sdy;
-    let friendT = 2;
+    let friendT = 2, allies = 0;
     const ts = this._lanceTs || (this._lanceTs = []);
     ts.length = 0;
     for (let cy = gy0; cy <= gy1; cy++)
@@ -1126,63 +1137,89 @@ export class Battle {
           if (o.dead || o.retired || o === e || o.kind !== SHIP) continue;
           const t = ((o.x - x0) * sdx + (o.y - y0) * sdy) / len2;
           if (t < 0 || t > 1) continue;
-          // Through the middle half of the hull: a graze doesn't cut anything in half.
-          const rr = o.radius * 0.5;
-          if ((x0 + sdx * t - o.x) ** 2 + (y0 + sdy * t - o.y) ** 2 > rr * rr) continue;
-          if (this.fr[(e.team << 4) | o.team]) { if (t < friendT) friendT = t; } else ts.push(t);
+          // Enemies count through the middle half of the hull (a graze doesn't cut anything in
+          // half); allies anywhere near the line count, with room for them to move into it while
+          // the bolt flies.
+          const d2 = (x0 + sdx * t - o.x) ** 2 + (y0 + sdy * t - o.y) ** 2;
+          if (this.fr[(e.team << 4) | o.team]) {
+            const ra = o.radius + LANCE_ALLY_MARGIN;
+            if (d2 <= ra * ra) { allies++; if (t < friendT) friendT = t; }
+          } else if (d2 <= o.radius * o.radius * 0.25) ts.push(t);
         }
       }
     let first = 2;
     for (const t of ts) if (t < first) first = t;
-    return friendT < first ? 0 : ts.length;
+    // The bolt carves through allies too: never a line with a friend first, and each ally on
+    // the line counts against it twice as much as an enemy counts for it.
+    return friendT < first ? 0 : Math.max(0, ts.length - 2 * allies);
   }
 
   /**
-   * Heavy laser: a beam several blocks wide with a damage budget that burns through every block
-   * on its line, ship after ship, until the budget is spent. Allied hulls further along the
-   * line are passed through unharmed (otherwise escorts around the gun ship stopped most
-   * shots), but it holds fire (returns false) if the first thing in the line is a friendly ship.
+   * Plasma cannon: launch a bolt (see plasmaStep). Holds fire (returns false) if a friendly ship
+   * is the first thing in line, since the bolt would carve straight through it.
    */
-  fireLance(e, x0, y0, ax, ay, W) {
-    const dx = ax - x0, dy = ay - y0, d = Math.hypot(dx, dy) || 1;
-    const x1 = x0 + (dx / d) * W.range, y1 = y0 + (dy / d) * W.range;
-    if (this.sweep(x0, y0, x1, y1, e.id) && this.hitE.kind === SHIP && this.fr[(e.team << 4) | this.hitE.team]) return false;
-    const hits = [];
-    const hw = ((W.width || 1) - 1) >> 1, g = this.grid, q = ++g.qid, n = g.n, pad = hw + 1;
+  firePlasma(e, x0, y0, ax, ay, tg, W) {
+    const d = Math.hypot(ax - x0, ay - y0) || 1;
+    const t = Math.min(d / W.speed, W.maxLead);
+    const ang = Math.atan2(ay + tg.vy * t - y0, ax + tg.vx * t - x0), ux = Math.cos(ang), uy = Math.sin(ang);
+    // Checked along the real (led) direction: hold if a friend is first in line, or the line has
+    // more allies than it's worth (lanceCount), so it rarely opens up on its own side.
+    if (this.sweep(x0, y0, x0 + ux * W.range, y0 + uy * W.range, e.id) && this.hitE.kind === SHIP && this.fr[(e.team << 4) | this.hitE.team]) return false;
+    if (!this.lanceCount(e, x0, y0, x0 + ux, y0 + uy, W.range)) return false;
+    const rec = this.shotStart(K_PLASMA, e.team, x0, y0, ang);
+    this.addProjectile(K_PLASMA, BT.LANCE, x0, y0, ux * W.speed, uy * W.speed,
+      Math.round(W.life / DT), e.id, e.team, -1, W.damage, 0, rec); // target: the last hull it burst into
+    return true;
+  }
+
+  /**
+   * Move plasma bolt i along x0,y0 → x1,y1 this tick, burning every live block on the way, in
+   * order, on every ship and wreck except the gun ship itself: friendly fire included (owner:
+   * something that powerful carves through friend and foe alike). Each hull it bursts into gets a
+   * flash. Returns true when the budget is spent (the bolt ends there with a blast).
+   */
+  plasmaStep(i, x0, y0, x1, y1) {
+    const P = this.P, owner = P.owner[i], hits = this._plasmaHits || (this._plasmaHits = []);
+    hits.length = 0;
+    const g = this.grid, q = ++g.qid, n = g.n, pad = 1;
     const gx0 = g.cx(Math.min(x0, x1) - pad), gx1 = g.cx(Math.max(x0, x1) + pad), gy0 = g.cx(Math.min(y0, y1) - pad), gy1 = g.cx(Math.max(y0, y1) + pad);
-    const sdx = x1 - x0, sdy = y1 - y0, len2 = sdx * sdx + sdy * sdy;
-    const px = -dy / d, py = dx / d; // unit perpendicular, for the beam's width
+    const sdx = x1 - x0, sdy = y1 - y0, len2 = sdx * sdx + sdy * sdy || 1;
     for (let cy = gy0; cy <= gy1; cy++)
       for (let cx = gx0; cx <= gx1; cx++) {
-        const c = cy * n + cx, s = g.start[c], m = g.count[c];
+        const c = cy * n + cx, st = g.start[c], m = g.count[c];
         for (let k = 0; k < m; k++) {
-          const o = g.ents[g.items[s + k]];
+          const o = g.ents[g.items[st + k]];
           if (o._q === q) continue;
           o._q = q;
-          if (o.dead || o.retired || o === e) continue;
+          if (o.dead || o.retired || o.id === owner) continue;
           let t = ((o.x - x0) * sdx + (o.y - y0) * sdy) / len2;
           t = t < 0 ? 0 : t > 1 ? 1 : t;
           const rr = o.radius + pad;
           if ((x0 + sdx * t - o.x) ** 2 + (y0 + sdy * t - o.y) ** 2 > rr * rr) continue;
-          // The beam is several blocks wide: parallel rays, one block apart.
-          for (let r = -hw; r <= hw; r++)
-            this.raycastAll(o, x0 + px * r, y0 + py * r, x1 + px * r, y1 + py * r, hits);
+          this.raycastAll(o, x0, y0, x1, y1, hits);
         }
       }
+    if (!hits.length) return false;
     hits.sort((a, b) => a.t - b.t);
-    let budget = W.damage, endT = 1;
+    let budget = P.dmg[i], last = null;
     for (const h of hits) {
       const o = h.e, hp = o.hp[h.cell];
       if (hp <= 0) continue;
-      if (!this.canDamage(o, e.team)) continue; // passes harmlessly through allied hulls
+      if (o !== last && o.id !== P.target[i]) { // bursting into a new hull: a flash
+        this.recExplosion(x0 + sdx * h.t, y0 + sdy * h.t, 4); // 4: plasma bursting into a hull
+        P.target[i] = o.id; last = o;
+      }
       const dmg = Math.min(hp, budget);
       this.damageCell(o, h.cell, dmg);
       budget -= dmg;
-      if (budget <= 0) { endT = h.t; break; }
+      if (budget <= 0) {
+        P.dmg[i] = 0;
+        this._ax = x0 + sdx * h.t; this._ay = y0 + sdy * h.t; this.hitT = h.t;
+        return true;
+      }
     }
-    // Start attached to the gun ship (the viewer draws a charge-up there), far end fixed in space.
-    this.recBeam(x0, y0, x0 + sdx * endT, y0 + sdy * endT, e.team, 2, hits.length ? 1 : 0, e, null);
-    return true;
+    P.dmg[i] = budget;
+    return false;
   }
 
   /** Like raycast(), but records every live block along the segment, not just the first. */
@@ -1377,7 +1414,7 @@ export class Battle {
     const meta = {
       version: 1, friendlyFire: this.friendlyFire, trackTotal: total, evQ: EV_Q, dt: DT, trackEvery: TRACK_EVERY, shoveEvery: SHOVE_EVERY, velQ: VEL_Q, missileEvery: MISSILE_EVERY, posQ: POS_Q, angQ: ANG_Q,
       ticks: this.tick, shipCount: S, chunkCount: this.byId.length - S,
-      shotSpeed: [WEAPON[BT.CANNON].speed, WEAPON[BT.MISSILE].speed],
+      shotSpeed: [WEAPON[BT.CANNON].speed, WEAPON[BT.MISSILE].speed, WEAPON[BT.LANCE].speed],
       designs: this.designs.map((d) => ({ name: d.name, cls: d.cls, stance: d.stance, w: d.w, h: d.h, hub: d.hub, cells: Array.from(d.cells) })),
       survivors: [...this.teamAlive], teams: this.nT,
     };

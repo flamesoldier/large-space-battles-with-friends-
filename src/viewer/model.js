@@ -176,6 +176,7 @@ export class ReplayModel {
     };
     this.shell = straight(0);
     this.missile = straight(1);
+    this.plasma = straight(2); // plasma cannon bolts (none in replays before Nov 2026)
     const nl = c.lasT.length;
     this.laser = { n: nl, t: c.lasT, x0: new Float32Array(nl), y0: new Float32Array(nl), x1: new Float32Array(nl), y1: new Float32Array(nl), team: c.lasTeam, hit: c.lasHit, kind: c.lasKind,
       // Beam ends attached to entities (newer replays): ids (0xffffffff = none) and local offsets.

@@ -502,7 +502,7 @@ canvas.addEventListener('pointerdown', (e) => {
   last = null;
   if (tool === 'pencil' || type === BT.LANCE || type === BT.HUB) {
     ed.checkpoint(); drag.started = true;
-    if (type === BT.LANCE) { if (!ed.stamp(x, y)) toast('A heavy laser needs a clear 10×10 space inside the grid, away from the hub.'); drag.once = true; }
+    if (type === BT.LANCE) { if (!ed.stamp(x, y)) toast('A plasma cannon needs a clear 10×10 space inside the grid, away from the hub.'); drag.once = true; }
     else if (type === BT.HUB) { ed.setCell(x, y, BT.HUB); drag.once = true; }
     else strokeTo(x, y, type);
   } else if (tool === 'fill') {

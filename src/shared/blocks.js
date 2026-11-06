@@ -12,7 +12,7 @@ export const BT = {
   CANNON: 7, // slow straight-flying shells with a bright trail: the main damage dealer
   MISSILE: 8, // huge, slow, long-range missiles that can be shot down
   PD: 9, // point defence: short-range rapid laser, kills missiles, also hits close ships
-  LANCE: 10, // heavy laser: a 10x10 multi-block gun, slow, long range, beam cuts through ships
+  LANCE: 10, // plasma cannon (was the heavy laser): a 10x10 multi-block gun, slow, long range, its bolt carves through ships
 };
 
 // Multi-block weapons: footprint in blocks, and the fraction of those blocks that must
@@ -35,7 +35,7 @@ export const BLOCKS = {
   [BT.CANNON]: { name: 'Cannon', hp: 150, mass: 3, cost: 50 }, // was 60: slow shells lose a lot to wrecks and overkill
   [BT.MISSILE]: { name: 'Missile launcher', hp: 200, mass: 5, cost: 75 }, // was 120, then 90 (spread-out fleets take fewer ships per blast)
   [BT.PD]: { name: 'Point defense', hp: 80, mass: 1.5, cost: 30 },
-  [BT.LANCE]: { name: 'Heavy laser', hp: 120, mass: 4, cost: 35 }, // per block; the gun is 10x10 of these (3,500 a gun)
+  [BT.LANCE]: { name: 'Plasma cannon', hp: 120, mass: 4, cost: 35 }, // per block; the gun is 10x10 of these (3,500 a gun)
 };
 
 // A destroyed heavy-laser block explodes: blast damage peak * (1 - d / radius)^2 to every block
@@ -66,7 +66,11 @@ export const WEAPON = {
   // It holds fire if a friendly ship is the first thing in the line of fire.
   // width: the beam burns a channel this many blocks wide (odd). The owner wants 1: a thin cut
   // slices off bigger pieces of ship than a wide one that vaporises them.
-  [BT.LANCE]: { kind: 'lance', range: 650, damage: 25000, cooldown: 20, width: 1 },
+  // Plasma cannon (owner, Nov 2026: was the heavy laser, an instant beam): same range, rate and
+  // 25,000 damage budget, but a big glowing bolt that flies at `speed` and carves through every
+  // block in its path, ship after ship, friend or foe, until the budget is spent. Aimed with lead
+  // (capped at maxLead s) along the line through the most enemy ships. Kind stays 'lance' inside.
+  [BT.LANCE]: { kind: 'lance', range: 650, damage: 25000, cooldown: 20, width: 1, speed: 60, life: 30, maxLead: 6 },
 };
 
 // Firing arcs: every weapon can fire in any direction where its shot wouldn't pass through its
