@@ -42,7 +42,9 @@ const TYPES = {
   'laser+pd': { t: BT.LASER, stance: 'line', pd: 0.25 }, // the generator's own laser/cannon/missile/PD mix, guns rescaled to the same spend
 };
 const only = flag('--only', null);
-const names = Object.keys(TYPES).filter((k) => (only ? only.split(',').includes(k) : !k.includes('+')));
+// "weapon@stance" in --only picks a stance, e.g. pd@flank,cannon@standoff.
+for (const k of (only || '').split(',')) if (k.includes('@') && TYPES[k.split('@')[0]]) TYPES[k] = { ...TYPES[k.split('@')[0]], stance: k.split('@')[1] };
+const names = only ? only.split(',').filter((k) => TYPES[k]) : Object.keys(TYPES).filter((k) => !k.includes('+'));
 
 /** Same hull, guns swapped: every weapon cell becomes armour, then `n` guns of type t on the skin. */
 export function variant(base, t, credits, stance, pdShare = 0) {
@@ -118,20 +120,20 @@ for (let s = 1; s <= SEEDS; s++) {
       const key = `${names[i]}|${names[j]}`;
       (table[key] ||= []).push(r);
     }
-  if (s === 1) for (const k of names) console.log(`${k.padEnd(8)} cost ${designCost(ds[k])}  guns ${ds[k].cells.filter((c) => c >= BT.LASER && c <= BT.PD).length}  stance ${ds[k].stance}`);
+  if (s === 1) for (const k of names) console.log(`${k.padEnd(16)} cost ${designCost(ds[k])}  guns ${ds[k].cells.filter((c) => c >= BT.LASER && c <= BT.PD).length}  stance ${ds[k].stance}`);
 }
 console.log(`\n${CLS}, ${SEEDS} seeds, ${BUDGET} cr per side. Row's score vs column (+1 flawless win, -1 wiped out):`);
 const score = {};
-console.log(''.padEnd(9) + names.map((n) => n.padStart(9)).join(''));
+console.log(''.padEnd(16) + names.map((n) => n.slice(0, 15).padStart(16)).join(''));
 for (const a of names) {
-  let line = a.padEnd(9), tot = 0;
+  let line = a.slice(0, 15).padEnd(16), tot = 0;
   for (const b of names) {
-    if (a === b) { line += '        -'; continue; }
+    if (a === b) { line += '-'.padStart(16); continue; }
     const k1 = `${a}|${b}`, k2 = `${b}|${a}`;
     const rs = table[k1] ? table[k1].map((r) => r.a) : table[k2].map((r) => -r.a);
     const m = rs.reduce((x, y) => x + y, 0) / rs.length;
     tot += m;
-    line += (m >= 0 ? '+' : '') + m.toFixed(2).padStart(8);
+    line += ((m >= 0 ? '+' : '') + m.toFixed(2)).padStart(16);
   }
   score[a] = tot / (names.length - 1);
   console.log(line + `   avg ${(score[a] >= 0 ? '+' : '') + score[a].toFixed(2)}`);

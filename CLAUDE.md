@@ -49,7 +49,9 @@ Weapons (numbers in `blocks.js`):
   lowered to compensate). Blast hits everything within
   9 blocks with damage `150 × (1 − d/9)²`: one missile craters, a volley tears ships apart.
   All launchers on one ship fire together as a volley. Lead is capped at 3 s.
-- **Point defence**: range 30 rapid beam; shoots missiles first, close ships otherwise.
+- **Point defence**: range 30 rapid beam; shoots missiles first, close ships otherwise. Owner
+  (Nov 2026): also a **super close range, high-dps option** against ships: 24 damage every 0.2 s
+  (was 6), 25 to missiles (was 10).
 - AI (Nov 2026): missile launchers aim at the biggest ship in range (all launchers on a ship
   agree, so volleys still land together), and a ship whose only guns are missiles sets its
   stance distance from missile range (it used to fall back to 60 and dive in).
@@ -83,8 +85,32 @@ Combat rules:
   grid up to 1024 × 640). Weapons aim at the near side of a big target's hull (range is not
   measured to its centre), big ships track up to 24 targets, and stance distances are measured
   roughly hull to hull, so giants actually fight.
-- **Stances** chosen per design (will be a designer option): charge, brawl, line, standoff,
-  escort. Escorts take limited slots around a big ship and break off to attack nearby enemies.
+- **Stances** chosen per design in the designer (`STANCES` in `battle.js`, `STANCE_INFO` in
+  `shipStats.js`). Owner's roles (Nov 2026):
+  - **Artillery** (`standoff`): hangs back at **60% of its longest weapon range** (heavy lasers
+    and missiles included; owner: not further, or battles become boring long-range duels),
+    backs off if pressed.
+  - **Front line** (`line`): 45% of its main gun range (cannon, else laser), trades broadsides.
+  - **Flanker** (`flank`): charges through the enemy line to the biggest enemy within reach
+    and circles it close in at full speed (`pickGoal`/`steerGoal`, goal = `e.goal`).
+  - **Raider** (`raid`): attack runs: straight in skimming a big ship, out the far side
+    (`runPhase`), turn, new target, again.
+  - **Interceptor** (`guard`): holds just in front of its side's artillery (`battle.backline`)
+    and chases down enemies within 150 of an artillery ship (read from the artillery ship's own
+    `targets`, so no extra spatial queries).
+  - Older ones kept: charge, brawl, escort (limited slots round a big ship, breaks off to
+    attack nearby enemies).
+  Measured (`npm run balance -- 6 40000 --cls destroyer --share 300 --only cannon@line,cannon@standoff,...`):
+  every stance within ±0.1 average; artillery beats PD flankers/raiders (+0.56), PD flankers
+  beat front line and brawlers. Small corvettes die to lasers (one 400 shot) before reaching a
+  goal, so flankers/raiders work from destroyer size up; generated fleets give flank to
+  destroyers.
+- **Owner's priorities (Nov 2026): battles that look cool, chaotic, huge, lots of destruction
+  first; ships killing efficiently second.** After significant combat changes, send him a
+  replay: `npm run build:viewer && node tools/replay-page.mjs 600 7 dist/replay.html "Title"`
+  writes one self-contained HTML page that plays it (open in any browser).
+- Cost of the new stances: 1,000 vs 1,000 is ~5.6 ms a tick (was ~3.5) because the fight is
+  closer and denser, but battles end sooner (157 s vs 244 s), so total compute is about the same.
 - **Debris** must stay clearly visible (wrecks keep most of their colour).
 - **Ships are drawn in their player's colour** in replays (owner, Nov 2026), militia in
   `NEUTRAL_COLOR`. `planEvent` puts `color` on each group, the worker / hot-seat page write

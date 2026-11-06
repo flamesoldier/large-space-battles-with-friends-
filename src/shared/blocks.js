@@ -59,7 +59,7 @@ export const WEAPON = {
   // All launchers on a ship fire together as a rippling volley at the same target.
   [BT.MISSILE]: { kind: 'missile', range: 700, damage: 150, cooldown: 30, speed: 20, life: 45, splash: 9, hp: 100, spread: 0.02, maxLead: 3 },
   // Point defence: shoots the nearest enemy missile in range, otherwise any enemy ship that close.
-  [BT.PD]: { kind: 'pd', range: 30, damage: 6, missileDamage: 25, cooldown: 0.2 }, // missileDamage was 10: one PD couldn't stop one missile
+  [BT.PD]: { kind: 'pd', range: 30, damage: 24, missileDamage: 25, cooldown: 0.2 }, // owner: super close range, high dps (damage was 6; missileDamage was 10)
   // Heavy laser: a 10x10 gun that fires wherever its unit can see past the rest of the ship. The beam carries a damage budget and
   // burns through block after block (and ship after ship) until the budget is spent.
   // It holds fire if a friendly ship is the first thing in the line of fire.

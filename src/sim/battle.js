@@ -40,15 +40,22 @@ const CHUNK_RETIRE_TICKS = Infinity;
 const K_KINETIC = 0, K_SHELL = 1, K_MISSILE = 2;
 const NONE = 0xffffffff; // 'no entity' in replay id columns
 
-// Combat stances, chosen per ship design. range(e, direct, shortest, longest) -> preferred distance.
-//   direct   = longest non-missile weapon range, shortest = shortest weapon range,
-//   longest  = longest range of any weapon (missiles included).
+// Combat stances, chosen per ship design. range(e, direct, shortest, longest, far, near) -> preferred distance.
+//   direct   = main gun range (cannon, else laser, else missile), shortest = shortest gun range
+//   (point defence and heavy lasers left out), longest = longest of those, far = longest of any
+//   weapon (heavy lasers too), near = shortest of any weapon (point defence too).
+// Flank, raid and guard steer by a goal ship (`e.goal`, picked in `pickGoal`); their range is how
+// close they pass or circle it.
+const close = (e, d, s, l, f, n) => Math.max(14, Math.min(60, n * 0.5));
 export const STANCES = {
-  charge:   { label: 'Charge',   range: (e) => e.radius + 14 },            // dive in, point blank
-  brawl:    { label: 'Brawler',  range: (e, d, s) => s * 0.4 },           // close range, inside enemy guns
-  line:     { label: 'Line',     range: (e, d) => d * 0.6 },              // mid range, well inside gun range
-  standoff: { label: 'Standoff', range: (e, d) => d * 0.9 },           // hang back at the edge of gun range // hang back, back off if pressed
-  escort:   { label: 'Escort',   range: (e, d) => d * 0.6 },              // screen a big friendly ship
+  charge:   { label: 'Charge',      range: (e) => e.radius + 14 },            // dive in, point blank
+  brawl:    { label: 'Brawler',     range: (e, d, s) => s * 0.4 },           // close range, inside enemy guns
+  line:     { label: 'Front line',  range: (e, d) => d * 0.45 },             // holds the front, in range of all its guns
+  standoff: { label: 'Artillery',   range: (e, d, s, l, f) => f * 0.6 },     // hangs back at 60% of its longest weapon, backs off if pressed
+  escort:   { label: 'Escort',      range: (e, d) => d * 0.6 },              // screen a big friendly ship
+  flank:    { label: 'Flanker',     range: close },                          // through the enemy line, circles their big ships
+  raid:     { label: 'Raider',      range: close },                          // attack runs: straight through, out, turn, again
+  guard:    { label: 'Interceptor', range: close },                          // guards the backline, chases down whoever goes for it
 };
 
 // Every weapon object gets its line-of-fire fields up front (one object shape, see makeEntity).
@@ -96,6 +103,7 @@ export class Battle {
     this.foeCx = new Array(nT).fill(0); // centre of each side's armed enemies
     this.foeCy = new Array(nT).fill(0);
     this.foeArmed = [];
+    this.backline = []; // each side's armed artillery (standoff) ships, for interceptors
     this.grid = new SpatialGrid(32, 6144);
     this.mgrid = new SpatialGrid(64, 6144);
     this._ax = 0; this._ay = 0;
@@ -168,6 +176,7 @@ export class Battle {
       _threatTick: -1, _threats: [], _gx0: 0, _gx1: 0, _gy0: 0, _gy1: 0,
       design: 0, hub: -1, stance: 'line', orbit: 1, targets: [], retarget: 0, weapons: [], track: null, t1: 65535,
       escortCount: 0, slot: 0, parent: -1, shoved: false, shoveRec: -1000,
+      goal: null, runPhase: 0, runA: 0, runT: 0, // flank / raid / guard steering
       // Collision box: centre (local) and half size, shrunk to the live blocks as they are lost.
       bcx: 0, bcy: 0, bhw: w / 2, bhh: h / 2,
       mass: 1, maxSpeed: 0, turn: 0, agility: 0, prefRange: 60, ward: null,
@@ -213,8 +222,9 @@ export class Battle {
     });
     for (const w of e.weapons) updateLineOfFire(e.types, e.hp, e.w, e.h, w); // armour shot away can open new arcs
     // Point defence doesn't drive positioning. "Direct" range is the main gun: cannons if fitted, else lasers.
-    let shortest = Infinity, longest = 0, cannon = 0, laser = 0;
+    let shortest = Infinity, longest = 0, cannon = 0, laser = 0, far = 0, near = Infinity;
     for (const w of e.weapons) {
+      far = Math.max(far, WEAPON[w.type].range); near = Math.min(near, WEAPON[w.type].range);
       if (w.type === BT.PD || w.type === BT.LANCE) continue;
       const r = WEAPON[w.type].range;
       if (w.type === BT.CANNON) cannon = r;
@@ -228,7 +238,7 @@ export class Battle {
     e.maxSpeed = Math.max(2.5, Math.min(22, (30 * thrust) / e.mass));
     e.turn = Math.max(0.05, Math.min(2.5, (1.6 * e.maxSpeed) / e.w));
     e.agility = Math.max(0.25, Math.min(2, e.maxSpeed / 8));
-    e.prefRange = STANCES[e.stance].range(e, range || 60, shortest === Infinity ? 60 : shortest, longest || 60);
+    e.prefRange = STANCES[e.stance].range(e, range || 60, shortest === Infinity ? 60 : shortest, longest || 60, far || 60, near === Infinity ? 60 : near);
   }
 
   /**
@@ -326,10 +336,13 @@ export class Battle {
   teamStats() {
     // Only armed ships count: disarmed hulks retreat and no longer hold the field.
     const nT = this.nT, sx = new Array(nT).fill(0), sy = new Array(nT).fill(0);
-    this.armed = [];
-    for (let t = 0; t < nT; t++) this.armed.push([]);
+    this.armed = []; this.backline = [];
+    for (let t = 0; t < nT; t++) { this.armed.push([]); this.backline.push([]); }
     for (const e of this.ents)
-      if (e.kind === SHIP && !e.dead && e.weapons.length) { sx[e.team] += e.x; sy[e.team] += e.y; this.armed[e.team].push(e); }
+      if (e.kind === SHIP && !e.dead && e.weapons.length) {
+        sx[e.team] += e.x; sy[e.team] += e.y; this.armed[e.team].push(e);
+        if (e.stance === 'standoff') this.backline[e.team].push(e); // what interceptors protect
+      }
     // Each side's enemies: one list (the other side's, with two sides) and their centre.
     for (let t = 0; t < nT; t++) {
       const foes = this.foes[t];
@@ -375,6 +388,58 @@ export class Battle {
     }
     e.targets = best;
     if (e.stance === 'escort' && (!e.ward || e.ward.dead)) this.pickWard(e);
+    if (e.stance === 'flank' || e.stance === 'raid' || e.stance === 'guard') {
+      this.pickGoal(e);
+      // Guns fire at the goal too (it goes first), as well as at whatever is nearest.
+      const g = e.goal;
+      if (g && !best.includes(g)) { best.unshift(g); if (best.length > maxT) best.pop(); }
+    }
+  }
+
+  /**
+   * The ship a flanker circles, a raider makes its run on, or an interceptor chases.
+   *   flank: the biggest enemy warship within reach (prefers one 2x its own mass or more).
+   *   raid: a big, near enemy, kept for the whole run and changed after each pass.
+   *   guard: the enemy nearest to it that is within 150 of a friendly artillery ship
+   *          (the backline); none when nobody threatens the backline.
+   */
+  pickGoal(e) {
+    const g = e.goal, live = g && !g.dead && g.weapons.length && !this.routedTeams[g.team] && !this.fr[(e.team << 4) | g.team];
+    if (e.stance === 'guard') {
+      // Each artillery ship already keeps its nearest enemies (`targets`, nearest first): any of
+      // them within 150 of its hull is a threat. No extra spatial queries.
+      let best = null, bd = Infinity;
+      const bl = this.backline[e.team];
+      for (let k = 0, n = 0; k < bl.length && n < 8; k++) {
+        const b = bl[k];
+        if ((b.x - e.x) ** 2 + (b.y - e.y) ** 2 > 700 * 700) continue;
+        n++;
+        const R2 = (b.radius + 150) ** 2;
+        for (const o of b.targets) {
+          if (o.dead || !o.weapons.length) continue;
+          if ((o.x - b.x) ** 2 + (o.y - b.y) ** 2 > R2) break; // nearest first: the rest are further
+          const d = (o.x - e.x) ** 2 + (o.y - e.y) ** 2;
+          if (d < bd) { bd = d; best = o; }
+        }
+      }
+      e.goal = best;
+      return;
+    }
+    if (live && (e.stance === 'raid' || (g.x - e.x) ** 2 + (g.y - e.y) ** 2 < 600 * 600)) return;
+    e.goal = null; e.runPhase = 0;
+    let best = null, bs = -Infinity;
+    const pool = this.foeArmed[e.team];
+    const score = (o) => {
+      const d = Math.hypot(o.x - e.x, o.y - e.y);
+      if (d > 600) return;
+      // Bigger is better, but not at any distance: 10x the mass is worth ~280 further away, so
+      // they go for the big ships within reach first and work deeper as the lines close.
+      const sc = Math.log(o.mass) - d / 120;
+      if (sc > bs) { bs = sc; best = o; }
+    };
+    for (const o of e.targets) score(o);
+    for (let k = 0; k < Math.min(12, pool.length); k++) score(pool[(this.rng() * pool.length) | 0]);
+    e.goal = best;
   }
 
   /**
@@ -424,6 +489,8 @@ export class Battle {
       const qx = sx - e.x, qy = sy - e.y, qd = Math.hypot(qx, qy);
       desired = qd > 6 ? Math.atan2(qy, qx) : Math.atan2(ey, ex);
       slow = qd < 25;
+    } else if (!disarmed && (e.stance === 'flank' || e.stance === 'raid' || e.stance === 'guard')) {
+      [desired, slow] = this.steerGoal(e, desired, pr);
     } else if (tg && !disarmed) {
       if (e.stance === 'standoff' && d < pr * 0.7) { desired += Math.PI - e.orbit * 0.4; } // too close: open the range
       else if (e.stance === 'charge' && d > pr) { /* straight at them */ }
@@ -441,6 +508,56 @@ export class Battle {
     }
     this.collide(e);
     e.x += e.vx * DT; e.y += e.vy * DT;
+  }
+
+  /**
+   * Flankers, raiders and interceptors steer by their goal ship. Returns [heading, slow].
+   *   flank: fly straight at it, ignoring the ships in between, then circle it close in at full
+   *          speed (its guns fire at whatever is in range on the way).
+   *   raid:  run in at full speed aiming to skim past its side, carry on out the far side, turn
+   *          and come back for another pass, at a new target.
+   *   guard: chase down and circle the ship threatening the backline; with no threat, hold just
+   *          in front of the backline, between it and the enemy.
+   */
+  steerGoal(e, desired, pr) {
+    const g = e.goal;
+    if (e.stance === 'guard' && !g) {
+      const bl = this.backline[e.team];
+      if (!bl.length) return [desired, false]; // no backline to guard: fight like a front-line ship
+      let bx = 0, by = 0;
+      for (const b of bl) { bx += b.x; by += b.y; }
+      bx /= bl.length; by /= bl.length;
+      const ex = this.foeCx[e.team] - bx, ey = this.foeCy[e.team] - by, el = Math.hypot(ex, ey) || 1;
+      const off = Math.min(90, el * 0.3) + e.orbit * 30;
+      const sx = bx + (ex / el) * off - (ey / el) * e.orbit * 40, sy = by + (ey / el) * off + (ex / el) * e.orbit * 40;
+      const qx = sx - e.x, qy = sy - e.y, qd = Math.hypot(qx, qy);
+      return [qd > 8 ? Math.atan2(qy, qx) : Math.atan2(ey, ex), qd < 40];
+    }
+    if (!g || g.dead) return [desired, false];
+    const dx = g.x - e.x, dy = g.y - e.y, dc = Math.hypot(dx, dy) || 1;
+    const to = Math.atan2(dy, dx), d = dc - g.radius * 0.8 - e.radius * 0.5;
+    if (e.stance !== 'raid') {
+      if (d > pr * 1.6) return [to, false];
+      // Circle it: tangent, bent in or out to hold the distance.
+      const k = Math.max(-1, Math.min(1, (d - pr) / pr));
+      return [to + e.orbit * (Math.PI / 2 - 0.9 * k), false];
+    }
+    // Raider. 0: run in, aiming beside the target so the pass skims its hull.
+    e.runT += DT;
+    if (e.runPhase === 0) {
+      const side = g.radius * 0.7 + e.radius + pr * 0.5;
+      const ax = g.x - (dy / dc) * side * e.orbit, ay = g.y + (dx / dc) * side * e.orbit;
+      const passed = dc < g.radius + e.radius + pr * 1.5 && dx * e.vx + dy * e.vy < 0;
+      if (passed || e.runT > 40) { e.runPhase = 1; e.runA = e.a; e.runT = 0; }
+      return [Math.atan2(ay - e.y, ax - e.x), false];
+    }
+    // 1: carry on out the far side; then turn back for a new pass (maybe at a new target).
+    if (dc > g.radius + 80 + e.radius * 2 || e.runT > 6) {
+      e.runPhase = 0; e.runT = 0; e.orbit = -e.orbit; e.goal = null;
+      this.pickGoal(e);
+      return [to, false];
+    }
+    return [e.runA, false];
   }
 
   /**

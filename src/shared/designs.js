@@ -25,11 +25,11 @@ export const CLASSES = {
 // Default combat stance odds per class for generated test designs. In the real game the
 // player picks the stance in the ship designer.
 const STANCE_ODDS = {
-  corvette: [['charge', 0.5], ['brawl', 0.5]],
-  frigate: [['brawl', 0.4], ['escort', 0.3], ['line', 0.3]],
-  destroyer: [['line', 0.5], ['escort', 0.3], ['brawl', 0.2]],
+  corvette: [['raid', 0.3], ['charge', 0.3], ['brawl', 0.2], ['flank', 0.2]],
+  frigate: [['raid', 0.3], ['guard', 0.3], ['escort', 0.2], ['line', 0.2]],
+  destroyer: [['flank', 0.3], ['line', 0.3], ['guard', 0.2], ['escort', 0.2]],
   cruiser: [['line', 0.6], ['standoff', 0.4]],
-  battleship: [['standoff', 0.7], ['line', 0.3]],
+  battleship: [['standoff', 0.6], ['line', 0.4]],
   titan: [['standoff', 1]],
   dreadnought: [['standoff', 1]],
   leviathan: [['standoff', 1]],
