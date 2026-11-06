@@ -50,8 +50,8 @@ Weapons (numbers in `blocks.js`):
   9 blocks with damage `150 × (1 − d/9)²`: one missile craters, a volley tears ships apart.
   All launchers on one ship fire together as a volley. Lead is capped at 3 s.
 - **Point defence**: range 30 rapid beam; shoots missiles first, close ships otherwise. Owner
-  (Nov 2026): also a **super close range, high-dps option** against ships: 24 damage every 0.2 s
-  (was 6), 25 to missiles (was 10).
+  (Nov 2026): also a **super close range, high-dps option** against ships: 32 damage every 0.2 s
+  (was 6, then 24 before ship spacing), 25 to missiles (was 10).
 - AI (Nov 2026): missile launchers aim at the biggest ship in range (all launchers on a ship
   agree, so volleys still land together), and a ship whose only guns are missiles sets its
   stance distance from missile range (it used to fall back to 60 and dive in).
@@ -95,22 +95,30 @@ Combat rules:
     and circles it close in at full speed (`pickGoal`/`steerGoal`, goal = `e.goal`).
   - **Raider** (`raid`): attack runs: straight in skimming a big ship, out the far side
     (`runPhase`), turn, new target, again.
-  - **Interceptor** (`guard`): holds just in front of its side's artillery (`battle.backline`)
-    and chases down enemies within 150 of an artillery ship (read from the artillery ship's own
-    `targets`, so no extra spatial queries).
+  - An **Interceptor** (`guard`, defend the artillery) was tried and **removed** (owner: it just
+    made big clumps of ships sitting at the back). Saved designs with an unknown stance load as
+    `line`.
   - Older ones kept: charge, brawl, escort (limited slots round a big ship, breaks off to
     attack nearby enemies).
   Measured (`npm run balance -- 6 40000 --cls destroyer --share 300 --only cannon@line,cannon@standoff,...`):
-  every stance within ±0.1 average; artillery beats PD flankers/raiders (+0.56), PD flankers
-  beat front line and brawlers. Small corvettes die to lasers (one 400 shot) before reaching a
+  every stance within about ±0.1 average; artillery beats PD flankers/raiders (+0.6), PD
+  flankers beat front-line, flanking and raiding cannon ships (+0.3). Small corvettes die to lasers (one 400 shot) before reaching a
   goal, so flankers/raiders work from destroyer size up; generated fleets give flank to
   destroyers.
 - **Owner's priorities (Nov 2026): battles that look cool, chaotic, huge, lots of destruction
   first; ships killing efficiently second.** After significant combat changes, send him a
   replay: `npm run build:viewer && node tools/replay-page.mjs 600 7 dist/replay.html "Title"`
   writes one self-contained HTML page that plays it (open in any browser).
-- Cost of the new stances: 1,000 vs 1,000 is ~5.6 ms a tick (was ~3.5) because the fight is
-  closer and denser, but battles end sooner (157 s vs 244 s), so total compute is about the same.
+- **Spacing** (owner, Nov 2026: "the front lines are crowded which is good but too crowded,
+  ships should be able to move past each other and there needs to be space to see the
+  projectiles"): `Battle.spacing()` every `SPACING_EVERY` (5) ticks; each ship steers and slides
+  away from ships whose hulls are within `SPACING_GAP` (25) of its own, **friends and enemies**,
+  only sideways or forwards (never backwards), lighter ships giving way more. Exceptions:
+  close-in stances (flank, raid, charge, brawl; `e.closeIn`) ignore enemies, nobody dodges an
+  enemy close-in ship, and a ship's own goal never pushes it away. Measured at 400 vs 400:
+  ships touching another 31% → 9%, median hull gap 7 → 18 blocks. 1,000 vs 1,000 ~4.2 ms a
+  tick (fewer collisions pays for the queries). Spread fleets take fewer ships per missile
+  blast, so missiles 90 → 75.
 - **Debris** must stay clearly visible (wrecks keep most of their colour).
 - **Ships are drawn in their player's colour** in replays (owner, Nov 2026), militia in
   `NEUTRAL_COLOR`. `planEvent` puts `color` on each group, the worker / hot-seat page write
@@ -181,10 +189,10 @@ All money numbers are in `src/shared/economy.js` (placeholders until balanced in
 - Every ship part has a credit cost (`cost` in `blocks.js`); a ship's price is the sum of its blocks.
   Owner's direction: **weapons and thrusters are expensive, armour and frame cheap**, to push
   players towards armoured designs. Current: frame 1, armour 3, heavy 7, thruster 20, PD 30,
-  hub 40, cannon 50, laser 80, missile 90, heavy laser 3,500 a unit. **Balance pass Nov 2026**
+  hub 40, cannon 50, missile 75, laser 80, heavy laser 3,500 a unit. **Balance pass Nov 2026**
   (`npm run balance`, `tools/balance.mjs`: equal-credit fleets of the same hull with one weapon
   each): at the old prices lasers beat every other weapon (+0.6 average score, most ships died
-  to lasers burning into their hub), so laser 45 → 80, cannon 60 → 50, missile 120 → 90, and
+  to lasers burning into their hub), so laser 45 → 80, cannon 60 → 50, missile 120 → 90 (75 after ship spacing), and
   point defence's damage to missiles 10 → 25 (one PD couldn't stop one missile). Now cannons
   beat lasers, missiles beat cannons, lasers ≈ missiles, and ships with a quarter of their gun
   money on PD beat missile fleets but lose to the rest. `upgradeWorld()` refreshes the stored

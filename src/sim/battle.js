@@ -38,13 +38,16 @@ export const MAX_TEAMS = 16; // sides in one battle (players plus militia); fr[]
 // The retire mechanism is kept as a cap that can be set if very long battles ever get slow.
 const CHUNK_RETIRE_TICKS = Infinity;
 const K_KINETIC = 0, K_SHELL = 1, K_MISSILE = 2;
+// Spacing between ships (see Battle.spacing): hull gap they try to keep, how hard it bends
+// their heading and slides them sideways, and how often it's refreshed.
+const SPACING_GAP = 25, SPACING_TURN = 3, SPACING_SLIDE = 1, SPACING_EVERY = 5;
 const NONE = 0xffffffff; // 'no entity' in replay id columns
 
 // Combat stances, chosen per ship design. range(e, direct, shortest, longest, far, near) -> preferred distance.
 //   direct   = main gun range (cannon, else laser, else missile), shortest = shortest gun range
 //   (point defence and heavy lasers left out), longest = longest of those, far = longest of any
 //   weapon (heavy lasers too), near = shortest of any weapon (point defence too).
-// Flank, raid and guard steer by a goal ship (`e.goal`, picked in `pickGoal`); their range is how
+// Flank and raid steer by a goal ship (`e.goal`, picked in `pickGoal`); their range is how
 // close they pass or circle it.
 const close = (e, d, s, l, f, n) => Math.max(14, Math.min(60, n * 0.5));
 export const STANCES = {
@@ -55,7 +58,6 @@ export const STANCES = {
   escort:   { label: 'Escort',      range: (e, d) => d * 0.6 },              // screen a big friendly ship
   flank:    { label: 'Flanker',     range: close },                          // through the enemy line, circles their big ships
   raid:     { label: 'Raider',      range: close },                          // attack runs: straight through, out, turn, again
-  guard:    { label: 'Interceptor', range: close },                          // guards the backline, chases down whoever goes for it
 };
 
 // Every weapon object gets its line-of-fire fields up front (one object shape, see makeEntity).
@@ -103,7 +105,6 @@ export class Battle {
     this.foeCx = new Array(nT).fill(0); // centre of each side's armed enemies
     this.foeCy = new Array(nT).fill(0);
     this.foeArmed = [];
-    this.backline = []; // each side's armed artillery (standoff) ships, for interceptors
     this.grid = new SpatialGrid(32, 6144);
     this.mgrid = new SpatialGrid(64, 6144);
     this._ax = 0; this._ay = 0;
@@ -131,6 +132,7 @@ export class Battle {
     e.design = spec.design;
     e.hub = d.hub;
     e.stance = STANCES[d.stance] ? d.stance : 'line';
+    e.closeIn = e.stance === 'flank' || e.stance === 'raid' || e.stance === 'charge' || e.stance === 'brawl';
     e.orbit = this.rng() < 0.5 ? 1 : -1;
     e.targets = [];
     e.retarget = this.rng();
@@ -176,7 +178,8 @@ export class Battle {
       _threatTick: -1, _threats: [], _gx0: 0, _gx1: 0, _gy0: 0, _gy1: 0,
       design: 0, hub: -1, stance: 'line', orbit: 1, targets: [], retarget: 0, weapons: [], track: null, t1: 65535,
       escortCount: 0, slot: 0, parent: -1, shoved: false, shoveRec: -1000,
-      goal: null, runPhase: 0, runA: 0, runT: 0, // flank / raid / guard steering
+      goal: null, runPhase: 0, runA: 0, runT: 0, // flank / raid steering
+      closeIn: false, sepX: 0, sepY: 0, // spacing push away from nearby ships (see `spacing`)
       // Collision box: centre (local) and half size, shrunk to the live blocks as they are lost.
       bcx: 0, bcy: 0, bhw: w / 2, bhh: h / 2,
       mass: 1, maxSpeed: 0, turn: 0, agility: 0, prefRange: 60, ward: null,
@@ -336,13 +339,10 @@ export class Battle {
   teamStats() {
     // Only armed ships count: disarmed hulks retreat and no longer hold the field.
     const nT = this.nT, sx = new Array(nT).fill(0), sy = new Array(nT).fill(0);
-    this.armed = []; this.backline = [];
-    for (let t = 0; t < nT; t++) { this.armed.push([]); this.backline.push([]); }
+    this.armed = [];
+    for (let t = 0; t < nT; t++) this.armed.push([]);
     for (const e of this.ents)
-      if (e.kind === SHIP && !e.dead && e.weapons.length) {
-        sx[e.team] += e.x; sy[e.team] += e.y; this.armed[e.team].push(e);
-        if (e.stance === 'standoff') this.backline[e.team].push(e); // what interceptors protect
-      }
+      if (e.kind === SHIP && !e.dead && e.weapons.length) { sx[e.team] += e.x; sy[e.team] += e.y; this.armed[e.team].push(e); }
     // Each side's enemies: one list (the other side's, with two sides) and their centre.
     for (let t = 0; t < nT; t++) {
       const foes = this.foes[t];
@@ -388,7 +388,7 @@ export class Battle {
     }
     e.targets = best;
     if (e.stance === 'escort' && (!e.ward || e.ward.dead)) this.pickWard(e);
-    if (e.stance === 'flank' || e.stance === 'raid' || e.stance === 'guard') {
+    if (e.stance === 'flank' || e.stance === 'raid') {
       this.pickGoal(e);
       // Guns fire at the goal too (it goes first), as well as at whatever is nearest.
       const g = e.goal;
@@ -397,34 +397,12 @@ export class Battle {
   }
 
   /**
-   * The ship a flanker circles, a raider makes its run on, or an interceptor chases.
+   * The ship a flanker circles or a raider makes its run on.
    *   flank: the biggest enemy warship within reach (prefers one 2x its own mass or more).
    *   raid: a big, near enemy, kept for the whole run and changed after each pass.
-   *   guard: the enemy nearest to it that is within 150 of a friendly artillery ship
-   *          (the backline); none when nobody threatens the backline.
    */
   pickGoal(e) {
     const g = e.goal, live = g && !g.dead && g.weapons.length && !this.routedTeams[g.team] && !this.fr[(e.team << 4) | g.team];
-    if (e.stance === 'guard') {
-      // Each artillery ship already keeps its nearest enemies (`targets`, nearest first): any of
-      // them within 150 of its hull is a threat. No extra spatial queries.
-      let best = null, bd = Infinity;
-      const bl = this.backline[e.team];
-      for (let k = 0, n = 0; k < bl.length && n < 8; k++) {
-        const b = bl[k];
-        if ((b.x - e.x) ** 2 + (b.y - e.y) ** 2 > 700 * 700) continue;
-        n++;
-        const R2 = (b.radius + 150) ** 2;
-        for (const o of b.targets) {
-          if (o.dead || !o.weapons.length) continue;
-          if ((o.x - b.x) ** 2 + (o.y - b.y) ** 2 > R2) break; // nearest first: the rest are further
-          const d = (o.x - e.x) ** 2 + (o.y - e.y) ** 2;
-          if (d < bd) { bd = d; best = o; }
-        }
-      }
-      e.goal = best;
-      return;
-    }
     if (live && (e.stance === 'raid' || (g.x - e.x) ** 2 + (g.y - e.y) ** 2 < 600 * 600)) return;
     e.goal = null; e.runPhase = 0;
     let best = null, bs = -Infinity;
@@ -489,7 +467,7 @@ export class Battle {
       const qx = sx - e.x, qy = sy - e.y, qd = Math.hypot(qx, qy);
       desired = qd > 6 ? Math.atan2(qy, qx) : Math.atan2(ey, ex);
       slow = qd < 25;
-    } else if (!disarmed && (e.stance === 'flank' || e.stance === 'raid' || e.stance === 'guard')) {
+    } else if (!disarmed && (e.stance === 'flank' || e.stance === 'raid')) {
       [desired, slow] = this.steerGoal(e, desired, pr);
     } else if (tg && !disarmed) {
       if (e.stance === 'standoff' && d < pr * 0.7) { desired += Math.PI - e.orbit * 0.4; } // too close: open the range
@@ -497,42 +475,71 @@ export class Battle {
       else if (d < pr * 0.8) { desired += e.orbit * Math.PI * 0.5; slow = e.stance !== 'charge'; } // broadside / orbit
       else if (d < pr * 1.1) { desired += e.orbit * 0.5; slow = e.stance === 'standoff'; }
     }
+    // Spacing (owner, Nov 2026: the front was too crowded to see the shots): every ship steers
+    // away from ships crowding it, friend or foe, but only sideways or forwards, never back, so
+    // it still goes where its stance wants and the lines spread out instead of piling up.
+    if ((e.id + this.now) % SPACING_EVERY === 0) this.spacing(e);
+    let sx = e.sepX, sy = e.sepY;
+    if (sx || sy) {
+      const fx = Math.cos(desired), fy = Math.sin(desired), dot = sx * fx + sy * fy;
+      if (dot < 0) { sx -= dot * fx; sy -= dot * fy; }
+      desired = Math.atan2(fy + sy * SPACING_TURN, fx + sx * SPACING_TURN);
+    }
     const da = wrapAngle(desired - e.a), mt = e.turn * DT;
     e.a = wrapAngle(e.a + (da > mt ? mt : da < -mt ? -mt : da));
     e.c = Math.cos(e.a); e.s = Math.sin(e.a);
     {
       const want = slow && !disarmed ? e.maxSpeed * 0.55 : e.maxSpeed;
       const k = 1 - Math.exp(-e.agility * DT);
-      e.vx += (e.c * want - e.vx) * k;
-      e.vy += (e.s * want - e.vy) * k;
+      // Manoeuvring jets slide it sideways out of a crowd as well as turning it.
+      const lat = e.maxSpeed * SPACING_SLIDE;
+      e.vx += (e.c * want + sx * lat - e.vx) * k;
+      e.vy += (e.s * want + sy * lat - e.vy) * k;
     }
     this.collide(e);
     e.x += e.vx * DT; e.y += e.vy * DT;
   }
 
   /**
-   * Flankers, raiders and interceptors steer by their goal ship. Returns [heading, slow].
+   * Push away from ships whose hulls are within SPACING_GAP of this one's (any side), weighted
+   * so the lighter ship gives way more. Stored in sepX/sepY (length up to ~1), refreshed every
+   * SPACING_EVERY ticks. Ships only, not debris (ships plough through wrecks).
+   */
+  spacing(e) {
+    const near = this._near, er = e.radius * 0.7, R = er + SPACING_GAP + 20; // +20: most neighbours' own reach
+    near.length = 0;
+    this.grid.queryBox(e.x - R, e.y - R, e.x + R, e.y + R, this._collect);
+    // A flanker's or raider's goal, and a charging ship's target, don't push it away: getting
+    // close to them is the point.
+    // Close-in stances (flank, raid, charge, brawl) only spread out from friends: enemies are
+    // what they came for (point defence needs to be within 30). And nobody slides away from an
+    // enemy close-in ship, or the spacing would dodge every flanker.
+    const skip = e.goal || (e.stance === 'charge' ? e.targets[0] : null);
+    const fr = this.fr, tb = e.team << 4, knife = e.closeIn;
+    let sx = 0, sy = 0;
+    for (const o of near) {
+      if (o === e || o === skip || o.kind !== SHIP || o.dead || ((knife || o.closeIn) && !fr[tb | o.team])) continue;
+      const dx = e.x - o.x, dy = e.y - o.y, dc = Math.hypot(dx, dy) || 0.01;
+      const want = er + o.radius * 0.7 + SPACING_GAP;
+      if (dc >= want) continue;
+      const push = (1 - dc / want) * (2 * o.mass) / (o.mass + e.mass);
+      sx += (dx / dc) * push; sy += (dy / dc) * push;
+    }
+    near.length = 0;
+    const l = Math.hypot(sx, sy);
+    if (l > 1) { sx /= l; sy /= l; }
+    e.sepX = sx; e.sepY = sy;
+  }
+
+  /**
+   * Flankers and raiders steer by their goal ship. Returns [heading, slow].
    *   flank: fly straight at it, ignoring the ships in between, then circle it close in at full
    *          speed (its guns fire at whatever is in range on the way).
    *   raid:  run in at full speed aiming to skim past its side, carry on out the far side, turn
    *          and come back for another pass, at a new target.
-   *   guard: chase down and circle the ship threatening the backline; with no threat, hold just
-   *          in front of the backline, between it and the enemy.
    */
   steerGoal(e, desired, pr) {
     const g = e.goal;
-    if (e.stance === 'guard' && !g) {
-      const bl = this.backline[e.team];
-      if (!bl.length) return [desired, false]; // no backline to guard: fight like a front-line ship
-      let bx = 0, by = 0;
-      for (const b of bl) { bx += b.x; by += b.y; }
-      bx /= bl.length; by /= bl.length;
-      const ex = this.foeCx[e.team] - bx, ey = this.foeCy[e.team] - by, el = Math.hypot(ex, ey) || 1;
-      const off = Math.min(90, el * 0.3) + e.orbit * 30;
-      const sx = bx + (ex / el) * off - (ey / el) * e.orbit * 40, sy = by + (ey / el) * off + (ex / el) * e.orbit * 40;
-      const qx = sx - e.x, qy = sy - e.y, qd = Math.hypot(qx, qy);
-      return [qd > 8 ? Math.atan2(qy, qx) : Math.atan2(ey, ex), qd < 40];
-    }
     if (!g || g.dead) return [desired, false];
     const dx = g.x - e.x, dy = g.y - e.y, dc = Math.hypot(dx, dy) || 1;
     const to = Math.atan2(dy, dx), d = dc - g.radius * 0.8 - e.radius * 0.5;

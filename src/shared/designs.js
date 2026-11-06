@@ -26,8 +26,8 @@ export const CLASSES = {
 // player picks the stance in the ship designer.
 const STANCE_ODDS = {
   corvette: [['raid', 0.3], ['charge', 0.3], ['brawl', 0.2], ['flank', 0.2]],
-  frigate: [['raid', 0.3], ['guard', 0.3], ['escort', 0.2], ['line', 0.2]],
-  destroyer: [['flank', 0.3], ['line', 0.3], ['guard', 0.2], ['escort', 0.2]],
+  frigate: [['raid', 0.3], ['line', 0.3], ['escort', 0.2], ['flank', 0.2]],
+  destroyer: [['flank', 0.3], ['line', 0.4], ['escort', 0.3]],
   cruiser: [['line', 0.6], ['standoff', 0.4]],
   battleship: [['standoff', 0.6], ['line', 0.4]],
   titan: [['standoff', 1]],
