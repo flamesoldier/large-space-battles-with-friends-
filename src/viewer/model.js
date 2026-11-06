@@ -56,7 +56,7 @@ export class ReplayModel {
   }
 
   makeEnt(kind, team, w, h) {
-    const e = { kind, team, w, h, parent: null, look: null, radius: Math.hypot(w, h) / 2, map: new Int32Array(w * h).fill(-1), tmp: [], sv0: 0, svN: 0, thr: null, thrBehind: null };
+    const e = { kind, team, w, h, parent: null, look: null, radius: Math.hypot(w, h) / 2, map: new Int32Array(w * h).fill(-1), tmp: [], sv0: 0, svN: 0, thr: null, thrBehind: null, nb: null };
     this.ents.push(e);
     return e;
   }
@@ -149,7 +149,7 @@ export class ReplayModel {
       }
       e.thr = Int32Array.from(thr); e.thrBehind = Int32Array.from(behind);
     }
-    for (const e of this.ents) e.map = null;
+    for (const e of this.ents) { neighbours(e); e.map = null; } // the grid map is only needed until here
     this.spark = new Float32Array(sp);
     this.sparkT = new Float32Array(sp.length / 7);
     for (let i = 0; i < this.sparkT.length; i++) this.sparkT[i] = sp[i * 7];
@@ -303,4 +303,16 @@ export class ReplayModel {
 function cr(p0, p1, p2, p3, t) {
   const t2 = t * t, t3 = t2 * t;
   return 0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+}
+/** For each block of an entity, the block index on each side (+x, -x, +y, -y), or -1. Built once. */
+function neighbours(e) {
+  const n = e.lx.length, nb = new Int32Array(n * 4), w = e.w, h = e.h, map = e.map;
+  for (let i = 0; i < n; i++) {
+    const x = Math.round(e.lx[i] + w / 2 - 0.5), y = Math.round(e.ly[i] + h / 2 - 0.5), o = i * 4;
+    nb[o] = x + 1 < w ? map[y * w + x + 1] : -1;
+    nb[o + 1] = x > 0 ? map[y * w + x - 1] : -1;
+    nb[o + 2] = y + 1 < h ? map[(y + 1) * w + x] : -1;
+    nb[o + 3] = y > 0 ? map[(y - 1) * w + x] : -1;
+  }
+  return (e.nb = nb);
 }

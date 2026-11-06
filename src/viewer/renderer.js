@@ -13,20 +13,88 @@ layout(location=1) in vec3 posA;
 layout(location=2) in vec3 sizeShape;
 layout(location=3) in vec4 color;
 uniform vec2 uCam; uniform vec2 uScale;
-out vec2 vUV; out vec4 vCol; flat out float vShape;
+out vec2 vUV; out vec4 vCol; flat out highp float vShape; flat out float vAng;
 void main(){
   float c = cos(posA.z), s = sin(posA.z);
   vec2 l = corner * sizeShape.xy;
   vec2 w = posA.xy + vec2(l.x*c - l.y*s, l.x*s + l.y*c);
   gl_Position = vec4((w - uCam) * uScale, 0.0, 1.0);
-  vUV = corner; vCol = color; vShape = sizeShape.z;
+  vUV = corner; vCol = color; vShape = sizeShape.z; vAng = posA.z;
 }`;
 
 const FS = `#version 300 es
 precision mediump float;
-in vec2 vUV; in vec4 vCol; flat in float vShape; out vec4 o;
+in vec2 vUV; in vec4 vCol; flat in highp float vShape; flat in float vAng; out vec4 o;
+uniform float uDet;   // 0..1: how much fine detail to draw (by on-screen block size)
+uniform float uTime;  // replay time in ticks, for glows that pulse
+// Detailed hull block. Shape code = 10 + type + 16 * open-sides mask + 256 * variety (0..7)
+// + 2048 if it's debris. Edges facing open space get a bevel lit from the upper left of the
+// world and a dark outline, so a hull reads as solid plating instead of a grid of tiles; each
+// block type has its own surface (plates, rivets, truss, nozzle, lens, turret, tubes, coils).
+vec3 hullBlock(int code, vec2 p) {
+  int type = code & 15, mask = (code >> 4) & 15, hv = (code >> 8) & 7;
+  bool dead = code >= 2048;
+  float c = cos(vAng), s = sin(vAng);
+  vec2 Lw = vec2(-0.6, -0.8);
+  vec2 L = vec2(Lw.x * c + Lw.y * s, -Lw.x * s + Lw.y * c); // light in block space
+  vec3 col = vCol.rgb * (0.94 + 0.02 * float(hv));
+  float lit = 1.0, ol = 0.0, b;
+  if ((mask & 1) == 0) { b = smoothstep(0.45, 1.0, p.x);  lit += b * (L.x * 0.5 - 0.1);  ol = max(ol, smoothstep(0.80, 0.9, p.x)); }
+  if ((mask & 2) == 0) { b = smoothstep(0.45, 1.0, -p.x); lit += b * (-L.x * 0.5 - 0.1); ol = max(ol, smoothstep(0.80, 0.9, -p.x)); }
+  if ((mask & 4) == 0) { b = smoothstep(0.45, 1.0, p.y);  lit += b * (L.y * 0.5 - 0.1);  ol = max(ol, smoothstep(0.80, 0.9, p.y)); }
+  if ((mask & 8) == 0) { b = smoothstep(0.45, 1.0, -p.y); lit += b * (-L.y * 0.5 - 0.1); ol = max(ol, smoothstep(0.80, 0.9, -p.y)); }
+  float d = uDet, r = length(p), sh = dot(p, L);
+  lit -= smoothstep(0.86, 1.0, max(abs(p.x), abs(p.y))) * 0.08 * d; // faint seams between plates
+  vec3 glow = vec3(0.0);
+  if (type == 1) {        // hub: glowing core
+    float core = 1.0 - smoothstep(0.15, 0.6, r);
+    float pulse = dead ? 0.0 : 0.75 + 0.25 * sin(uTime * 0.35);
+    lit *= 0.75 + 0.25 * smoothstep(0.75, 0.6, r);
+    glow = mix(col, vec3(1.0), 0.5) * core * pulse * d;
+  } else if (type == 2) { // armour: plate with rivets in the corners
+    float rv = 1.0 - smoothstep(0.06, 0.12, length(abs(p) - 0.66));
+    lit += (rv * (0.12 - sh * 0.2) - sh * 0.04) * d;
+  } else if (type == 3) { // heavy armour: raised inner plate, groove, rivets
+    float m = max(abs(p.x), abs(p.y));
+    float groove = smoothstep(0.5, 0.56, m) * (1.0 - smoothstep(0.62, 0.68, m));
+    float rv = 1.0 - smoothstep(0.05, 0.1, length(abs(p) - 0.78));
+    lit += (step(m, 0.56) * (0.06 - sh * 0.06) - groove * 0.25 + rv * 0.15) * d;
+  } else if (type == 4) { // frame: open truss, X braces over a dark interior
+    float br = min(abs(p.x - p.y), abs(p.x + p.y));
+    float bar = 1.0 - smoothstep(0.08, 0.14, br);
+    lit *= mix(1.0, 0.78 + 0.22 * bar, d);
+  } else if (type == 5) { // thruster: housing with a nozzle, hot inside
+    float ring = smoothstep(0.42, 0.5, r) * (1.0 - smoothstep(0.62, 0.7, r));
+    lit *= mix(1.0, 0.55 + ring * 0.7 - sh * 0.1, d);
+    if (!dead) glow = vec3(1.0, 0.55, 0.2) * (1.0 - smoothstep(0.0, 0.42, r)) * 0.9 * d;
+  } else if (type == 6) { // laser: lens in a dark mount
+    float lens = 1.0 - smoothstep(0.32, 0.4, r);
+    lit *= mix(1.0, 0.6 + 0.2 * (1.0 - smoothstep(0.5, 0.75, r)), d);
+    glow = mix(col, vec3(1.0), 0.4) * lens * (dead ? 0.2 : 0.9) * d + vec3(1.0) * (1.0 - smoothstep(0.0, 0.12, length(p + L * 0.15))) * 0.5 * d;
+  } else if (type == 7) { // cannon: round turret dome
+    float dome = 1.0 - smoothstep(0.62, 0.7, r);
+    lit *= mix(1.0, mix(0.6, 1.05 - sh * 0.35, dome), d);
+  } else if (type == 8) { // missile launcher: four tubes
+    float tube = 1.0 - smoothstep(0.2, 0.27, length(abs(p) - 0.42));
+    lit *= mix(1.0, 1.0 - tube * 0.65, d);
+  } else if (type == 9) { // point defence: small dome
+    float dome = 1.0 - smoothstep(0.4, 0.48, r);
+    lit *= mix(1.0, mix(0.7, 1.1 - sh * 0.4, dome), d);
+  } else if (type == 10) { // plasma cannon: dark housing with glowing blue coils
+    float coil = 1.0 - smoothstep(0.06, 0.14, abs(fract((p.x + p.y) * 0.75 + float(hv) * 0.13) - 0.5));
+    lit *= mix(1.0, 0.7, d);
+    if (!dead) glow = vec3(0.3, 0.6, 1.0) * coil * (0.55 + 0.25 * sin(uTime * 0.5 + float(hv))) * d;
+  }
+  col = col * max(lit, 0.0) + glow;
+  return mix(col, col * 0.3, ol * (0.4 + 0.6 * d));
+}
 void main(){
-  if (vShape < 0.5) {            // hull block: bevelled tile
+  if (vShape > 9.5) {
+    o = vec4(hullBlock(int(vShape - 10.0 + 0.5), vUV), 1.0);
+  } else if (vShape > 4.5 && vShape < 5.5) { // gun barrel: metal rod, lit along its length
+    float k = 1.0 - abs(vUV.y);
+    o = vec4(vCol.rgb * (0.55 + 0.6 * k) * (vUV.x > 0.85 ? 0.6 : 1.0), 1.0);
+  } else if (vShape < 0.5) {     // hull block: bevelled tile (far zoom, cheap)
     float e = max(abs(vUV.x), abs(vUV.y));
     float shade = 1.0 - smoothstep(0.6, 1.0, e) * 0.5 - vUV.y * 0.08;
     o = vec4(vCol.rgb * shade, 1.0);
@@ -73,6 +141,11 @@ const shade = (hex, k) => {
   const ch = (s) => Math.min(255, Math.round(((v >> s) & 255) * k)).toString(16).padStart(2, '0');
   return '#' + ch(16) + ch(8) + ch(0);
 };
+
+// Gun barrels drawn sticking out of the hull (half-width, half-length in blocks).
+const BARREL = []; BARREL[BT.CANNON] = 0.16; BARREL[BT.LASER] = 0.09; BARREL[BT.PD] = 0.07;
+const BARREL_LEN = []; BARREL_LEN[BT.CANNON] = 0.55; BARREL_LEN[BT.LASER] = 0.5; BARREL_LEN[BT.PD] = 0.35;
+const BARREL_DIR = [0, Math.PI / 2, -Math.PI / 2, Math.PI];
 
 export const TEAM = [
   { name: 'Azure Compact', armor: '#5c7ea3', heavy: '#41597a', frame: '#90a6c0', hub: '#86e8ff', beam: '#63d4ff', accent: '#86e8ff' },
@@ -154,6 +227,7 @@ const C = {
   mGlow: TEAM.map((t) => rgba(t.beam, 255)), smoke: rgba('#9a8f86', 255),
   lod: TEAM.map((t) => rgba(t.accent)), lodDead: rgba('#7a7c86'), hotChunk: rgba('#ff7a2e', 255),
   // Plasma cannon: blue whatever the side (owner: "blue with a trail, that would look like plasma").
+  barrel: rgba('#8d939c'),
   plGlow: rgba('#2f7dff', 255), plBody: rgba('#6fd2ff', 255), plCore: rgba('#f4fcff', 255), plTrail: rgba('#3fa0ff', 220),
 };
 
@@ -174,6 +248,7 @@ export class Renderer {
     this.prog = prog;
     this.uCam = gl.getUniformLocation(prog, 'uCam');
     this.uScale = gl.getUniformLocation(prog, 'uScale');
+    this.uDet = gl.getUniformLocation(prog, 'uDet'); this.uTime = gl.getUniformLocation(prog, 'uTime');
     this.vao = gl.createVertexArray();
     gl.bindVertexArray(this.vao);
     const quad = gl.createBuffer();
@@ -209,6 +284,7 @@ export class Renderer {
     const vis = (x, y, r) => x + r > vx0 && x - r < vx1 && y + r > vy0 && y - r < vy1;
     const px = 1 / z; // one CSS pixel in world units
     const lod = z < 0.9;
+    const dpr = Math.min(2, window.devicePixelRatio || 1), detail = z * dpr >= 2.5; // detailed blocks from 2.5 screen pixels per block
     let blocks = 0, ships = 0;
 
     for (const e of model.ents) {
@@ -225,10 +301,30 @@ export class Renderer {
       }
       const c = Math.cos(tr.a), s = Math.sin(tr.a), pal = e.look ? e.look.pal[dead ? 1 : 0] : PAL[dead ? 1 : 0][e.team];
       const lx = e.lx, ly = e.ly, ty = e.type, de = e.death;
-      for (let i = 0; i < lx.length; i++) {
-        if (de[i] <= t) continue;
-        solid.push(tr.x + lx[i] * c - ly[i] * s, tr.y + lx[i] * s + ly[i] * c, tr.a, 0.5, 0.5, 0, pal[ty[i]]);
-        blocks++;
+      if (!detail) {
+        for (let i = 0; i < lx.length; i++) {
+          if (de[i] <= t) continue;
+          solid.push(tr.x + lx[i] * c - ly[i] * s, tr.y + lx[i] * s + ly[i] * c, tr.a, 0.5, 0.5, 0, pal[ty[i]]);
+          blocks++;
+        }
+      } else {
+        // Detailed blocks: which sides are open (for bevels and outlines) and a gun barrel
+        // sticking out of each gun's first open side. Pure function of time, like the rest.
+        const nb = e.nb, deadBit = dead ? 2048 : 0;
+        for (let i = 0; i < lx.length; i++) {
+          if (de[i] <= t) continue;
+          const o = i * 4, a0 = nb[o], a1 = nb[o + 1], a2 = nb[o + 2], a3 = nb[o + 3];
+          const mask = (a0 >= 0 && de[a0] > t ? 1 : 0) | (a1 >= 0 && de[a1] > t ? 2 : 0) | (a2 >= 0 && de[a2] > t ? 4 : 0) | (a3 >= 0 && de[a3] > t ? 8 : 0);
+          const type = ty[i], x = tr.x + lx[i] * c - ly[i] * s, y = tr.y + lx[i] * s + ly[i] * c;
+          solid.push(x, y, tr.a, 0.5, 0.5, 10 + type + 16 * mask + 256 * ((i * 2654435761) >>> 29) + deadBit, pal[type]);
+          blocks++;
+          const bw = BARREL[type];
+          if (bw && mask !== 15) {
+            const k = !(mask & 1) ? 0 : !(mask & 4) ? 1 : !(mask & 8) ? 2 : 3; // +x, +y, -y, -x
+            const da = BARREL_DIR[k], ca = Math.cos(tr.a + da), sa = Math.sin(tr.a + da), len = BARREL_LEN[type];
+            solid.push(x + ca * len, y + sa * len, tr.a + da, len, bw, 5, C.barrel);
+          }
+        }
       }
       if (!dead) {
         // A flame on each working thruster with open space behind it (nose is local +x, so
@@ -257,6 +353,8 @@ export class Renderer {
     gl.bindVertexArray(this.vao);
     gl.uniform2f(this.uCam, cam.x, cam.y);
     gl.uniform2f(this.uScale, (2 * z) / cw, (-2 * z) / chh);
+    gl.uniform1f(this.uDet, Math.max(0, Math.min(1, (z * Math.min(2, window.devicePixelRatio || 1) - 2.5) / 5)));
+    gl.uniform1f(this.uTime, t);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.inst);
     gl.disable(gl.BLEND);
     gl.bufferData(gl.ARRAY_BUFFER, solid.f.subarray(0, solid.n * STRIDE), gl.STREAM_DRAW);

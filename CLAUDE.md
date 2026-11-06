@@ -245,6 +245,16 @@ The test-fleet generator (`designs.js`) puts missile launchers on the skin and h
 the nose or hull edge, where they have a line of fire. It also makes dreadnought, leviathan and
 colossus samples for the designer's templates (not used in the generated test fleets).
 
+- **Detailed ship look** (owner, Nov 2026, viewer only: no server, sim or replay cost): from 2.5
+  screen pixels per block, hull blocks use shape code `10 + type + 16 × open-sides mask + 256 ×
+  variety + 2048 if debris` (`hullBlock()` in the fragment shader). Edges facing open space get a
+  bevel lit from the upper left and a dark outline, so hulls read as solid plating; each type has
+  its own surface (rivets, raised heavy plates, truss frame, nozzle with hot core, laser lens,
+  turret dome, four missile tubes, PD dome, glowing blue plasma coils, pulsing hub core). Cannons,
+  lasers and PD get a barrel (shape 5) out of their first open side (+x, +y, −y, −x). Neighbour
+  table `e.nb` (4 ints per block) is built in `ReplayModel` before `e.map` is dropped. `uDet`
+  fades the detail in between 2.5 and 7.5 px per block. Software rendering measured ~25% slower
+  per frame at mid zoom (9 vs 12 fps in headless SwiftShader); a real GPU shouldn't notice.
 - **Engine flames are per thruster** (owner, Nov 2026): the viewer draws a flickering flame
   behind each working thruster block with open space behind it (`e.thr`/`e.thrBehind` in
   `ReplayModel`), instead of one glow behind the whole ship.
