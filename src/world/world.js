@@ -359,6 +359,12 @@ export function upgradeWorld(world) {
     world.relations = {};
     for (const a of world.players) for (const b of world.players) if (a.id < b.id && a.team && a.team === b.team) world.relations[`${a.id}|${b.id}`] = 'ally';
   }
+  // Block prices change in balance passes: keep each stored design's price in step with
+  // blocks.js, so ship values in the panels and combat log match what a new shipyard for it
+  // costs. Shipyards already bought keep what was paid for them.
+  for (const d of Object.values(world.designs || {})) {
+    try { d.cost = designCost(decodeDesign(d.data)); } catch { /* keep the stored price */ }
+  }
   world.version = 3;
   return world;
 }

@@ -222,7 +222,7 @@ export class Battle {
       if (w.type !== BT.MISSILE) shortest = Math.min(shortest, r);
       longest = Math.max(longest, r);
     }
-    range = cannon || laser;
+    range = cannon || laser || longest; // missile boats stand off at missile range, not at 60
     e.mass = Math.max(1, mass);
     // The hub has weak manoeuvring jets, so a ship that loses every engine still crawls.
     e.maxSpeed = Math.max(2.5, Math.min(22, (30 * thrust) / e.mass));
@@ -569,21 +569,30 @@ export class Battle {
       // Preferred target first, then any other target that is in range and inside this weapon's arc.
       // Missiles and heavy lasers all go for the primary target so volleys land together.
       const spreadFire = W.kind !== 'missile' && W.kind !== 'lance';
-      let tg = null, ax = 0, ay = 0;
+      // Missiles pick the biggest ship in range (a 9-block blast is wasted on a corvette, and big
+      // ships are slow enough to hit). Every launcher on a ship picks the same one, so the volley
+      // still lands together.
+      const big = W.kind === 'missile';
+      let tg = null, ax = 0, ay = 0, best = -1;
       const r2 = W.range * W.range;
       for (let j = 0; j < tl; j++) {
         const o = e.targets[spreadFire ? (k + j) % tl : j];
+        if (big && o.alive <= best) continue;
         const d2 = (o.x - wx) ** 2 + (o.y - wy) ** 2;
+        let px, py;
         if (d2 <= r2) {
           if (!this.bears(e, w, wx, wy, o.x, o.y)) continue;
-          tg = o; [ax, ay] = this.aimPoint(o); break;
+          [px, py] = this.aimPoint(o);
+        } else {
+          // Centre out of range, but a big ship's near side may be in range: aim at a block there.
+          if (o.radius < 12 || Math.sqrt(d2) - o.radius > W.range) continue;
+          if (!this.aimInRange(o, wx, wy, r2)) continue;
+          px = this._ax; py = this._ay;
+          if (!this.bears(e, w, wx, wy, px, py)) continue;
         }
-        // Centre out of range, but a big ship's near side may be in range: aim at a block there.
-        if (o.radius < 12 || Math.sqrt(d2) - o.radius > W.range) continue;
-        if (this.aimInRange(o, wx, wy, r2)) {
-          ax = this._ax; ay = this._ay;
-          if (this.bears(e, w, wx, wy, ax, ay)) { tg = o; break; }
-        }
+        tg = o; ax = px; ay = py;
+        if (!big) break;
+        best = o.alive;
       }
       if (!tg) { w.cd = 0.2 + this.rng() * 0.2; continue; }
       if (W.kind === 'lance') {

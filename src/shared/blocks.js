@@ -31,9 +31,9 @@ export const BLOCKS = {
   [BT.HEAVY]: { name: 'Heavy armor', hp: 240, mass: 4, cost: 7 },
   [BT.FRAME]: { name: 'Frame', hp: 45, mass: 1, cost: 1 },
   [BT.THRUSTER]: { name: 'Thruster', hp: 60, mass: 1.5, thrust: 10, cost: 20 },
-  [BT.LASER]: { name: 'Laser', hp: 130, mass: 2, cost: 45 },
-  [BT.CANNON]: { name: 'Cannon', hp: 150, mass: 3, cost: 60 },
-  [BT.MISSILE]: { name: 'Missile launcher', hp: 200, mass: 5, cost: 120 },
+  [BT.LASER]: { name: 'Laser', hp: 130, mass: 2, cost: 80 }, // was 45: lasers out-fought everything at equal cost (tools/balance.mjs)
+  [BT.CANNON]: { name: 'Cannon', hp: 150, mass: 3, cost: 50 }, // was 60: slow shells lose a lot to wrecks and overkill
+  [BT.MISSILE]: { name: 'Missile launcher', hp: 200, mass: 5, cost: 90 }, // was 120
   [BT.PD]: { name: 'Point defense', hp: 80, mass: 1.5, cost: 30 },
   [BT.LANCE]: { name: 'Heavy laser', hp: 120, mass: 4, cost: 35 }, // per block; the gun is 10x10 of these (3,500 a gun)
 };
@@ -59,7 +59,7 @@ export const WEAPON = {
   // All launchers on a ship fire together as a rippling volley at the same target.
   [BT.MISSILE]: { kind: 'missile', range: 700, damage: 150, cooldown: 30, speed: 20, life: 45, splash: 9, hp: 100, spread: 0.02, maxLead: 3 },
   // Point defence: shoots the nearest enemy missile in range, otherwise any enemy ship that close.
-  [BT.PD]: { kind: 'pd', range: 30, damage: 6, missileDamage: 10, cooldown: 0.2 },
+  [BT.PD]: { kind: 'pd', range: 30, damage: 6, missileDamage: 25, cooldown: 0.2 }, // missileDamage was 10: one PD couldn't stop one missile
   // Heavy laser: a 10x10 gun that fires wherever its unit can see past the rest of the ship. The beam carries a damage budget and
   // burns through block after block (and ship after ship) until the budget is spent.
   // It holds fire if a friendly ship is the first thing in the line of fire.

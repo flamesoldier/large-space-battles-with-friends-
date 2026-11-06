@@ -50,6 +50,9 @@ Weapons (numbers in `blocks.js`):
   9 blocks with damage `150 × (1 − d/9)²`: one missile craters, a volley tears ships apart.
   All launchers on one ship fire together as a volley. Lead is capped at 3 s.
 - **Point defence**: range 30 rapid beam; shoots missiles first, close ships otherwise.
+- AI (Nov 2026): missile launchers aim at the biggest ship in range (all launchers on a ship
+  agree, so volleys still land together), and a ship whose only guns are missiles sets its
+  stance distance from missile range (it used to fall back to 60 and dive in).
 - **Heavy laser**: 10×10 multi-block turret, range 650, every 20 s, 25,000-damage beam **1 block
   wide** (owner: a thin cut slices off bigger pieces; `width` in `blocks.js`, was briefly 5) that
   burns through blocks and ships until spent. Drawn to be unmistakable (owner found it hard to
@@ -152,7 +155,14 @@ All money numbers are in `src/shared/economy.js` (placeholders until balanced in
 - Every ship part has a credit cost (`cost` in `blocks.js`); a ship's price is the sum of its blocks.
   Owner's direction: **weapons and thrusters are expensive, armour and frame cheap**, to push
   players towards armoured designs. Current: frame 1, armour 3, heavy 7, thruster 20, PD 30,
-  hub 40, laser 45, cannon 60, missile 120, heavy laser 3,500 a unit.
+  hub 40, cannon 50, laser 80, missile 90, heavy laser 3,500 a unit. **Balance pass Nov 2026**
+  (`npm run balance`, `tools/balance.mjs`: equal-credit fleets of the same hull with one weapon
+  each): at the old prices lasers beat every other weapon (+0.6 average score, most ships died
+  to lasers burning into their hub), so laser 45 → 80, cannon 60 → 50, missile 120 → 90, and
+  point defence's damage to missiles 10 → 25 (one PD couldn't stop one missile). Now cannons
+  beat lasers, missiles beat cannons, lasers ≈ missiles, and ships with a quarter of their gun
+  money on PD beat missile fleets but lose to the rest. `upgradeWorld()` refreshes the stored
+  `cost` of every design in a running game. Heavy lasers aren't in the harness yet.
 
 ## Status: ship designer
 

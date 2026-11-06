@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "bench": "node tools/bench.mjs",
+    "balance": "node tools/balance.mjs",
     "build": "node tools/build-viewer.mjs",
     "build:viewer": "node tools/build-viewer.mjs viewer",
     "build:designer": "node tools/build-viewer.mjs designer",
