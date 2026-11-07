@@ -253,6 +253,17 @@ designer's numbers against the sim.
   connected to it, block limit, heavy lasers as whole separate 10×10 units. Warnings: no weapons,
   buried weapons, guns with under 45° of arc, heavy-laser cook-off, no thrusters, big escorts.
 - Designs are saved cropped, in the format above; JSON export stores `cells` as base64.
+- Nov 2026 (owner's friends): the designer canvas draws blocks like the replay viewer (`glyph()`,
+  `plasmaUnit()` in `designer/app.js`: crystal lasers, gun-port cannons, red PD dishes, missile
+  tubes, the plasma machine with its orb). The weapon table shows damage per shot / reload and
+  range (hover a row for what the weapon does); damage/s counts point defence too. Opened from
+  the galaxy, the test battle's enemy list includes **every design in play in that galaxy**
+  (yours and other players', sent once in the first `lsb-designer-embed` message as
+  `designs`). Template designs are named "My <class>" by default.
+- **Renaming designs** (owner, Nov 2026): a Rename button on your own shipyards in the world
+  panel opens a small dialog; `renameDesign()` in `world.js` (owner only, 1–40 chars, control
+  characters stripped) renames the design everywhere and logs it; server action
+  `{ type: 'rename', design, name }`.
 
 The test-fleet generator (`designs.js`) puts missile launchers on the skin and heavy lasers on
 the nose or hull edge, where they have a line of fire. It also makes dreadnought, leviathan and
