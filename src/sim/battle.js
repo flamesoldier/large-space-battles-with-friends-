@@ -43,9 +43,6 @@ const K_KINETIC = 0, K_SHELL = 1, K_MISSILE = 2, K_PLASMA = 3;
 const SPACING_GAP = 25, SPACING_TURN = 3, SPACING_SLIDE = 1, SPACING_EVERY = 5;
 // Debris still over the ship it broke off from is pushed out at up to this speed (blocks/s).
 const OWN_CLEAR_SPEED = 6;
-// Missile launchers only fire at ships with fewer live blocks than this (a corvette is up to 40)
-// when they're within MISSILE_SMALL_RANGE: further out, a small quick ship just dodges.
-const MISSILE_MIN_TARGET = 41, MISSILE_SMALL_RANGE = 200;
 // Plasma cannon aiming: an ally within this many blocks of the line counts as in the way.
 const LANCE_ALLY_MARGIN = 0; // 0: ~1 in 3 shots hits an ally first, 4 enemies killed per ally (owner wants friendly fire); 5: almost never, but it holds fire far more
 const NONE = 0xffffffff; // 'no entity' in replay id columns
@@ -723,8 +720,6 @@ export class Battle {
         const o = e.targets[spreadFire ? (k + j) % tl : j];
         if (big && o.alive <= best) continue;
         const d2 = (o.x - wx) ** 2 + (o.y - wy) ** 2;
-        // A huge slow missile is wasted on a small quick ship far away: only at close range.
-        if (big && o.alive < MISSILE_MIN_TARGET && d2 > MISSILE_SMALL_RANGE * MISSILE_SMALL_RANGE) continue;
         let px, py;
         if (d2 <= r2) {
           if (!this.bears(e, w, wx, wy, o.x, o.y)) continue;

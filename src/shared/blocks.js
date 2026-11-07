@@ -32,9 +32,9 @@ export const BLOCKS = {
   [BT.FRAME]: { name: 'Frame', hp: 45, mass: 1, cost: 1 },
   [BT.THRUSTER]: { name: 'Thruster', hp: 60, mass: 1.5, thrust: 10, cost: 20 },
   [BT.LASER]: { name: 'Laser', hp: 130, mass: 2, cost: 80 }, // was 45: lasers out-fought everything at equal cost (tools/balance.mjs)
-  [BT.CANNON]: { name: 'Cannon', hp: 150, mass: 3, cost: 60 }, // 60 -> 50 -> 60: an all-rounder, shouldn't beat missiles on big ships (tools/balance.mjs --vs)
-  [BT.MISSILE]: { name: 'Missile launcher', hp: 200, mass: 5, cost: 60 }, // was 120, 90, 75: the big-ship killer (tools/balance.mjs --vs)
-  [BT.PD]: { name: 'Point defense', hp: 80, mass: 1.5, cost: 30 },
+  [BT.CANNON]: { name: 'Cannon', hp: 150, mass: 3, cost: 50 }, // was 60: slow shells lose a lot to wrecks and overkill
+  [BT.MISSILE]: { name: 'Missile launcher', hp: 200, mass: 5, cost: 75 }, // was 120, then 90 (spread-out fleets take fewer ships per blast)
+  [BT.PD]: { name: 'Point defense', hp: 80, mass: 1.5, cost: 60 }, // owner, Nov 2026: was 30 (makes missiles better)
   [BT.LANCE]: { name: 'Plasma cannon', hp: 120, mass: 4, cost: 35 }, // per block; the gun is 10x10 of these (3,500 a gun)
 };
 
