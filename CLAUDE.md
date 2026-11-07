@@ -253,7 +253,8 @@ colossus samples for the designer's templates (not used in the generated test fl
   so hulls read as solid plating. **Guns are fixed mounts** (owner: turrets that can't swivel
   looked cheap; barrels were tried and removed): laser = glowing faceted crystal, cannon = gun
   port with a big dark bore and bright rim, point defence = sensor dish with rings, crosshair and
-  a red eye, missile launcher = four tubes inside hazard stripes. **The plasma cannon is drawn as
+  a red eye, in one fixed red for every side (owner: it blended into the ship colour; `PD_COLOR`),
+  missile launcher = four tubes inside hazard stripes. **The plasma cannon is drawn as
   one 10×10 machine**: dark housing with panel lines, machinery in the corners, pipes with blue
   energy flowing inward to a glowing blue orb in a collar; its 1.5 s charge-up glow before each
   shot swells over the orb (the bolt launches from the unit's centre). Armour has rivets, heavy

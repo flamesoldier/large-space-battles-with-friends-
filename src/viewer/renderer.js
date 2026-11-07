@@ -175,6 +175,9 @@ const shade = (hex, k) => {
   return '#' + ch(16) + ch(8) + ch(0);
 };
 
+// Point defence is one fixed colour for every side (owner: in the ship's colour it blended in).
+const PD_COLOR = '#c2413f';
+
 export const TEAM = [
   { name: 'Azure Compact', armor: '#5c7ea3', heavy: '#41597a', frame: '#90a6c0', hub: '#86e8ff', beam: '#63d4ff', accent: '#86e8ff' },
   { name: 'Ember Dominion', armor: '#a5684f', heavy: '#7a4a38', frame: '#c69c86', hub: '#ffd27a', beam: '#ff7a52', accent: '#ffb35c' },
@@ -184,7 +187,7 @@ function blockPalette(team, dead) {
   const T = TEAM[team], k = dead ? 0.7 : 1; // wrecks stay readable, just burnt
   const p = [];
   p[BT.HUB] = T.hub; p[BT.ARMOR] = T.armor; p[BT.HEAVY] = T.heavy; p[BT.FRAME] = T.frame;
-  p[BT.THRUSTER] = '#3d434f'; p[BT.LASER] = team ? '#ffd9c9' : '#d8f4ff'; p[BT.CANNON] = '#9aa1ab'; p[BT.MISSILE] = '#b9b16c'; p[BT.PD] = team ? '#e8a07a' : '#7fc4e0'; p[BT.LANCE] = team ? '#8a4f63' : '#5b5f9c';
+  p[BT.THRUSTER] = '#3d434f'; p[BT.LASER] = team ? '#ffd9c9' : '#d8f4ff'; p[BT.CANNON] = '#9aa1ab'; p[BT.MISSILE] = '#b9b16c'; p[BT.PD] = PD_COLOR; p[BT.LANCE] = team ? '#8a4f63' : '#5b5f9c';
   return p.map((c) => (c ? rgba(dead ? shade(c, k) : c) : 0));
 }
 const PAL = [[blockPalette(0, false), blockPalette(1, false)], [blockPalette(0, true), blockPalette(1, true)]];
@@ -208,7 +211,7 @@ function lookFor(hex) {
     const p = [];
     p[BT.HUB] = T.hub; p[BT.ARMOR] = T.armor; p[BT.HEAVY] = T.heavy; p[BT.FRAME] = T.frame;
     p[BT.THRUSTER] = '#3d434f'; p[BT.LASER] = mixHex(hex, '#ffffff', 0.75); p[BT.CANNON] = '#9aa1ab'; p[BT.MISSILE] = '#b9b16c';
-    p[BT.PD] = shade(mixHex(hex, '#ffffff', 0.3), 0.9); p[BT.LANCE] = shade(mixHex(hex, '#40404a', 0.5), 0.9);
+    p[BT.PD] = PD_COLOR; p[BT.LANCE] = shade(mixHex(hex, '#40404a', 0.5), 0.9);
     return p.map((c) => (c ? rgba(dead ? shade(c, 0.7) : c) : 0));
   };
   L = { pal: [make(false), make(true)], lod: rgba(hex), engine: rgba(hex, 150), accent: hex };
