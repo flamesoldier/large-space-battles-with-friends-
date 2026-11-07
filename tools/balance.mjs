@@ -97,14 +97,41 @@ function fight(dA, dB, seed) {
     for (let k = 0; k < n; k++) ships.push({ design: di, team, x: -dir * (300 + Math.hypot(d.w, d.h) * 0.6 + r() * (30 + Math.sqrt(n) * 10)), y: (r() - 0.5) * spanY, a: team ? Math.PI : 0 });
   };
   place(0, nA, 0, dA); place(1, nB, 1, dB);
-  const b = new Battle({ designs: [dA, dB], ships, seed, maxTime: 240 });
+  const b = new Battle({ designs: [dA, dB], ships, seed, maxTime: Number(flag('--time', 240)) });
   b.run();
-  const lost = [0, 0], start = [nA * cA, nB * cB];
+  const lost = [0, 0], start = [nA * cA, nB * cB], blk = [0, 0], blk0 = [0, 0];
+  const size = [dA, dB].map((d) => d.cells.reduce((n, c) => n + (c ? 1 : 0), 0));
   for (let k = 0; k < ships.length; k++) {
-    const e = b.byId[k];
-    if (e.dead || e.hubDead || !e.weapons.length) lost[ships[k].team] += ships[k].team ? cB : cA;
+    const e = b.byId[k], t = ships[k].team;
+    if (e.dead || e.hubDead || !e.weapons.length) lost[t] += t ? cB : cA;
+    blk0[t] += size[t]; blk[t] += e.dead ? size[t] : size[t] - e.alive; // blocks shot off (wrecks count as lost)
   }
-  return { a: lost[1] / start[1] - lost[0] / start[0], t: b.tick / 10, why: b.endReason, nA, nB };
+  return { a: lost[1] / start[1] - lost[0] / start[0], kill: lost[1] / start[1], lost: lost[0] / start[0], dmg: blk[1] / blk0[1], hurt: blk[0] / blk0[0], t: b.tick / 10, why: b.endReason, nA, nB };
+}
+
+// --vs CLASS: each weapon type against a fleet of generated CLASS ships (their own mixed guns,
+// plasma cannons swapped for heavy armour, front-line stance), same credits. Measures how each
+// weapon does against small or large targets. Prints, per type: score, share of the enemy's
+// credits killed, share of its own lost, and share of enemy / own blocks shot off.
+const VS = flag('--vs', null);
+if (VS) {
+  const acc = {};
+  for (let s = 1; s <= SEEDS; s++) {
+    const base = makeDesign(CLS, 5000 + s * 17);
+    const def = makeDesign(VS, 9000 + s * 31);
+    def.cells = def.cells.map((c) => (c === BT.LANCE ? BT.HEAVY : c)); if (flag('--vs-stance', null)) def.stance = flag('--vs-stance', null);
+    for (const k of names) {
+      const r = fight(variant(base, TYPES[k].t, WEAPON_SHARE, STANCE || TYPES[k].stance, TYPES[k].pd || 0), def, s);
+      const a = (acc[k] ||= { a: 0, kill: 0, lost: 0, dmg: 0, hurt: 0, n: 0, nB: 0 });
+      for (const f of ['a', 'kill', 'lost', 'dmg', 'hurt', 'nB']) a[f] += r[f];
+      a.n++;
+    }
+  }
+  console.log(`${CLS} fleets (${BUDGET} cr) vs ${VS} fleets, ${SEEDS} seeds (about ${Math.round(acc[names[0]].nB / SEEDS)} enemy ships):`);
+  console.log('type'.padEnd(16) + 'score'.padStart(8) + 'killed'.padStart(9) + 'lost'.padStart(7) + '  blocks shot off: enemy / own');
+  const pc = (v) => (Math.round(v * 100) + '%').padStart(7);
+  for (const k of names) { const a = acc[k], n = a.n; console.log(k.padEnd(16) + ((a.a >= 0 ? '+' : '') + (a.a / n).toFixed(2)).padStart(8) + pc(a.kill / n).padStart(9) + pc(a.lost / n) + pc(a.dmg / n).padStart(10) + ' /' + pc(a.hurt / n)); }
+  process.exit(0);
 }
 
 const table = {};

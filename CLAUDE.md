@@ -197,7 +197,7 @@ All money numbers are in `src/shared/economy.js` (placeholders until balanced in
 - Every ship part has a credit cost (`cost` in `blocks.js`); a ship's price is the sum of its blocks.
   Owner's direction: **weapons and thrusters are expensive, armour and frame cheap**, to push
   players towards armoured designs. Current: frame 1, armour 3, heavy 7, thruster 20, PD 30,
-  hub 40, cannon 50, missile 75, laser 80, heavy laser 3,500 a unit. **Balance pass Nov 2026**
+  hub 40, cannon 60, missile 60, laser 80, plasma cannon 3,500 a unit. **Balance pass Nov 2026**
   (`npm run balance`, `tools/balance.mjs`: equal-credit fleets of the same hull with one weapon
   each): at the old prices lasers beat every other weapon (+0.6 average score, most ships died
   to lasers burning into their hub), so laser 45 → 80, cannon 60 → 50, missile 120 → 90 (75 after ship spacing), and
@@ -205,6 +205,18 @@ All money numbers are in `src/shared/economy.js` (placeholders until balanced in
   beat lasers, missiles beat cannons, lasers ≈ missiles, and ships with a quarter of their gun
   money on PD beat missile fleets but lose to the rest. `upgradeWorld()` refreshes the stored
   `cost` of every design in a running game. Heavy lasers aren't in the harness yet.
+  **Counter system by target size** (owner, Nov 2026: missiles good against large ships and
+  worse against small, lasers good against small and worse against large, cannons about even
+  but not as good as either at its speciality). Checked with `npm run balance -- 6 40000 --only
+  laser,cannon,missile --vs <class> --vs-stance line --time 900` (each weapon on the same hull
+  against equal-credit fleets of generated corvettes / frigates / battleships / titans).
+  Cruiser attackers now score: vs corvettes laser +0.82, cannon +0.33, missile −0.07; vs
+  frigates +0.82 / +0.44 / +0.05; vs battleships +0.18 / +0.47 / +0.65; vs titans +0.31 / +0.70 /
+  +0.86 (destroyer attackers show the same order). To get there: cannon 50 → 60, missile 75 →
+  60, and missile launchers only fire at ships under 41 live blocks (corvette size) when they're
+  within 200 (`MISSILE_MIN_TARGET`, `MISSILE_SMALL_RANGE`): before that, missiles did as well as
+  cannons against corvette swarms (one blast kills a corvette). Cannons still do somewhat better
+  against big ships than small.
 
 ## Status: ship designer
 
