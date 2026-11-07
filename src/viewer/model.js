@@ -50,27 +50,29 @@ export class ReplayModel {
       e.design = c.shipDesign[k];
       e.s0 = s0; e.n = n; e.t0 = 0;
       e.t1 = c.shipT1[k] === 65535 ? Infinity : c.shipT1[k];
-      for (let i = 0; i < d.cells.length; i++) if (d.cells[i]) this.addCell(e, i, d.cells[i]);
+      const up = unitPos(d);
+      for (let i = 0; i < d.cells.length; i++) if (d.cells[i]) this.addCell(e, i, d.cells[i], up[i]);
       this.finishEnt(e);
     }
   }
 
   makeEnt(kind, team, w, h) {
-    const e = { kind, team, w, h, parent: null, look: null, radius: Math.hypot(w, h) / 2, map: new Int32Array(w * h).fill(-1), tmp: [], sv0: 0, svN: 0, thr: null, thrBehind: null, nb: null };
+    const e = { kind, team, w, h, parent: null, look: null, radius: Math.hypot(w, h) / 2, map: new Int32Array(w * h).fill(-1), tmp: [], sv0: 0, svN: 0, thr: null, thrBehind: null, nb: null, unit: null };
     this.ents.push(e);
     return e;
   }
 
-  addCell(e, gridIndex, type) {
-    e.map[gridIndex] = e.tmp.length / 3;
-    e.tmp.push((gridIndex % e.w) + 0.5 - e.w / 2, ((gridIndex / e.w) | 0) + 0.5 - e.h / 2, type);
+  /** unit: for plasma cannon blocks, 1 + position in its 10x10 unit (u * 10 + v); else 0. */
+  addCell(e, gridIndex, type, unit = 0) {
+    e.map[gridIndex] = e.tmp.length / 4;
+    e.tmp.push((gridIndex % e.w) + 0.5 - e.w / 2, ((gridIndex / e.w) | 0) + 0.5 - e.h / 2, type, unit);
   }
 
   finishEnt(e) {
-    const n = e.tmp.length / 3;
-    e.lx = new Float32Array(n); e.ly = new Float32Array(n); e.type = new Uint8Array(n);
+    const n = e.tmp.length / 4;
+    e.lx = new Float32Array(n); e.ly = new Float32Array(n); e.type = new Uint8Array(n); e.unit = new Uint8Array(n);
     e.death = new Float32Array(n).fill(Infinity);
-    for (let i = 0; i < n; i++) { e.lx[i] = e.tmp[i * 3]; e.ly[i] = e.tmp[i * 3 + 1]; e.type[i] = e.tmp[i * 3 + 2]; }
+    for (let i = 0; i < n; i++) { const o = i * 4; e.lx[i] = e.tmp[o]; e.ly[i] = e.tmp[o + 1]; e.type[i] = e.tmp[o + 2]; e.unit[i] = e.tmp[o + 3]; }
     e.tmp = null;
   }
 
@@ -89,7 +91,7 @@ export class ReplayModel {
       for (let m = 0; m < c.chN[k]; m++) {
         const pi = c.chCells[c.chC0[k] + m];
         const ci = (((pi / pd.w) | 0) - minJ) * cw + ((pi % pd.w) - minI);
-        this.addCell(e, ci, pd.cells[pi]);
+        this.addCell(e, ci, pd.cells[pi], unitPos(pd)[pi]);
       }
       this.finishEnt(e);
     }
@@ -315,4 +317,27 @@ function neighbours(e) {
     nb[o + 3] = y > 0 ? map[(y - 1) * w + x] : -1;
   }
   return (e.nb = nb);
+}
+/**
+ * For each cell of a design: 1 + its position (u * 10 + v) inside its plasma cannon's 10x10 unit,
+ * or 0. Units never touch (the designer refuses that), so each connected group of plasma cannon
+ * cells is one unit and its bounding box gives the position. Cached on the design.
+ */
+function unitPos(d) {
+  if (d._unit) return d._unit;
+  const { w, h, cells } = d, out = new Uint8Array(w * h), seen = new Uint8Array(w * h), stack = [];
+  for (let s = 0; s < cells.length; s++) {
+    if (cells[s] !== BT.LANCE || seen[s]) continue;
+    const group = [];
+    let x0 = Infinity, y0 = Infinity;
+    stack.push(s); seen[s] = 1;
+    while (stack.length) {
+      const c = stack.pop(), x = c % w, y = (c / w) | 0;
+      group.push(c); x0 = Math.min(x0, x); y0 = Math.min(y0, y);
+      for (const n of [x > 0 ? c - 1 : -1, x < w - 1 ? c + 1 : -1, y > 0 ? c - w : -1, y < h - 1 ? c + w : -1])
+        if (n >= 0 && !seen[n] && cells[n] === BT.LANCE) { seen[n] = 1; stack.push(n); }
+    }
+    for (const c of group) out[c] = 1 + Math.min(9, (c % w) - x0) * 10 + Math.min(9, ((c / w) | 0) - y0);
+  }
+  return (d._unit = out);
 }

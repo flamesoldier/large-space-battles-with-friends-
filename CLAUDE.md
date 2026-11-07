@@ -247,14 +247,20 @@ colossus samples for the designer's templates (not used in the generated test fl
 
 - **Detailed ship look** (owner, Nov 2026, viewer only: no server, sim or replay cost): from 2.5
   screen pixels per block, hull blocks use shape code `10 + type + 16 × open-sides mask + 256 ×
-  variety + 2048 if debris` (`hullBlock()` in the fragment shader). Edges facing open space get a
-  bevel lit from the upper left and a dark outline, so hulls read as solid plating; each type has
-  its own surface (rivets, raised heavy plates, truss frame, nozzle with hot core, laser lens,
-  turret dome, four missile tubes, PD dome, glowing blue plasma coils, pulsing hub core). Cannons,
-  lasers and PD get a barrel (shape 5) out of their first open side (+x, +y, −y, −x). Neighbour
-  table `e.nb` (4 ints per block) is built in `ReplayModel` before `e.map` is dropped. `uDet`
-  fades the detail in between 2.5 and 7.5 px per block. Software rendering measured ~25% slower
-  per frame at mid zoom (9 vs 12 fps in headless SwiftShader); a real GPU shouldn't notice.
+  var + 32768 if debris` (`hullBlock()` in the fragment shader; var = 0..7 variety, or for
+  plasma cannon blocks `u × 10 + v`, the place in its 10×10 unit, from `unitPos()` in `model.js`
+  → `e.unit`). Edges facing open space get a bevel lit from the upper left and a dark outline,
+  so hulls read as solid plating. **Guns are fixed mounts** (owner: turrets that can't swivel
+  looked cheap; barrels were tried and removed): laser = glowing faceted crystal, cannon = gun
+  port with a big dark bore and bright rim, point defence = sensor dish with rings, crosshair and
+  a red eye, missile launcher = four tubes inside hazard stripes. **The plasma cannon is drawn as
+  one 10×10 machine**: dark housing with panel lines, machinery in the corners, pipes with blue
+  energy flowing inward to a glowing blue orb in a collar; its 1.5 s charge-up glow before each
+  shot swells over the orb (the bolt launches from the unit's centre). Armour has rivets, heavy
+  armour a raised plate, frame a light truss, thrusters a hot nozzle, the hub a pulsing core.
+  Neighbour table `e.nb` (4 ints per block) is built in `ReplayModel` before `e.map` is dropped.
+  `uDet` fades the detail in between 2.5 and 7.5 px per block. Software rendering measured ~25%
+  slower per frame at mid zoom (headless SwiftShader); a real GPU shouldn't notice.
 - **Engine flames are per thruster** (owner, Nov 2026): the viewer draws a flickering flame
   behind each working thruster block with open space behind it (`e.thr`/`e.thrBehind` in
   `ReplayModel`), instead of one glow behind the whole ship.
