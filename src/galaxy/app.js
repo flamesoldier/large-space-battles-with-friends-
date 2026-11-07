@@ -570,6 +570,14 @@ function movePanel(P, myShips) {
       html += `<span class="eta">${fmtHours(pv.hours)}</span><br>${laneLegs ? `${laneLegs} hyperlane jump${laneLegs > 1 ? 's' : ''}` : 'No hyperlanes'}${spaceLegs ? `${laneLegs ? ' + ' : ', '}${spaceLegs} leg${spaceLegs > 1 ? 's' : ''} through normal space` : ''} · speed ${pv.speed.toFixed(1)} · arrives ${clockText(world.clock + pv.hours * HOUR_MS)}`;
       const via = pv.legs.slice(0, -1).map((l) => l.to);
       if (via.length) html += `<br>Stops at ${via.map((id) => esc(world.planets[id].name)).join(', ')} on the way.`;
+      // Hyperlanes on but none used because "Avoid worlds you don't hold" blocks them (the usual
+      // case early on: every lane beyond your first neighbours runs through militia worlds).
+      if (move.lanes && move.avoid && !laneLegs) {
+        const alt = previewFleet(world, move.from, move.to, move.ships, { owner: ui.me, lanes: true, avoid: false });
+        if (alt.ok && alt.legs.some((l) => l.lane) && alt.hours < pv.hours - 1e-6) {
+          html += `<br><span style="color:var(--warn)">No hyperlanes on this route because they pass ${alt.stops.length} world${alt.stops.length > 1 ? 's' : ''} you don't hold. Using them would take <b>${fmtHours(alt.hours)}</b>, but the fleet stops and fights at each.</span> <button class="small" data-act="use-lanes">Use hyperlanes anyway</button>`;
+        }
+      }
       html += `<br><span class="hint">Battles start ${fmtHours(HOLD_MS / HOUR_MS)} after the fleet arrives, so reinforcements can join.</span>`;
       if (pv.stops.length) {
         const list = pv.stops.map((id) => { const S = world.planets[id], n = shipTotal(S); return `${esc(S.name)} (${esc(playerName(world, S.owner))}${n ? `, ${n} ships` : ''})`; }).join(', ');
@@ -651,6 +659,7 @@ $('panel').addEventListener('click', (e) => {
   } else if (act === 'pick') { move.picking = true; move.to = null; refreshPreview(); renderPanel(true); toast('Click a world to send the fleet there.'); }
   else if (act === 'cancel-move') cancelMove();
   else if (act === 'launch') launchMove();
+  else if (act === 'use-lanes') { move.lanes = true; move.avoid = false; refreshPreview(); renderPanel(true); }
 });
 $('panel').addEventListener('change', (e) => {
   if (e.target.dataset.act === 'lanes') { move.lanes = e.target.checked; refreshPreview(); renderPanel(true); }

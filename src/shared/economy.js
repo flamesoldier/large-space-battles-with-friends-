@@ -29,7 +29,7 @@ export const crowdingSurcharge = (existingListValue) => Math.round(existingListV
 export const shipyardPriceAt = (design, existingListValue) => shipyardPrice(design) + crowdingSurcharge(existingListValue);
 
 // Selling a shipyard gives back this share of what was actually paid for it.
-export const SHIPYARD_SELL_REFUND = 0.5;
+export const SHIPYARD_SELL_REFUND = 0.95; // owner, Nov 2026 (was 0.5)
 
 // Income: every world pays a fixed number of credits per hour into its owner's global pool.
 // Home worlds pay HOME_INCOME; every other world rolls a fixed value in PLANET_INCOME (in

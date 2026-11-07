@@ -192,7 +192,7 @@ All money numbers are in `src/shared/economy.js` (placeholders until balanced in
   owner's benchmark: **the 100th shipyard of the same cost on one world is about 2× the first**
   (1.99×), whatever the ship costs. List prices, not what was paid, so it doesn't compound. (An
   earlier version used list × (1 + value / 25,000); the owner found that far too steep.)
-- **Shipyards can be sold**: 50% of what was actually paid comes back.
+- **Shipyards can be sold**: **95%** of what was actually paid comes back (owner, Nov 2026; was 50%).
 - Ships a shipyard builds garrison its world and defend it.
 - Every ship part has a credit cost (`cost` in `blocks.js`); a ship's price is the sum of its blocks.
   Owner's direction: **weapons and thrusters are expensive, armour and frame cheap**, to push
@@ -244,9 +244,9 @@ designer's numbers against the sim.
   of a slow-to-analyse design waits for the end of a stroke. Owner's controls: **mouse wheel
   zooms** (towards the cursor), **WASD / arrow keys pan** smoothly while held (Shift faster),
   plus a Hand tool (H), Space+drag, +/− buttons and a clickable minimap. Q toggles all arcs.
-  **Right-click an empty cell (or Esc) deselects the block** (owner, Nov 2026: `block === null`,
-  left clicks then do nothing); right-click/drag on blocks still erases, and a right drag that
-  starts on an empty cell still erases once it moves. Opened from the galaxy, the designer sits
+  **Right-click an empty cell picks the Hand tool** and dragging moves the view (owner, Nov 2026;
+  it used to deselect the block); picking a block from the palette leaves the Hand tool. Esc
+  still deselects (`block === null`). Right-click/drag on blocks still erases. Opened from the galaxy, the designer sits
   under a top bar with a prominent "← Back to galaxy" button (`.overlay-bar`; the old button
   overlapped the help text and was easy to miss).
 - Validation errors block test battles (and should block shipyards): one hub, everything
@@ -405,6 +405,11 @@ economy, fleets, captures, with real battles).
   round every world not held by you or an ally (a straight flight always exists); with it off the
   route is fastest and the panel lists the hostile stops (marked on the map) and their ships.
   Saves from before this rule (`upgradeWorld`) let fleets already in flight fly straight on.
+  Early on almost every hyperlane route passes militia worlds, so with "Avoid" on fleets fly
+  through normal space (measured: 4 of 30 destinations from a home world use a lane, 30 of 30
+  with Avoid off). The owner thought hyperlanes had broken, so when Avoid is what stops them
+  the move panel says so, shows the lane route's time and has a **"Use hyperlanes anyway"**
+  button (turns Avoid off).
 - Fleet speed = slowest ship's battle top speed (blocks/s) × `TRAVEL_SCALE` (1) galaxy units per
   hour: a destroyer takes ~10 h between neighbours through space, ~1 h along a lane. Ships under
   `MIN_FLEET_SPEED` can't leave (fixed defences; hub thrusters alone give ~2.5, so rare).
@@ -476,7 +481,7 @@ hashes are kept). The server runs with no game too (players are told it isn't se
 - Not yet: fog of war (every browser gets the whole world), designer library on the server.
 
 Open with the owner (placeholders now): incomes and starting credits, the crowding share,
-the 50% resale, militia strength, travel scale, the 30-minute hold, fog of war, recalling fleets,
+militia strength, travel scale, the 30-minute hold, fog of war, recalling fleets,
 damage carried between battles, and the battle size cap (a big late-game garrison can mean thousands of ships; the plan is waves).
 
 Still open with the owner: the exact block prices and the shipyard multiplier (placeholders
