@@ -197,7 +197,7 @@ All money numbers are in `src/shared/economy.js` (placeholders until balanced in
 - Every ship part has a credit cost (`cost` in `blocks.js`); a ship's price is the sum of its blocks.
   Owner's direction: **weapons and thrusters are expensive, armour and frame cheap**, to push
   players towards armoured designs. Current: frame 1, armour 3, heavy 7, thruster 20,
-  hub 40, cannon 50, missile 75, laser 80, point defence 60, plasma cannon 3,500 a unit. **Balance pass Nov 2026**
+  hub 40, cannon 50, missile 75, laser 80, point defence 60, plasma cannon 1,500 a unit (15 a block; was 3,500). **Balance pass Nov 2026**
   (`npm run balance`, `tools/balance.mjs`: equal-credit fleets of the same hull with one weapon
   each): at the old prices lasers beat every other weapon (+0.6 average score, most ships died
   to lasers burning into their hub), so laser 45 → 80, cannon 60 → 50, missile 120 → 90 (75 after ship spacing), and
@@ -211,6 +211,13 @@ All money numbers are in `src/shared/economy.js` (placeholders until balanced in
   missiles against big ships and missiles doing well against corvette swarms. A fix (cannon 60,
   missile 60, missiles holding fire at far corvettes) was offered and **turned down by the
   owner**: missiles firing at small ships is fine, they hit whatever is behind them.
+  **Plasma cannon priced at 1,500 a unit** (was 3,500; owner thought it too dear). Measured
+  (`/tmp`-style test: the same generated battleship with its plasma cannon vs with it swapped
+  for heavy armour, equal-credit fleets, 4–6 seeds, 15-minute battles): it's an **anti-capital
+  weapon**. Even at 3,500 plasma battleships beat 75% more plain ones (+0.38); against titans
+  at 1,500 they score +0.81 where plain ones score −0.08. Against small ships it's a liability:
+  at 3,500, −0.79 vs frigates and −0.53 vs destroyers (plain: −0.06 / +0.04); at 1,200 still
+  −0.60 / −0.12. At 1,500 it's about break-even against cruisers (−0.05 vs −0.14 plain).
 
 ## Status: ship designer
 
