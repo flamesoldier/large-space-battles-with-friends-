@@ -42,6 +42,7 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } },
 };
 const LIB_KEY = 'lsb.designs.v1', CUR_KEY = 'lsb.designer.current.v1';
+const PLASMA_WARNING = "WARNING: HUGE FRIENDLY FIRE. ITS BOLT CARVES THROUGH YOUR OWN SHIPS AS WELL AS THE ENEMY'S, AND ITS BLOCKS EXPLODE WHEN DESTROYED, WRECKING YOUR SHIP AND ANY ALLY NEARBY.";
 
 // ------------------------------------------------------------ UI setup
 function blockTitle(t) {
@@ -52,6 +53,7 @@ function blockTitle(t) {
   if (t === BT.THRUSTER) s += `, thrust ${B.thrust}`;
   if (W) s += `. Range ${W.range}, ${W.damage} damage every ${W.cooldown} s`;
   if (t === BT.HUB) s += '. One per ship; placing it moves it. Lose it and the ship breaks apart.';
+  if (t === BT.LANCE) s += `.\n\n${PLASMA_WARNING}`;
   return s;
 }
 for (const [t, key] of PALETTE) {
@@ -172,7 +174,7 @@ const SHOT_HINT = {
   [BT.CANNON]: 'A slow shell aimed ahead of the target; damage splashes onto the blocks around the hit.',
   [BT.MISSILE]: 'Huge slow missile, flies over your own ships. Blast 9 blocks wide, strongest in the middle. Point defence can shoot it down.',
   [BT.PD]: 'Very short range. Shoots down missiles first (25 damage to a missile), then shreds nearby hulls.',
-  [BT.LANCE]: 'A blue plasma bolt that carves through ship after ship, yours included, until its damage is spent.',
+  [BT.LANCE]: `A blue plasma bolt that carves through ship after ship until its damage is spent.\n\n${PLASMA_WARNING}`,
 };
 
 // ------------------------------------------------------------ drawing

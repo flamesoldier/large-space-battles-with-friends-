@@ -149,7 +149,7 @@ export function analyzeDesign(d) {
   const narrow = weapons.filter((x) => !x.omni && !x.buried && x.arcDeg < 45);
   if (narrow.length) warnings.push(`${narrow.length} weapon${narrow.length > 1 ? 's have' : ' has'} a firing arc under 45°. Guns that stick out of the hull can cover more.`);
   if (!thrust && blocks > 1) warnings.push('No thrusters: the ship crawls on hub jets (2.5 speed).');
-  if (groups.length) warnings.push(`Plasma cannon blocks explode when destroyed and chain-react, wrecking everything within about ${COOKOFF.radius} blocks of the gun, your own ship included. Armour it well.`);
+  if (groups.length) warnings.push(`FRIENDLY FIRE: plasma bolts carve through your own ships too. Plasma cannon blocks also explode when destroyed and chain-react, wrecking everything within about ${COOKOFF.radius} blocks of the gun, your own ship included. Armour it well.`);
   if (d.stance === 'escort' && cls && cls.id !== 'corvette' && cls.id !== 'frigate' && cls.id !== 'destroyer')
     warnings.push('Escorts only screen ships 3× their mass, so big escorts rarely find a ship to guard.');
 

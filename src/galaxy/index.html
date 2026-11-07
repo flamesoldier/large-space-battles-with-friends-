@@ -212,6 +212,11 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
 .prow input[type=color] { width: 44px; height: 30px; padding: 2px; background: transparent; border: 1px solid var(--line); border-radius: 3px; }
 .designs { display: grid; gap: 6px; max-height: 46vh; overflow-y: auto; margin-top: 12px; }
 .design { display: grid; grid-template-columns: 96px 1fr auto; gap: 12px; align-items: center; border: 1px solid var(--line); padding: 6px 8px; }
+.design-acts { display: flex; gap: 6px; align-items: center; }
+.yard-hidden { margin-top: 8px; font-size: 13px; }
+.yard-hidden summary { cursor: pointer; color: var(--dim); }
+.hidden-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 0; border-top: 1px solid var(--line); }
+.hidden-row small { color: var(--dim); font-family: var(--mono); }
 .design canvas { width: 96px; height: 48px; image-rendering: pixelated; background: rgba(255,255,255,0.02); }
 .design b { display: block; font-size: 14px; }
 .design span { font-family: var(--mono); font-size: 11.5px; color: var(--dim); }

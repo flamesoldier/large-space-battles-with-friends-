@@ -264,6 +264,14 @@ designer's numbers against the sim.
   panel opens a small dialog; `renameDesign()` in `world.js` (owner only, 1–40 chars, control
   characters stripped) renames the design everywhere and logs it; server action
   `{ type: 'rename', design, name }`.
+- **Shipyard shortlist** (owner, Nov 2026): in the New shipyard dialog each design can be starred
+  (☆/★, goes to the top) or removed (✕); removed ones sit under "Removed from the list" with a
+  Put back button. Kept per browser, per game and player (`lsb.yardlist.v1.<online|local>.<seed>.<player>`
+  in localStorage: `{ fav, hidden }` lists of `name|cells` keys); nothing on the server changes.
+  New designs get onto the list by being built or saved to the designer library.
+- Plasma cannon tooltips (palette and weapon table) end with a capitals warning about friendly
+  fire and exploding blocks (`PLASMA_WARNING`), and the designer's check list starts its plasma
+  warning with "FRIENDLY FIRE".
 
 The test-fleet generator (`designs.js`) puts missile launchers on the skin and heavy lasers on
 the nose or hull edge, where they have a line of fire. It also makes dreadnought, leviathan and

@@ -779,36 +779,72 @@ function openYardDialog(planetId) {
   $('yard-info').innerHTML = P.yards.length
     ? `${P.name} already has <b>${P.yards.length}</b> shipyard${P.yards.length > 1 ? 's' : ''} worth ${fmt(existing)} cr, so a new one here costs <b>${fmt(extra)} cr</b> more than its list price (${Math.round(SHIPYARD_CROWDING_SHARE * 100)}% of the shipyards already here). Building on your other worlds avoids that. You have <b>${fmt(me().credits)}</b> credits.`
     : `A shipyard costs 10× the ship it builds, and makes one every ${SHIPYARD_INTERVAL_MIN} min for free. Each shipyard already on a world adds ${Math.round(SHIPYARD_CROWDING_SHARE * 100)}% of its price to the next one there. You have <b>${fmt(me().credits)}</b> credits.`;
-  // Your designs already in the game, then your designer library.
-  const seen = new Set(), items = [];
+  // Your designs already in the game, then your designer library. Each can be starred (goes to
+  // the top) or removed from this list; removed ones can be brought back.
+  const seen = new Set(), all = [], prefs = yardPrefs();
   for (const d of Object.values(world.designs)) {
     if (d.owner !== ui.me) continue;
-    seen.add(`${d.name}|${d.data.cells}`);
-    items.push({ design: designOf(world, d.id), src: 'In use' });
+    const key = `${d.name}|${d.data.cells}`;
+    seen.add(key);
+    all.push({ design: designOf(world, d.id), src: 'In use', key });
   }
-  for (const o of library()) {
+  library().forEach((o, k) => {
     try {
-      const d = decodeDesign(o);
-      if (seen.has(`${d.name}|${o.cells}`) || !analyzeDesign(d).ok) continue;
-      items.push({ design: d, src: 'Library' });
+      const d = decodeDesign(o), key = `${d.name}|${o.cells}`;
+      if (seen.has(key) || !analyzeDesign(d).ok) return;
+      all.push({ design: d, src: 'Library', key, lib: k });
     } catch { /* skip broken entries */ }
-  }
+  });
+  const hidden = all.filter((it) => prefs.hidden.includes(it.key));
+  const items = all.filter((it) => !prefs.hidden.includes(it.key))
+    .sort((a, b) => (prefs.fav.includes(b.key) ? 1 : 0) - (prefs.fav.includes(a.key) ? 1 : 0));
   const list = $('yard-list');
   list.innerHTML = '';
-  if (!items.length) list.innerHTML = '<p class="empty">No designs yet. Design a ship (or save some in the ship designer\'s library) and it will appear here.</p>';
+  if (!items.length) list.innerHTML = '<p class="empty">No designs on your list. Press <b>Design a new ship…</b> (its <b>Save</b> button keeps a design in your library, and it shows up here), or bring back ones you removed below.</p>';
   for (const it of items) {
     const q = quoteShipyard(world, planetId, it.design), afford = me().credits >= q.price;
     const row = document.createElement('div');
     row.className = 'design';
-    row.innerHTML = `<canvas width="96" height="48"></canvas><div><b>${esc(it.design.name)}</b><span>${esc(it.design.cls)} · ${fmt(designCost(it.design))} cr a ship · ${it.src}</span><br><span class="price">${fmt(q.price)} cr</span>${q.surcharge ? ` <span>(list ${fmt(q.list)} + ${fmt(q.surcharge)})</span>` : ''}</div><button class="go" ${afford ? '' : 'disabled'} title="${afford ? '' : 'Not enough credits'}">Build</button>`;
+    const fav = prefs.fav.includes(it.key);
+    row.innerHTML = `<canvas width="96" height="48"></canvas><div><b>${fav ? '★ ' : ''}${esc(it.design.name)}</b><span>${esc(it.design.cls)} · ${fmt(designCost(it.design))} cr a ship · ${it.src}</span><br><span class="price">${fmt(q.price)} cr</span>${q.surcharge ? ` <span>(list ${fmt(q.list)} + ${fmt(q.surcharge)})</span>` : ''}</div>
+      <div class="design-acts"><button class="small" data-k="fav" title="${fav ? 'Unstar' : 'Star: keep it at the top of this list'}">${fav ? '★' : '☆'}</button><button class="small" data-k="hide" title="Remove from this list (you can bring it back below)">✕</button><button class="go" data-k="build" ${afford ? '' : 'disabled'} title="${afford ? '' : 'Not enough credits'}">Build</button></div>`;
     thumb(row.querySelector('canvas'), it.design);
-    row.querySelector('button').addEventListener('click', async (e) => {
+    row.querySelector('[data-k=fav]').addEventListener('click', () => { toggleYardPref('fav', it.key); openYardDialog(planetId); });
+    row.querySelector('[data-k=hide]').addEventListener('click', () => { toggleYardPref('hidden', it.key, true); openYardDialog(planetId); });
+    row.querySelector('[data-k=build]').addEventListener('click', async (e) => {
       e.currentTarget.disabled = true;
       if (await build(planetId, it.design)) $('yard-dlg').close(); else e.currentTarget.disabled = false;
     });
     list.append(row);
   }
-  $('yard-dlg').showModal();
+  if (hidden.length) {
+    const more = document.createElement('details');
+    more.className = 'yard-hidden';
+    more.innerHTML = `<summary>Removed from the list (${hidden.length})</summary>`;
+    for (const it of hidden) {
+      const r = document.createElement('div');
+      r.className = 'hidden-row';
+      r.innerHTML = `<span>${esc(it.design.name)} <small>${esc(it.design.cls)} · ${it.src}</small></span><button class="small">Put back</button>`;
+      r.querySelector('button').addEventListener('click', () => { toggleYardPref('hidden', it.key, false); openYardDialog(planetId); });
+      more.append(r);
+    }
+    list.append(more);
+  }
+  if (!$('yard-dlg').open) $('yard-dlg').showModal();
+}
+// Your shipyard shortlist choices (starred / removed designs), kept in this browser per game and player.
+const yardPrefsKey = () => `lsb.yardlist.v1.${ONLINE ? 'online' : 'local'}.${world.seed}.${ui.me}`;
+function yardPrefs() {
+  const p = store.get(yardPrefsKey(), null) || {};
+  return { fav: Array.isArray(p.fav) ? p.fav : [], hidden: Array.isArray(p.hidden) ? p.hidden : [] };
+}
+function toggleYardPref(kind, key, on) {
+  const p = yardPrefs(), had = p[kind].includes(key);
+  const want = on === undefined ? !had : on;
+  p[kind] = p[kind].filter((k) => k !== key);
+  if (want) p[kind].push(key);
+  if (kind === 'hidden' && want) p.fav = p.fav.filter((k) => k !== key);
+  store.set(yardPrefsKey(), p);
 }
 $('yard-cancel').addEventListener('click', () => $('yard-dlg').close());
 $('yard-design').addEventListener('click', () => { $('yard-dlg').close(); openDesigner(yardPlanet); });
