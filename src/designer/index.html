@@ -110,10 +110,10 @@ dl.kv { display: grid; grid-template-columns: auto 1fr; gap: 5px 10px; margin: 0
 dl.kv dt { color: var(--dim); }
 dl.kv dd { margin: 0; text-align: right; font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; }
 table { width: 100%; border-collapse: collapse; font-size: 12px; }
-th { color: var(--dim); font-weight: 500; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; text-align: right; padding: 0 0 4px; }
+th { color: var(--dim); font-weight: 500; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; text-align: right; padding: 0 0 4px 8px; white-space: nowrap; }
 th:first-child, td:first-child { text-align: left; }
-td { font-family: var(--mono); text-align: right; padding: 3px 0; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
-td:first-child { font-family: var(--display); }
+td { font-family: var(--mono); text-align: right; padding: 3px 0 3px 8px; white-space: nowrap; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+td:first-child { font-family: var(--display); white-space: normal; }
 td small { color: var(--bad); }
 .issues { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; font-size: 12.5px; line-height: 1.4; }
 .issues li { padding-left: 14px; position: relative; }
@@ -243,12 +243,12 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
       <dt>Top speed</dt><dd id="s-speed"></dd>
       <dt>Turn rate</dt><dd id="s-turn"></dd>
       <dt>Hit points</dt><dd id="s-hp"></dd>
-      <dt>Damage / s</dt><dd id="s-dps"></dd>
+      <dt title="All guns together, if every shot hits">Damage / s</dt><dd id="s-dps"></dd>
       <dt>Range</dt><dd id="s-range"></dd>
     </dl>
     <h2>Weapons</h2>
     <table>
-      <thead><tr><th>Type</th><th>Count</th><th>Dmg/s</th><th>Range</th></tr></thead>
+      <thead><tr><th>Type</th><th>Count</th><th title="Damage of one shot, and how often each gun fires. Hover a row for what the weapon does.">Shot</th><th>Range</th></tr></thead>
       <tbody id="weapons"></tbody>
     </table>
     <h2>Stance</h2>

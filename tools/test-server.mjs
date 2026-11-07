@@ -181,6 +181,13 @@ try {
   const yard = after.planets[annHome].yards[0].id;
   r = await ben.act({ type: 'sell', planet: annHome, yard });
   ok(!r.body.ok, 'Ben can\'t sell Ann\'s shipyard');
+  const dId = after.planets[annHome].yards[0].design;
+  r = await ben.act({ type: 'rename', design: dId, name: 'Ben was here' });
+  ok(!r.body.ok, 'Ben can\'t rename Ann\'s design');
+  r = await ann.act({ type: 'rename', design: dId, name: 'Ann Destroyer' });
+  ok(r.body.ok && r.body.state.world.designs[dId].name === 'Ann Destroyer', 'Ann renames her own design');
+  r = await ann.act({ type: 'rename', design: '__proto__', name: 'x' });
+  ok(!r.body.ok, 'odd design ids are refused');
   r = await ben.act({ type: 'fleet', from: annHome, to: benHome, ships: { [after.planets[annHome].yards[0].design]: 1 } });
   ok(!r.body.ok, 'Ben can\'t move Ann\'s ships');
   r = await ann.act({ type: 'fleet', from: annHome, to: 'constructor', ships: {} });

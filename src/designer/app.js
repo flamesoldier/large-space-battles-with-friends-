@@ -18,7 +18,7 @@ const fmt = (n) => Math.round(n).toLocaleString();
 // Same colours as the replay viewer's Azure side, so a design looks like it will in battle.
 const COLOR = {
   [BT.HUB]: '#86e8ff', [BT.ARMOR]: '#5c7ea3', [BT.HEAVY]: '#41597a', [BT.FRAME]: '#90a6c0', [BT.THRUSTER]: '#3d434f',
-  [BT.LASER]: '#d8f4ff', [BT.CANNON]: '#9aa1ab', [BT.MISSILE]: '#b9b16c', [BT.PD]: '#7fc4e0', [BT.LANCE]: '#5b5f9c',
+  [BT.LASER]: '#d8f4ff', [BT.CANNON]: '#9aa1ab', [BT.MISSILE]: '#b9b16c', [BT.PD]: '#c2413f', [BT.LANCE]: '#2c3150',
 };
 // Palette order and number keys.
 const PALETTE = [
@@ -148,7 +148,8 @@ function refresh(force = false) {
   $('s-range').textContent = a.maxRange ? (a.minRange === a.maxRange ? `${a.maxRange}` : `${a.minRange}–${a.maxRange}`) : '—';
   $('weapons').innerHTML = WEAPON_ORDER.filter((t) => a.fire[t]).map((t) => {
     const f = a.fire[t];
-    return `<tr><td>${BLOCKS[t].name}</td><td>${f.count}${f.buried ? ` <small title="buried">(${f.buried} buried)</small>` : ''}</td><td>${f.dps.toFixed(t === BT.MISSILE ? 1 : 0)}</td><td>${f.range}</td></tr>`;
+    const W = WEAPON[t];
+    return `<tr title="${SHOT_HINT[t] || ''}"><td>${BLOCKS[t].name}</td><td>${f.count}${f.buried ? ` <small title="buried">(${f.buried} buried)</small>` : ''}</td><td>${fmt(W.damage)} / ${W.cooldown} s</td><td>${f.range}</td></tr>`;
   }).join('') || '<tr><td colspan="4" style="color:var(--dim)">No weapons yet</td></tr>';
   $('stance-hint').textContent = STANCE_INFO[ed.stance].hint;
   const items = [...a.errors.map((s) => `<li class="err">${s}</li>`), ...a.warnings.map((s) => `<li class="warn">${s}</li>`)];
@@ -164,6 +165,15 @@ function saveCurrent() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => store.set(CUR_KEY, encodeDesign(design)), 1000);
 }
+
+// What each weapon does, shown when hovering its row in the weapon table.
+const SHOT_HINT = {
+  [BT.LASER]: 'Always hits. The beam burns through blocks until its damage is spent, often into a second ship.',
+  [BT.CANNON]: 'A slow shell aimed ahead of the target; damage splashes onto the blocks around the hit.',
+  [BT.MISSILE]: 'Huge slow missile, flies over your own ships. Blast 9 blocks wide, strongest in the middle. Point defence can shoot it down.',
+  [BT.PD]: 'Very short range. Shoots down missiles first (25 damage to a missile), then shreds nearby hulls.',
+  [BT.LANCE]: 'A blue plasma bolt that carves through ship after ship, yours included, until its damage is spent.',
+};
 
 // ------------------------------------------------------------ drawing
 function resize() {
@@ -252,7 +262,7 @@ function draw() {
       for (let y = vy0; y <= vy1; y++)
         for (let x = vx0, i = y * ed.w + vx0; x <= vx1; x++, i++) if (cells[i] && cells[i] !== BT.LANCE) glyph(cells[i], sx(x), sy(y), z);
   }
-  // Heavy lasers: one turret per unit (from the last analysis).
+  // Plasma cannons: one machine per unit (from the last analysis).
   if (info) {
     const ox = design.x0, oy = design.y0;
     const visible = (x0, y0, x1, y1) => x1 + ox >= vx0 && x0 + ox <= vx1 && y1 + oy >= vy0 && y0 + oy <= vy1;
@@ -261,13 +271,7 @@ function draw() {
       const gr = w.group;
       if (!visible(gr.x0, gr.y0, gr.x1, gr.y1)) continue;
       const x = sx(gr.x0 + ox), y = sy(gr.y0 + oy), ww = (gr.x1 - gr.x0 + 1) * z, hh = (gr.y1 - gr.y0 + 1) * z;
-      if (gr.ok && ww > 12) {
-        const cx = x + ww / 2, cy = y + hh / 2;
-        g.strokeStyle = 'rgba(200,205,255,0.55)'; g.lineWidth = Math.max(1, z * 0.25);
-        g.beginPath(); g.arc(cx, cy, ww * 0.32, 0, Math.PI * 2); g.stroke();
-        g.fillStyle = '#c9ccff'; g.fillRect(cx, cy - z * 0.45, ww * 0.5, z * 0.9);
-        g.beginPath(); g.arc(cx, cy, ww * 0.15, 0, Math.PI * 2); g.fill();
-      }
+      if (gr.ok && ww > 12) plasmaUnit(x, y, ww, hh, z);
       g.strokeStyle = gr.ok ? 'rgba(200,205,255,0.4)' : '#ff6b6b'; g.lineWidth = Math.max(1, dpr());
       g.strokeRect(x + 0.5, y + 0.5, ww - 1, hh - 1);
     }
@@ -350,16 +354,61 @@ function previewRect(x, y, w, h, t, faint) {
   g.globalAlpha = 1;
 }
 
+// Block details, drawn to match the replay viewer's look (fixed gun mounts, see renderer.js).
 function glyph(t, x, y, z) {
-  const c = z / 2;
-  g.fillStyle = 'rgba(5,7,12,0.55)';
-  if (t === BT.HUB) { g.strokeStyle = 'rgba(5,7,12,0.6)'; g.lineWidth = Math.max(1, z * 0.12); g.beginPath(); g.arc(x + c, y + c, z * 0.26, 0, Math.PI * 2); g.stroke(); }
-  else if (t === BT.CANNON) { g.beginPath(); g.arc(x + c, y + c, z * 0.22, 0, Math.PI * 2); g.fill(); }
-  else if (t === BT.LASER) { g.fillRect(x + z * 0.2, y + c - z * 0.08, z * 0.6, z * 0.16); }
-  else if (t === BT.PD) { g.fillRect(x + c - z * 0.12, y + c - z * 0.12, z * 0.24, z * 0.24); }
-  else if (t === BT.MISSILE) { g.beginPath(); g.moveTo(x + c, y + z * 0.18); g.lineTo(x + z * 0.82, y + c); g.lineTo(x + c, y + z * 0.82); g.lineTo(x + z * 0.18, y + c); g.fill(); }
-  else if (t === BT.THRUSTER) { g.fillStyle = 'rgba(88,184,255,0.55)'; g.fillRect(x + z * 0.12, y + z * 0.3, z * 0.22, z * 0.4); }
-  else if (t === BT.HEAVY) { g.fillStyle = 'rgba(255,255,255,0.08)'; g.fillRect(x + z * 0.2, y + z * 0.2, z * 0.6, z * 0.6); }
+  const c = z / 2, cx = x + c, cy = y + c;
+  const circle = (r, fill) => { g.fillStyle = fill; g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fill(); };
+  const ring = (r, w, stroke) => { g.strokeStyle = stroke; g.lineWidth = w; g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.stroke(); };
+  if (t === BT.HUB) { circle(z * 0.34, 'rgba(255,255,255,0.35)'); circle(z * 0.18, '#ffffff'); }
+  else if (t === BT.ARMOR) { // rivets in the corners
+    g.fillStyle = 'rgba(255,255,255,0.22)';
+    for (const [dx, dy] of [[0.17, 0.17], [0.83, 0.17], [0.17, 0.83], [0.83, 0.83]]) { g.beginPath(); g.arc(x + z * dx, y + z * dy, z * 0.055, 0, Math.PI * 2); g.fill(); }
+  } else if (t === BT.HEAVY) { // raised inner plate in a groove
+    g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(x + z * 0.18, y + z * 0.18, z * 0.64, z * 0.64);
+    g.fillStyle = 'rgba(255,255,255,0.09)'; g.fillRect(x + z * 0.24, y + z * 0.24, z * 0.52, z * 0.52);
+  } else if (t === BT.FRAME) { // open truss
+    g.strokeStyle = 'rgba(0,0,0,0.22)'; g.lineWidth = Math.max(1, z * 0.08);
+    g.beginPath(); g.moveTo(x + z * 0.1, y + z * 0.1); g.lineTo(x + z * 0.9, y + z * 0.9); g.moveTo(x + z * 0.9, y + z * 0.1); g.lineTo(x + z * 0.1, y + z * 0.9); g.stroke();
+  } else if (t === BT.THRUSTER) { ring(z * 0.3, Math.max(1, z * 0.1), 'rgba(200,210,225,0.55)'); circle(z * 0.2, '#ff8c3a'); circle(z * 0.09, '#ffe2b0'); }
+  else if (t === BT.LASER) { // faceted crystal in a dark mount
+    g.fillStyle = 'rgba(5,7,12,0.55)'; g.fillRect(x + z * 0.1, y + z * 0.1, z * 0.8, z * 0.8);
+    g.fillStyle = '#e6f7ff'; g.beginPath(); g.moveTo(cx, y + z * 0.16); g.lineTo(x + z * 0.84, cy); g.lineTo(cx, y + z * 0.84); g.lineTo(x + z * 0.16, cy); g.fill();
+    g.fillStyle = 'rgba(120,200,255,0.55)'; g.beginPath(); g.moveTo(cx, cy); g.lineTo(x + z * 0.84, cy); g.lineTo(cx, y + z * 0.84); g.fill();
+  } else if (t === BT.CANNON) { ring(z * 0.36, Math.max(1, z * 0.12), 'rgba(235,240,248,0.75)'); circle(z * 0.3, '#07090d'); circle(z * 0.1, 'rgba(255,120,40,0.45)'); }
+  else if (t === BT.PD) { // sensor dish: rings, crosshair, red eye
+    ring(z * 0.31, Math.max(1, z * 0.06), 'rgba(255,220,220,0.6)'); ring(z * 0.19, Math.max(1, z * 0.06), 'rgba(255,220,220,0.6)');
+    g.strokeStyle = 'rgba(255,220,220,0.45)'; g.beginPath(); g.moveTo(cx - z * 0.31, cy); g.lineTo(cx + z * 0.31, cy); g.moveTo(cx, cy - z * 0.31); g.lineTo(cx, cy + z * 0.31); g.stroke();
+    circle(z * 0.08, '#ff3b30');
+  } else if (t === BT.MISSILE) { // four tubes inside hazard stripes
+    g.save(); g.beginPath(); g.rect(x, y, z, z); g.rect(x + z * 0.16, y + z * 0.16, z * 0.68, z * 0.68); g.clip('evenodd');
+    g.strokeStyle = 'rgba(10,10,10,0.6)'; g.lineWidth = Math.max(1, z * 0.1);
+    for (let k = -1; k <= 3; k++) { g.beginPath(); g.moveTo(x + k * z * 0.3, y + z); g.lineTo(x + k * z * 0.3 + z, y); g.stroke(); }
+    g.restore();
+    g.fillStyle = 'rgba(5,7,12,0.75)';
+    for (const [dx, dy] of [[0.33, 0.33], [0.67, 0.33], [0.33, 0.67], [0.67, 0.67]]) { g.beginPath(); g.arc(x + z * dx, y + z * dy, z * 0.12, 0, Math.PI * 2); g.fill(); }
+  }
+}
+
+/** A plasma cannon unit, drawn as one machine: housing, corner machinery, pipes into a blue orb. */
+function plasmaUnit(x, y, ww, hh, z) {
+  const cx = x + ww / 2, cy = y + hh / 2, R = Math.min(ww, hh);
+  g.fillStyle = '#23283f'; g.fillRect(x, y, ww, hh);
+  g.strokeStyle = 'rgba(255,255,255,0.05)'; g.lineWidth = 1;
+  for (let k = 1; k < 5; k++) { g.beginPath(); g.moveTo(x + (ww * k) / 5, y); g.lineTo(x + (ww * k) / 5, y + hh); g.moveTo(x, y + (hh * k) / 5); g.lineTo(x + ww, y + (hh * k) / 5); g.stroke(); }
+  g.fillStyle = '#3a4160';
+  for (const [dx, dy] of [[0.04, 0.04], [0.8, 0.04], [0.04, 0.8], [0.8, 0.8]]) g.fillRect(x + ww * dx, y + hh * dy, ww * 0.16, hh * 0.16);
+  g.lineCap = 'round';
+  for (const [ex, ey] of [[0, 0.5], [1, 0.5], [0.5, 0], [0.5, 1], [0.1, 0.1], [0.9, 0.1], [0.1, 0.9], [0.9, 0.9]]) {
+    g.strokeStyle = '#8f98b8'; g.lineWidth = R * 0.05;
+    g.beginPath(); g.moveTo(x + ww * ex, y + hh * ey); g.lineTo(cx, cy); g.stroke();
+    g.strokeStyle = '#4f9dff'; g.lineWidth = R * 0.018;
+    g.beginPath(); g.moveTo(x + ww * ex, y + hh * ey); g.lineTo(cx, cy); g.stroke();
+  }
+  g.lineCap = 'butt';
+  g.strokeStyle = '#a9b2d0'; g.lineWidth = R * 0.03; g.beginPath(); g.arc(cx, cy, R * 0.215, 0, Math.PI * 2); g.stroke();
+  const grad = g.createRadialGradient(cx, cy, 0, cx, cy, R * 0.17);
+  grad.addColorStop(0, '#f4fbff'); grad.addColorStop(0.45, '#7fc8ff'); grad.addColorStop(1, '#2a5fd8');
+  g.fillStyle = grad; g.beginPath(); g.arc(cx, cy, R * 0.17, 0, Math.PI * 2); g.fill();
 }
 
 function drawArc(w, x, y, z, strong) {
@@ -684,8 +733,12 @@ function openTest() {
   $('t-copies').value = DEFAULT_COPIES[design.cls] ?? 10;
   const opp = $('t-opp');
   opp.innerHTML = '';
-  opp.add(new Option('Mixed fleet (sample designs)', ''));
+  opp.add(new Option('Mixed fleet (generated sample ships)', ''));
   opp.add(new Option('A copy of this design', 'self'));
+  // Opened from the galaxy: the ships really in play there, yours and everyone else's.
+  (embed?.designs || []).forEach((o, k) => {
+    try { const d = decodeDesign(o.data); if (analyzeDesign(d).ok) opp.add(new Option(`In this game: ${o.name} (${o.mine ? 'yours' : o.owner}, ${fmt(designCost(d))} cr)`, `g${k}`)); } catch { /* skip */ }
+  });
   library().forEach((o, k) => { try { const d = decodeDesign(o); if (analyzeDesign(d).ok) opp.add(new Option(`Saved: ${d.name} (${fmt(designCost(d))} cr)`, String(k))); } catch { /* skip */ } });
   $('test-result').hidden = true; $('test-progress').hidden = true; $('t-watch').hidden = true;
   $('t-run').disabled = false;
@@ -704,7 +757,7 @@ $('t-run').addEventListener('click', async () => {
   const seed = Math.max(1, Number($('t-seed').value) || 1);
   const v = $('t-opp').value;
   const mine = { ...design, name: design.name || 'Your design' };
-  const opponent = v === 'self' ? { ...mine } : v ? decodeDesign(library()[Number(v)]) : null;
+  const opponent = v === 'self' ? { ...mine } : v.startsWith('g') ? { ...decodeDesign(embed.designs[Number(v.slice(1))].data), name: embed.designs[Number(v.slice(1))].name } : v ? decodeDesign(library()[Number(v)]) : null;
   const scen = makeTestScenario(mine, copies, opponent, seed);
   const b = new Battle({ designs: scen.designs, ships: scen.ships, seed });
   const t0 = performance.now();
@@ -784,7 +837,7 @@ function syncEmbed() {
 if (window.parent !== window) {
   addEventListener('message', (e) => {
     if (e.source !== window.parent || e.data?.type !== 'lsb-designer-embed') return;
-    embed = e.data;
+    embed = { ...e.data, designs: e.data.designs || embed?.designs || [] }; // designs come with the first message only
     $('test-btn').classList.remove('go');
     syncEmbed();
   });

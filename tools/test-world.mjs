@@ -7,7 +7,7 @@ import { planRoute, fleetPosition, laneMap } from '../src/world/routes.js';
 import {
   createWorld, advanceTo, runWorld, buildShipyard, sellShipyard, quoteShipyard, sendFleet, previewFleet,
   shipsAt, incomeOf, allied, YARD_MS, HOLD_MS, designOf, upgradeWorld,
-  proposeAlliance, acceptAlliance, breakAlliance, proposalsFor, dueEvent, siegeAt,
+  proposeAlliance, acceptAlliance, breakAlliance, proposalsFor, dueEvent, siegeAt, renameDesign,
 } from '../src/world/world.js';
 import { writeFileSync } from 'node:fs';
 import { packReplay } from '../src/shared/replayFormat.js';
@@ -127,6 +127,12 @@ const resolve = (scen) => {
   const s = sellShipyard(w, 0, home, r2.yard.id);
   ok(s.ok && Math.abs(w.players[0].credits - c0 - Math.round(r2.yard.paid * SHIPYARD_SELL_REFUND)) < 1e-6, 'selling refunds');
   ok(P.yards.length === 1, 'sold yard is gone');
+
+  // Renaming a design: owner only, shows everywhere, survives decoding.
+  ok(!renameDesign(w, 1, did, 'Stolen').ok, 'can\'t rename someone else\'s design');
+  ok(!renameDesign(w, 0, did, '   ').ok, 'empty names are refused');
+  const rn = renameDesign(w, 0, did, '  Ironclad\u0007 ');
+  ok(rn.ok && w.designs[did].name === 'Ironclad' && designOf(w, did).name === 'Ironclad', `rename works and is tidied (${rn.name})`);
 
   // Fleets: send destroyers to an ally's world (they join it), then attack a militia world.
   const ally = w.players[1].home;

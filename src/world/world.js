@@ -204,6 +204,25 @@ export function sellShipyard(world, pid, planetId, yardId) {
 
 export const sellValue = (yard) => Math.round(yard.paid * SHIPYARD_SELL_REFUND);
 
+/**
+ * Rename one of your ship designs (owner, Nov 2026: a friend left a shipyard as "My frigate").
+ * The new name shows everywhere the design does: its shipyards, garrisons, fleets and battles.
+ */
+export function renameDesign(world, pid, designId, name) {
+  const d = world.designs[designId];
+  if (!d || !Object.hasOwn(world.designs, designId)) return { ok: false, error: 'No such ship design.' };
+  if (d.owner !== pid) return { ok: false, error: 'You can only rename your own designs.' };
+  const clean = String(name ?? '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 40);
+  if (!clean) return { ok: false, error: 'Give it a name.' };
+  if (clean === d.name) return { ok: true, name: clean };
+  const old = d.name;
+  d.name = clean;
+  if (d.data) d.data.name = clean;
+  decoded.get(world)?.delete(designId); // cached decoded copy carries the old name
+  log(world, 'yard', `${world.players[pid].name} renamed the ${old} design to ${clean}.`, { players: [pid] });
+  return { ok: true, name: clean };
+}
+
 // ---------------------------------------------------------------- time and events
 
 /**

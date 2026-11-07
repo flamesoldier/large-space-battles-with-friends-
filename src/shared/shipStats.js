@@ -124,7 +124,7 @@ export function analyzeDesign(d) {
     f.count++;
     if (wp.buried) { f.buried++; continue; }
     f.dps += W.damage / W.cooldown; f.alpha += W.damage;
-    if (wp.type !== BT.PD) { dps += W.damage / W.cooldown; alpha += W.damage; }
+    dps += W.damage / W.cooldown; alpha += W.damage; // point defence counts too: it's a real anti-ship gun now (32 every 0.2 s)
   }
   const ranges = weapons.filter((x) => x.type !== BT.PD && !x.buried).map((x) => WEAPON[x.type].range);
 

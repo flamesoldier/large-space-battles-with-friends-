@@ -22,7 +22,7 @@ import {
   sendFleet, previewFleet, shipsAt, incomeOf, allied, playerName, designOf, fleetValue, countShips, fmtHours,
   sellValue, yardListValue, YARD_MS, HOLD_MS, upgradeWorld,
   proposeAlliance, acceptAlliance, declineAlliance, breakAlliance, proposalsFor, hasProposed,
-  isOpenSeat, freeColors,
+  isOpenSeat, freeColors, renameDesign,
 } from '../world/world.js';
 import { readBattle, shipColors, battleOptions } from '../world/battleSetup.js';
 import { fleetPosition } from '../world/routes.js';
@@ -541,7 +541,7 @@ function planetPanel(P) {
       if (!P.yards.length) html += `<p class="hint">None yet. A shipyard builds one ship of its design every ${SHIPYARD_INTERVAL_MIN} min, for free, forever, and the ships guard this world.</p>`;
       for (const y of P.yards) {
         const d = world.designs[y.design];
-        html += `<div class="yard"><b>${esc(d.name)}</b>${mine ? `<button class="small danger" data-act="sell" data-yard="${y.id}" ${busy ? 'disabled' : ''} title="Sell for ${Math.round(SHIPYARD_SELL_REFUND * 100)}% of what you paid">Sell +${fmt(sellValue(y))}</button>` : ''}
+        html += `<div class="yard"><b>${esc(d.name)}</b>${mine && d.owner === ui.me ? `<button class="small" data-act="rename" data-design="${esc(y.design)}" ${busy ? 'disabled' : ''} title="Rename this ship design (everywhere it appears)">Rename</button>` : ''}${mine ? `<button class="small danger" data-act="sell" data-yard="${y.id}" ${busy ? 'disabled' : ''} title="Sell for ${Math.round(SHIPYARD_SELL_REFUND * 100)}% of what you paid">Sell +${fmt(sellValue(y))}</button>` : ''}
         <span>${esc(d.cls)} · next in <span data-next="${y.next}"></span> · ${fmt(y.built)} built${mine ? ` · paid ${fmt(y.paid)}` : ''}</span></div>`;
       }
     }
@@ -642,6 +642,7 @@ $('panel').addEventListener('click', (e) => {
   else if (act === 'yard') openYardDialog(sel.id);
   else if (act === 'fold-yards') { ui.yardsOpen = ui.yardsOpen === false; store.set(UI_KEY, ui); renderPanel(true); }
   else if (act === 'sell') sellYard(sel.id, b.dataset.yard);
+  else if (act === 'rename') openRename(b.dataset.design);
   else if (act === 'move') startMove(sel.id);
   else if (act === 'all' || act === 'none') {
     const have = shipsAt(world.planets[move.from], ui.me);
@@ -739,6 +740,35 @@ async function sellYard(planetId, yardId) {
   save(); renderPanel(true); renderEvents(); updateTop();
 }
 
+// Rename a design: a small dialog (no prompt(): some hosts block it).
+let renameDlg = null;
+function openRename(designId) {
+  const d = world.designs[designId];
+  if (!d) return;
+  if (!renameDlg) {
+    renameDlg = document.createElement('dialog');
+    renameDlg.className = 'rename-dlg';
+    renameDlg.innerHTML = `<form method="dialog"><h3>Rename ship design</h3><input id="rename-input" maxlength="40" autocomplete="off" style="width:100%">
+      <p class="hint">The new name shows on every shipyard, garrison and fleet with this design.</p>
+      <div style="display:flex;gap:8px;justify-content:flex-end"><button value="cancel" class="small">Cancel</button><button value="ok" class="small go">Rename</button></div></form>`;
+    document.body.appendChild(renameDlg);
+  }
+  const input = renameDlg.querySelector('#rename-input');
+  input.value = d.name;
+  renameDlg.onclose = async () => {
+    if (renameDlg.returnValue !== 'ok') return;
+    const name = input.value.trim();
+    if (!name || name === d.name) return;
+    const r = await perform({ type: 'rename', design: designId, name }, () => renameDesign(world, ui.me, designId, name));
+    if (!r.ok) return toast(r.error, true);
+    toast(`Renamed to “${r.name}”.`);
+    save(); renderPanel(true); renderEvents();
+  };
+  renameDlg.returnValue = '';
+  renameDlg.showModal();
+  input.select();
+}
+
 const library = () => store.get(LIB_KEY, []);
 let yardPlanet = null;
 function openYardDialog(planetId) {
@@ -808,9 +838,13 @@ const DESIGNER_PAGE = typeof __DESIGNER_PAGE__ === 'string' ? __DESIGNER_PAGE__ 
 const VIEWER_PAGE = typeof __VIEWER_PAGE__ === 'string' ? __VIEWER_PAGE__ : '';
 const pageDoc = (body) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0">${body}</body></html>`;
 let designerFor = null, designerTimer = 0;
-function designerInfo() {
+function designerInfo(withDesigns = false) {
   const P = world.planets[designerFor];
-  return { type: 'lsb-designer-embed', planet: P.name, existing: yardListValue(P), credits: Math.floor(me().credits), yards: P.yards.length };
+  const info = { type: 'lsb-designer-embed', planet: P.name, existing: yardListValue(P), credits: Math.floor(me().credits), yards: P.yards.length };
+  // Every design in play in this galaxy (yours and other players'), so test battles can be fought
+  // against the ships people are really building. Sent once, when the designer opens.
+  if (withDesigns) info.designs = Object.values(world.designs).map((d) => ({ name: d.name, owner: d.owner === null ? 'Militia' : playerName(world, d.owner), mine: d.owner === ui.me, data: d.data }));
+  return info;
 }
 function openDesigner(planetId) {
   if (!DESIGNER_PAGE) return toast('This build has no ship designer. Run npm run build.', true);
@@ -829,7 +863,7 @@ $('designer-close').addEventListener('click', closeDesigner);
 addEventListener('message', (e) => {
   const frame = $('designer-frame');
   if (e.source !== frame.contentWindow || designerFor === null) return;
-  if (e.data?.type === 'lsb-designer-ready') frame.contentWindow.postMessage(designerInfo(), '*');
+  if (e.data?.type === 'lsb-designer-ready') frame.contentWindow.postMessage(designerInfo(true), '*');
   if (e.data?.type === 'lsb-design-chosen') {
     let d;
     try { d = decodeDesign(e.data.design); } catch (err) { return toast(err.message, true); }
