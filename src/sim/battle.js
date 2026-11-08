@@ -186,6 +186,7 @@ export class Battle {
       goal: null, runPhase: 0, runA: 0, runT: 0, // flank / raid steering
       closeIn: false, sepX: 0, sepY: 0, // spacing push away from nearby ships (see `spacing`)
       fixed: false, // a defence: never moves or turns, and nothing can shove it
+      still: false, // can't move under its own power: a defence, or a ship with every thruster gone (see refit)
       // Collision box: centre (local) and half size, shrunk to the live blocks as they are lost.
       bcx: 0, bcy: 0, bhw: w / 2, bhh: h / 2,
       mass: 1, maxSpeed: 0, turn: 0, agility: 0, prefRange: 60, ward: null,
@@ -243,6 +244,7 @@ export class Battle {
     }
     range = cannon || laser || longest; // missile boats stand off at missile range, not at 60
     e.mass = Math.max(1, mass);
+    e.still = e.fixed || thrust === 0;
     // The hub has weak manoeuvring jets, so a ship that loses every engine still crawls.
     e.maxSpeed = Math.max(2.5, Math.min(22, (30 * thrust) / e.mass));
     e.turn = Math.max(0.05, Math.min(2.5, (1.6 * e.maxSpeed) / e.w));
@@ -1146,7 +1148,14 @@ export class Battle {
           // the bolt flies.
           const d2 = (x0 + sdx * t - o.x) ** 2 + (y0 + sdy * t - o.y) ** 2;
           if (this.fr[(e.team << 4) | o.team]) {
-            if (o.fixed) continue; // friendly defences don't count: the bolt passes through them (plasmaStep)
+            if (o.still) {
+              // A friend that can't move (a defence, or a ship with no thrusters left) will never
+              // drift into the line, so only a bolt that really runs through its blocks counts
+              // (owner, Nov 2026: plasma defences in rows hardly fired). The bolt still hurts it.
+              const tb = this.raycast(o, x0, y0, x1, y1, 1);
+              if (tb >= 0) { allies++; if (tb < friendT) friendT = tb; }
+              continue;
+            }
             const ra = o.radius + LANCE_ALLY_MARGIN;
             if (d2 <= ra * ra) { allies++; if (t < friendT) friendT = t; }
           } else if (d2 <= o.radius * o.radius * 0.25) ts.push(t);
@@ -1161,8 +1170,7 @@ export class Battle {
 
   /**
    * Plasma cannon: launch a bolt (see plasmaStep). Holds fire (returns false) if a friendly ship
-   * is the first thing in line, since the bolt would carve straight through it. Friendly
-   * defences don't count: the bolt passes through them unharmed.
+   * is the first thing in line, since the bolt would carve straight through it.
    */
   firePlasma(e, x0, y0, ax, ay, tg, W) {
     const d = Math.hypot(ax - x0, ay - y0) || 1;
@@ -1170,7 +1178,7 @@ export class Battle {
     const ang = Math.atan2(ay + tg.vy * t - y0, ax + tg.vx * t - x0), ux = Math.cos(ang), uy = Math.sin(ang);
     // Checked along the real (led) direction: hold if a friend is first in line, or the line has
     // more allies than it's worth (lanceCount), so it rarely opens up on its own side.
-    if (this.sweep(x0, y0, x0 + ux * W.range, y0 + uy * W.range, e.id) && this.hitE.kind === SHIP && this.fr[(e.team << 4) | this.hitE.team] && !this.hitE.fixed) return false;
+    if (this.sweep(x0, y0, x0 + ux * W.range, y0 + uy * W.range, e.id) && this.hitE.kind === SHIP && this.fr[(e.team << 4) | this.hitE.team]) return false;
     if (!this.lanceCount(e, x0, y0, x0 + ux, y0 + uy, W.range)) return false;
     const rec = this.shotStart(K_PLASMA, e.team, x0, y0, ang);
     this.addProjectile(K_PLASMA, BT.LANCE, x0, y0, ux * W.speed, uy * W.speed,
@@ -1198,9 +1206,6 @@ export class Battle {
           if (o._q === q) continue;
           o._q = q;
           if (o.dead || o.retired || o.id === owner) continue;
-          // Friendly defences are spared (owner, Nov 2026): they can never move out of the line, so
-          // without this plasma defences in rows and ships behind them would hardly ever fire.
-          if (o.fixed && this.fr[(P.team[i] << 4) | o.team]) continue;
           let t = ((o.x - x0) * sdx + (o.y - y0) * sdy) / len2;
           t = t < 0 ? 0 : t > 1 ? 1 : t;
           const rr = o.radius + pad;

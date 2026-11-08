@@ -69,13 +69,13 @@ Weapons (numbers in `blocks.js`):
   alike"): it damages allies and wrecks too, never its own gun ship. Aiming (`lanceAim` /
   `lanceCount`): the line through the most enemy ships, each ally on the line counting −2; holds
   fire if a friend is first in line or allies outweigh enemies, checked along the real led
-  direction. **Friendly defences are spared** (owner, Nov 2026: plasma defences
-  in rows hardly fired, since the defences in front can never move out of the line): allied
-  `fixed` ships don't count in the aim checks, and the bolt passes through them unharmed
-  (`plasmaStep`). It still carves through allied ships and wrecks, and cook-offs still hurt
-  defences. Measured, 20 plasma defences in designer-test rows: 11 → 15.5 shots a battle (a
-  "carve through them" version: 13.9 shots and ~5,700 damage to its own defences); in looser
-  world rows the gain is small, because defences there die fast and mostly reload. `LANCE_ALLY_MARGIN` (0) widens the ally check: at 0, about 1 shot in 3 hits an ally
+  direction. **Friends that can't move** (`e.still`: defences, and ships with
+  every thruster gone, set in `refit()`; owner, Nov 2026: plasma defences in rows hardly fired)
+  count only if the bolt's path really runs through their blocks (`raycast`), not the hull-circle
+  safety zone kept for ships that move. The bolt **still damages** them (owner's choice; a
+  pass-through version was offered and turned down). Measured against the version before: 20
+  plasma defences in designer-test rows 11 → 13.8 shots a battle, a world battle with 24 plasma
+  defences 9.2 → 10.2, and zero friendly plasma damage to defences in both. `LANCE_ALLY_MARGIN` (0) widens the ally check: at 0, about 1 shot in 3 hits an ally
   first and ~4 enemies are killed per ally; at 5 allies are almost never hit but it holds fire
   far more and kills ~40% fewer. Measured at 600 vs 600 (2 seeds): ~2.2 enemy ships hit and ~1.4
   destroyed or broken per shot, ~0.4 allies destroyed. Keeps a 0.6 s blue charge-up glow at the
