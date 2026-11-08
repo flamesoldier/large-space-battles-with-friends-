@@ -1146,6 +1146,7 @@ export class Battle {
           // the bolt flies.
           const d2 = (x0 + sdx * t - o.x) ** 2 + (y0 + sdy * t - o.y) ** 2;
           if (this.fr[(e.team << 4) | o.team]) {
+            if (o.fixed) continue; // friendly defences don't count: the bolt passes through them (plasmaStep)
             const ra = o.radius + LANCE_ALLY_MARGIN;
             if (d2 <= ra * ra) { allies++; if (t < friendT) friendT = t; }
           } else if (d2 <= o.radius * o.radius * 0.25) ts.push(t);
@@ -1160,7 +1161,8 @@ export class Battle {
 
   /**
    * Plasma cannon: launch a bolt (see plasmaStep). Holds fire (returns false) if a friendly ship
-   * is the first thing in line, since the bolt would carve straight through it.
+   * is the first thing in line, since the bolt would carve straight through it. Friendly
+   * defences don't count: the bolt passes through them unharmed.
    */
   firePlasma(e, x0, y0, ax, ay, tg, W) {
     const d = Math.hypot(ax - x0, ay - y0) || 1;
@@ -1168,7 +1170,7 @@ export class Battle {
     const ang = Math.atan2(ay + tg.vy * t - y0, ax + tg.vx * t - x0), ux = Math.cos(ang), uy = Math.sin(ang);
     // Checked along the real (led) direction: hold if a friend is first in line, or the line has
     // more allies than it's worth (lanceCount), so it rarely opens up on its own side.
-    if (this.sweep(x0, y0, x0 + ux * W.range, y0 + uy * W.range, e.id) && this.hitE.kind === SHIP && this.fr[(e.team << 4) | this.hitE.team]) return false;
+    if (this.sweep(x0, y0, x0 + ux * W.range, y0 + uy * W.range, e.id) && this.hitE.kind === SHIP && this.fr[(e.team << 4) | this.hitE.team] && !this.hitE.fixed) return false;
     if (!this.lanceCount(e, x0, y0, x0 + ux, y0 + uy, W.range)) return false;
     const rec = this.shotStart(K_PLASMA, e.team, x0, y0, ang);
     this.addProjectile(K_PLASMA, BT.LANCE, x0, y0, ux * W.speed, uy * W.speed,
@@ -1196,6 +1198,9 @@ export class Battle {
           if (o._q === q) continue;
           o._q = q;
           if (o.dead || o.retired || o.id === owner) continue;
+          // Friendly defences are spared (owner, Nov 2026): they can never move out of the line, so
+          // without this plasma defences in rows and ships behind them would hardly ever fire.
+          if (o.fixed && this.fr[(P.team[i] << 4) | o.team]) continue;
           let t = ((o.x - x0) * sdx + (o.y - y0) * sdy) / len2;
           t = t < 0 ? 0 : t > 1 ? 1 : t;
           const rr = o.radius + pad;
@@ -1379,6 +1384,11 @@ export class Battle {
 
   /** Columnar replay: { meta, cols } ready for packReplay(). */
   toReplay() {
+    // Shots still flying when the battle ends never got a flight time (it is written when a shot
+    // ends), so the viewer drew none of them: every plasma bolt fired in a battle's last 30 s
+    // was invisible. Give them the rest of their life; the replay stops at the battle's end.
+    const P = this.P;
+    for (let i = 0; i < P.n; i++) if (this.R.shotFlight.a[P.rec[i]] === 0) this.shotEnd(P.rec[i], this.now + P.life[i], 0);
     const S = this.shipCount;
     const team = new Uint8Array(S), design = new Uint16Array(S), t1 = new Uint16Array(S);
     const tStart = new Uint32Array(S), tCount = new Uint32Array(S);

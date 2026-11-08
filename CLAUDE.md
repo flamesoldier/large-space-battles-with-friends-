@@ -69,7 +69,13 @@ Weapons (numbers in `blocks.js`):
   alike"): it damages allies and wrecks too, never its own gun ship. Aiming (`lanceAim` /
   `lanceCount`): the line through the most enemy ships, each ally on the line counting −2; holds
   fire if a friend is first in line or allies outweigh enemies, checked along the real led
-  direction. `LANCE_ALLY_MARGIN` (0) widens the ally check: at 0, about 1 shot in 3 hits an ally
+  direction. **Friendly defences are spared** (owner, Nov 2026: plasma defences
+  in rows hardly fired, since the defences in front can never move out of the line): allied
+  `fixed` ships don't count in the aim checks, and the bolt passes through them unharmed
+  (`plasmaStep`). It still carves through allied ships and wrecks, and cook-offs still hurt
+  defences. Measured, 20 plasma defences in designer-test rows: 11 → 15.5 shots a battle (a
+  "carve through them" version: 13.9 shots and ~5,700 damage to its own defences); in looser
+  world rows the gain is small, because defences there die fast and mostly reload. `LANCE_ALLY_MARGIN` (0) widens the ally check: at 0, about 1 shot in 3 hits an ally
   first and ~4 enemies are killed per ally; at 5 allies are almost never hit but it holds fire
   far more and kills ~40% fewer. Measured at 600 vs 600 (2 seeds): ~2.2 enemy ships hit and ~1.4
   destroyed or broken per shot, ~0.4 allies destroyed. Keeps a 0.6 s blue charge-up glow at the
@@ -166,6 +172,10 @@ Battle end:
 - The viewer is stateless: everything drawn is a pure function of time (that's what makes
   scrubbing free). Anything new in the replay should follow that pattern.
 - Projectile samples must stay contiguous per projectile (an earlier bug interleaved them).
+- A shot's flight time is written when it ends, so `toReplay()` first gives every shot still flying
+  the rest of its life. Before Nov 2026 those had flight 0 and were never drawn: every plasma
+  bolt fired in a battle's last 30 s was invisible (owner noticed in a colossus test). Replays
+  recorded before the fix keep the gap.
 - Always benchmark after sim changes (`npm run bench -- 1000`); 1,000 vs 1,000 takes about 7 s.
 - Line of fire is incremental: each weapon stores the cell blocking each of its 64 rays
   (`blk`), and `refit()` only re-casts rays whose blocker died (`updateLineOfFire`). A full
