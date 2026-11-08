@@ -96,7 +96,7 @@ tpl.addEventListener('change', () => {
   tpl.value = '';
   if (!v) return;
   if (v === 'blank') { ed.clear(); ed.name = 'New design'; ed.stance = 'line'; toast('Cleared. Undo to get your design back.'); }
-  else if (v.startsWith('y')) { // one of your shipyards' designs (opened from the galaxy)
+  else if (v.startsWith('y')) { // one of your shipyards' designs or defences (opened from the galaxy)
     const o = embed.designs[Number(v.slice(1))], d = decodeDesign(o.data);
     ed.load({ ...d, name: o.name }); toast(`Loaded ${o.name}. Undo to go back.`);
   } else { const d = makeDesign(v, 7 + Math.floor(Math.random() * 1000)); ed.load({ ...d, name: defenseMode() ? `My ${v} defence` : `My ${v}` }); toast(`Loaded a sample ${v}. Undo to go back.`); }
@@ -104,14 +104,22 @@ tpl.addEventListener('change', () => {
   syncFields(); fit();
 });
 
-// Opened from the galaxy: "Start from" also lists the designs your shipyards build.
-function addYardTemplates(list) {
-  const mine = list.map((o, k) => [o, k]).filter(([o]) => o.yard);
-  if (!mine.length) return;
-  const grp = document.createElement('optgroup');
-  grp.label = 'Your shipyards';
-  for (const [o, k] of mine) grp.append(new Option(o.name, `y${k}`));
-  tpl.insertBefore(grp, tpl.options[1]);
+// Opened from the galaxy: "Start from" also lists the designs your shipyards build, and in the
+// defence designer the defences you've already built come first.
+function addYardTemplates(list, defence = false) {
+  const group = (label, pick) => {
+    const mine = list.map((o, k) => [o, k]).filter(([o]) => pick(o));
+    if (!mine.length) return null;
+    const grp = document.createElement('optgroup');
+    grp.label = label;
+    for (const [o, k] of mine) grp.append(new Option(o.name, `y${k}`));
+    return grp;
+  };
+  const blank = [...tpl.options].find((o) => o.value === 'blank');
+  const defs = defence && group('Your defences', (o) => o.defence);
+  if (defs) tpl.insertBefore(defs, blank);
+  const yards = group('Your shipyards', (o) => o.yard);
+  if (yards) tpl.insertBefore(yards, blank);
 }
 
 const toggle = (id, get, set) => {
@@ -907,7 +915,7 @@ function syncEmbed() {
 if (window.parent !== window) {
   addEventListener('message', (e) => {
     if (e.source !== window.parent || e.data?.type !== 'lsb-designer-embed') return;
-    if (e.data.designs && !embed?.designs?.length) addYardTemplates(e.data.designs);
+    if (e.data.designs && !embed?.designs?.length) addYardTemplates(e.data.designs, e.data.mode === 'defense');
     embed = { ...e.data, designs: e.data.designs || embed?.designs || [] }; // designs come with the first message only
     $('test-btn').classList.remove('go');
     if (defenseMode() && !defenseShown) { defenseShown = true; enterDefenseMode(); seenVersion = -1; refresh(true); } // re-check the issues list for defences

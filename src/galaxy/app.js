@@ -933,7 +933,7 @@ function designerInfo(withDesigns = false) {
   // against the ships people are really building. Sent once, when the designer opens.
   if (withDesigns) {
     const myYards = new Set(world.planets.filter((p) => p.owner === ui.me).flatMap((p) => p.yards.map((y) => y.design)));
-    info.designs = Object.values(world.designs).map((d) => ({ name: d.name, owner: d.owner === null ? 'Militia' : playerName(world, d.owner), mine: d.owner === ui.me, yard: myYards.has(d.id), data: d.data }));
+    info.designs = Object.values(world.designs).map((d) => ({ name: d.name, owner: d.owner === null ? 'Militia' : playerName(world, d.owner), mine: d.owner === ui.me, yard: myYards.has(d.id), defence: d.owner === ui.me && !!d.fixed, data: d.data }));
   }
   return info;
 }

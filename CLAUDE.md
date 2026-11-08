@@ -226,7 +226,8 @@ All money numbers are in `src/shared/economy.js` (placeholders until balanced in
   toast) when it opens and whenever a design is loaded from Start from, the library or Import.
   The defence designer remembers its last design under its own key
   (`lsb.designer.defence.current.v1`) so stripping thrusters never changes the ship the Ship
-  Designer reopens with. None of this applies in ship mode. Measured: 400 attackers (480k cr) beat 86 defences + 90 ships
+  Designer reopens with. None of this applies in ship mode. Its "Start from" menu lists **Your defences** first (your own `fixed` world designs, `defence: true`
+  in the embed message's `designs`), then Your shipyards; the ship designer doesn't list defences. Measured: 400 attackers (480k cr) beat 86 defences + 90 ships
   (137k cr counting defences at 1/5) in 95 s (`/tmp`-style script; replay sent to the owner).
 - Ships a shipyard builds garrison its world and defend it.
 - Every ship part has a credit cost (`cost` in `blocks.js`); a ship's price is the sum of its blocks.
