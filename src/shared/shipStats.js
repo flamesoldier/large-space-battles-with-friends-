@@ -9,13 +9,14 @@
 import { BT, BLOCKS, WEAPON, MULTIBLOCK, HULL_CLASSES, MAX_BLOCKS, MAX_W, MAX_H, COOKOFF, isWeapon } from './blocks.js';
 import { lineOfFire, openDegrees } from './arcs.js';
 
+// Escort and Brawler were taken out (owner, Nov 2026). A design saved with either loads as Front
+// line (decodeDesign, the editor), so ships already in play fight as Front line too. The sim
+// still knows both stances (STANCES in battle.js).
 export const STANCE_INFO = {
   standoff: { label: 'Artillery', hint: 'Hangs back at 60% of its longest weapon\'s range and backs off if pressed.' },
   line: { label: 'Front line', hint: 'Holds the front at 45% of its main gun range, where all its guns reach, and trades broadsides.' },
   flank: { label: 'Flanker', hint: 'Charges through the enemy line to their biggest ship and circles it close in at full speed. Point defence shreds hulls up close.' },
   raid: { label: 'Raider', hint: 'Attack runs: flies straight through the enemy at full speed skimming a big ship, out the far side, turns and comes back.' },
-  escort: { label: 'Escort', hint: 'Screens a friendly ship 3× its mass or more, breaking off to hit enemies that come close.' },
-  brawl: { label: 'Brawler', hint: 'Fights at 40% of its shortest gun range, inside the enemy\'s big guns.' },
   charge: { label: 'Charge', hint: 'Dives straight at the nearest enemy to point blank. For small, fast, cheap ships.' },
 };
 
@@ -150,8 +151,6 @@ export function analyzeDesign(d) {
   if (narrow.length) warnings.push(`${narrow.length} weapon${narrow.length > 1 ? 's have' : ' has'} a firing arc under 45°. Guns that stick out of the hull can cover more.`);
   if (!thrust && blocks > 1) warnings.push('No thrusters: the ship crawls on hub jets (2.5 speed).');
   if (groups.length) warnings.push(`FRIENDLY FIRE: plasma bolts carve through your own ships too. Plasma cannon blocks also explode when destroyed and chain-react, wrecking everything within about ${COOKOFF.radius} blocks of the gun, your own ship included. Armour it well.`);
-  if (d.stance === 'escort' && cls && cls.id !== 'corvette' && cls.id !== 'frigate' && cls.id !== 'destroyer')
-    warnings.push('Escorts only screen ships 3× their mass, so big escorts rarely find a ship to guard.');
 
   return {
     blocks, cost, mass, hp, thrust, maxSpeed, turn, turnDeg: (turn * 180) / Math.PI,

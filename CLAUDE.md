@@ -106,8 +106,9 @@ Combat rules:
   - An **Interceptor** (`guard`, defend the artillery) was tried and **removed** (owner: it just
     made big clumps of ships sitting at the back). Saved designs with an unknown stance load as
     `line`.
-  - Older ones kept: charge, brawl, escort (limited slots round a big ship, breaks off to
-    attack nearby enemies).
+  - Older ones: charge kept. **Escort and Brawler removed** from the designer (owner, Nov 2026):
+    designs saved with them, including ships already in play, load as Front line
+    (`decodeDesign`); the sim's `STANCES` still has both. Generated fleets no longer use them.
   Measured (`npm run balance -- 6 40000 --cls destroyer --share 300 --only cannon@line,cannon@standoff,...`):
   every stance within about ±0.1 average; artillery beats PD flankers/raiders (+0.6), PD
   flankers beat front-line, flanking and raiding cannon ships (+0.3). Small corvettes die to lasers (one 400 shot) before reaching a
