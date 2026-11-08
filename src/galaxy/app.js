@@ -689,7 +689,7 @@ function startMove(from) {
   const have = shipsAt(world.planets[from], ui.me);
   const ships = {};
   for (const [d, n] of Object.entries(have)) ships[d] = world.designs[d].speed >= MIN_FLEET_SPEED ? n : 0;
-  move = { from, ships, to: null, lanes: true, avoid: true, picking: true, preview: null, hoverTo: null };
+  move = { from, ships, to: null, lanes: true, avoid: false, picking: true, preview: null, hoverTo: null }; // avoid off by default (owner, Nov 2026)
   renderPanel(true);
   toast('Click a world to send the fleet there.');
 }
@@ -888,7 +888,10 @@ function designerInfo(withDesigns = false) {
   const info = { type: 'lsb-designer-embed', planet: P.name, existing: yardListValue(P), credits: Math.floor(me().credits), yards: P.yards.length };
   // Every design in play in this galaxy (yours and other players'), so test battles can be fought
   // against the ships people are really building. Sent once, when the designer opens.
-  if (withDesigns) info.designs = Object.values(world.designs).map((d) => ({ name: d.name, owner: d.owner === null ? 'Militia' : playerName(world, d.owner), mine: d.owner === ui.me, data: d.data }));
+  if (withDesigns) {
+    const myYards = new Set(world.planets.filter((p) => p.owner === ui.me).flatMap((p) => p.yards.map((y) => y.design)));
+    info.designs = Object.values(world.designs).map((d) => ({ name: d.name, owner: d.owner === null ? 'Militia' : playerName(world, d.owner), mine: d.owner === ui.me, yard: myYards.has(d.id), data: d.data }));
+  }
   return info;
 }
 function openDesigner(planetId) {

@@ -245,7 +245,8 @@ designer's numbers against the sim.
   zooms** (towards the cursor), **WASD / arrow keys pan** smoothly while held (Shift faster),
   plus a Hand tool (H), Space+drag, +/− buttons and a clickable minimap. Q toggles all arcs.
   **Right-click an empty cell picks the Hand tool** and dragging moves the view (owner, Nov 2026;
-  it used to deselect the block); picking a block from the palette leaves the Hand tool. Esc
+  it used to deselect the block); picking a block from the palette, or right-clicking the ship
+  while the Hand tool is on, goes back to building (no erase). Esc
   still deselects (`block === null`). Right-click/drag on blocks still erases. Opened from the galaxy, the designer sits
   under a top bar with a prominent "← Back to galaxy" button (`.overlay-bar`; the old button
   overlapped the help text and was easy to miss).
@@ -259,7 +260,9 @@ designer's numbers against the sim.
   range (hover a row for what the weapon does); damage/s counts point defence too. Opened from
   the galaxy, the test battle's enemy list includes **every design in play in that galaxy**
   (yours and other players', sent once in the first `lsb-designer-embed` message as
-  `designs`). Template designs are named "My <class>" by default.
+  `designs`). Template designs are named "My <class>" by default. The "Start from" menu also
+  gets a **"Your shipyards"** group: the designs your own shipyards build (`yard: true` in that
+  message), loaded under their own names.
 - **Renaming designs** (owner, Nov 2026): a Rename button on your own shipyards in the world
   panel opens a small dialog; `renameDesign()` in `world.js` (owner only, 1–40 chars, control
   characters stripped) renames the design everywhere and logs it; server action
@@ -401,7 +404,7 @@ economy, fleets, captures, with real battles).
   (`upgradeWorld`). Battle log entries carry `players` (per side: ships, survived, lost, routed),
   `winner` and `camps` ("N-way" in the text counts groups of allies, not players); the summary
   `ships/survived/lost` [0, 1] are attackers vs the world's side, as before.
-- The move panel's **"Avoid worlds you don't hold"** (on by default) plans
+- The move panel's **"Avoid worlds you don't hold"** (**off by default** since Nov 2026, owner; was on) plans
   round every world not held by you or an ally (a straight flight always exists); with it off the
   route is fastest and the panel lists the hostile stops (marked on the map) and their ships.
   Saves from before this rule (`upgradeWorld`) let fleets already in flight fly straight on.

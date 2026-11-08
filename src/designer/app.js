@@ -91,9 +91,22 @@ tpl.addEventListener('change', () => {
   tpl.value = '';
   if (!v) return;
   if (v === 'blank') { ed.clear(); ed.name = 'New design'; ed.stance = 'line'; toast('Cleared. Undo to get your design back.'); }
-  else { const d = makeDesign(v, 7 + Math.floor(Math.random() * 1000)); ed.load({ ...d, name: `My ${v}` }); toast(`Loaded a sample ${v}. Undo to go back.`); }
+  else if (v.startsWith('y')) { // one of your shipyards' designs (opened from the galaxy)
+    const o = embed.designs[Number(v.slice(1))], d = decodeDesign(o.data);
+    ed.load({ ...d, name: o.name }); toast(`Loaded ${o.name}. Undo to go back.`);
+  } else { const d = makeDesign(v, 7 + Math.floor(Math.random() * 1000)); ed.load({ ...d, name: `My ${v}` }); toast(`Loaded a sample ${v}. Undo to go back.`); }
   syncFields(); fit();
 });
+
+// Opened from the galaxy: "Start from" also lists the designs your shipyards build.
+function addYardTemplates(list) {
+  const mine = list.map((o, k) => [o, k]).filter(([o]) => o.yard);
+  if (!mine.length) return;
+  const grp = document.createElement('optgroup');
+  grp.label = 'Your shipyards';
+  for (const [o, k] of mine) grp.append(new Option(o.name, `y${k}`));
+  tpl.insertBefore(grp, tpl.options[1]);
+}
 
 const toggle = (id, get, set) => {
   const b = $(id);
@@ -540,6 +553,12 @@ canvas.addEventListener('pointerdown', (e) => {
   }
   if (e.button === 1 || spaceDown || (tool === 'pan' && e.button === 0)) { panning = true; canvas.style.cursor = 'grabbing'; return; }
   const [x, y] = toCell(e.clientX, e.clientY);
+  if (e.button === 2 && tool === 'pan' && ed.get(x, y)) {
+    // With the Hand tool, right-clicking the ship goes back to building (it doesn't erase).
+    setTool('pencil'); if (block === null) setBlock(BT.ARMOR);
+    toast('Back to building.');
+    return;
+  }
   if (e.button === 2 && !ed.get(x, y)) {
     // Right-click on an empty cell picks the Hand tool, and dragging moves the view. Picking a
     // block from the palette (or B / R / F) goes back to building.
@@ -833,6 +852,7 @@ function syncEmbed() {
 if (window.parent !== window) {
   addEventListener('message', (e) => {
     if (e.source !== window.parent || e.data?.type !== 'lsb-designer-embed') return;
+    if (e.data.designs && !embed?.designs?.length) addYardTemplates(e.data.designs);
     embed = { ...e.data, designs: e.data.designs || embed?.designs || [] }; // designs come with the first message only
     $('test-btn').classList.remove('go');
     syncEmbed();
