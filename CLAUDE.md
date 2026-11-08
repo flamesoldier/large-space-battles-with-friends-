@@ -375,7 +375,9 @@ economy, fleets, captures, with real battles).
 - Map: 2–10 players, one **spawn point** (home world) each, spread evenly round a ring so starts
   are fair; ~7 worlds per player scattered between. Same seed and player count = same map.
 - **Hyperlanes**: minimum spanning tree (every world reachable) plus some non-crossing links
-  between near neighbours. **Moving along a lane is 10× faster** than normal space. Fleets can fly
+  between near neighbours. Every home world also gets at least one lane **inward** (`linkHomesInward()` in
+  `galaxyGen.js`; owner, Nov 2026: about 1 home world in 3 only had lanes along the rim). It also
+  runs in `upgradeWorld()`, so running games got the missing lanes, logged as "New hyperlane". **Moving along a lane is 10× faster** than normal space. Fleets can fly
   straight to any world through normal space too; the planner (Dijkstra) picks the fastest mix
   and the player can turn lanes off. Fleets can't be recalled.
 - **Fleets stop at every world on their route** (owner's rule, so enemies can block or ambush

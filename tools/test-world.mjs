@@ -35,6 +35,11 @@ for (let n = 2; n <= MAX_PLAYERS; n++)
     const seen = new Set([0]), q = [0];
     while (q.length) { const u = q.pop(); for (const [a, b] of g.lanes) { const v = a === u ? b : b === u ? a : -1; if (v >= 0 && !seen.has(v)) { seen.add(v); q.push(v); } } }
     ok(seen.size === g.planets.length, `${n}p seed ${seed}: hyperlanes reach every world`);
+    // Every home world has a lane heading inward, not only along the rim.
+    for (const id of g.spawns) {
+      const H = g.planets[id], R = (p) => Math.hypot(p.x, p.y);
+      ok(g.lanes.some(([a, b]) => (a === id || b === id) && R(g.planets[a === id ? b : a]) < R(H) * 0.85), `${n}p seed ${seed}: home world ${id} has an inward lane`);
+    }
     // Same seed, same map.
     ok(JSON.stringify(generateGalaxy({ players: n, seed })) === JSON.stringify(g), 'generation is deterministic');
     // Home worlds sit the same distance from the centre.

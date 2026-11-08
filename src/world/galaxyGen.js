@@ -41,6 +41,33 @@ function pointSegDist(p, a, b) {
 }
 
 /**
+ * Owner, Nov 2026: a home world whose only lanes run along the rim (about 1 in 3 did) has to go
+ * the long way round to reach the middle. Give every home world at least one lane inward: to the
+ * nearest world clearly closer to the centre that the lane can reach without crossing another
+ * lane or passing too close to a world. Changes `lanes` in place; returns how many were added.
+ * Safe to run again (a home world that has an inward lane is left alone).
+ */
+export function linkHomesInward(planets, lanes) {
+  const R = (p) => Math.hypot(p.x, p.y), added = [];
+  const has = new Set(lanes.map(([a, b]) => (a < b ? `${a}-${b}` : `${b}-${a}`)));
+  for (const H of planets) {
+    if (!(H.home >= 0)) continue;
+    const inner = (p) => R(p) < R(H) * 0.85;
+    const nb = lanes.filter(([a, b]) => a === H.id || b === H.id).map(([a, b]) => planets[a === H.id ? b : a]);
+    if (nb.some(inner)) continue;
+    const cands = planets.filter((p) => p !== H && inner(p)).sort((a, b) => Math.hypot(a.x - H.x, a.y - H.y) - Math.hypot(b.x - H.x, b.y - H.y));
+    for (const B of cands.slice(0, 8)) {
+      if (has.has(H.id < B.id ? `${H.id}-${B.id}` : `${B.id}-${H.id}`)) continue;
+      if (lanes.some(([c, d]) => segmentsCross(H, B, planets[c], planets[d]))) continue;
+      if (planets.some((p) => p !== H && p !== B && pointSegDist(p, H, B) < PLANET_SPACING * 0.35)) continue;
+      lanes.push(H.id < B.id ? [H.id, B.id] : [B.id, H.id]); has.add(H.id < B.id ? `${H.id}-${B.id}` : `${B.id}-${H.id}`); added.push([H.id, B.id]);
+      break;
+    }
+  }
+  return added;
+}
+
+/**
  * Make a galaxy for `players` players (2–10).
  * Returns { radius, planets: [{ id, name, x, y, size, income, home }], lanes: [[a, b], ...], spawns: [planetId per player] }.
  * `home` is the index of the player whose spawn point it is, or -1.
@@ -107,6 +134,7 @@ export function generateGalaxy({ players, seed = 1, planetsPerPlayer = DEFAULT_P
     if (planets.some((p, i) => i !== a && i !== b && pointSegDist(p, A, B) < PLANET_SPACING * 0.35)) continue;
     add(a, b);
   }
+  linkHomesInward(planets, lanes);
   lanes.sort((x, y) => x[0] - y[0] || x[1] - y[1]);
   const spawns = [];
   for (const p of planets) if (p.home >= 0) spawns[p.home] = p.id;

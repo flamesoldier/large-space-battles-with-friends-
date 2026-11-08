@@ -22,7 +22,7 @@ import {
   SHIPYARD_INTERVAL_MIN, shipyardPrice, crowdingSurcharge, SHIPYARD_SELL_REFUND,
   STARTING_CREDITS, NEUTRAL_GARRISON_HOURS,
 } from '../shared/economy.js';
-import { generateGalaxy } from './galaxyGen.js';
+import { generateGalaxy, linkHomesInward } from './galaxyGen.js';
 import { planRoute, travelSpeed, laneMap } from './routes.js';
 import { makeBattleScenario } from './battleSetup.js';
 import { HOUR_MS, MIN_FLEET_SPEED, NEUTRAL_COLOR, PLAYER_COLORS, CHOOSABLE_COLORS, MIN_PLAYERS, MAX_PLAYERS, BATTLE_MAX_TIME, BATTLE_HOLD_MIN } from './rules.js';
@@ -374,6 +374,12 @@ export function upgradeWorld(world) {
     world.sieges.splice(world.sieges.indexOf(sg), 1);
   }
   world.proposals ??= [];
+  // Nov 2026: every home world gets a hyperlane inward (some only had lanes along the rim).
+  const newLanes = linkHomesInward(world.planets, world.lanes);
+  if (newLanes.length) {
+    world.lanes.sort((x, y) => x[0] - y[0] || x[1] - y[1]);
+    for (const [h, b] of newLanes) log(world, 'lane', `New hyperlane: ${world.planets[h].name} ↔ ${world.planets[b].name}.`, { planet: h });
+  }
   if (!world.relations) {
     world.relations = {};
     for (const a of world.players) for (const b of world.players) if (a.id < b.id && a.team && a.team === b.team) world.relations[`${a.id}|${b.id}`] = 'ally';
