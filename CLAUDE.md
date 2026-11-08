@@ -217,8 +217,16 @@ All money numbers are in `src/shared/economy.js` (placeholders until balanced in
   auto-turn (`bestFacing`, most guns toward the enemy) was removed at the owner's request. Wider rows (6×, 10×) clear more lines but
   stretch out of reach and kill fewer; every fleet starts outside them (no extra random draws, so battles without defences start
   as before). The designer opened with Design a new defence… (`mode: 'defense'` in the embed
-  message) shows the defence price, errors on thrusters, hides the stance, and its test battle
-  holds your copies still. Measured: 400 attackers (480k cr) beat 86 defences + 90 ships
+  message) is titled **Defence Designer** (page title, header, "Your defences" in the test dialog), shows the defence price, errors on thrusters, hides the stance, and its test battle
+  holds your copies still **in the same staggered rows as a real world** (`layoutDefences()` in
+  `battleSetup.js`, shared with `makeBattleScenario`; `makeTestScenario(..., fixed)`): before
+  Nov 2026 they were scattered at random and, unable to move, sat inside each other. Owner (Nov
+  2026): the **Thruster block is greyed out** in the defence designer (button disabled, key 4
+  refused), and **thrusters are removed automatically** (`ed.removeType()`, one undo step, with a
+  toast) when it opens and whenever a design is loaded from Start from, the library or Import.
+  The defence designer remembers its last design under its own key
+  (`lsb.designer.defence.current.v1`) so stripping thrusters never changes the ship the Ship
+  Designer reopens with. None of this applies in ship mode. Measured: 400 attackers (480k cr) beat 86 defences + 90 ships
   (137k cr counting defences at 1/5) in 95 s (`/tmp`-style script; replay sent to the owner).
 - Ships a shipyard builds garrison its world and defend it.
 - Every ship part has a credit cost (`cost` in `blocks.js`); a ship's price is the sum of its blocks.

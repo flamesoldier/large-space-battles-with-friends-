@@ -4,6 +4,7 @@
 import { makeDesign, CLASS_MIX } from '../shared/designs.js';
 import { designCost } from '../shared/shipStats.js';
 import { mulberry32 } from '../shared/rng.js';
+import { layoutDefences } from '../world/battleSetup.js';
 
 // How many copies to field by default, so a test is a proper fleet fight but stays quick.
 export const DEFAULT_COPIES = { corvette: 30, frigate: 20, destroyer: 12, cruiser: 6, battleship: 3, titan: 1, dreadnought: 1, leviathan: 1, colossus: 1, worldbreaker: 1 };
@@ -13,9 +14,12 @@ const MAX_ENEMY_SHIPS = 2500;
 /**
  * Build a Battle scenario. `opponent` is null for a generated mixed fleet, or a design to
  * field as many copies of as the budget buys (at least one).
+ * `fixed`: your copies are defences. They stand in the same staggered rows as at a real world
+ * (they can't move, so scattered at random they'd sit inside each other), fronts toward the
+ * enemy, and the enemy starts clear of the rows.
  * Returns { designs, ships, budget, enemyCost, enemyCount }.
  */
-export function makeTestScenario(design, copies, opponent = null, seed = 1) {
+export function makeTestScenario(design, copies, opponent = null, seed = 1, fixed = false) {
   const r = mulberry32(seed * 977 + 5);
   const budget = designCost(design) * copies;
   const designs = [design];
@@ -47,14 +51,20 @@ export function makeTestScenario(design, copies, opponent = null, seed = 1) {
   }
 
   const ships = [];
+  let clear = 0; // how far the defence rows reach toward the enemy
   const place = (team, list) => {
     const dir = team === 0 ? 1 : -1, spanY = Math.max(160, Math.sqrt(list.length) * 45);
     for (const di of list) {
       const d = designs[di], depth = Math.hypot(d.w, d.h) * 0.6 + r() * (30 + Math.sqrt(list.length) * 10);
-      ships.push({ design: di, team, x: -dir * (220 + depth), y: (r() - 0.5) * spanY, a: team === 0 ? 0 : Math.PI });
+      ships.push({ design: di, team, x: -dir * (Math.max(220, clear + 60) + depth), y: (r() - 0.5) * spanY, a: team === 0 ? 0 : Math.PI });
     }
   };
-  place(0, new Array(copies).fill(0));
+  if (fixed) {
+    // Defences at the origin in rows facing right (angle 0), the enemy coming in from the right.
+    const mine = Array.from({ length: copies }, () => ({ design: 0, team: 0, fixed: true }));
+    clear = layoutDefences(mine, designs, [0], 2);
+    ships.push(...mine);
+  } else place(0, new Array(copies).fill(0));
   place(1, enemy);
   return { designs, ships, budget, enemyCost: spent, enemyCount: enemy.length };
 }

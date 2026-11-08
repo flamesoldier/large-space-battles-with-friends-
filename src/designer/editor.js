@@ -220,6 +220,15 @@ export class ShipEditor {
     this.changed();
   }
 
+  /** Remove every block of one type (thrusters from a defence, say) as one undo step. Returns how many. */
+  removeType(t) {
+    this.checkpoint();
+    let n = 0;
+    for (let i = 0; i < this.cells.length; i++) if (this.cells[i] === t && t !== BT.HUB) { this.write(i, 0); n++; }
+    this.changed();
+    return n;
+  }
+
   /** Forget all undo history (after restoring a saved session, say). */
   resetHistory() { this.undoStack.length = 0; this.redoStack.length = 0; this.rec = null; }
 }

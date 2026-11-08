@@ -70,6 +70,7 @@ h2:first-child { margin-top: 0; }
 .blk i { width: 18px; height: 18px; border-radius: 2px; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.35); }
 .blk em { font-style: normal; font-family: var(--mono); font-size: 11.5px; color: var(--dim); }
 .blk kbd { display: none; }
+.blk:disabled { opacity: 0.3; cursor: not-allowed; filter: grayscale(1); }
 .blk[aria-pressed="true"] em { color: var(--azure); }
 .row { display: flex; gap: 4px; flex-wrap: wrap; }
 .row button { flex: 1 1 auto; }
@@ -169,7 +170,7 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
 
 <div id="app">
   <header class="top">
-    <div class="brand"><b>Ship Designer</b><span>Build it block by block. Every block costs credits.</span></div>
+    <div class="brand"><b id="brand-name">Ship Designer</b><span id="brand-sub">Build it block by block. Every block costs credits.</span></div>
     <div class="group">
       <input id="name" type="text" maxlength="40" aria-label="Design name" spellcheck="false">
       <label for="stance" id="stance-row">Stance <select id="stance"></select></label>
@@ -228,7 +229,7 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
 
   <aside id="stats">
     <div class="price">
-      <div><small>Ship cost</small><strong id="cost">0</strong> <span>cr</span></div>
+      <div><small id="cost-label">Ship cost</small><strong id="cost">0</strong> <span>cr</span></div>
       <div class="yard"><small id="yard-label">Shipyard</small><strong id="yard">0</strong> <span>cr</span></div>
     </div>
     <p class="hint" id="yard-hint" style="margin:6px 0 0"></p>
@@ -270,9 +271,9 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
 
   <dialog id="test">
     <h3>Test battle</h3>
-    <p class="hint" style="margin-top:0">Your ships fight an enemy fleet worth the same number of credits, using the real battle sim.</p>
+    <p class="hint" id="t-hint" style="margin-top:0">Your ships fight an enemy fleet worth the same number of credits, using the real battle sim.</p>
     <div class="form">
-      <label for="t-copies">Your ships</label><input id="t-copies" type="number" min="1" max="400" value="10">
+      <label for="t-copies" id="t-copies-label">Your ships</label><input id="t-copies" type="number" min="1" max="400" value="10">
       <label for="t-opp">Enemy</label><select id="t-opp"></select>
       <label for="t-seed">Seed</label><input id="t-seed" type="number" min="1" value="1">
     </div>

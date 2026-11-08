@@ -41,7 +41,11 @@ const store = {
   get(k, fallback) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fallback; } catch { return fallback; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } },
 };
-const LIB_KEY = 'lsb.designs.v1', CUR_KEY = 'lsb.designer.current.v1';
+const LIB_KEY = 'lsb.designs.v1';
+// The design you were last working on. The defence designer keeps its own, so taking the
+// thrusters off a defence never changes the ship you come back to in the ship designer.
+const SHIP_CUR_KEY = 'lsb.designer.current.v1', DEF_CUR_KEY = 'lsb.designer.defence.current.v1';
+let CUR_KEY = SHIP_CUR_KEY;
 const PLASMA_WARNING = "WARNING: HUGE FRIENDLY FIRE. ITS BOLT CARVES THROUGH YOUR OWN SHIPS AS WELL AS THE ENEMY'S, AND ITS BLOCKS EXPLODE WHEN DESTROYED, WRECKING YOUR SHIP AND ANY ALLY NEARBY.";
 
 // ------------------------------------------------------------ UI setup
@@ -65,6 +69,7 @@ for (const [t, key] of PALETTE) {
   $('blocks').append(b);
 }
 function setBlock(t) {
+  if (t === BT.THRUSTER && defenseMode()) { toast("Defences can't have thrusters: they never move."); return; }
   block = t;
   if ((t === BT.LANCE || t === BT.HUB || tool === 'pan') && tool !== 'pencil') setTool('pencil'); // picking a block leaves the Hand tool
   document.querySelectorAll('.blk').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.block) === t)));
@@ -94,7 +99,8 @@ tpl.addEventListener('change', () => {
   else if (v.startsWith('y')) { // one of your shipyards' designs (opened from the galaxy)
     const o = embed.designs[Number(v.slice(1))], d = decodeDesign(o.data);
     ed.load({ ...d, name: o.name }); toast(`Loaded ${o.name}. Undo to go back.`);
-  } else { const d = makeDesign(v, 7 + Math.floor(Math.random() * 1000)); ed.load({ ...d, name: `My ${v}` }); toast(`Loaded a sample ${v}. Undo to go back.`); }
+  } else { const d = makeDesign(v, 7 + Math.floor(Math.random() * 1000)); ed.load({ ...d, name: defenseMode() ? `My ${v} defence` : `My ${v}` }); toast(`Loaded a sample ${v}. Undo to go back.`); }
+  if (v !== 'blank') dropThrusters();
   syncFields(); fit();
 });
 
@@ -717,7 +723,7 @@ function openLibrary() {
     item.innerHTML = `<img alt=""><div class="meta"><b></b><span>${a.hullClass?.name ?? 'Too big'} · ${fmt(a.cost)} cr · ${a.blocks} blocks${a.ok ? '' : ' · draft'}</span></div><div class="row"><button data-act="load">Load</button><button data-act="del" title="Delete">✕</button></div>`;
     item.querySelector('img').src = thumbnail(d);
     item.querySelector('b').textContent = d.name;
-    item.querySelector('[data-act=load]').addEventListener('click', () => { ed.load(d); syncFields(); fit(); $('library').close(); toast(`Loaded “${d.name}”.`); });
+    item.querySelector('[data-act=load]').addEventListener('click', () => { ed.load(d); syncFields(); fit(); $('library').close(); toast(`Loaded “${d.name}”.`); dropThrusters(); });
     item.querySelector('[data-act=del]').addEventListener('click', () => {
       if (!confirm(`Delete “${d.name}”?`)) return;
       const l = library(); l.splice(k, 1); store.set(LIB_KEY, l); openLibrary();
@@ -743,7 +749,7 @@ $('import-file').addEventListener('change', async (e) => {
   const f = e.target.files[0];
   e.target.value = '';
   if (!f) return;
-  try { const d = decodeDesign(JSON.parse(await f.text())); ed.load(d); syncFields(); fit(); toast(`Imported “${d.name}”.`); }
+  try { const d = decodeDesign(JSON.parse(await f.text())); ed.load(d); syncFields(); fit(); toast(`Imported “${d.name}”.`); dropThrusters(); }
   catch (err) { toast(`Couldn't import: ${err.message}`); }
 });
 
@@ -780,8 +786,7 @@ $('t-run').addEventListener('click', async () => {
   const v = $('t-opp').value;
   const mine = { ...design, name: design.name || 'Your design' };
   const opponent = v === 'self' ? { ...mine } : v.startsWith('g') ? { ...decodeDesign(embed.designs[Number(v.slice(1))].data), name: embed.designs[Number(v.slice(1))].name } : v ? decodeDesign(library()[Number(v)]) : null;
-  const scen = makeTestScenario(mine, copies, opponent, seed);
-  if (defenseMode()) for (const sh of scen.ships) if (sh.team === 0) sh.fixed = true; // defences hold still, front to the enemy
+  const scen = makeTestScenario(mine, copies, opponent, seed, defenseMode()); // defences stand in rows and hold still, front to the enemy
   const b = new Battle({ designs: scen.designs, ships: scen.ships, seed });
   const t0 = performance.now();
   while (!b.done) {
@@ -847,6 +852,32 @@ let embed = null;
 /** Opened from the galaxy to design a defence (no thrusters, never moves) rather than a shipyard's ship. */
 const defenseMode = () => embed?.mode === 'defense';
 let defenseShown = false;
+/** In the defence designer, take every thruster off the design (after loading or importing one). */
+function dropThrusters() {
+  if (!defenseMode()) return 0;
+  const n = ed.removeType(BT.THRUSTER);
+  if (n) toast(`Removed ${n} thruster${n === 1 ? '' : 's'}: defences never move. Undo puts them back.`);
+  return n;
+}
+/** Opened from the galaxy as the defence designer: rename the page, grey out thrusters, own memory. */
+function enterDefenseMode() {
+  document.title = 'Defence Designer';
+  $('brand-name').textContent = 'Defence Designer';
+  $('brand-sub').textContent = 'Build it block by block. Defences never move, so no thrusters.';
+  $('cost-label').textContent = 'Block price';
+  $('t-copies-label').textContent = 'Your defences';
+  $('t-hint').textContent = 'Your defences stand in staggered rows, fronts toward the enemy, exactly as at a real world, against an enemy fleet worth the same number of credits (at full block price). Real battle sim.';
+  const tb = document.querySelector(`.blk[data-block="${BT.THRUSTER}"]`);
+  if (tb) { tb.disabled = true; tb.title = "Thrusters: not allowed on defences. A defence never moves."; }
+  if (block === BT.THRUSTER) setBlock(BT.ARMOR);
+  // Your last defence if you have one, otherwise the design on screen with its thrusters taken off.
+  clearTimeout(saveTimer);
+  CUR_KEY = DEF_CUR_KEY;
+  const saved = store.get(DEF_CUR_KEY, null);
+  let loaded = false;
+  if (saved) { try { const d = decodeDesign(saved); if (d.cells.some((c) => c && c !== BT.HUB)) { ed.load(d); ed.resetHistory(); loaded = true; } } catch { /* use the one on screen */ } }
+  if (loaded) { syncFields(); fit(); dropThrusters(); } else { ed.removeType(BT.THRUSTER); ed.resetHistory(); }
+}
 function syncEmbed() {
   if (!embed || !design) return;
   if (defenseMode()) {
@@ -879,7 +910,7 @@ if (window.parent !== window) {
     if (e.data.designs && !embed?.designs?.length) addYardTemplates(e.data.designs);
     embed = { ...e.data, designs: e.data.designs || embed?.designs || [] }; // designs come with the first message only
     $('test-btn').classList.remove('go');
-    if (defenseMode() && !defenseShown) { defenseShown = true; seenVersion = -1; refresh(true); } // re-check the issues list for defences
+    if (defenseMode() && !defenseShown) { defenseShown = true; enterDefenseMode(); seenVersion = -1; refresh(true); } // re-check the issues list for defences
     syncEmbed();
   });
   $('use-design').addEventListener('click', () => {

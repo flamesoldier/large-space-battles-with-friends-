@@ -40,7 +40,38 @@ export function makeBattleScenario(groups, designOf, seed, opts = null) {
   // Biggest in the back row by the world, smaller ones in front, with gaps to shoot through. They can never turn in battle.
   // Every fleet then starts clear of the rows. No random draws, so battles without defences start
   // exactly as before.
-  const fixed = ships.filter((s) => s.fixed);
+  const attackAngles = [];
+  for (let c = 1; c < nCamps; c++) attackAngles.push((2 * Math.PI * c) / nCamps);
+  if (!attackAngles.length) attackAngles.push(Math.PI);
+  const ringOut = layoutDefences(ships.filter((s) => s.fixed), designs, attackAngles, nCamps);
+  const order = [];
+  for (let c = 1; c < nCamps; c++) order.push(c);
+  order.push(0); // same draw order as before for two sides: attackers first
+  for (const camp of order) {
+    const list = ships.filter((s) => campOf(s.team) === camp && !s.fixed);
+    if (!list.length) continue;
+    // Camp direction from the world: camp 0 at angle 0 (right), the others round the circle.
+    const phi = nCamps <= 1 ? 0 : (2 * Math.PI * camp) / nCamps;
+    const c = Math.cos(phi), sn = Math.sin(phi);
+    const spanY = Math.max(160, Math.sqrt(list.length) * 45);
+    for (const s of list) {
+      const d = designs[s.design], depth = Math.hypot(d.w, d.h) * 0.6 + r() * (30 + Math.sqrt(list.length) * 10);
+      const along = Math.max(220, ringOut + 60) + depth, across = (r() - 0.5) * spanY;
+      const k = c < 0 ? -1 : 1; // spread sideways (same layout as before for two sides)
+      s.x = c * along - k * sn * across; s.y = sn * along + k * c * across;
+      s.a = (phi + Math.PI) % (2 * Math.PI); // facing the world
+    }
+  }
+  return { designs, ships, groups: out, seed, teams: opts ? opts.teams : 2 };
+}
+
+/**
+ * Stand defences (fixed ships) in staggered rows, one block of rows per direction in
+ * attackAngles, facing out that way (sets x, y, a on each ship). nCamps sets how far out each
+ * block stands when there are several. Returns how far out the rows reach from (0, 0), so fleets
+ * can start clear of them. Used by world battles and the designer's defence test battle.
+ */
+export function layoutDefences(fixed, designs, attackAngles, nCamps = attackAngles.length + 1) {
   let ringOut = 0;
   if (fixed.length) {
     const D = (s) => designs[s.design];
@@ -54,9 +85,6 @@ export function makeBattleScenario(groups, designOf, seed, opts = null) {
     const slot = (s) => wide(s) + Math.max(16, wide(s) * 0.9);
     const rowGap = 26;
     fixed.sort((a, b) => D(b).w * D(b).h - D(a).w * D(a).h);
-    const attackAngles = [];
-    for (let c = 1; c < nCamps; c++) attackAngles.push((2 * Math.PI * c) / nCamps);
-    if (!attackAngles.length) attackAngles.push(Math.PI);
     const blocks = attackAngles.map(() => []);
     fixed.forEach((s, k) => blocks[k % blocks.length].push(s));
     blocks.forEach((list, bi) => {
@@ -84,25 +112,7 @@ export function makeBattleScenario(groups, designOf, seed, opts = null) {
       }
     });
   }
-  const order = [];
-  for (let c = 1; c < nCamps; c++) order.push(c);
-  order.push(0); // same draw order as before for two sides: attackers first
-  for (const camp of order) {
-    const list = ships.filter((s) => campOf(s.team) === camp && !s.fixed);
-    if (!list.length) continue;
-    // Camp direction from the world: camp 0 at angle 0 (right), the others round the circle.
-    const phi = nCamps <= 1 ? 0 : (2 * Math.PI * camp) / nCamps;
-    const c = Math.cos(phi), sn = Math.sin(phi);
-    const spanY = Math.max(160, Math.sqrt(list.length) * 45);
-    for (const s of list) {
-      const d = designs[s.design], depth = Math.hypot(d.w, d.h) * 0.6 + r() * (30 + Math.sqrt(list.length) * 10);
-      const along = Math.max(220, ringOut + 60) + depth, across = (r() - 0.5) * spanY;
-      const k = c < 0 ? -1 : 1; // spread sideways (same layout as before for two sides)
-      s.x = c * along - k * sn * across; s.y = sn * along + k * c * across;
-      s.a = (phi + Math.PI) % (2 * Math.PI); // facing the world
-    }
-  }
-  return { designs, ships, groups: out, seed, teams: opts ? opts.teams : 2 };
+  return ringOut;
 }
 
 /** Battle options for a scenario: how many sides and which pairs fight (scen.hostile: [[a, b], ...]). */
