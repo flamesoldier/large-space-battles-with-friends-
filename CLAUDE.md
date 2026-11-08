@@ -75,7 +75,13 @@ Weapons (numbers in `blocks.js`):
   safety zone kept for ships that move. The bolt **still damages** them (owner's choice; a
   pass-through version was offered and turned down). Measured against the version before: 20
   plasma defences in designer-test rows 11 → 13.8 shots a battle, a world battle with 24 plasma
-  defences 9.2 → 10.2, and zero friendly plasma damage to defences in both. `LANCE_ALLY_MARGIN` (0) widens the ally check: at 0, about 1 shot in 3 hits an ally
+  defences 9.2 → 10.2, and zero friendly plasma damage to defences in both. **Moving friends are checked where they will be** when the bolt
+  reaches them as well as where they are (owner, Nov 2026: bolts fired with a friend flying into
+  the line). A ship with no thrusters counts as still only once it has stopped (speed < 1): it
+  can drift on at its old speed. Measured (2 × 600 vs 600 + 4 world defence battles): friendly
+  ships hit by friendly plasma 126 → 19, enemy ships hit 638 → 543, ship plasma shots 241 → 183
+  (a margin of 3 on top barely helped; margin 5 without prediction was worse on both counts).
+  So the "1 in 3 shots hits an ally first" figure below is out of date. `LANCE_ALLY_MARGIN` (0) widens the ally check: at 0, about 1 shot in 3 hits an ally
   first and ~4 enemies are killed per ally; at 5 allies are almost never hit but it holds fire
   far more and kills ~40% fewer. Measured at 600 vs 600 (2 seeds): ~2.2 enemy ships hit and ~1.4
   destroyed or broken per shot, ~0.4 allies destroyed. Keeps a 0.6 s blue charge-up glow at the

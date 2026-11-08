@@ -44,6 +44,7 @@ const SPACING_GAP = 25, SPACING_TURN = 3, SPACING_SLIDE = 1, SPACING_EVERY = 5;
 // Debris still over the ship it broke off from is pushed out at up to this speed (blocks/s).
 const OWN_CLEAR_SPEED = 6;
 // Plasma cannon aiming: an ally within this many blocks of the line counts as in the way.
+const LANCE_SPEED = WEAPON[BT.LANCE].speed;
 const LANCE_ALLY_MARGIN = 0; // 0: ~1 in 3 shots hits an ally first, 4 enemies killed per ally (owner wants friendly fire); 5: almost never, but it holds fire far more
 const NONE = 0xffffffff; // 'no entity' in replay id columns
 
@@ -1127,8 +1128,8 @@ export class Battle {
   lanceCount(e, x0, y0, ax, ay, range) {
     const dx = ax - x0, dy = ay - y0, d = Math.hypot(dx, dy) || 1;
     const x1 = x0 + (dx / d) * range, y1 = y0 + (dy / d) * range;
-    const g = this.grid, q = ++g.qid, n = g.n;
-    const gx0 = g.cx(Math.min(x0, x1)), gx1 = g.cx(Math.max(x0, x1)), gy0 = g.cx(Math.min(y0, y1)), gy1 = g.cx(Math.max(y0, y1));
+    const g = this.grid, q = ++g.qid, n = g.n, pad = 20; // pad: friends flying in from just off the line
+    const gx0 = g.cx(Math.min(x0, x1) - pad), gx1 = g.cx(Math.max(x0, x1) + pad), gy0 = g.cx(Math.min(y0, y1) - pad), gy1 = g.cx(Math.max(y0, y1) + pad);
     const sdx = x1 - x0, sdy = y1 - y0, len2 = sdx * sdx + sdy * sdy;
     let friendT = 2, allies = 0;
     const ts = this._lanceTs || (this._lanceTs = []);
@@ -1148,16 +1149,25 @@ export class Battle {
           // the bolt flies.
           const d2 = (x0 + sdx * t - o.x) ** 2 + (y0 + sdy * t - o.y) ** 2;
           if (this.fr[(e.team << 4) | o.team]) {
-            if (o.still) {
-              // A friend that can't move (a defence, or a ship with no thrusters left) will never
+            if (o.fixed || (o.still && o.vx * o.vx + o.vy * o.vy < 1)) {
+              // A friend that can't move (a defence, or a ship with no thrusters left that has
+              // come to a stop; one still drifting on its old momentum counts as moving) will never
               // drift into the line, so only a bolt that really runs through its blocks counts
               // (owner, Nov 2026: plasma defences in rows hardly fired). The bolt still hurts it.
               const tb = this.raycast(o, x0, y0, x1, y1, 1);
               if (tb >= 0) { allies++; if (tb < friendT) friendT = tb; }
               continue;
             }
+            // Moving friends: where it is now, or where it will be when the bolt gets there (owner,
+            // Nov 2026: bolts grazed friends flying into the line; friendly ships hit −85%).
             const ra = o.radius + LANCE_ALLY_MARGIN;
-            if (d2 <= ra * ra) { allies++; if (t < friendT) friendT = t; }
+            let near = d2 <= ra * ra;
+            if (!near) {
+              const ft = (t * range) / LANCE_SPEED, qx = o.x + o.vx * ft, qy = o.y + o.vy * ft;
+              const tq = ((qx - x0) * sdx + (qy - y0) * sdy) / len2;
+              near = (x0 + sdx * tq - qx) ** 2 + (y0 + sdy * tq - qy) ** 2 <= ra * ra;
+            }
+            if (near) { allies++; if (t < friendT) friendT = t; }
           } else if (d2 <= o.radius * o.radius * 0.25) ts.push(t);
         }
       }
