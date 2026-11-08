@@ -5,7 +5,7 @@
 import { BT, BLOCKS, WEAPON, MULTIBLOCK, HULL_CLASSES, COOKOFF } from '../shared/blocks.js';
 import { ARC_BINS, binAngle, binOpen } from '../shared/arcs.js';
 import { analyzeDesign, encodeDesign, decodeDesign, designCost, STANCE_INFO } from '../shared/shipStats.js';
-import { shipyardPrice, shipyardPriceAt, crowdingSurcharge, SHIPYARD_INTERVAL_MIN, SHIPYARD_PRICE_MULT } from '../shared/economy.js';
+import { shipyardPrice, shipyardPriceAt, crowdingSurcharge, SHIPYARD_INTERVAL_MIN, SHIPYARD_PRICE_MULT, defensePrice, DEFENSE_PRICE_SHARE } from '../shared/economy.js';
 import { makeDesign, CLASSES } from '../shared/designs.js';
 import { Battle, DT } from '../sim/battle.js';
 import { packReplay } from '../shared/replayFormat.js';
@@ -167,7 +167,14 @@ function refresh(force = false) {
     return `<tr title="${SHOT_HINT[t] || ''}"><td>${BLOCKS[t].name}</td><td>${f.count}${f.buried ? ` <small title="buried">(${f.buried} buried)</small>` : ''}</td><td>${fmt(W.damage)} / ${W.cooldown} s</td><td>${f.range}</td></tr>`;
   }).join('') || '<tr><td colspan="4" style="color:var(--dim)">No weapons yet</td></tr>';
   $('stance-hint').textContent = STANCE_INFO[ed.stance].hint;
-  const items = [...a.errors.map((s) => `<li class="err">${s}</li>`), ...a.warnings.map((s) => `<li class="warn">${s}</li>`)];
+  const errs = [...a.errors], warns = [...a.warnings];
+  if (defenseMode()) {
+    const n = a.byType[BT.THRUSTER] || 0;
+    if (n) errs.unshift(`Defences can't have thrusters: remove ${n === 1 ? 'the' : `all ${n}`} thruster${n > 1 ? 's' : ''}.`);
+    for (let k = warns.length - 1; k >= 0; k--) if (warns[k].startsWith('No thrusters')) warns.splice(k, 1);
+    warns.push('A defence never moves or turns: its front (the right-hand side here) always faces the enemy. Put the guns where you want them to fire, e.g. all facing front, or armour in front and guns on the sides to hit ships flying past.');
+  }
+  const items = [...errs.map((s) => `<li class="err">${s}</li>`), ...warns.map((s) => `<li class="warn">${s}</li>`)];
   $('issues').innerHTML = items.join('') || '<li class="ok">Ready for battle.</li>';
   $('test-btn').disabled = !a.ok;
   $('test-btn').title = a.ok ? '' : 'Fix the red issues first';
@@ -774,6 +781,7 @@ $('t-run').addEventListener('click', async () => {
   const mine = { ...design, name: design.name || 'Your design' };
   const opponent = v === 'self' ? { ...mine } : v.startsWith('g') ? { ...decodeDesign(embed.designs[Number(v.slice(1))].data), name: embed.designs[Number(v.slice(1))].name } : v ? decodeDesign(library()[Number(v)]) : null;
   const scen = makeTestScenario(mine, copies, opponent, seed);
+  if (defenseMode()) for (const sh of scen.ships) if (sh.team === 0) sh.fixed = true; // defences hold still, front to the enemy
   const b = new Battle({ designs: scen.designs, ships: scen.ships, seed });
   const t0 = performance.now();
   while (!b.done) {
@@ -836,8 +844,24 @@ $('replay-close').addEventListener('click', () => {
 // It sends { type: 'lsb-designer-embed', planet, existing, credits, yards } (existing is the list
 // value of the shipyards already on that world, which sets the crowding surcharge); "Build shipyard" posts the design back as { type: 'lsb-design-chosen' }.
 let embed = null;
+/** Opened from the galaxy to design a defence (no thrusters, never moves) rather than a shipyard's ship. */
+const defenseMode = () => embed?.mode === 'defense';
+let defenseShown = false;
 function syncEmbed() {
   if (!embed || !design) return;
+  if (defenseMode()) {
+    const price = defensePrice(design), thr = info.byType[BT.THRUSTER] || 0;
+    const b = $('use-design');
+    b.hidden = false;
+    b.textContent = `Build defence · ${fmt(price)} cr`;
+    b.disabled = !info.ok || thr > 0 || price > embed.credits;
+    b.title = !info.ok || thr ? 'Fix the red issues first' : price > embed.credits ? `You have ${fmt(embed.credits)} credits` : `Build one of these defences at ${embed.planet} (build more from the Build defences list)`;
+    $('yard-label').textContent = 'Defence';
+    $('yard').textContent = fmt(price);
+    $('yard-hint').textContent = `At ${embed.planet}: built at once for ${Math.round(DEFENSE_PRICE_SHARE * 100)}% of the blocks' price. It never moves, and when it's destroyed it's gone.`;
+    $('stance-row').hidden = true; $('stance-hint').hidden = true; $('stance-head').hidden = true;
+    return;
+  }
   const price = shipyardPriceAt(design, embed.existing || 0), extra = crowdingSurcharge(embed.existing || 0);
   const b = $('use-design');
   b.hidden = false;
@@ -855,6 +879,7 @@ if (window.parent !== window) {
     if (e.data.designs && !embed?.designs?.length) addYardTemplates(e.data.designs);
     embed = { ...e.data, designs: e.data.designs || embed?.designs || [] }; // designs come with the first message only
     $('test-btn').classList.remove('go');
+    if (defenseMode() && !defenseShown) { defenseShown = true; seenVersion = -1; refresh(true); } // re-check the issues list for defences
     syncEmbed();
   });
   $('use-design').addEventListener('click', () => {

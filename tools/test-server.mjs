@@ -188,6 +188,19 @@ try {
   ok(r.body.ok && r.body.state.world.designs[dId].name === 'Ann Destroyer', 'Ann renames her own design');
   r = await ann.act({ type: 'rename', design: '__proto__', name: 'x' });
   ok(!r.body.ok, 'odd design ids are refused');
+  const fortD = makeDesign('corvette', 7);
+  const fort = encodeDesign({ ...fortD, cells: fortD.cells.map((t) => (t === 5 ? 2 : t)), name: 'Test Fort', stance: 'line' }); // thrusters → armour
+  r = await ben.act({ type: 'defend', planet: annHome, design: fort, count: 2 });
+  ok(!r.body.ok, 'Ben can\'t build defences on Ann\'s world');
+  r = await ann.act({ type: 'defend', planet: annHome, design, count: 1 });
+  ok(!r.body.ok && /thruster/.test(r.body.error), 'a design with thrusters can\'t be a defence');
+  r = await ann.act({ type: 'defend', planet: annHome, design: fort, count: 'lots' });
+  ok(!r.body.ok, 'defence counts must be whole numbers');
+  r = await ann.act({ type: 'defend', planet: annHome, design: fort, count: 2 });
+  const fortId = r.body.ok && Object.values(r.body.state.world.designs).find((d) => d.fixed)?.id;
+  ok(fortId && r.body.state.world.planets[annHome].garrison.some((g) => g.design === fortId && g.n === 2 && g.owner === 0), 'Ann builds 2 defences on her world');
+  r = await ann.act({ type: 'fleet', from: annHome, to: benHome, ships: { [fortId]: 1 } });
+  ok(!r.body.ok, 'defences can\'t be sent');
   r = await ben.act({ type: 'fleet', from: annHome, to: benHome, ships: { [after.planets[annHome].yards[0].design]: 1 } });
   ok(!r.body.ok, 'Ben can\'t move Ann\'s ships');
   r = await ann.act({ type: 'fleet', from: annHome, to: 'constructor', ships: {} });
@@ -216,7 +229,7 @@ try {
   await sleep(2500);
   st = (await ann.state()).body;
   const home = st.world.planets[annHome];
-  const mine = home.garrison.filter((g) => g.owner === 0);
+  const mine = home.garrison.filter((g) => g.owner === 0 && !st.world.designs[g.design].fixed);
   ok(mine.length && mine[0].n >= 2, `the shipyard has built ships (${mine[0]?.n})`);
   const target = st.world.planets.filter((p) => p.owner === null).sort((a, b) => Math.hypot(a.x - home.x, a.y - home.y) - Math.hypot(b.x - home.x, b.y - home.y))[0];
   r = await ann.act({ type: 'fleet', from: annHome, to: target.id, ships: { [mine[0].design]: mine[0].n } });

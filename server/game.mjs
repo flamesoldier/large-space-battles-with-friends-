@@ -17,7 +17,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import {
-  advanceTo, dueEvent, planEvent, applyEvent, upgradeWorld, sendFleet, buildShipyard, sellShipyard, renameDesign,
+  advanceTo, dueEvent, planEvent, applyEvent, upgradeWorld, sendFleet, buildShipyard, sellShipyard, renameDesign, buildDefense,
   proposeAlliance, acceptAlliance, declineAlliance, breakAlliance, playerName, claimPlayer,
 } from '../src/world/world.js';
 import { decodeDesign } from '../src/shared/shipStats.js';
@@ -216,6 +216,13 @@ export class Game {
         let design;
         try { design = decodeDesign(a.design); } catch (e) { return { ok: false, error: e.message }; }
         return buildShipyard(W, pid, planet, design);
+      }
+      case 'defend': {
+        const planet = index(a.planet, nP);
+        if (planet === null) return { ok: false, error: 'No such world.' };
+        let design;
+        try { design = decodeDesign(a.design); } catch (e) { return { ok: false, error: e.message }; }
+        return buildDefense(W, pid, planet, design, a.count);
       }
       case 'sell': {
         const planet = index(a.planet, nP);

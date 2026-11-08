@@ -172,7 +172,7 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
     <div class="brand"><b>Ship Designer</b><span>Build it block by block. Every block costs credits.</span></div>
     <div class="group">
       <input id="name" type="text" maxlength="40" aria-label="Design name" spellcheck="false">
-      <label for="stance">Stance <select id="stance"></select></label>
+      <label for="stance" id="stance-row">Stance <select id="stance"></select></label>
     </div>
     <div class="grow"></div>
     <div class="group">
@@ -229,7 +229,7 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
   <aside id="stats">
     <div class="price">
       <div><small>Ship cost</small><strong id="cost">0</strong> <span>cr</span></div>
-      <div class="yard"><small>Shipyard</small><strong id="yard">0</strong> <span>cr</span></div>
+      <div class="yard"><small id="yard-label">Shipyard</small><strong id="yard">0</strong> <span>cr</span></div>
     </div>
     <p class="hint" id="yard-hint" style="margin:6px 0 0"></p>
     <div class="cls">
@@ -251,7 +251,7 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
       <thead><tr><th>Type</th><th>Count</th><th title="Damage of one shot, and how often each gun fires. Hover a row for what the weapon does.">Shot</th><th>Range</th></tr></thead>
       <tbody id="weapons"></tbody>
     </table>
-    <h2>Stance</h2>
+    <h2 id="stance-head">Stance</h2>
     <p class="hint" id="stance-hint"></p>
     <h2>Checks</h2>
     <ul class="issues" id="issues"></ul>

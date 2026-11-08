@@ -29,17 +29,66 @@ export function makeBattleScenario(groups, designOf, seed, opts = null) {
     if (!index.has(g.design)) { index.set(g.design, designs.length); designs.push(designOf(g.design)); }
     const team = g.team ?? g.side;
     out.push({ ...g, team, start: ships.length });
-    for (let k = 0; k < g.n; k++) ships.push({ design: index.get(g.design), team });
+    for (let k = 0; k < g.n; k++) ships.push(g.fixed ? { design: index.get(g.design), team, fixed: true } : { design: index.get(g.design), team });
   }
   // Camps: where each team starts. Two sides: attackers (camp 1) on the left, defenders (camp 0)
   // on the right. More: the attacking camps spread evenly round the world, at the same distance.
   const nCamps = opts ? Math.max(1, opts.camps) : 2;
   const campOf = (team) => (opts ? opts.campOf[team] : team === 0 ? 1 : 0);
+  // Defences (fixed) stand in rows at the world (owner, Nov 2026: rows, not a circle), facing
+  // the attackers: one block of rows per attacking camp, the defences shared out between them.
+  // Biggest in the back row by the world, smaller ones in front, with gaps to shoot through. They can never turn in battle.
+  // Every fleet then starts clear of the rows. No random draws, so battles without defences start
+  // exactly as before.
+  const fixed = ships.filter((s) => s.fixed);
+  let ringOut = 0;
+  if (fixed.length) {
+    const D = (s) => designs[s.design];
+    // A defence's front (its nose, the right-hand side in the designer) always faces the enemy
+    // (owner: players design for that, e.g. armour in front and guns on the sides), so in the row
+    // it is `deep` (its length) toward the enemy and `wide` (its height) across.
+    const deep = (s) => D(s).w, wide = (s) => D(s).h;
+    // Spread out (owner: guns in the back rows had no gaps to fire through): each defence gets its
+    // own width plus a gap about as wide again across the row, rows stand well apart, and every
+    // other row is shifted half a slot so back-row guns look through the gaps in front.
+    const slot = (s) => wide(s) + Math.max(16, wide(s) * 0.9);
+    const rowGap = 26;
+    fixed.sort((a, b) => D(b).w * D(b).h - D(a).w * D(a).h);
+    const attackAngles = [];
+    for (let c = 1; c < nCamps; c++) attackAngles.push((2 * Math.PI * c) / nCamps);
+    if (!attackAngles.length) attackAngles.push(Math.PI);
+    const blocks = attackAngles.map(() => []);
+    fixed.forEach((s, k) => blocks[k % blocks.length].push(s));
+    blocks.forEach((list, bi) => {
+      if (!list.length) return;
+      const ph = attackAngles[bi], ux = Math.cos(ph), uy = Math.sin(ph), vx = -uy, vy = ux;
+      // Row width: about three times the depth of the whole block.
+      const span = list.reduce((t, s) => t + slot(s), 0), depth = list.reduce((t, s) => t + deep(s) + rowGap, 0) / list.length;
+      const width = Math.max(140, Math.sqrt(3 * span * depth));
+      // With several blocks, each sits out from the world far enough to clear its neighbours.
+      let along = blocks.length > 1 ? width / 2 / Math.tan(Math.PI / nCamps) + 15 : 0;
+      for (let k = 0, r = 0; k < list.length; r++) {
+        const row = [];
+        let used = 0;
+        while (k < list.length && (!row.length || used + slot(list[k]) <= width)) { used += slot(list[k]); row.push(list[k++]); }
+        const rowDepth = Math.max(...row.map(deep));
+        const shift = r % 2 ? (used / row.length) / 2 : 0; // stagger alternate rows
+        let across = -used / 2 + shift;
+        for (const s of row) {
+          const h = slot(s), a = along + rowDepth / 2, c = across + h / 2;
+          s.x = ux * a + vx * c; s.y = uy * a + vy * c; s.a = ph;
+          across += h;
+          ringOut = Math.max(ringOut, Math.hypot(s.x, s.y) + Math.hypot(D(s).w, D(s).h) / 2);
+        }
+        along += rowDepth + rowGap;
+      }
+    });
+  }
   const order = [];
   for (let c = 1; c < nCamps; c++) order.push(c);
   order.push(0); // same draw order as before for two sides: attackers first
   for (const camp of order) {
-    const list = ships.filter((s) => campOf(s.team) === camp);
+    const list = ships.filter((s) => campOf(s.team) === camp && !s.fixed);
     if (!list.length) continue;
     // Camp direction from the world: camp 0 at angle 0 (right), the others round the circle.
     const phi = nCamps <= 1 ? 0 : (2 * Math.PI * camp) / nCamps;
@@ -47,7 +96,7 @@ export function makeBattleScenario(groups, designOf, seed, opts = null) {
     const spanY = Math.max(160, Math.sqrt(list.length) * 45);
     for (const s of list) {
       const d = designs[s.design], depth = Math.hypot(d.w, d.h) * 0.6 + r() * (30 + Math.sqrt(list.length) * 10);
-      const along = 220 + depth, across = (r() - 0.5) * spanY;
+      const along = Math.max(220, ringOut + 60) + depth, across = (r() - 0.5) * spanY;
       const k = c < 0 ? -1 : 1; // spread sideways (same layout as before for two sides)
       s.x = c * along - k * sn * across; s.y = sn * along + k * c * across;
       s.a = (phi + Math.PI) % (2 * Math.PI); // facing the world

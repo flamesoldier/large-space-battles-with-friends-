@@ -214,6 +214,9 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
 .design { display: grid; grid-template-columns: 96px 1fr auto; gap: 12px; align-items: center; border: 1px solid var(--line); padding: 6px 8px; }
 .design-acts { display: flex; gap: 6px; align-items: center; }
 .yard-hidden { margin-top: 8px; font-size: 13px; }
+.yard-count { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 13px; }
+.yard-count input { width: 80px; }
+.design .why { color: var(--warn); }
 .yard-hidden summary { cursor: pointer; color: var(--dim); }
 .hidden-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 0; border-top: 1px solid var(--line); }
 .hidden-row small { color: var(--dim); font-family: var(--mono); }
@@ -357,6 +360,7 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
   <dialog id="yard-dlg">
     <h3 id="yard-title">New shipyard</h3>
     <p class="hint" id="yard-info"></p>
+    <label id="yard-count-row" class="yard-count" hidden>How many <input id="yard-count" type="number" min="1" max="1000" step="1" value="1"></label>
     <div class="designs" id="yard-list"></div>
     <div class="actions">
       <button id="yard-cancel">Cancel</button>

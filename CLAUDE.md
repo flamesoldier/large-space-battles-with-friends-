@@ -194,6 +194,32 @@ All money numbers are in `src/shared/economy.js` (placeholders until balanced in
   (1.99×), whatever the ship costs. List prices, not what was paid, so it doesn't compound. (An
   earlier version used list × (1 + value / 25,000); the owner found that far too steep.)
 - **Shipyards can be sold**: **95%** of what was actually paid comes back (owner, Nov 2026; was 50%).
+- **Defences** (owner, Nov 2026: a friend lost his home world and wanted static defences): the
+  world panel has **Build** for Defences next to Shipyards. A defence is any valid design with
+  **no thrusters**, bought outright at **1/5 of its block price** (`DEFENSE_PRICE_SHARE`,
+  `defensePrice()` in `economy.js`), any number per order (`MAX_DEFENSE_ORDER` 1,000), built
+  at once into the garrison (`buildDefense()` in `world.js`, server action
+  `{ type: 'defend', planet, design, count }`). Stored as its own world design with
+  `fixed: true`, `speed: 0` and `cost` = the defence price. Defences can't be sent
+  (`previewFleet` refuses), count as defenders (a world held only by defences still stops and
+  fights fleets), and when destroyed they're gone. **When a world falls, every defence not on the
+  new owner's side is destroyed** (`capture()`, "N defences destroyed" in the log), never sent home.
+  In battle (`fixed` on scenario ships → `e.fixed` in `battle.js`) they never move or turn and
+  nothing shoves them (collisions push the other ship or the debris); `makeBattleScenario` puts
+  them in **rows** at the world (owner asked for rows instead of the first version's rings), facing the
+  attackers: one block of rows per attacking camp (defences shared out round-robin, each block set
+  out from the world far enough to clear its neighbours), biggest in the back row by the world,
+  rows about 3× as wide as the block is deep. **Spread out** (owner: back rows couldn't fire
+  through): each defence gets its width plus ~0.9× that again as a gap, rows 26 apart, every other
+  row shifted half a slot. **The front of a defence (nose, right-hand side in the designer)
+  always faces the enemy** (owner's rule: players design for it, e.g. armour in front and guns on
+  the sides for ships flying past; the designer's checks and the defence dialog say so). A tried
+  auto-turn (`bestFacing`, most guns toward the enemy) was removed at the owner's request. Wider rows (6×, 10×) clear more lines but
+  stretch out of reach and kill fewer; every fleet starts outside them (no extra random draws, so battles without defences start
+  as before). The designer opened with Design a new defence… (`mode: 'defense'` in the embed
+  message) shows the defence price, errors on thrusters, hides the stance, and its test battle
+  holds your copies still. Measured: 400 attackers (480k cr) beat 86 defences + 90 ships
+  (137k cr counting defences at 1/5) in 95 s (`/tmp`-style script; replay sent to the owner).
 - Ships a shipyard builds garrison its world and defend it.
 - Every ship part has a credit cost (`cost` in `blocks.js`); a ship's price is the sum of its blocks.
   Owner's direction: **weapons and thrusters are expensive, armour and frame cheap**, to push

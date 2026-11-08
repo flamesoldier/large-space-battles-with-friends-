@@ -134,6 +134,7 @@ export class Battle {
     for (let i = 0; i < e.types.length; i++) if (e.types[i]) { e.hp[i] = BLOCKS[e.types[i]].hp; e.alive++; }
     e.x = spec.x; e.y = spec.y; e.a = spec.a; e.c = Math.cos(e.a); e.s = Math.sin(e.a);
     e.design = spec.design;
+    e.fixed = !!spec.fixed;
     e.hub = d.hub;
     e.stance = STANCES[d.stance] ? d.stance : 'line';
     e.closeIn = e.stance === 'flank' || e.stance === 'raid' || e.stance === 'charge' || e.stance === 'brawl';
@@ -184,6 +185,7 @@ export class Battle {
       escortCount: 0, slot: 0, parent: -1, shoved: false, shoveRec: -1000,
       goal: null, runPhase: 0, runA: 0, runT: 0, // flank / raid steering
       closeIn: false, sepX: 0, sepY: 0, // spacing push away from nearby ships (see `spacing`)
+      fixed: false, // a defence: never moves or turns, and nothing can shove it
       // Collision box: centre (local) and half size, shrunk to the live blocks as they are lost.
       bcx: 0, bcy: 0, bhw: w / 2, bhh: h / 2,
       mass: 1, maxSpeed: 0, turn: 0, agility: 0, prefRange: 60, ward: null,
@@ -443,6 +445,7 @@ export class Battle {
   }
 
   move(e) {
+    if (e.fixed) { e.vx = 0; e.vy = 0; e.va = 0; this.collide(e); return; } // defences hold their spot (and push debris off)
     const tg = e.targets[0];
     let tx, ty;
     const disarmed = !e.weapons.length || this.routedTeams[e.team] === 1; // routed sides run too
@@ -620,7 +623,8 @@ export class Battle {
         continue;
       }
       if (best <= 0) continue;
-      const pen = Math.min(best, 4), share = o.mass / (o.mass + e.mass); // the lighter one gets shoved more
+      // The lighter one gets shoved more; a defence (fixed) never moves, so the other takes it all.
+      const pen = Math.min(best, 4), share = e.fixed ? 0 : o.fixed ? 1 : o.mass / (o.mass + e.mass);
       const push = pen * share;
       e.x += bx * push * 0.5; e.y += by * push * 0.5; // positional correction
       e.vx += bx * push * 2; e.vy += by * push * 2; // and a nudge so they steer apart

@@ -13,7 +13,7 @@
 
 import { BT } from '../shared/blocks.js';
 import { decodeDesign, encodeDesign, analyzeDesign, designCost } from '../shared/shipStats.js';
-import { SHIPYARD_INTERVAL_MIN, SHIPYARD_CROWDING_SHARE, SHIPYARD_SELL_REFUND, crowdingSurcharge } from '../shared/economy.js';
+import { SHIPYARD_INTERVAL_MIN, SHIPYARD_CROWDING_SHARE, SHIPYARD_SELL_REFUND, crowdingSurcharge, defensePrice, DEFENSE_PRICE_SHARE, MAX_DEFENSE_ORDER } from '../shared/economy.js';
 import { Battle, DT } from '../sim/battle.js';
 import { packReplay } from '../shared/replayFormat.js';
 import { mulberry32 } from '../shared/rng.js';
@@ -22,7 +22,7 @@ import {
   sendFleet, previewFleet, shipsAt, incomeOf, allied, playerName, designOf, fleetValue, countShips, fmtHours,
   sellValue, yardListValue, YARD_MS, HOLD_MS, upgradeWorld,
   proposeAlliance, acceptAlliance, declineAlliance, breakAlliance, proposalsFor, hasProposed,
-  isOpenSeat, freeColors, renameDesign,
+  isOpenSeat, freeColors, renameDesign, buildDefense, defenseProblem,
 } from '../world/world.js';
 import { readBattle, shipColors, battleOptions } from '../world/battleSetup.js';
 import { fleetPosition } from '../world/routes.js';
@@ -494,15 +494,18 @@ function garrisonTable(P) {
   for (const [owner, list] of byOwner) {
     const total = list.reduce((a, s) => a + s.n, 0), value = list.reduce((a, s) => a + s.n * world.designs[s.design].cost, 0);
     html += `<table><thead><tr><th>${who(owner)}${owner !== P.owner && P.owner !== null ? ' <span class="tag">guest</span>' : ''}</th><th>Ships</th><th>Speed</th></tr></thead><tbody>`;
-    html += list.map((s) => { const d = world.designs[s.design]; return `<tr><td title="${esc(d.cls)} · ${fmt(d.cost)} cr each">${esc(d.name)}</td><td>${fmt(s.n)}</td><td>${d.speed < MIN_FLEET_SPEED ? 'fixed' : d.speed.toFixed(1)}</td></tr>`; }).join('');
+    html += list.map((s) => { const d = world.designs[s.design]; return `<tr><td title="${esc(d.cls)} · ${fmt(d.cost)} cr each">${esc(d.name)}</td><td>${fmt(s.n)}</td><td>${d.fixed ? '<span title="A defence: never moves or leaves this world">defence</span>' : d.speed < MIN_FLEET_SPEED ? 'fixed' : d.speed.toFixed(1)}</td></tr>`; }).join('');
     html += `</tbody></table><p class="hint" style="margin:2px 0 10px">${fmt(total)} ships · ${fmt(value)} cr of hulls</p>`;
   }
   return html;
 }
 
+/** Defences at a world (all of them, or one player's). */
+const defenseCount = (P, owner) => P.garrison.reduce((s, g) => s + (world.designs[g.design]?.fixed && (owner === undefined || g.owner === owner) ? g.n : 0), 0);
+
 function planetPanel(P) {
   const mine = P.owner === ui.me, friendly = allied(world, P.owner, ui.me);
-  const myShips = shipsAt(P, ui.me), haveShips = Object.keys(myShips).length > 0;
+  const myShips = shipsAt(P, ui.me), haveShips = Object.keys(myShips).some((d) => !world.designs[d].fixed); // defences can't move
   const lanes = world.lanes.filter(([a, b]) => a === P.id || b === P.id).length;
   let html = `<h1><span class="swatch" style="background:${colorOf(P.owner)}"></span>${esc(P.name)}</h1>
     <div class="sub">${who(P.owner)}${P.home >= 0 ? ` <span class="tag" title="Spawn point">${esc(playerName(world, P.home))}'s home</span>` : ''}${friendly && !mine ? ' <span class="tag">ally</span>' : ''}</div>
@@ -510,6 +513,7 @@ function planetPanel(P) {
       <dt>Income</dt><dd>${fmt(P.income)} cr/h</dd>
       <dt>Hyperlanes</dt><dd>${lanes}</dd>
       <dt>Shipyards</dt><dd>${P.yards.length}${P.yards.length ? ` (${fmt(yardListValue(P))} cr)` : ''}</dd>
+      ${defenseCount(P) ? `<dt>Defences</dt><dd>${fmt(defenseCount(P))}</dd>` : ''}
     </dl>`;
 
   // Siege: everyone at the world, and whether they'll fight when the battle starts (free-for-all:
@@ -534,6 +538,11 @@ function planetPanel(P) {
   if (!friendly && !haveShips) html += `<p class="hint">${P.owner === null ? 'Unclaimed: held by militia.' : 'Enemy world.'} Send a fleet here and win the battle to take it: every shipyard on it is destroyed and its income becomes yours.</p>`;
   // Shipyards: below the ships so they don't push the move controls down; collapsible (the
   // choice is remembered in ui.yardsOpen). The Build button stays in the header either way.
+  if (mine) {
+    const n = defenseCount(P, ui.me);
+    html += `<h2>Defences (${fmt(n)})<button class="small go" data-act="defend" ${busy || me().eliminated ? 'disabled' : ''}>Build</button></h2>
+      <p class="hint">${n ? 'Listed with the ships above. ' : ''}Defences are built at once for ${Math.round(DEFENSE_PRICE_SHARE * 100)}% of their blocks' price, never move and fight for this world. When one is destroyed it's gone, and they're all lost if the world falls.</p>`;
+  }
   if (mine || P.yards.length) {
     const open = ui.yardsOpen !== false;
     html += `<h2><button class="fold" data-act="fold-yards" aria-expanded="${open}">${open ? '▾' : '▸'} Shipyards (${P.yards.length})</button>${mine ? `<button class="small go" data-act="yard" ${busy || me().eliminated ? 'disabled' : ''}>Build</button>` : ''}</h2>`;
@@ -553,7 +562,7 @@ function movePanel(P, myShips) {
   let html = `<h2>Move ships</h2><table><thead><tr><th>Design</th><th>Here</th><th>Send</th></tr></thead><tbody>`;
   for (const [d, n] of Object.entries(myShips)) {
     const D = world.designs[d], fixed = D.speed < MIN_FLEET_SPEED;
-    html += `<tr><td>${esc(D.name)}</td><td>${fmt(n)}</td><td>${fixed ? '<span title="No engines: a fixed defence">fixed</span>' : `<input type="number" min="0" max="${n}" step="1" value="${move.ships[d] ?? 0}" data-ship="${d}" aria-label="${esc(D.name)} to send">`}</td></tr>`;
+    html += `<tr><td>${esc(D.name)}</td><td>${fmt(n)}</td><td>${fixed ? `<span title="${D.fixed ? 'A defence: never leaves its world' : 'No engines: it can\'t leave'}">${D.fixed ? 'defence' : 'fixed'}</span>` : `<input type="number" min="0" max="${n}" step="1" value="${move.ships[d] ?? 0}" data-ship="${d}" aria-label="${esc(D.name)} to send">`}</td></tr>`;
   }
   html += `</tbody></table><div class="row"><button class="small" data-act="all">All</button><button class="small" data-act="none">None</button></div>`;
   html += `<label class="check"><input type="checkbox" data-act="lanes" ${move.lanes ? 'checked' : ''}> Use hyperlanes (${HYPERLANE_SPEEDUP}× faster)</label>`;
@@ -647,7 +656,8 @@ $('panel').addEventListener('click', (e) => {
   const act = b.dataset.act;
   if (act === 'goto') { const P = world.planets[Number(b.dataset.planet)]; cam.x = P.x; cam.y = P.y; cam.zoom = Math.max(cam.zoom, 1.6); select({ kind: 'planet', id: P.id }); }
   else if (act === 'fleet') select({ kind: 'fleet', id: Number(b.dataset.fleet) });
-  else if (act === 'yard') openYardDialog(sel.id);
+  else if (act === 'yard') openYardDialog(sel.id, 'yard');
+  else if (act === 'defend') { $('yard-count').value = 1; openYardDialog(sel.id, 'defense'); }
   else if (act === 'fold-yards') { ui.yardsOpen = ui.yardsOpen === false; store.set(UI_KEY, ui); renderPanel(true); }
   else if (act === 'sell') sellYard(sel.id, b.dataset.yard);
   else if (act === 'rename') openRename(b.dataset.design);
@@ -779,50 +789,74 @@ function openRename(designId) {
 }
 
 const library = () => store.get(LIB_KEY, []);
-let yardPlanet = null;
-function openYardDialog(planetId) {
-  yardPlanet = planetId;
+let yardPlanet = null, yardMode = 'yard';
+/** The New shipyard / New defences dialog (mode 'yard' or 'defense'). */
+function openYardDialog(planetId, mode = yardMode) {
+  yardPlanet = planetId; yardMode = mode;
+  const def = mode === 'defense';
   const P = world.planets[planetId], existing = yardListValue(P);
-  $('yard-title').textContent = `New shipyard at ${P.name}`;
+  $('yard-title').textContent = def ? `New defences at ${P.name}` : `New shipyard at ${P.name}`;
+  $('yard-design').textContent = def ? 'Design a new defence…' : 'Design a new ship…';
+  $('yard-count-row').hidden = !def;
+  const count = def ? Math.max(1, Math.min(MAX_DEFENSE_ORDER, Math.floor(Number($('yard-count').value)) || 1)) : 1;
   const extra = crowdingSurcharge(existing);
-  $('yard-info').innerHTML = P.yards.length
-    ? `${P.name} already has <b>${P.yards.length}</b> shipyard${P.yards.length > 1 ? 's' : ''} worth ${fmt(existing)} cr, so a new one here costs <b>${fmt(extra)} cr</b> more than its list price (${Math.round(SHIPYARD_CROWDING_SHARE * 100)}% of the shipyards already here). Building on your other worlds avoids that. You have <b>${fmt(me().credits)}</b> credits.`
-    : `A shipyard costs 10× the ship it builds, and makes one every ${SHIPYARD_INTERVAL_MIN} min for free. Each shipyard already on a world adds ${Math.round(SHIPYARD_CROWDING_SHARE * 100)}% of its price to the next one there. You have <b>${fmt(me().credits)}</b> credits.`;
+  $('yard-info').innerHTML = def
+    ? `A defence is built at once and costs <b>${Math.round(DEFENSE_PRICE_SHARE * 100)}%</b> of its blocks' price, paid once. It can't have thrusters, never moves or turns (its front, the right-hand side in the designer, always faces the enemy) and never leaves ${esc(P.name)}. Destroyed is gone for good, and all of them are lost if the world falls. You have <b>${fmt(me().credits)}</b> credits.`
+    : P.yards.length
+      ? `${P.name} already has <b>${P.yards.length}</b> shipyard${P.yards.length > 1 ? 's' : ''} worth ${fmt(existing)} cr, so a new one here costs <b>${fmt(extra)} cr</b> more than its list price (${Math.round(SHIPYARD_CROWDING_SHARE * 100)}% of the shipyards already here). Building on your other worlds avoids that. You have <b>${fmt(me().credits)}</b> credits.`
+      : `A shipyard costs 10× the ship it builds, and makes one every ${SHIPYARD_INTERVAL_MIN} min for free. Each shipyard already on a world adds ${Math.round(SHIPYARD_CROWDING_SHARE * 100)}% of its price to the next one there. You have <b>${fmt(me().credits)}</b> credits.`;
   // Your designs already in the game, then your designer library. Each can be starred (goes to
-  // the top) or removed from this list; removed ones can be brought back.
-  const seen = new Set(), all = [], prefs = yardPrefs();
+  // the top) or removed from this list; removed ones can be brought back. Defences are listed
+  // only for defences, ships only for shipyards.
+  const seen = new Set(), all = [], prefs = yardPrefs(), tag = def ? 'def|' : '';
   for (const d of Object.values(world.designs)) {
-    if (d.owner !== ui.me) continue;
-    const key = `${d.name}|${d.data.cells}`;
+    if (d.owner !== ui.me || !!d.fixed !== def) continue;
+    const key = `${tag}${d.name}|${d.data.cells}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    all.push({ design: designOf(world, d.id), src: d.fixed ? 'Your defence' : 'In use', key });
+  }
+  if (def) for (const d of Object.values(world.designs)) { // your ships, as defences if they have no thrusters
+    if (d.owner !== ui.me || d.fixed) continue;
+    const key = `${tag}${d.name}|${d.data.cells}`;
+    if (seen.has(key)) continue;
     seen.add(key);
     all.push({ design: designOf(world, d.id), src: 'In use', key });
   }
   library().forEach((o, k) => {
     try {
-      const d = decodeDesign(o), key = `${d.name}|${o.cells}`;
+      const d = decodeDesign(o), key = `${tag}${d.name}|${o.cells}`;
       if (seen.has(key) || !analyzeDesign(d).ok) return;
       all.push({ design: d, src: 'Library', key, lib: k });
     } catch { /* skip broken entries */ }
   });
   const hidden = all.filter((it) => prefs.hidden.includes(it.key));
+  const ready = (it) => (def && defenseProblem(it.design) ? 0 : 1);
   const items = all.filter((it) => !prefs.hidden.includes(it.key))
-    .sort((a, b) => (prefs.fav.includes(b.key) ? 1 : 0) - (prefs.fav.includes(a.key) ? 1 : 0));
+    .sort((a, b) => (prefs.fav.includes(b.key) ? 1 : 0) - (prefs.fav.includes(a.key) ? 1 : 0) || ready(b) - ready(a));
   const list = $('yard-list');
   list.innerHTML = '';
-  if (!items.length) list.innerHTML = '<p class="empty">No designs on your list. Press <b>Design a new ship…</b> (its <b>Save</b> button keeps a design in your library, and it shows up here), or bring back ones you removed below.</p>';
+  if (!items.length) list.innerHTML = `<p class="empty">No designs on your list. Press <b>${def ? 'Design a new defence…' : 'Design a new ship…'}</b> (its <b>Save</b> button keeps a design in your library, and it shows up here), or bring back ones you removed below.</p>`;
   for (const it of items) {
-    const q = quoteShipyard(world, planetId, it.design), afford = me().credits >= q.price;
+    const why = def ? defenseProblem(it.design) : null;
+    const q = def ? null : quoteShipyard(world, planetId, it.design);
+    const price = def ? defensePrice(it.design) * count : q.price, afford = me().credits >= price;
     const row = document.createElement('div');
     row.className = 'design';
     const fav = prefs.fav.includes(it.key);
-    row.innerHTML = `<canvas width="96" height="48"></canvas><div><b>${fav ? '★ ' : ''}${esc(it.design.name)}</b><span>${esc(it.design.cls)} · ${fmt(designCost(it.design))} cr a ship · ${it.src}</span><br><span class="price">${fmt(q.price)} cr</span>${q.surcharge ? ` <span>(list ${fmt(q.list)} + ${fmt(q.surcharge)})</span>` : ''}</div>
-      <div class="design-acts"><button class="small" data-k="fav" title="${fav ? 'Unstar' : 'Star: keep it at the top of this list'}">${fav ? '★' : '☆'}</button><button class="small" data-k="hide" title="Remove from this list (you can bring it back below)">✕</button><button class="go" data-k="build" ${afford ? '' : 'disabled'} title="${afford ? '' : 'Not enough credits'}">Build</button></div>`;
+    const priceTxt = def
+      ? `<span class="price">${fmt(price)} cr</span>${count > 1 ? ` <span>(${fmt(defensePrice(it.design))} each)</span>` : ''}`
+      : `<span class="price">${fmt(q.price)} cr</span>${q.surcharge ? ` <span>(list ${fmt(q.list)} + ${fmt(q.surcharge)})</span>` : ''}`;
+    const info = def ? `${esc(it.design.cls)} · ${fmt(designCost(it.design))} cr of blocks · ${it.src}` : `${esc(it.design.cls)} · ${fmt(designCost(it.design))} cr a ship · ${it.src}`;
+    row.innerHTML = `<canvas width="96" height="48"></canvas><div><b>${fav ? '★ ' : ''}${esc(it.design.name)}</b><span>${info}</span><br>${why ? `<span class="why">${esc(why)}</span>` : priceTxt}</div>
+      <div class="design-acts"><button class="small" data-k="fav" title="${fav ? 'Unstar' : 'Star: keep it at the top of this list'}">${fav ? '★' : '☆'}</button><button class="small" data-k="hide" title="Remove from this list (you can bring it back below)">✕</button><button class="go" data-k="build" ${afford && !why ? '' : 'disabled'} title="${why ? esc(why) : afford ? '' : 'Not enough credits'}">Build</button></div>`;
     thumb(row.querySelector('canvas'), it.design);
     row.querySelector('[data-k=fav]').addEventListener('click', () => { toggleYardPref('fav', it.key); openYardDialog(planetId); });
     row.querySelector('[data-k=hide]').addEventListener('click', () => { toggleYardPref('hidden', it.key, true); openYardDialog(planetId); });
     row.querySelector('[data-k=build]').addEventListener('click', async (e) => {
       e.currentTarget.disabled = true;
-      if (await build(planetId, it.design)) $('yard-dlg').close(); else e.currentTarget.disabled = false;
+      const ok = def ? await buildDef(planetId, it.design, count) : await build(planetId, it.design);
+      if (ok) $('yard-dlg').close(); else e.currentTarget.disabled = false;
     });
     list.append(row);
   }
@@ -841,6 +875,7 @@ function openYardDialog(planetId) {
   }
   if (!$('yard-dlg').open) $('yard-dlg').showModal();
 }
+$('yard-count').addEventListener('input', () => { if ($('yard-dlg').open && yardMode === 'defense') openYardDialog(yardPlanet, 'defense'); });
 // Your shipyard shortlist choices (starred / removed designs), kept in this browser per game and player.
 const yardPrefsKey = () => `lsb.yardlist.v1.${ONLINE ? 'online' : 'local'}.${world.seed}.${ui.me}`;
 function yardPrefs() {
@@ -856,12 +891,20 @@ function toggleYardPref(kind, key, on) {
   store.set(yardPrefsKey(), p);
 }
 $('yard-cancel').addEventListener('click', () => $('yard-dlg').close());
-$('yard-design').addEventListener('click', () => { $('yard-dlg').close(); openDesigner(yardPlanet); });
+$('yard-design').addEventListener('click', () => { $('yard-dlg').close(); openDesigner(yardPlanet, yardMode); });
 
 async function build(planetId, design) {
   const r = await perform({ type: 'build', planet: planetId, design: encodeDesign(design) }, () => buildShipyard(world, ui.me, planetId, design));
   if (!r.ok) { toast(r.error, true); return false; }
   toast(`Shipyard built at ${world.planets[planetId].name}: first ${world.designs[r.yard.design].name} in ${SHIPYARD_INTERVAL_MIN} min.`);
+  save(); renderPanel(true); renderEvents(); updateTop();
+  return true;
+}
+
+async function buildDef(planetId, design, count) {
+  const r = await perform({ type: 'defend', planet: planetId, design: encodeDesign(design), count }, () => buildDefense(world, ui.me, planetId, design, count));
+  if (!r.ok) { toast(r.error, true); return false; }
+  toast(`${r.count === 1 ? 'Defence' : `${fmt(r.count)} defences`} built at ${world.planets[planetId].name} (${fmt(r.price)} cr).`);
   save(); renderPanel(true); renderEvents(); updateTop();
   return true;
 }
@@ -882,10 +925,10 @@ function thumb(c, d) {
 const DESIGNER_PAGE = typeof __DESIGNER_PAGE__ === 'string' ? __DESIGNER_PAGE__ : '';
 const VIEWER_PAGE = typeof __VIEWER_PAGE__ === 'string' ? __VIEWER_PAGE__ : '';
 const pageDoc = (body) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0">${body}</body></html>`;
-let designerFor = null, designerTimer = 0;
+let designerFor = null, designerTimer = 0, designerMode = 'yard';
 function designerInfo(withDesigns = false) {
   const P = world.planets[designerFor];
-  const info = { type: 'lsb-designer-embed', planet: P.name, existing: yardListValue(P), credits: Math.floor(me().credits), yards: P.yards.length };
+  const info = { type: 'lsb-designer-embed', mode: designerMode, planet: P.name, existing: yardListValue(P), credits: Math.floor(me().credits), yards: P.yards.length };
   // Every design in play in this galaxy (yours and other players'), so test battles can be fought
   // against the ships people are really building. Sent once, when the designer opens.
   if (withDesigns) {
@@ -894,10 +937,12 @@ function designerInfo(withDesigns = false) {
   }
   return info;
 }
-function openDesigner(planetId) {
+function openDesigner(planetId, mode = 'yard') {
   if (!DESIGNER_PAGE) return toast('This build has no ship designer. Run npm run build.', true);
-  designerFor = planetId;
-  $('designer-for').textContent = `Designing a ship for a new shipyard at ${world.planets[planetId].name}. Nothing is spent until you press Build shipyard.`;
+  designerFor = planetId; designerMode = mode;
+  $('designer-for').textContent = mode === 'defense'
+    ? `Designing a defence for ${world.planets[planetId].name}: no thrusters, it never moves. Nothing is spent until you press Build defence.`
+    : `Designing a ship for a new shipyard at ${world.planets[planetId].name}. Nothing is spent until you press Build shipyard.`;
   $('designer-overlay').hidden = false;
   $('designer-frame').srcdoc = pageDoc(DESIGNER_PAGE);
   clearInterval(designerTimer);
@@ -915,7 +960,7 @@ addEventListener('message', (e) => {
   if (e.data?.type === 'lsb-design-chosen') {
     let d;
     try { d = decodeDesign(e.data.design); } catch (err) { return toast(err.message, true); }
-    build(designerFor, d).then((ok) => { if (ok) closeDesigner(); });
+    (designerMode === 'defense' ? buildDef(designerFor, d, Math.max(1, Math.floor(e.data.count) || 1)) : build(designerFor, d)).then((ok) => { if (ok) closeDesigner(); });
   }
 });
 

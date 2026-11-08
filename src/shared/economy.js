@@ -28,6 +28,15 @@ export const SHIPYARD_CROWDING_SHARE = 0.01;
 export const crowdingSurcharge = (existingListValue) => Math.round(existingListValue * SHIPYARD_CROWDING_SHARE);
 export const shipyardPriceAt = (design, existingListValue) => shipyardPrice(design) + crowdingSurcharge(existingListValue);
 
+// Defences (owner, Nov 2026: a friend lost his home world and wanted static defences): built
+// from the same blocks but with no thrusters, they never move and can't leave their world.
+// Bought once, outright (no shipyard): a defence costs this share of its blocks' price, and when
+// it's destroyed it's gone. They are destroyed too if the world falls.
+export const DEFENSE_PRICE_SHARE = 0.2;
+export const defensePrice = (design) => Math.max(1, Math.round(designCost(design) * DEFENSE_PRICE_SHARE));
+// Most defences one order can buy (just a guard against typos).
+export const MAX_DEFENSE_ORDER = 1000;
+
 // Selling a shipyard gives back this share of what was actually paid for it.
 export const SHIPYARD_SELL_REFUND = 0.95; // owner, Nov 2026 (was 0.5)
 

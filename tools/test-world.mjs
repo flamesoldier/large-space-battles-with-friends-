@@ -8,6 +8,7 @@ import {
   createWorld, advanceTo, runWorld, buildShipyard, sellShipyard, quoteShipyard, sendFleet, previewFleet,
   shipsAt, incomeOf, allied, YARD_MS, HOLD_MS, designOf, upgradeWorld,
   proposeAlliance, acceptAlliance, breakAlliance, proposalsFor, dueEvent, siegeAt, renameDesign,
+  buildDefense, planEvent, applyEvent,
 } from '../src/world/world.js';
 import { writeFileSync } from 'node:fs';
 import { packReplay } from '../src/shared/replayFormat.js';
@@ -16,7 +17,7 @@ import { Battle } from '../src/sim/battle.js';
 import { makeDesign } from '../src/shared/designs.js';
 import { BT } from '../src/shared/blocks.js';
 import { designCost } from '../src/shared/shipStats.js';
-import { STARTING_CREDITS, HOME_INCOME, SHIPYARD_SELL_REFUND, shipyardPrice } from '../src/shared/economy.js';
+import { STARTING_CREDITS, HOME_INCOME, SHIPYARD_SELL_REFUND, shipyardPrice, defensePrice } from '../src/shared/economy.js';
 import { HOUR_MS, HYPERLANE_SPEEDUP, MAX_PLAYERS, PLANET_SPACING } from '../src/world/rules.js';
 
 let checks = 0;
@@ -502,6 +503,83 @@ const resolve = (scen) => {
     writeFileSync(process.env.SAVE_REPLAY, packReplay(rep.meta, rep.cols));
     writeFileSync(process.env.SAVE_REPLAY + '.json', JSON.stringify({ teams: owners.map((o) => names[o]) }));
   }
+}
+
+// ---- defences: built outright at a fifth of the price, no thrusters, never move, lost with the world
+{
+  const w = createWorld({ players: [{ name: 'A' }, { name: 'B' }], seed: 12 });
+  const A = 0, B = 1, aHome = w.planets[w.players[A].home], bHome = w.planets[w.players[B].home];
+  const noThrust = (d) => ({ ...d, cells: d.cells.map((t) => (t === BT.THRUSTER ? BT.ARMOR : t)) });
+  const ship = { ...makeDesign('cruiser', 21), name: 'Bastion' }, fort = { ...noThrust(ship), name: 'Bastion fort' };
+  ok(defensePrice(fort) === Math.round(designCost(fort) / 5), 'a defence costs a fifth of its blocks');
+  const c0 = w.players[A].credits = 1e6;
+  ok(!buildDefense(w, A, aHome.id, ship, 1).ok, 'a design with thrusters can\'t be a defence');
+  ok(!buildDefense(w, A, bHome.id, fort, 1).ok, 'only on your own worlds');
+  ok(!buildDefense(w, A, aHome.id, fort, 0).ok && !buildDefense(w, A, aHome.id, fort, 2.5).ok, 'whole numbers only');
+  const r = buildDefense(w, A, aHome.id, fort, 12);
+  ok(r.ok && shipsAt(aHome, A)[r.design] === 12, `12 defences built at once (${r.error})`);
+  ok(Math.abs(w.players[A].credits - (c0 - 12 * defensePrice(fort))) < 1e-6, 'paid once, at a fifth of the price');
+  ok(w.designs[r.design].fixed && w.designs[r.design].speed === 0 && w.designs[r.design].cost === defensePrice(fort), 'stored as a defence, valued at what it cost');
+  ok(buildDefense(w, A, aHome.id, fort, 3).design === r.design && shipsAt(aHome, A)[r.design] === 15, 'more of the same defence stack up');
+  const near = w.planets.find((p) => p.owner === null);
+  const sent = sendFleet(w, A, aHome.id, near.id, { [r.design]: 1 });
+  ok(!sent.ok && /defence/.test(sent.error), 'defences can\'t be sent anywhere');
+  w.designs[r.design].cost = 1; upgradeWorld(w);
+  ok(w.designs[r.design].cost === defensePrice(fort), 'upgradeWorld keeps defence prices at a fifth');
+
+  // An attack on a world held only by defences: they fight from fixed spots round the world.
+  w.players[B].credits = 1e7;
+  const atkYard = buildShipyard(w, B, bHome.id, { ...makeDesign('destroyer', 22), name: 'Raider' });
+  bHome.garrison = []; aHome.garrison = aHome.garrison.filter((g) => g.design === r.design);
+  const atkId = atkYard.yard.design;
+  bHome.garrison.push({ owner: B, design: atkId, n: 60 });
+  const f = sendFleet(w, B, bHome.id, aHome.id, { [atkId]: 60 }, { avoid: true, lanes: false });
+  ok(f.ok, `B attacks A's defences (${f.error})`);
+  runWorld(w, f.fleet.arrive, resolve);
+  const sg = siegeAt(w, aHome.id)[0];
+  ok(sg, 'defences alone stop a fleet and start a siege');
+  const plan = planEvent(w, { kind: 'siege', siege: sg });
+  const fixedShips = plan.battle.ships.filter((x) => x.fixed);
+  ok(fixedShips.length === 15, 'all 15 defences are in the battle as fixed');
+  ok(plan.battle.ships.filter((x) => !x.fixed).every((x) => Math.hypot(x.x, x.y) > Math.max(...fixedShips.map((d) => Math.hypot(d.x, d.y)))), 'fleets start outside the ring of defences');
+  const before = fixedShips.map((x) => [x.x, x.y]);
+  runWorld(w, sg.startsAt + 1, resolve);
+  const fx = lastBattle.b.byId.filter((e) => e.fixed);
+  ok(fx.every((e, k) => Math.hypot(e.x - before[k][0], e.y - before[k][1]) < 1e-9), 'defences never moved in the battle');
+  const e = w.log.filter((x) => x.battle).at(-1);
+  console.log(`  defences: ${e.text}`);
+  const left = shipsAt(aHome, A)[r.design] || 0;
+  if (aHome.owner === A) ok(left === e.battle.players.find((q) => q.id === A).survived, 'destroyed defences are gone, survivors stay');
+  else {
+    ok(left === 0 && !w.fleets.some((x) => x.owner === A), 'world lost: its defences are destroyed, none fly home');
+    const survivors = e.battle.players.find((q) => q.id === A).survived;
+    ok(!survivors || /defences? destroyed/.test(e.text), 'the log says any surviving defences were destroyed');
+  }
+}
+
+// ---- a world that falls takes its surviving defences with it (its side routed with defences standing)
+{
+  const w = createWorld({ players: [{ name: 'A' }, { name: 'B' }], seed: 13 });
+  const P = w.planets[w.players[0].home], bHome = w.planets[w.players[1].home];
+  w.players[0].credits = 1e6; w.players[1].credits = 1e7;
+  const fort = { ...makeDesign('frigate', 3), name: 'Picket fort' };
+  fort.cells = fort.cells.map((t) => (t === BT.THRUSTER ? BT.ARMOR : t));
+  const r = buildDefense(w, 0, P.id, fort, 4);
+  P.garrison = P.garrison.filter((g) => g.design === r.design);
+  const y = buildShipyard(w, 1, bHome.id, { ...makeDesign('destroyer', 8), name: 'Hammer' });
+  bHome.garrison = [{ owner: 1, design: y.yard.design, n: 5 }];
+  const f = sendFleet(w, 1, bHome.id, P.id, { [y.yard.design]: 5 }, { avoid: true, lanes: false });
+  runWorld(w, f.fleet.arrive, resolve);
+  const sg = siegeAt(w, P.id)[0];
+  const plan = planEvent(w, { kind: 'siege', siege: sg });
+  // Everyone survives, but A's side broke and ran: B takes the world.
+  const teamA = plan.battle.owners.indexOf(0);
+  const result = { routed: plan.battle.owners.map((o, t) => (t === teamA ? 1 : 0)), groups: plan.battle.groups.map((g) => ({ ...g, survived: g.n })), seconds: 60 };
+  w.clock = sg.startsAt;
+  applyEvent(w, { kind: 'siege', siege: sg }, plan, result);
+  ok(P.owner === 1, 'B takes the world when A routs');
+  ok(!(shipsAt(P, 0)[r.design] > 0) && !w.fleets.some((x) => x.owner === 0), 'A\'s surviving defences are destroyed, not sent home');
+  ok(/4 defences destroyed/.test(w.log.filter((e) => e.battle).at(-1).text), 'the log counts the destroyed defences');
 }
 
 // ---- a fleet only passing a siege world stops only if someone there is its enemy; old saves merge sieges

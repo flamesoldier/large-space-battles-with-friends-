@@ -16,11 +16,12 @@
 // readBattle()'s result to applyEvent().
 
 import { analyzeDesign, decodeDesign, encodeDesign, designCost } from '../shared/shipStats.js';
+import { BT } from '../shared/blocks.js';
 import { makeDesign } from '../shared/designs.js';
 import { mulberry32 } from '../shared/rng.js';
 import {
   SHIPYARD_INTERVAL_MIN, shipyardPrice, crowdingSurcharge, SHIPYARD_SELL_REFUND,
-  STARTING_CREDITS, NEUTRAL_GARRISON_HOURS,
+  defensePrice, MAX_DEFENSE_ORDER, STARTING_CREDITS, NEUTRAL_GARRISON_HOURS,
 } from '../shared/economy.js';
 import { generateGalaxy, linkHomesInward } from './galaxyGen.js';
 import { planRoute, travelSpeed, laneMap } from './routes.js';
@@ -149,16 +150,21 @@ export function designOf(world, id) {
  * Store a design for a player (or null for militia) and return its id. The same ship saved
  * twice by the same player gets the same id. Throws if the design isn't valid.
  */
-export function registerDesign(world, owner, design) {
+export function registerDesign(world, owner, design, fixed = false) {
   const data = encodeDesign(design);
   for (const [id, e] of Object.entries(world.designs))
-    if (e.owner === owner && e.data.cells === data.cells && e.data.w === data.w && e.data.stance === data.stance && e.name === data.name) return id;
+    if (e.owner === owner && !!e.fixed === fixed && e.data.cells === data.cells && e.data.w === data.w && e.data.stance === data.stance && e.name === data.name) return id;
   const a = analyzeDesign(design);
   if (!a.ok) throw new Error(`“${design.name}” can't be built: ${a.errors[0]}`);
   const id = `d${newId(world)}`;
-  world.designs[id] = { id, owner, name: data.name, cls: a.hullClass?.id ?? design.cls, cost: a.cost, speed: a.maxSpeed, blocks: a.blocks, data };
+  world.designs[id] = fixed
+    ? { id, owner, name: data.name, cls: a.hullClass?.id ?? design.cls, cost: defensePrice(design), speed: 0, blocks: a.blocks, data, fixed: true }
+    : { id, owner, name: data.name, cls: a.hullClass?.id ?? design.cls, cost: a.cost, speed: a.maxSpeed, blocks: a.blocks, data };
   return id;
 }
+
+/** Is this world design a defence (never moves, can't leave its world)? */
+export const isDefense = (world, id) => !!world.designs[id]?.fixed;
 
 // ---------------------------------------------------------------- shipyards
 
@@ -203,6 +209,37 @@ export function sellShipyard(world, pid, planetId, yardId) {
 }
 
 export const sellValue = (yard) => Math.round(yard.paid * SHIPYARD_SELL_REFUND);
+
+// ---------------------------------------------------------------- defences
+
+/** Why a design can't be a defence, or null if it can (it has to have no thrusters). */
+export function defenseProblem(design) {
+  const n = design.cells.reduce((s, t) => s + (t === BT.THRUSTER ? 1 : 0), 0);
+  return n ? `Defences can't have thrusters: remove its ${n} thruster${n > 1 ? 's' : ''} in the designer.` : null;
+}
+
+/**
+ * Build `count` defences of `design` (a decoded design, no thrusters) on one of your worlds. They
+ * join the garrison at once, never move, and cost defensePrice() each, paid once: a defence that's
+ * destroyed is gone. Returns { ok, error?, design?, count?, price? }.
+ */
+export function buildDefense(world, pid, planetId, design, count = 1) {
+  const p = world.planets[planetId], pl = world.players[pid];
+  if (!p || !pl) return { ok: false, error: 'No such world or player.' };
+  if (pl.eliminated) return { ok: false, error: `${pl.name} is out of the game.` };
+  if (p.owner !== pid) return { ok: false, error: `You don't hold ${p.name}.` };
+  if (!Number.isInteger(count) || count < 1 || count > MAX_DEFENSE_ORDER) return { ok: false, error: `Build between 1 and ${MAX_DEFENSE_ORDER} at a time.` };
+  const why = defenseProblem(design);
+  if (why) return { ok: false, error: why };
+  const each = defensePrice(design), price = each * count;
+  if (pl.credits + 1e-6 < price) return { ok: false, error: `Needs ${price.toLocaleString()} credits; you have ${Math.floor(pl.credits).toLocaleString()}.` };
+  let id;
+  try { id = registerDesign(world, pid, design, true); } catch (e) { return { ok: false, error: e.message }; }
+  pl.credits -= price;
+  addShips(p, pid, id, count);
+  log(world, 'yard', `${pl.name} built ${count === 1 ? 'a' : count.toLocaleString()} ${world.designs[id].name} defence${count > 1 ? 's' : ''} at ${p.name} (${price.toLocaleString()} cr).`, { planet: p.id, players: [pid] });
+  return { ok: true, design: id, count, price };
+}
 
 /**
  * Rename one of your ship designs (owner, Nov 2026: a friend left a shipyard as "My frigate").
@@ -305,6 +342,8 @@ export function previewFleet(world, from, to, ships, opts = {}) {
   const ids = Object.keys(ships).filter((d) => ships[d] > 0);
   if (!ids.length) return { ok: false, error: 'Pick some ships to send.' };
   if (from === to) return { ok: false, error: 'They\'re already there.' };
+  const fixed = ids.find((d) => world.designs[d].fixed);
+  if (fixed !== undefined) return { ok: false, error: `${world.designs[fixed].name} is a defence: defences never leave their world.` };
   const slow = ids.filter((d) => world.designs[d].speed < MIN_FLEET_SPEED);
   if (slow.length) return { ok: false, error: `${world.designs[slow[0]].name} has no engines to speak of and can't leave its world.` };
   const speed = travelSpeed(fleetSpeed(world, ships));
@@ -388,7 +427,7 @@ export function upgradeWorld(world) {
   // blocks.js, so ship values in the panels and combat log match what a new shipyard for it
   // costs. Shipyards already bought keep what was paid for them.
   for (const d of Object.values(world.designs || {})) {
-    try { d.cost = designCost(decodeDesign(d.data)); } catch { /* keep the stored price */ }
+    try { const dd = decodeDesign(d.data); d.cost = d.fixed ? defensePrice(dd) : designCost(dd); } catch { /* keep the stored price */ }
   }
   world.version = 3;
   return world;
@@ -503,7 +542,7 @@ export function planEvent(world, ev) {
   fighters.forEach((q, team) => {
     const side = defends(q.owner) ? 1 : 0;
     const color = q.owner === null ? NEUTRAL_COLOR : world.players[q.owner]?.color || null;
-    for (const g of q.stacks) groups.push({ team, side, owner: q.owner, design: g.design, n: g.n, garrison: true, color });
+    for (const g of q.stacks) groups.push({ team, side, owner: q.owner, design: g.design, n: g.n, garrison: true, color, ...(world.designs[g.design]?.fixed ? { fixed: true } : {}) });
     for (const f of q.fleets) for (const [design, n] of Object.entries(f.ships)) if (n > 0) groups.push({ team, side, owner: q.owner, design, n, fleet: f.id, color });
   });
   // Starting positions: the owner's side holds the world; attackers come in from around it, each
@@ -689,6 +728,12 @@ function capture(world, P, owner, ships, battleInfo) {
   const old = P.owner, yards = P.yards.length;
   P.yards = [];
   P.owner = owner;
+  // Defences can't leave: any not on the new owner's side are destroyed with the world.
+  let razed = 0;
+  P.garrison = P.garrison.filter((s) => {
+    if (s.n <= 0 || !world.designs[s.design]?.fixed || allied(world, s.owner, owner)) return true;
+    razed += s.n; return false;
+  });
   // Anyone still here who isn't on the new owner's side leaves for home: defenders that were routed
   // (a few ships still armed when their side broke) flee, and players who sat the battle out
   // (allied with both sides) go unharmed. Militia that survive a rout scatter and are gone.
@@ -699,7 +744,7 @@ function capture(world, P, owner, ships, battleInfo) {
   const me = playerName(world, owner);
   const from = old === null ? '' : ` from ${playerName(world, old)}`;
   const how = battleInfo ? 'won the battle for' : 'took';
-  const ruin = yards ? ` ${yards} shipyard${yards > 1 ? 's' : ''} destroyed.` : '';
+  const ruin = (yards ? ` ${yards} shipyard${yards > 1 ? 's' : ''} destroyed.` : '') + (razed ? ` ${razed} defence${razed > 1 ? 's' : ''} destroyed.` : '');
   const tail = fled.length ? ` ${fled.join('; ')}.` : '';
   log(world, battleInfo ? 'battle' : 'capture', `${me} ${how} ${P.name}${from}.${ruin} +${P.income.toLocaleString()} cr/h.${tail}`, { planet: P.id, players: old === null ? [owner] : [owner, old], capture: { by: owner, from: old, yards }, ...(battleInfo || {}) });
   return world.log[world.log.length - 1];
