@@ -70,7 +70,7 @@ export const STANCES = {
 };
 
 // Every weapon object gets its line-of-fire fields up front (one object shape, see makeEntity).
-const arcFields = () => ({ omni: false, buried: false, m0: 0, m1: 0, ox: 0, oy: 0, bx0: 1, by0: 1, bx1: 0, by1: 0, blk: null });
+const arcFields = () => ({ sq: 0, omni: false, buried: false, m0: 0, m1: 0, ox: 0, oy: 0, bx0: 1, by0: 1, bx1: 0, by1: 0, blk: null });
 
 export class Battle {
   // maxTime: 4 minutes while testing; the plan for launch is 30 minutes so every battle resolves.
@@ -180,9 +180,11 @@ export class Battle {
       }
       let sx = 0, sy = 0;
       for (const c of group) { sx += (c % d.w) + 0.5 - d.w / 2; sy += ((c / d.w) | 0) + 0.5 - d.h / 2; }
-      // Fighter bays launch their first fighter early; plasma cannons charge for 4-10 s.
+      // Fighter bays launch their opening squadron early; plasma cannons charge for 4-10 s.
       const cd0 = this.rng();
-      e.weapons.push({ cell: group[0], cells: group, type: t, lx: sx / group.length, ly: sy / group.length, cd: t === BT.BAY ? 1 + cd0 * 3 : 4 + cd0 * 6, ...arcFields() });
+      const wpn = { cell: group[0], cells: group, type: t, lx: sx / group.length, ly: sy / group.length, cd: t === BT.BAY ? 1 + cd0 * 2 : 4 + cd0 * 6, ...arcFields() };
+      if (t === BT.BAY) wpn.sq = WEAPON[BT.BAY].squadron; // opening squadron still to launch
+      e.weapons.push(wpn);
     }
     for (const w of e.weapons) this.facing(e, w);
     e.track = [];
@@ -738,7 +740,12 @@ export class Battle {
         w.cd = this.firePD(e, w, wx, wy, W) ? W.cooldown * (0.85 + 0.3 * this.rng()) : 0.25;
         continue;
       }
-      if (W.kind === 'bay') { w.cd = this.launchFighter(e, w, wx, wy) ? W.cooldown : 0.5; continue; }
+      if (W.kind === 'bay') {
+        // The opening squadron leaves a few tenths of a second apart, then one fighter every cooldown.
+        if (this.launchFighter(e, w, wx, wy)) w.cd = w.sq > 0 && --w.sq > 0 ? W.squadronGap : W.cooldown;
+        else w.cd = 0.5;
+        continue;
+      }
       if (!tl) { if (!this.fireAtFighter(e, w, wx, wy, W)) w.cd = 0.3; continue; }
       // Preferred target first, then any other target that is in range and inside this weapon's arc.
       // Missiles and heavy lasers all go for the primary target so volleys land together.
@@ -858,7 +865,7 @@ export class Battle {
     const j = this.nearestFighter(wx, wy, r, e.team, e, w);
     if (j >= 0) {
       const Fi = this.Fi;
-      Fi.hp[j] -= W.damage; // 5 bursts kill a fighter (owner)
+      Fi.hp[j] -= W.fighterDamage ?? W.damage; // point defence is the fighter counter (rework, Nov 2026)
       this.recBeam(wx, wy, Fi.x[j], Fi.y[j], e.team, 1, 1, e, null);
       return true;
     }
@@ -1243,7 +1250,15 @@ export class Battle {
     if (j < 0) return false;
     const Fi = this.Fi, fx = Fi.x[j], fy = Fi.y[j];
     if (W.kind === 'laser') {
-      if (!this.fireLaser(e, wx, wy, fx, fy, W)) return false;
+      // A big slow-charging laser is bad at tracking a small fast fighter (rework, Nov 2026): it
+      // hits only `fighterHit` of the time; a miss sweeps just past it (drawn, and it may still hit
+      // whatever is beyond).
+      let tx = fx, ty = fy;
+      if (this.rng() >= (W.fighterHit ?? 1)) {
+        const d = Math.hypot(fx - wx, fy - wy) || 1, side = this.rng() < 0.5 ? -1 : 1, off = FIGHTER_R + 2;
+        tx += (-(fy - wy) / d) * off * side; ty += ((fx - wx) / d) * off * side;
+      }
+      if (!this.fireLaser(e, wx, wy, tx, ty, W)) return false;
     } else {
       const t = Math.hypot(fx - wx, fy - wy) / W.speed;
       const ang = Math.atan2(fy + Fi.vy[j] * t - wy, fx + Fi.vx[j] * t - wx) + (this.rng() - 0.5) * 2 * W.spread;

@@ -55,7 +55,7 @@ export const WEAPON = {
   // Instant beam, never misses what it's aimed at, slow to recharge. Like a small heavy laser,
   // the beam carries a damage budget and burns through block after block until it's spent
   // (about three armour blocks, or a heavy armour block and the one behind it).
-  [BT.LASER]: { kind: 'laser', range: 340, damage: 400, cooldown: 15 },
+  [BT.LASER]: { kind: 'laser', range: 340, damage: 400, cooldown: 15, fighterHit: 0.3 }, // fighterHit: chance a laser aimed at a fighter hits it (fighter rework)
   // Slow shell that flies dead straight (aimed with lead at firing), small blast on impact.
   // life: owner (Nov 2026) doesn't want misses to vanish mid-battle, so a shell flies on for 30 s
   // (1,350 blocks, well past the fight) and can still hit something far behind its target.
@@ -72,7 +72,7 @@ export const WEAPON = {
   // Point defence: shoots the nearest enemy missile in range, otherwise any enemy ship that close.
   // Owner, Nov 2026: range 80 against everything (was 30: it must outrange fighters), 15 damage a
   // burst every 0.2 s, to ships, fighters and missiles alike (was 32 / 25 to missiles).
-  [BT.PD]: { kind: 'pd', range: 80, damage: 15, missileDamage: 15, cooldown: 0.2 }, // damage was 6, then 24, then 32; missileDamage was 10, then 25
+  [BT.PD]: { kind: 'pd', range: 80, damage: 15, missileDamage: 15, fighterDamage: 40, cooldown: 0.2 }, // fighterDamage (fighter rework, Nov 2026): point defence is the fighter counter, ~8 bursts (1.5 s) a fighter // damage was 6, then 24, then 32; missileDamage was 10, then 25
   // Heavy laser: a 10x10 gun that fires wherever its unit can see past the rest of the ship. The beam carries a damage budget and
   // burns through block after block (and ship after ship) until the budget is spent.
   // It holds fire if a friendly ship is the first thing in the line of fire.
@@ -93,8 +93,16 @@ export const WEAPON = {
   // them: 2 cannon shells or 5 point-defence bursts (owner). Point defence prefers them to ships
   // (after missiles); any other gun with no enemy ship to shoot turns on them.
   // damage 0: the bay itself does no damage (the fighters do).
-  [BT.BAY]: { kind: 'bay', range: 600, damage: 0, cooldown: 30,
-    fighter: { hp: 450, speed: 30, turn: 3, range: 60, damage: 45, cooldown: 1, orbit: 14 } },
+  // Fighter rework (Nov 2026, owner's four roles: look cool; soak a little fire and do small,
+  // reliable damage at the start; hunt down long-range ships late in the battle; be countered by
+  // point defence): each bay opens with a `squadron` of fighters, `squadronGap` s apart, that fly
+  // ahead of the fleet; after that one fighter every `cooldown` s. They go for the nearest enemy
+  // ship at any range, so late in a battle, with the front line gone, they find the artillery
+  // left behind (a "go for the ship furthest back" rule was tried and did worse: it sent fighters
+  // through the whole enemy fleet). They are fast (40) and lasers mostly miss them (`fighterHit`
+  // on the laser), but point defence does `fighterDamage` (40) to them: 8 bursts, 1.6 s.
+  [BT.BAY]: { kind: 'bay', range: 600, damage: 0, cooldown: 30, squadron: 3, squadronGap: 0.4,
+    fighter: { hp: 300, speed: 40, turn: 3, range: 60, damage: 30, cooldown: 1, orbit: 14 } }, // speed was 30, hp 450, damage 45 (rework, Nov 2026)
 };
 
 // Firing arcs: every weapon can fire in any direction where its shot wouldn't pass through its

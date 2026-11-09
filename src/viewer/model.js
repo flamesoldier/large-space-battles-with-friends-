@@ -349,7 +349,8 @@ function unitPos(d) {
  * Fighters (shot kind 4, Nov 2026) are recorded like guided missiles: launch point, then a point
  * on their path every few ticks (gmRec/gmT/gmX/gmY) up to where they were shot down. Each stretch
  * between two points is a straight piece { t0, t1, x, y, vx, vy }; `launch` marks a fighter's
- * first piece (launch flash) and `fid` its shot index. Null if the replay has no fighters.
+ * first piece (launch flash), `dead` a shot-down fighter's last piece (the renderer draws it
+ * tumbling and burning out after that), and `fid` its shot index. Null if the replay has no fighters.
  */
 function fighters(c, q) {
   if (!c.gmRec || !c.shotKind.includes(4)) return null;
@@ -364,18 +365,20 @@ function fighters(c, q) {
   for (let i = 0; i < c.shotT0.length; i++) {
     if (c.shotKind[i] !== 4) continue;
     const p = [c.shotT0[i], c.shotX[i] / q, c.shotY[i] / q, ...(pts.get(i) || [])];
+    let lastK = -1;
+    for (let k = 0; k + 1 < p.length / 3; k++) if (p[k * 3 + 3] > p[k * 3]) lastK = k;
     for (let k = 0; k + 1 < p.length / 3; k++) {
       const ta = p[k * 3], tb = p[k * 3 + 3];
       if (tb <= ta) continue;
       const xa = p[k * 3 + 1], ya = p[k * 3 + 2];
-      seg.push([ta, tb, xa, ya, (p[k * 3 + 4] - xa) / (tb - ta), (p[k * 3 + 5] - ya) / (tb - ta), c.shotTeam[i], k === 0 ? 1 : 0, i]);
+      seg.push([ta, tb, xa, ya, (p[k * 3 + 4] - xa) / (tb - ta), (p[k * 3 + 5] - ya) / (tb - ta), c.shotTeam[i], k === 0 ? 1 : 0, i, k === lastK && c.shotHit[i] === 2 ? 1 : 0]);
     }
   }
   seg.sort((a, b) => a[0] - b[0]);
   const n = seg.length, F = { n, t0: new Float32Array(n), t1: new Float32Array(n), x: new Float32Array(n), y: new Float32Array(n),
-    vx: new Float32Array(n), vy: new Float32Array(n), team: new Uint8Array(n), launch: new Uint8Array(n), fid: new Uint32Array(n), maxPiece: 0 };
+    vx: new Float32Array(n), vy: new Float32Array(n), team: new Uint8Array(n), launch: new Uint8Array(n), fid: new Uint32Array(n), dead: new Uint8Array(n), maxPiece: 0 };
   seg.forEach((r, k) => {
-    F.t0[k] = r[0]; F.t1[k] = r[1]; F.x[k] = r[2]; F.y[k] = r[3]; F.vx[k] = r[4]; F.vy[k] = r[5]; F.team[k] = r[6]; F.launch[k] = r[7]; F.fid[k] = r[8];
+    F.t0[k] = r[0]; F.t1[k] = r[1]; F.x[k] = r[2]; F.y[k] = r[3]; F.vx[k] = r[4]; F.vy[k] = r[5]; F.team[k] = r[6]; F.launch[k] = r[7]; F.fid[k] = r[8]; F.dead[k] = r[9];
     if (r[1] - r[0] > F.maxPiece) F.maxPiece = r[1] - r[0];
   });
   return F;

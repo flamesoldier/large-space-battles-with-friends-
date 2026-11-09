@@ -1,13 +1,14 @@
 # Large Space Battles with Friends: project context
 
-> **⚠ THIS BRANCH (`fighter-bays`) IS NOT LIVE.** Saved 10 Nov 2026 so a new chat can carry on.
+> **⚠ THIS BRANCH (`fighter-bays`) IS NOT LIVE.** Last saved 10 Nov 2026 (second chat).
 > The live game runs `main` (Railway deploys only `main`). This branch adds, on top of `main`:
-> fighter bays (6×6, 225 cr, a fighter every 30 s, any range; fighters 450 hp, 45 damage every 1 s,
-> range 60), point defence range 80 against everything at 15 damage every 0.2 s, cannon range 340,
-> missile hp 150. The owner is still tuning fighter numbers (last question: how carriers do against
-> fleets without point defence; see the Fighter bay notes below). **Only merge into `main` (which
+> fighter bays (6×6, 225 cr; an opening squadron of 3 fighters, then one every 30 s, any range;
+> fighters 300 hp, speed 40, 30 damage every 1 s, range 60), point defence range 80 against
+> everything at 15 damage every 0.2 s (**40 a burst against fighters**), lasers hit fighters only
+> 30% of the time, cannon range 340, missile hp 150. See "Fighter rework" under Fighter bay below.
+> Waiting for the owner's verdict on the rework replay. **Only merge into `main` (which
 > makes it live) after the owner says "make it live"**: run `npm test` and `npm run bench -- 1000`,
-> rebuild `dist/`, merge, push, then delete this warning.
+rebuild `dist/`, merge, push, then delete this warning.
 
 Read this first, then `docs/ARCHITECTURE.md` for how the battle engine works and
 `docs/SERVER.md` for the online game. **Current phase: bug fixing and balance on the live game**
@@ -173,6 +174,33 @@ Weapons (numbers in `blocks.js`):
   fighter. Designer: key **C**, whole-unit stamps (`ShipEditor.stamp(x, y, type)`, editor
   generalised from the 10×10-only plasma code), "sealed in" warning and red X for a bay with no
   way out, hover shows its launch directions, weapon table "1 fighter / 30 s".
+- **Fighter rework** (Nov 2026, second chat; owner: "rework the direction or adjust the stats, your
+  choice"). The owner's four roles for fighters: (1) look cool as they fight and die, (2) at the
+  start absorb a little enemy fire and do small, reliable damage, (3) hunt down ships late in the
+  battle when long-range ships are shooting each other, (4) be countered by point defence. Changes:
+  - Each bay opens with a **squadron of 3** (`squadron`, `squadronGap` 0.4 s; weapon field `w.sq`,
+    declared for every weapon in `arcFields()`), then one every 30 s as before.
+  - Fighter **hp 450 → 300, damage 45 → 30 a second, speed 30 → 40**.
+  - **Point defence does 40 a burst to fighters** (`WEAPON[BT.PD].fighterDamage`; still 15 to ships
+    and missiles), ~1.6 s a fighter: the counter.
+  - **Lasers aimed at a fighter hit it only 30% of the time** (`WEAPON[BT.LASER].fighterHit`; a miss
+    is drawn sweeping just past it): one 400 shot always killed one, so artillery swatted every
+    fighter on the way in and role 3 never happened.
+  - Targeting stays **nearest enemy ship, any range**. A "hunt the ship furthest back from the
+    fighting" rule was built and measured, and did worse (fighters flew through the whole enemy
+    fleet and its PD); late in a battle nearest already means the artillery left at the back.
+  - Viewer: a shot-down fighter **breaks in two and the halves tumble on, burning and smoking,
+    for 1.2 s** (`drawFighterDeath`, `F.dead` in `fighters()`; pure function of time, no replay change).
+  - Measured (harness in the chat, 8 seeds, 60,000 cr a side vs a generated mixed fleet; score =
+    enemy value lost share − own; "delta" = 4-bay carriers minus the same hull with heavy armour in
+    the bays). Old (round 5) → rework: carriers alone +0.73 → +0.62; 30% carriers in a mixed fleet
+    +0.19 → +0.25; artillery duel (both fleets standoff) +0.04 → **+0.16**; vs an enemy that adds
+    PD to its hull skin +0.06 → +0.09 (fighter damage there 33.7k → 12k a battle, but PD shooting
+    fighters isn't shooting ships, so they still pay as decoys). In the first minute fighters soak
+    ~34k hp of enemy fire in the fleet test. Fighters live ~12 s (was ~18). Pure carrier fleets are
+    still strong against fleets with little PD: the levers are squadron size and fighter damage.
+  - Cost: bench 1,000 vs 1,000 (no bays) unchanged (187.5 s, ~5.5 ms a tick). 1,122 ships incl. 120
+    four-bay carriers: 1,440 fighters at once at the opening, 3.6 ms a tick, 5.2 MB gzip replay.
 - **Point defence, cannons and missiles, Nov 2026 (owner, two rounds)**: first PD range 80 against
   missiles and fighters only (30 against ships kept) with missile hp 300; then the owner chose **PD
   range 80 against everything, a burst every 0.8 s** (was 0.2: "decent but not overpowered against

@@ -53,7 +53,7 @@ const BLOCK_HINT = {
   [BT.PD]: `SHOOTS DOWN ENEMY MISSILES (normal and guided) within ${WEAPON[BT.PD].range} blocks: a missile has ${WEAPON[BT.MISSILE].hp} hp and each burst does ${WEAPON[BT.PD].missileDamage}, so a few of these protect a ship. Then ENEMY FIGHTERS within ${WEAPON[BT.PD].range} (${WEAPON[BT.PD].damage} a burst). When neither is near, it shoots any enemy ship within ${WEAPON[BT.PD].range}.`,
   [BT.MISSILE]: 'A huge, slow, unguided missile: flies straight where it was aimed, over your own ships, and its blast wrecks everything within 9 blocks. Point defence can shoot it down.',
   [BT.GUIDED]: 'The same huge missile, but it steers after its target in flight (and finds a new one nearby if its target dies), so it hits ships that dodge. Point defence can still shoot it down.',
-  [BT.BAY]: `LAUNCHES A FIGHTER every ${WEAPON[BT.BAY].cooldown} s for as long as the battle lasts. Fighters fly out along a straight open line: put the bay on the hull edge, or leave a straight empty tunnel from it to space (hover the bay to see its way out). A fighter circles an enemy ship shooting it (${WEAPON[BT.BAY].fighter.damage} damage every ${WEAPON[BT.BAY].fighter.cooldown} s, range ${WEAPON[BT.BAY].fighter.range}), dogfights enemy fighters, and flies until it's shot down (${WEAPON[BT.BAY].fighter.hp} hp: 2 cannon shells or 5 point-defence bursts). Point defence hunts fighters; any other gun with no ship to shoot turns on them.`,
+  [BT.BAY]: `LAUNCHES FIGHTERS: a squadron of ${WEAPON[BT.BAY].squadron} as the battle opens, then one every ${WEAPON[BT.BAY].cooldown} s for as long as it lasts, at any range. Fighters fly out along a straight open line: put the bay on the hull edge, or leave a straight empty tunnel from it to space (hover the bay to see its way out). A fighter circles the nearest enemy ship shooting it (${WEAPON[BT.BAY].fighter.damage} damage every ${WEAPON[BT.BAY].fighter.cooldown} s, range ${WEAPON[BT.BAY].fighter.range}), dogfights enemy fighters, and flies until it's shot down (${WEAPON[BT.BAY].fighter.hp} hp). Early on they soak up enemy fire; late in a battle they hunt down the long-range ships left at the back. Lasers mostly miss them, but POINT DEFENCE SHREDS THEM (${WEAPON[BT.PD].fighterDamage} a burst).`,
 };
 const PLASMA_WARNING = "WARNING: HUGE FRIENDLY FIRE. ITS BOLT CARVES THROUGH YOUR OWN SHIPS AS WELL AS THE ENEMY'S, AND ITS BLOCKS EXPLODE WHEN DESTROYED, WRECKING YOUR SHIP AND ANY ALLY NEARBY.";
 
@@ -191,7 +191,7 @@ function refresh(force = false) {
   $('weapons').innerHTML = WEAPON_ORDER.filter((t) => a.fire[t]).map((t) => {
     const f = a.fire[t];
     const W = WEAPON[t];
-    const shot = t === BT.BAY ? `1 fighter / ${W.cooldown} s` : `${fmt(W.damage)} / ${W.cooldown} s`;
+    const shot = t === BT.BAY ? `${W.squadron} fighters, then 1 / ${W.cooldown} s` : `${fmt(W.damage)} / ${W.cooldown} s`;
     return `<tr title="${SHOT_HINT[t] || ''}"><td>${BLOCKS[t].name}</td><td>${f.count}${f.buried ? ` <small title="${t === BT.BAY ? 'no way out' : 'buried'}">(${f.buried} ${t === BT.BAY ? 'sealed' : 'buried'})</small>` : ''}</td><td>${shot}</td><td>${t === BT.BAY ? 'any' : f.range}</td></tr>`;
   }).join('') || '<tr><td colspan="4" style="color:var(--dim)">No weapons yet</td></tr>';
   $('stance-hint').textContent = STANCE_INFO[ed.stance].hint;
@@ -223,9 +223,9 @@ const SHOT_HINT = {
   [BT.CANNON]: 'A slow shell aimed ahead of the target; damage splashes onto the blocks around the hit.',
   [BT.MISSILE]: 'Huge slow missile, flies over your own ships. Blast 9 blocks wide, strongest in the middle. Point defence can shoot it down.',
   [BT.GUIDED]: 'Like the missile launcher, but the missile steers after its target in flight. Point defence can shoot it down.',
-  [BT.PD]: `Anti-missile: shoots down enemy missiles within ${WEAPON[BT.PD].range} blocks first (${WEAPON[BT.PD].missileDamage} a burst, a missile has ${WEAPON[BT.MISSILE].hp} hp), then enemy fighters, then enemy hulls, all within ${WEAPON[BT.PD].range}.`,
+  [BT.PD]: `Anti-missile: shoots down enemy missiles within ${WEAPON[BT.PD].range} blocks first (${WEAPON[BT.PD].missileDamage} a burst, a missile has ${WEAPON[BT.MISSILE].hp} hp), then enemy fighters (${WEAPON[BT.PD].fighterDamage} a burst: the best answer to carriers), then enemy hulls (${WEAPON[BT.PD].damage} a burst), all within ${WEAPON[BT.PD].range}.`,
   [BT.LANCE]: `A blue plasma bolt that carves through ship after ship until its damage is spent.\n\n${PLASMA_WARNING}`,
-  [BT.BAY]: `Launches a fighter every ${WEAPON[BT.BAY].cooldown} s for as long as the battle lasts. Fighters circle enemy ships shooting them (${WEAPON[BT.BAY].fighter.damage} damage every ${WEAPON[BT.BAY].fighter.cooldown} s, range ${WEAPON[BT.BAY].fighter.range}), dogfight enemy fighters, and fly until shot down (${WEAPON[BT.BAY].fighter.hp} hp).`,
+  [BT.BAY]: `A squadron of ${WEAPON[BT.BAY].squadron} fighters as the battle opens, then one every ${WEAPON[BT.BAY].cooldown} s. Fighters circle enemy ships shooting them (${WEAPON[BT.BAY].fighter.damage} damage every ${WEAPON[BT.BAY].fighter.cooldown} s, range ${WEAPON[BT.BAY].fighter.range}), dogfight enemy fighters, and fly until shot down (${WEAPON[BT.BAY].fighter.hp} hp). Point defence is their counter.`,
 };
 
 // ------------------------------------------------------------ drawing

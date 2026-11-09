@@ -265,6 +265,7 @@ export function applyColors(model, sideColors) {
   return out;
 }
 const LANCE_CHARGE = 6, LANCE_LIFE = 16; // heavy laser: charge-up and beam life, in ticks
+const FIGHTER_DEATH = 12; // a shot-down fighter tumbles and burns out over this many ticks (1.2 s)
 const alpha2 = (col, k) => (col & 0xffffff) | ((Math.max(0, Math.min(1, k)) * 255) << 24);
 const fadeCol = (col, k) => (col & 0xffffff) | ((((col >>> 24) * Math.max(0, Math.min(1, k))) | 0) << 24); // scales the colour's own alpha
 const C = {
@@ -574,8 +575,8 @@ export class Renderer {
    */
   drawFighters(F, t, vis, minW) {
     const g = this.glow, sol = this.solid;
-    for (let i = lowerBound(F.t0, t - F.maxPiece - 1); i < F.n && F.t0[i] <= t; i++) {
-      if (t > F.t1[i]) continue;
+    for (let i = lowerBound(F.t0, t - F.maxPiece - FIGHTER_DEATH - 1); i < F.n && F.t0[i] <= t; i++) {
+      if (t > F.t1[i]) { if (F.dead[i] && t < F.t1[i] + FIGHTER_DEATH) this.drawFighterDeath(F, i, t, vis, minW); continue; }
       const age = t - F.t0[i], vx = F.vx[i], vy = F.vy[i], x = F.x[i] + vx * age, y = F.y[i] + vy * age;
       if (!vis(x, y, 8)) continue;
       const a = Math.atan2(vy, vx), c = Math.cos(a), s = Math.sin(a), team = F.team[i];
@@ -591,6 +592,38 @@ export class Renderer {
       g.push(x - c * 2.4 * k, y - s * 2.4 * k, a, 1.5 * k, Math.max(0.25, minW * 0.6), 2, alpha2(C.mGlow[team], 0.55));
       if (F.launch[i] && age < 6) { const f = 1 - age / 6; g.push(F.x[i], F.y[i], 0, 2.5 + 3 * f, 2.5 + 3 * f, 1, alpha2(C.mGlow[team], 0.8 * f)); }
     }
+  }
+
+  /**
+   * A shot-down fighter (rework, Nov 2026, owner: they should look cool as they die): it breaks in
+   * two and the pieces tumble on along its last heading, slowing, spinning apart, on fire, trailing
+   * smoke, and burn out over FIGHTER_DEATH ticks (1.2 s). A pure function
+   * of time, like everything else drawn.
+   */
+  drawFighterDeath(F, i, t, vis, minW) {
+    const g = this.glow, sol = this.solid, dt = t - F.t1[i], f = dt / FIGHTER_DEATH, team = F.team[i];
+    const vx = F.vx[i], vy = F.vy[i], piece = F.t1[i] - F.t0[i];
+    // Where it was hit, then drifting on with its speed bleeding away (distance = v·(1-e^-kt)/k).
+    const k = 0.25, drift = (1 - Math.exp(-k * dt)) / k;
+    const x0 = F.x[i] + vx * (piece + drift), y0 = F.y[i] + vy * (piece + drift);
+    if (!vis(x0, y0, 12)) return;
+    const a0 = Math.atan2(vy, vx), size = Math.max(1.9, minW / 0.35);
+    const spin = (F.fid[i] & 1 ? 1 : -1) * (0.5 + (F.fid[i] % 7) * 0.08); // rad per tick, each wreck its own
+    const fade = 1 - f, hot = Math.max(0, 1 - f * 2.5);
+    for (const side of [-1, 1]) { // two halves flying apart
+      const sep = (0.4 + dt * 0.3) * size * 0.5, px = x0 - Math.sin(a0) * side * sep, py = y0 + Math.cos(a0) * side * sep;
+      const ang = a0 + spin * dt * side;
+      sol.push(px, py, ang, 0.55 * size, 0.17 * size, 0, fadeCol(C.fBody, 0.35 + 0.65 * fade));
+      sol.push(px - Math.cos(ang) * 0.3 * size, py - Math.sin(ang) * 0.3 * size, ang + side * 1.05, 0.4 * size, 0.13 * size, 0, fadeCol(C.mTip[team], 0.3 + 0.7 * fade));
+      // flames licking off each half, flickering
+      const fl = 0.6 + 0.4 * Math.sin(dt * 2.3 + side * 1.7 + F.fid[i]);
+      g.push(px, py, 0, (1 + 1.4 * hot) * size * fl, (1 + 1.4 * hot) * size * fl, 1, alpha2(C.mFlame, fade));
+      g.push(px, py, 0, 2.2 * size * fl, 2.2 * size * fl, 1, alpha2(C.mGlow[team], 0.35 * fade)); // and a wider glow round it
+      // smoke trail back along its path
+      const tl = Math.min(drift, 14) * Math.hypot(vx, vy) * 0.08 + 1;
+      g.push(px - Math.cos(a0) * tl, py - Math.sin(a0) * tl, a0, tl, Math.max(0.35, minW * 0.8) * (1 + f), 2, alpha2(C.smoke, 0.45 * fade));
+    }
+    if (dt < 3) g.push(x0, y0, 0, (2 + dt) * size * 0.9, (2 + dt) * size * 0.9, 1, alpha2(C.mGlow[team], 0.9 * (1 - dt / 3))); // the hit flash
   }
 
   /** Shells and heavy missiles: straight-line flight, so position is launch + velocity * age. */
