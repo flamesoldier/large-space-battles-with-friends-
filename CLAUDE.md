@@ -1,15 +1,5 @@
 # Large Space Battles with Friends: project context
 
-> **⚠ THIS BRANCH (`fighter-bays`) IS NOT LIVE.** Last saved 10 Nov 2026 (second chat).
-> The live game runs `main` (Railway deploys only `main`). This branch adds, on top of `main`:
-> fighter bays (6×6, 225 cr; an opening squadron of 3 fighters, then one every 30 s, any range;
-> fighters 300 hp, speed 40, 30 damage every 1 s, range 60), point defence range 80 against
-> everything at 15 damage every 0.2 s (**40 a burst against fighters**), lasers hit fighters only
-> 30% of the time, cannon range 340, missile hp 150. See "Fighter rework" under Fighter bay below.
-> Waiting for the owner's verdict on the rework replay. **Only merge into `main` (which
-> makes it live) after the owner says "make it live"**: run `npm test` and `npm run bench -- 1000`,
-rebuild `dist/`, merge, push, then delete this warning.
-
 Read this first, then `docs/ARCHITECTURE.md` for how the battle engine works and
 `docs/SERVER.md` for the online game. **Current phase: bug fixing and balance on the live game**
 (see "Working on the live game" and "Bug fixing and balance" at the end).
@@ -76,8 +66,9 @@ Weapons (numbers in `blocks.js`):
   score +0.35 even at 110 cr; the owner then set 135.
 - **Point defence** (named **Anti-missile point defence** since Nov 2026: a friend didn't know it
   shoots missiles down; its palette tooltip now says so first): **range 80 against everything, 15 damage
-  every 0.2 s** to ships, fighters and missiles alike (owner, Nov 2026, third round; see below);
-  missiles first, then fighters, then ships.
+  every 0.2 s** to ships, fighters and missiles alike (owner, Nov 2026, third round; see below;
+  `fighterDamage` 15: 40 against fighters was tried in the fighter rework and the owner found it
+  too good); missiles first, then fighters, then ships.
   Before: range 30, a burst every 0.2 s, "super close range, high dps" against ships.
 - AI (Nov 2026): missile launchers aim at the biggest ship in range (all launchers on a ship
   agree, so volleys still land together), and a ship whose only guns are missiles sets its
@@ -180,9 +171,11 @@ Weapons (numbers in `blocks.js`):
   battle when long-range ships are shooting each other, (4) be countered by point defence. Changes:
   - Each bay opens with a **squadron of 3** (`squadron`, `squadronGap` 0.4 s; weapon field `w.sq`,
     declared for every weapon in `arcFields()`), then one every 30 s as before.
-  - Fighter **hp 450 → 300, damage 45 → 30 a second, speed 30 → 40**.
-  - **Point defence does 40 a burst to fighters** (`WEAPON[BT.PD].fighterDamage`; still 15 to ships
-    and missiles), ~1.6 s a fighter: the counter.
+  - Fighter **speed 30 → 40**; hp and damage: tried 300 / 30 a second, then the owner chose
+    **hp 600, 45 damage a second** (final, live since 10 Nov 2026).
+  - Point defence against fighters: `WEAPON[BT.PD].fighterDamage`. 40 a burst was tried; **the
+    owner set it back to 15** like everything else ("point defence was too good"): 40 bursts, 8 s
+    of one PD, to kill a fighter.
   - **Lasers aimed at a fighter hit it only 30% of the time** (`WEAPON[BT.LASER].fighterHit`; a miss
     is drawn sweeping just past it): one 400 shot always killed one, so artillery swatted every
     fighter on the way in and role 3 never happened.
@@ -191,7 +184,22 @@ Weapons (numbers in `blocks.js`):
     fleet and its PD); late in a battle nearest already means the artillery left at the back.
   - Viewer: a shot-down fighter **breaks in two and the halves tumble on, burning and smoking,
     for 1.2 s** (`drawFighterDeath`, `F.dead` in `fighters()`; pure function of time, no replay change).
-  - Measured (harness in the chat, 8 seeds, 60,000 cr a side vs a generated mixed fleet; score =
+  - **Owner's own test** (the fair one): 100 identical 32×16 cruisers with one bay each vs the
+    same cruiser with frame where the bay is, equal credits (so ~110 plain ones), 6 seeds. First
+    version (cannons only, 6 thrusters, fighters 300 hp / 30 dps, PD 40 to fighters): bays lost every
+    run (−0.16 no PD, −0.11 PD): a bay's ~18 fighters do ~180 damage each, while its 189 cr buys ~4
+    cannons. My earlier tests flattered bays (they compared them with heavy armour, not more guns).
+    Owner's second version (cannon/laser mix, 12 thrusters): today's 300/30 fighters about even;
+    600 hp / 45 dps with PD 40: +0.26 no PD, +0.01 PD; **final (600 / 45, PD 15): +0.26 no PD,
+    +0.16 with PD** (bays win all 6 both ways). Owner: fighters should excel in long drawn-out
+    fights between tanky ships, and they do. Carrier tests below at final stats: carriers alone vs
+    the mixed fleet +0.80 (plain −0.18), 30% carriers +0.34 (plain −0.04), artillery duel +0.39
+    (plain +0.06), vs extra-PD enemy +0.45 (plain +0.25). The owner was told PD no longer clearly
+    counters them and that all-carrier fleets are very strong; levers if needed: PD
+    `fighterDamage`, squadron size, launch interval. 1,122 ships incl. 120 four-bay carriers: 1,440
+    fighters at once at the opening, 3.9 ms a tick, 6.5 MB gzip replay. Bench 1,000 vs 1,000 (no bays)
+    unchanged: 187.5 s, ~5.4 ms a tick.
+  - Earlier measurements at 300 hp / 30 dps / PD 40 (harness in the chat, 8 seeds, 60,000 cr a side vs a generated mixed fleet; score =
     enemy value lost share − own; "delta" = 4-bay carriers minus the same hull with heavy armour in
     the bays). Old (round 5) → rework: carriers alone +0.73 → +0.62; 30% carriers in a mixed fleet
     +0.19 → +0.25; artillery duel (both fleets standoff) +0.04 → **+0.16**; vs an enemy that adds

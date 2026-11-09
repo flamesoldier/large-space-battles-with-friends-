@@ -72,7 +72,7 @@ export const WEAPON = {
   // Point defence: shoots the nearest enemy missile in range, otherwise any enemy ship that close.
   // Owner, Nov 2026: range 80 against everything (was 30: it must outrange fighters), 15 damage a
   // burst every 0.2 s, to ships, fighters and missiles alike (was 32 / 25 to missiles).
-  [BT.PD]: { kind: 'pd', range: 80, damage: 15, missileDamage: 15, fighterDamage: 40, cooldown: 0.2 }, // fighterDamage (fighter rework, Nov 2026): point defence is the fighter counter, ~8 bursts (1.5 s) a fighter // damage was 6, then 24, then 32; missileDamage was 10, then 25
+  [BT.PD]: { kind: 'pd', range: 80, damage: 15, missileDamage: 15, fighterDamage: 15, cooldown: 0.2 }, // fighterDamage: owner, Nov 2026: 15 like everything else (40 was tried: too good); 40 bursts, 8 s, a fighter // damage was 6, then 24, then 32; missileDamage was 10, then 25
   // Heavy laser: a 10x10 gun that fires wherever its unit can see past the rest of the ship. The beam carries a damage budget and
   // burns through block after block (and ship after ship) until the budget is spent.
   // It holds fire if a friendly ship is the first thing in the line of fire.
@@ -100,9 +100,9 @@ export const WEAPON = {
   // ship at any range, so late in a battle, with the front line gone, they find the artillery
   // left behind (a "go for the ship furthest back" rule was tried and did worse: it sent fighters
   // through the whole enemy fleet). They are fast (40) and lasers mostly miss them (`fighterHit`
-  // on the laser), but point defence does `fighterDamage` (40) to them: 8 bursts, 1.6 s.
+  // on the laser); point defence still prefers them to ships. Owner: they shine in long fights.
   [BT.BAY]: { kind: 'bay', range: 600, damage: 0, cooldown: 30, squadron: 3, squadronGap: 0.4,
-    fighter: { hp: 300, speed: 40, turn: 3, range: 60, damage: 30, cooldown: 1, orbit: 14 } }, // speed was 30, hp 450, damage 45 (rework, Nov 2026)
+    fighter: { hp: 600, speed: 40, turn: 3, range: 60, damage: 45, cooldown: 1, orbit: 14 } }, // owner, Nov 2026 (rework): hp 600, damage 45, speed 40 (was 30)
 };
 
 // Firing arcs: every weapon can fire in any direction where its shot wouldn't pass through its
