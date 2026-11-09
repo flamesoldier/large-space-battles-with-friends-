@@ -183,8 +183,14 @@ heavy-laser holds and escorts (who may guard an ally's ship) all go through `fr`
 
 Battle end:
 - No two sides still in the fight are enemies (a side with no armed ships, or that routed, is out).
-- Rout: a side under 20% of its starting ships still armed and outgunned 2:1 by its enemies,
-  counted against it **plus its allies** (so a small allied contingent doesn't run while its
+- Rout: a side under 20% of its starting **value** still armed and outgunned 2:1 **by value** by its
+  enemies, counted against it **plus its allies**. Value = credit cost of each ship's design (`e.worth`,
+  `teamStartWorth`, `armedWorth` in `battle.js`); owner, Nov 2026: it used to count ships, so 80 cheap
+  ships dying fast made a side run with its 20 big ships still fighting (measured: 80 corvettes + 20
+  battleships vs an equal-value mixed fleet, 6 seeds: the old rule ran in 3 of them at ~35 s with
+  66–71% of the side's value still armed and 18–19 of 20 battleships; the new rule never ran early
+  and won all 6). Defences count at their full block value.
+  Counted against it **plus its allies** (so a small allied contingent doesn't run while its
   friends are winning). A routed side breaks and runs (its ships flee like disarmed hulks and no
   longer hold the field; `battle.routedTeams`); the others fight on if any are still enemies.
   **The routed side loses** (`battle.routed`, read by `readBattle()`): routed defenders lose the world and their
@@ -192,7 +198,8 @@ Battle end:
   defender win, so 300 attackers that cut 100 defenders down to 13 were "beaten off" in ~60 s.
   Stalemate and time limit still leave the world with its holder.
 - Disengagement: 20 s with no damage dealt anywhere, after the first 30 s.
-- Time limit: 4 minutes for testing; **30 minutes at launch** so every battle resolves.
+- Time limit: **8 minutes** (owner, Nov 2026; was 4) for world battles, the designer's test battle and
+  the Battle simulator (`BATTLE_MAX_TIME` in `rules.js`; the sim's own default is still 240 for bench and tools).
 - The owner explicitly does not want a "mutual exhaustion" rule.
 
 ## Engineering rules learned the hard way
@@ -653,6 +660,6 @@ Known issues and loose ends (not yet fixed):
   (localStorage); designs in play are on the server.
 - `npm run admin -- new-game` checks `data/server.pid` to refuse while the server runs; after an
   unclean restart a stale pid file could block it (not used on Railway, where `/admin` is used).
-- Battle time limit is still the 4-minute testing value (`BATTLE_MAX_TIME` in `rules.js`); the
-  plan for launch is 30 minutes. Check with the owner before changing it.
+- Battle time limit is 8 minutes (`BATTLE_MAX_TIME` in `rules.js`, owner, Nov 2026). Battles that
+  reach the limit now take up to twice the compute and replay size; watch Railway memory on huge ones.
 

@@ -15,6 +15,7 @@ import { packReplay } from '../src/shared/replayFormat.js';
 import { readBattle, makeBattleScenario, battleOptions, shipColors } from '../src/world/battleSetup.js';
 import { Battle } from '../src/sim/battle.js';
 import { makeDesign } from '../src/shared/designs.js';
+import { makeTestScenario } from '../src/designer/testBattle.js';
 import { BT } from '../src/shared/blocks.js';
 import { designCost, encodeDesign, decodeDesign } from '../src/shared/shipStats.js';
 import { STARTING_CREDITS, HOME_INCOME, SHIPYARD_SELL_REFUND, shipyardPrice, defensePrice } from '../src/shared/economy.js';
@@ -636,6 +637,20 @@ const resolve = (scen) => {
   const all = sc.ships;
   for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++)
     if (all[i].fixed && all[j].fixed) ok(Math.hypot(all[i].x - all[j].x, all[i].y - all[j].y) > 8, 'defences never start inside each other');
+}
+
+// ---- rout goes by value, not ship count (owner, Nov 2026): a cheap swarm dying fast mustn't make the big ships run
+{
+  const small = { ...makeDesign('corvette', 4), stance: 'line' }, big = { ...makeDesign('battleship', 5), stance: 'line' };
+  const scen = makeTestScenario(small, 80, null, 1, false, [{ design: big, count: 20, fixed: false }]);
+  const b = new Battle({ designs: scen.designs, ships: scen.ships, seed: 1, maxTime: 480 });
+  let ranWith = -1;
+  while (!b.done) {
+    b.step();
+    if (ranWith < 0 && b.routedTeams[0]) ranWith = b.armedWorth[0] / b.teamStartWorth[0];
+  }
+  ok(ranWith < 0 || ranWith < 0.2, `a side only runs once under 20% of its value is still armed (ran with ${(ranWith * 100).toFixed(0)}%)`);
+  ok(b.teamStartWorth[0] > 0 && b.armedWorth.length === b.nT, 'the battle tracks each side\'s value');
 }
 
 console.log(`world: ${checks} checks passed`);

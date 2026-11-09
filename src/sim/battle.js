@@ -108,6 +108,12 @@ export class Battle {
     this.routedTeams = new Uint8Array(nT); // sides that broke and are running
     this.teamAlive = new Array(nT).fill(0);
     this.teamStart = new Array(nT).fill(0);
+    // Credit value of each side's ships at the start, and of its armed ships now (teamStats). The
+    // rout check goes by value, not ship count (owner, Nov 2026: 80 small ships dying fast made a
+    // side with 20 big ships still fighting run).
+    this.teamStartWorth = new Array(nT).fill(0);
+    this.armedWorth = new Array(nT).fill(0);
+    this._worth = new Map(); // design index -> credit value
     this.foeCx = new Array(nT).fill(0); // centre of each side's armed enemies
     this.foeCy = new Array(nT).fill(0);
     this.foeArmed = [];
@@ -173,6 +179,10 @@ export class Battle {
     this.refit(e);
     this.teamAlive[e.team]++;
     this.teamStart[e.team]++;
+    let worth = this._worth.get(spec.design);
+    if (worth === undefined) { worth = 0; for (const t of d.cells) if (t) worth += BLOCKS[t].cost || 0; this._worth.set(spec.design, (worth = Math.max(1, worth))); }
+    e.worth = worth;
+    this.teamStartWorth[e.team] += worth;
   }
 
   makeEntity(kind, team, w, h, types) {
@@ -192,6 +202,7 @@ export class Battle {
       // Collision box: centre (local) and half size, shrunk to the live blocks as they are lost.
       bcx: 0, bcy: 0, bhw: w / 2, bhh: h / 2,
       mass: 1, maxSpeed: 0, turn: 0, agility: 0, prefRange: 60, ward: null,
+      worth: 0, // credit value of the ship's design (rout check)
     };
     this.byId.push(e);
     this.ents.push(e);
@@ -310,20 +321,20 @@ export class Battle {
     // End when a side has no warships left, when the fleets have disengaged (20 s with no
     // damage dealt), or at the time limit.
     const stalled = this.tick > 300 && this.now - (this.lastDamage || 0) > 200;
-    // Rout: a side down to <20% of its starting ships still able to fight, and outgunned 2:1 by
-    // its enemies together (against it plus its allies). It breaks and runs (its ships flee like disarmed hulks and no longer
+    // Rout: a side down to <20% of its starting value (credits) still able to fight, and outgunned
+    // 2:1 by value by its enemies together (against it plus its allies). By value, not ship count
+    // (owner, Nov 2026), so a swarm of cheap ships dying fast doesn't make the big ships run. It breaks and runs (its ships flee like disarmed hulks and no longer
     // count as holding the field); the others fight on if any of them are still enemies.
     let newRout = -1;
     if (this.endTick < 0) {
-      const nT = this.nT, armed = this.armed, R = this.routedTeams;
+      const nT = this.nT, armed = this.armed, worth = this.armedWorth, R = this.routedTeams;
       for (let t = 0; t < nT; t++) {
-        const a = armed[t].length;
-        if (!a || R[t]) continue;
-        if (a >= this.teamStart[t] * 0.2) continue;
+        if (!armed[t].length || R[t]) continue;
+        if (worth[t] >= this.teamStartWorth[t] * 0.2) continue;
         // Outgunned 2:1: its enemies against it and its allies together (a small allied
         // contingent doesn't run while its friends are winning).
         let foes = 0, friends = 0;
-        for (let o = 0; o < nT; o++) if (!R[o]) { if (this.fr[(t << 4) | o]) friends += armed[o].length; else foes += armed[o].length; }
+        for (let o = 0; o < nT; o++) if (!R[o]) { if (this.fr[(t << 4) | o]) friends += worth[o]; else foes += worth[o]; }
         if (foes > 2 * friends) { R[t] = 1; if (newRout < 0) newRout = t; if (this.routed < 0) this.routed = t; }
       }
     }
@@ -350,9 +361,9 @@ export class Battle {
     // Only armed ships count: disarmed hulks retreat and no longer hold the field.
     const nT = this.nT, sx = new Array(nT).fill(0), sy = new Array(nT).fill(0);
     this.armed = [];
-    for (let t = 0; t < nT; t++) this.armed.push([]);
+    for (let t = 0; t < nT; t++) { this.armed.push([]); this.armedWorth[t] = 0; }
     for (const e of this.ents)
-      if (e.kind === SHIP && !e.dead && e.weapons.length) { sx[e.team] += e.x; sy[e.team] += e.y; this.armed[e.team].push(e); }
+      if (e.kind === SHIP && !e.dead && e.weapons.length) { sx[e.team] += e.x; sy[e.team] += e.y; this.armed[e.team].push(e); this.armedWorth[e.team] += e.worth; }
     // Each side's enemies: one list (the other side's, with two sides) and their centre.
     for (let t = 0; t < nT; t++) {
       const foes = this.foes[t];

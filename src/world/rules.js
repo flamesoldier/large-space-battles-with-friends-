@@ -18,9 +18,9 @@ export const HYPERLANE_SPEEDUP = 10;
 // Ships slower than this (no real engines) can't leave their world: they are fixed defences.
 export const MIN_FLEET_SPEED = 0.5;
 
-// How long a battle may run (simulated seconds). 4 minutes while testing, like the designer;
-// the plan for launch is 30 minutes so every battle comes to a resolution.
-export const BATTLE_MAX_TIME = 240;
+// How long a battle may run (simulated seconds). 8 minutes (owner, Nov 2026; was 4 while
+// testing). The designer's test battle and Battle simulator use the same limit.
+export const BATTLE_MAX_TIME = 480;
 
 // When a fleet reaches a world it means to attack (or defenders bar its way), the battle waits
 // this long so reinforcements from both sides can arrive and join in. Game minutes.

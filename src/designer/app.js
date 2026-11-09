@@ -11,6 +11,7 @@ import { Battle, DT } from '../sim/battle.js';
 import { packReplay } from '../shared/replayFormat.js';
 import { ShipEditor } from './editor.js';
 import { makeTestScenario, summarise, DEFAULT_COPIES } from './testBattle.js';
+import { BATTLE_MAX_TIME } from '../world/rules.js';
 
 const $ = (id) => document.getElementById(id);
 const fmt = (n) => Math.round(n).toLocaleString();
@@ -853,7 +854,7 @@ $('t-run').addEventListener('click', async () => {
   const opponent = v === 'self' ? { ...mine } : v.startsWith('g') ? { ...decodeDesign(embed.designs[Number(v.slice(1))].data), name: embed.designs[Number(v.slice(1))].name } : v ? decodeDesign(library()[Number(v)]) : null;
   const extras = sideExtras();
   const scen = makeTestScenario(mine, copies, opponent, seed, defenseMode(), extras); // defences stand in rows and hold still, front to the enemy
-  const b = new Battle({ designs: scen.designs, ships: scen.ships, seed });
+  const b = new Battle({ designs: scen.designs, ships: scen.ships, seed, maxTime: BATTLE_MAX_TIME }); // same limit as real battles
   const t0 = performance.now();
   while (!b.done) {
     const end = performance.now() + 30;
