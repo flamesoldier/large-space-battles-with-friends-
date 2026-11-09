@@ -5,7 +5,7 @@
 // Time is measured in sim ticks (float).
 
 import { unpackReplay } from '../shared/replayFormat.js';
-import { BT } from '../shared/blocks.js';
+import { MULTIBLOCK, BT } from '../shared/blocks.js';
 
 export function lowerBound(arr, v, n = arr.length) {
   let lo = 0, hi = n;
@@ -179,6 +179,7 @@ export class ReplayModel {
     this.shell = straight(0);
     this.missile = withGuided(straight(1), c, q);
     this.plasma = straight(2); // plasma cannon bolts (none in replays before Nov 2026)
+    this.fighter = fighters(c, q); // fighters from fighter bays (shot kind 4, Nov 2026), or null
     const nl = c.lasT.length;
     this.laser = { n: nl, t: c.lasT, x0: new Float32Array(nl), y0: new Float32Array(nl), x1: new Float32Array(nl), y1: new Float32Array(nl), team: c.lasTeam, hit: c.lasHit, kind: c.lasKind,
       // Beam ends attached to entities (newer replays): ids (0xffffffff = none) and local offsets.
@@ -319,15 +320,17 @@ function neighbours(e) {
   return (e.nb = nb);
 }
 /**
- * For each cell of a design: 1 + its position (u * 10 + v) inside its plasma cannon's 10x10 unit,
- * or 0. Units never touch (the designer refuses that), so each connected group of plasma cannon
- * cells is one unit and its bounding box gives the position. Cached on the design.
+ * For each cell of a design: 1 + its position (u * n + v) inside its multi-block unit (plasma
+ * cannon 10x10, fighter bay 3x3), or 0. Units never touch (the designer refuses that), so each
+ * connected group of one type is one unit and its bounding box gives the position. Cached on the design.
  */
 function unitPos(d) {
   if (d._unit) return d._unit;
   const { w, h, cells } = d, out = new Uint8Array(w * h), seen = new Uint8Array(w * h), stack = [];
   for (let s = 0; s < cells.length; s++) {
-    if (cells[s] !== BT.LANCE || seen[s]) continue;
+    const T = cells[s];
+    if (!MULTIBLOCK[T] || seen[s]) continue;
+    const N = MULTIBLOCK[T].size;
     const group = [];
     let x0 = Infinity, y0 = Infinity;
     stack.push(s); seen[s] = 1;
@@ -335,11 +338,47 @@ function unitPos(d) {
       const c = stack.pop(), x = c % w, y = (c / w) | 0;
       group.push(c); x0 = Math.min(x0, x); y0 = Math.min(y0, y);
       for (const n of [x > 0 ? c - 1 : -1, x < w - 1 ? c + 1 : -1, y > 0 ? c - w : -1, y < h - 1 ? c + w : -1])
-        if (n >= 0 && !seen[n] && cells[n] === BT.LANCE) { seen[n] = 1; stack.push(n); }
+        if (n >= 0 && !seen[n] && cells[n] === T) { seen[n] = 1; stack.push(n); }
     }
-    for (const c of group) out[c] = 1 + Math.min(9, (c % w) - x0) * 10 + Math.min(9, ((c / w) | 0) - y0);
+    for (const c of group) out[c] = 1 + Math.min(N - 1, (c % w) - x0) * N + Math.min(N - 1, ((c / w) | 0) - y0);
   }
   return (d._unit = out);
+}
+
+/**
+ * Fighters (shot kind 4, Nov 2026) are recorded like guided missiles: launch point, then a point
+ * on their path every few ticks (gmRec/gmT/gmX/gmY) up to where they were shot down. Each stretch
+ * between two points is a straight piece { t0, t1, x, y, vx, vy }; `launch` marks a fighter's
+ * first piece (launch flash) and `fid` its shot index. Null if the replay has no fighters.
+ */
+function fighters(c, q) {
+  if (!c.gmRec || !c.shotKind.includes(4)) return null;
+  const pts = new Map();
+  for (let k = 0; k < c.gmRec.length; k++) {
+    const r = c.gmRec[k];
+    if (c.shotKind[r] !== 4) continue;
+    if (!pts.has(r)) pts.set(r, []);
+    pts.get(r).push(c.gmT[k] / 10, c.gmX[k] / q, c.gmY[k] / q);
+  }
+  const seg = [];
+  for (let i = 0; i < c.shotT0.length; i++) {
+    if (c.shotKind[i] !== 4) continue;
+    const p = [c.shotT0[i], c.shotX[i] / q, c.shotY[i] / q, ...(pts.get(i) || [])];
+    for (let k = 0; k + 1 < p.length / 3; k++) {
+      const ta = p[k * 3], tb = p[k * 3 + 3];
+      if (tb <= ta) continue;
+      const xa = p[k * 3 + 1], ya = p[k * 3 + 2];
+      seg.push([ta, tb, xa, ya, (p[k * 3 + 4] - xa) / (tb - ta), (p[k * 3 + 5] - ya) / (tb - ta), c.shotTeam[i], k === 0 ? 1 : 0, i]);
+    }
+  }
+  seg.sort((a, b) => a[0] - b[0]);
+  const n = seg.length, F = { n, t0: new Float32Array(n), t1: new Float32Array(n), x: new Float32Array(n), y: new Float32Array(n),
+    vx: new Float32Array(n), vy: new Float32Array(n), team: new Uint8Array(n), launch: new Uint8Array(n), fid: new Uint32Array(n), maxPiece: 0 };
+  seg.forEach((r, k) => {
+    F.t0[k] = r[0]; F.t1[k] = r[1]; F.x[k] = r[2]; F.y[k] = r[3]; F.vx[k] = r[4]; F.vy[k] = r[5]; F.team[k] = r[6]; F.launch[k] = r[7]; F.fid[k] = r[8];
+    if (r[1] - r[0] > F.maxPiece) F.maxPiece = r[1] - r[0];
+  });
+  return F;
 }
 
 /**

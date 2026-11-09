@@ -121,6 +121,23 @@ vec3 hullBlock(int code, vec2 p) {
            + vec3(0.15, 0.35, 0.9) * (1.0 - smoothstep(0.15, 0.3, R)) * 0.4) * d;
       lit *= 1.0 - orb * d * 0.8;
     } else lit *= 1.0 - orb * d * 0.3;
+  } else if (type == 12) { // fighter bay: the 6x6 unit is one hangar, a dark deck in a hazard-striped frame
+    vec2 q = (vec2(float(var / 6), float(var - (var / 6) * 6)) + p * 0.5 + 0.5) / 6.0 - 0.5; // -0.5..0.5 across the unit
+    vec2 aq = abs(q);
+    float m = max(aq.x, aq.y), R = length(q);
+    float frame = smoothstep(0.42, 0.435, m);
+    float stripe = step(0.5, fract((q.x + q.y) * 8.0));
+    float rows = 1.0 - smoothstep(0.003, 0.007, abs(fract(q.y * 6.0 + 0.5) - 0.5) / 6.0);
+    float deck = 0.28 + rows * 0.1 * (1.0 - frame);
+    // a small fighter parked in the middle, nose forward (+x)
+    float body = step(abs(q.y), 0.05 + (0.16 - q.x) * 0.45) * step(-0.14, q.x) * step(q.x, 0.18);
+    float base = mix(deck, 0.35 + 0.75 * stripe, frame);
+    base = mix(base, 1.05 - dot(q, L) * 0.3, body * (1.0 - frame));
+    lit *= mix(1.0, base, d);
+    if (!dead) {
+      float lights = 1.0 - smoothstep(0.012, 0.025, length(aq - 0.33));
+      glow = vec3(1.0, 0.7, 0.3) * lights * (0.6 + 0.4 * sin(uTime * 0.5 + q.x * 9.0)) * d;
+    }
   }
   col = col * max(lit, 0.0) + glow;
   return mix(col, col * 0.3, ol * (0.4 + 0.6 * d));
@@ -188,7 +205,7 @@ function blockPalette(team, dead) {
   const T = TEAM[team], k = dead ? 0.7 : 1; // wrecks stay readable, just burnt
   const p = [];
   p[BT.HUB] = T.hub; p[BT.ARMOR] = T.armor; p[BT.HEAVY] = T.heavy; p[BT.FRAME] = T.frame;
-  p[BT.THRUSTER] = '#3d434f'; p[BT.LASER] = team ? '#ffd9c9' : '#d8f4ff'; p[BT.CANNON] = '#9aa1ab'; p[BT.MISSILE] = '#b9b16c'; p[BT.PD] = PD_COLOR; p[BT.LANCE] = team ? '#8a4f63' : '#5b5f9c'; p[BT.GUIDED] = '#8fb79e';
+  p[BT.THRUSTER] = '#3d434f'; p[BT.LASER] = team ? '#ffd9c9' : '#d8f4ff'; p[BT.CANNON] = '#9aa1ab'; p[BT.MISSILE] = '#b9b16c'; p[BT.PD] = PD_COLOR; p[BT.LANCE] = team ? '#8a4f63' : '#5b5f9c'; p[BT.GUIDED] = '#8fb79e'; p[BT.BAY] = '#c9a23c';
   return p.map((c) => (c ? rgba(dead ? shade(c, k) : c) : 0));
 }
 const PAL = [[blockPalette(0, false), blockPalette(1, false)], [blockPalette(0, true), blockPalette(1, true)]];
@@ -212,7 +229,7 @@ function lookFor(hex) {
     const p = [];
     p[BT.HUB] = T.hub; p[BT.ARMOR] = T.armor; p[BT.HEAVY] = T.heavy; p[BT.FRAME] = T.frame;
     p[BT.THRUSTER] = '#3d434f'; p[BT.LASER] = mixHex(hex, '#ffffff', 0.75); p[BT.CANNON] = '#9aa1ab'; p[BT.MISSILE] = '#b9b16c';
-    p[BT.PD] = PD_COLOR; p[BT.LANCE] = shade(mixHex(hex, '#40404a', 0.5), 0.9); p[BT.GUIDED] = '#8fb79e';
+    p[BT.PD] = PD_COLOR; p[BT.LANCE] = shade(mixHex(hex, '#40404a', 0.5), 0.9); p[BT.GUIDED] = '#8fb79e'; p[BT.BAY] = '#c9a23c';
     return p.map((c) => (c ? rgba(dead ? shade(c, 0.7) : c) : 0));
   };
   L = { pal: [make(false), make(true)], lod: rgba(hex), engine: rgba(hex, 150), accent: hex };
@@ -260,6 +277,7 @@ const C = {
   lod: TEAM.map((t) => rgba(t.accent)), lodDead: rgba('#7a7c86'), hotChunk: rgba('#ff7a2e', 255),
   // Plasma cannon: blue whatever the side (owner: "blue with a trail, that would look like plasma").
   plGlow: rgba('#2f7dff', 255), plBody: rgba('#6fd2ff', 255), plCore: rgba('#f4fcff', 255), plTrail: rgba('#3fa0ff', 220),
+  fBody: rgba('#d3d9e3'), fCanopy: rgba('#7fd8ff'), // fighters
 };
 
 export class Renderer {
@@ -347,7 +365,7 @@ export class Renderer {
           const o = i * 4, a0 = nb[o], a1 = nb[o + 1], a2 = nb[o + 2], a3 = nb[o + 3];
           const mask = (a0 >= 0 && de[a0] > t ? 1 : 0) | (a1 >= 0 && de[a1] > t ? 2 : 0) | (a2 >= 0 && de[a2] > t ? 4 : 0) | (a3 >= 0 && de[a3] > t ? 8 : 0);
           const type = ty[i], x = tr.x + lx[i] * c - ly[i] * s, y = tr.y + lx[i] * s + ly[i] * c;
-          const v = type === BT.LANCE && un[i] ? un[i] - 1 : (i * 2654435761) >>> 29;
+          const v = (type === BT.LANCE || type === BT.BAY) && un[i] ? un[i] - 1 : (i * 2654435761) >>> 29;
           solid.push(x, y, tr.a, 0.5, 0.5, 10 + type + 16 * mask + 256 * v + deadBit, pal[type]);
           blocks++;
         }
@@ -404,13 +422,14 @@ export class Renderer {
       if (L.kind[i] === 2) this.drawLanceCharge(m, L, i, t, vis, minW);
     for (let i = lowerBound(L.t, t - LANCE_LIFE); i < L.n && L.t[i] <= t; i++) {
       if (L.kind[i] === 2) { this.drawLance(m, L, i, t, vis, minW); continue; }
-      const pd = L.kind[i] === 1, life = pd ? 1.5 : 6, age = t - L.t[i];
+      const fg = L.kind[i] === 3; // fighter gun: a short quick flicker in the side's colour
+      const pd = L.kind[i] === 1 || fg, life = pd ? 1.5 : 6, age = t - L.t[i];
       if (age > life) continue;
       if (!vis((L.x0[i] + L.x1[i]) / 2, (L.y0[i] + L.y1[i]) / 2, Math.hypot(L.x1[i] - L.x0[i], L.y1[i] - L.y0[i]) / 2 + 20)) continue;
       const B = m.beamAt(i, t, this._beam || (this._beam = { x0: 0, y0: 0, x1: 0, y1: 0 }));
       const x0 = B.x0, y0 = B.y0, x1 = B.x1, y1 = B.y1;
       const mx = (x0 + x1) / 2, my = (y0 + y1) / 2, len = Math.hypot(x1 - x0, y1 - y0) / 2;
-      const col = pd ? C.pd[L.team[i]] : C.beam[L.team[i]], a = Math.atan2(y1 - y0, x1 - x0);
+      const col = fg ? C.beam[L.team[i]] : pd ? C.pd[L.team[i]] : C.beam[L.team[i]], a = Math.atan2(y1 - y0, x1 - x0);
       if (pd) {
         const k = 1 - age / life;
         g.push(mx, my, a, len, Math.max(0.16, minW), 4, alpha(col, k));
@@ -432,6 +451,7 @@ export class Renderer {
     this.drawStraight(m.shell, t, vis, minW, false);
     this.drawStraight(m.missile, t, vis, minW, true);
     if (m.plasma) this.drawPlasma(m.plasma, t, vis, minW);
+    if (m.fighter) this.drawFighters(m.fighter, t, vis, minW);
     // Detonations: 0 = missile shot down, 1 = cannon shell, 2 = heavy missile, 3 = heavy-laser block cooking off,
     // 4 = plasma bolt bursting into a hull, 5 = plasma bolt's final blast (both blue)
     const E = m.expl;
@@ -545,6 +565,31 @@ export class Renderer {
       g.push(x, y, 0, R, R, 1, alpha2(C.plGlow, 0.6 * fade));
       g.push(x, y, 0, Math.max(4.5, minW * 5), Math.max(4.5, minW * 5), 1, alpha2(C.plBody, fade));
       g.push(x, y, 0, Math.max(2, minW * 2.5), Math.max(2, minW * 2.5), 1, alpha2(C.plCore, fade));
+    }
+  }
+
+  /**
+   * Fighters (Nov 2026): a small swept-wing craft in its side's colour with an engine glow and a
+   * short trail, flying piece by piece along its recorded path; a flash where it launches.
+   */
+  drawFighters(F, t, vis, minW) {
+    const g = this.glow, sol = this.solid;
+    for (let i = lowerBound(F.t0, t - F.maxPiece - 1); i < F.n && F.t0[i] <= t; i++) {
+      if (t > F.t1[i]) continue;
+      const age = t - F.t0[i], vx = F.vx[i], vy = F.vy[i], x = F.x[i] + vx * age, y = F.y[i] + vy * age;
+      if (!vis(x, y, 8)) continue;
+      const a = Math.atan2(vy, vx), c = Math.cos(a), s = Math.sin(a), team = F.team[i];
+      const k = Math.max(1.9, minW / 0.35); // about 3 blocks long (owner: bigger); stays visible zoomed out
+      // Two swept-back wings in the side's colour, a pale fuselage over them, a blue canopy.
+      for (const side of [-1, 1]) {
+        const wx = x - c * 0.3 * k - s * side * 0.38 * k, wy = y - s * 0.3 * k + c * side * 0.38 * k;
+        sol.push(wx, wy, a - side * 1.05, 0.5 * k, 0.15 * k, 0, C.mTip[team]);
+      }
+      sol.push(x, y, a, 0.8 * k, 0.17 * k, 0, C.fBody);                       // fuselage
+      sol.push(x + c * 0.4 * k, y + s * 0.4 * k, a, 0.2 * k, 0.1 * k, 0, C.fCanopy);
+      g.push(x - c * 0.9 * k, y - s * 0.9 * k, 0, 0.55 * k, 0.55 * k, 1, C.mFlame);   // engine
+      g.push(x - c * 2.4 * k, y - s * 2.4 * k, a, 1.5 * k, Math.max(0.25, minW * 0.6), 2, alpha2(C.mGlow[team], 0.55));
+      if (F.launch[i] && age < 6) { const f = 1 - age / 6; g.push(F.x[i], F.y[i], 0, 2.5 + 3 * f, 2.5 + 3 * f, 1, alpha2(C.mGlow[team], 0.8 * f)); }
     }
   }
 

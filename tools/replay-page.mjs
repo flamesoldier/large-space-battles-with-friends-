@@ -4,6 +4,7 @@
 //
 // Usage: node tools/replay-page.mjs [perSide=600] [seed=1] [out=dist/replay.html] [title]
 // Run `npm run build:viewer` first (it embeds dist/viewer.html).
+import { BATTLE_MAX_TIME } from '../src/world/rules.js';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { Battle } from '../src/sim/battle.js';
@@ -13,7 +14,7 @@ import { packReplay } from '../src/shared/replayFormat.js';
 const [perSide = 600, seed = 1, out = 'dist/replay.html', title = 'Test battle'] = process.argv.slice(2);
 const scen = makeScenario({ perSide: Number(perSide), seed: Number(seed) });
 const t0 = performance.now();
-const b = new Battle({ ...scen, seed: Number(seed) });
+const b = new Battle({ ...scen, seed: Number(seed), maxTime: BATTLE_MAX_TIME }); // same limit as real battles
 b.run();
 const ms = performance.now() - t0;
 const rep = b.toReplay();

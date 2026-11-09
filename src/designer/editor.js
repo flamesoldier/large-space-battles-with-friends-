@@ -9,7 +9,7 @@
 import { BT, MULTIBLOCK, MAX_W, MAX_H } from '../shared/blocks.js';
 import { cropDesign, STANCE_INFO, placeOf } from '../shared/shipStats.js';
 
-const LANCE = MULTIBLOCK[BT.LANCE].size;
+const unitSize = (type) => (MULTIBLOCK[type] ? MULTIBLOCK[type].size : 1); // plasma cannon 10, fighter bay 3
 const UNDO_LIMIT = 300; // actions
 const UNDO_CELLS = 8e6; // total changed cells kept across all undo steps
 
@@ -146,25 +146,26 @@ export class ShipEditor {
 
   erase(x, y) { this.paint(x, y, 0); }
 
-  /** Top-left corner for a heavy-laser unit centred on (x, y). */
-  static stampOrigin(x, y) { return [x - (LANCE >> 1) + 1, y - (LANCE >> 1) + 1]; }
+  /** Top-left corner for a multi-block unit (plasma cannon, fighter bay) centred on (x, y). */
+  static stampOrigin(x, y, type = BT.LANCE) { const n = unitSize(type); return [x - (n >> 1) + (n % 2 ? 0 : 1), y - (n >> 1) + (n % 2 ? 0 : 1)]; }
 
   /** Place a whole 10x10 heavy-laser unit centred on (x, y), mirrored if it doesn't overlap itself. */
   stamp(x, y, type = BT.LANCE) {
-    const [x0, y0] = ShipEditor.stampOrigin(x, y);
+    const n = unitSize(type), [x0, y0] = ShipEditor.stampOrigin(x, y, type);
     if (!this.placeUnit(x0, y0, type)) return false;
     if (this.mirror) {
-      const my0 = this.mirrorY(y0 + LANCE - 1);
-      if (my0 >= y0 + LANCE || my0 + LANCE <= y0) this.placeUnit(x0, my0, type);
+      const my0 = this.mirrorY(y0 + n - 1);
+      if (my0 >= y0 + n || my0 + n <= y0) this.placeUnit(x0, my0, type);
     }
     return true;
   }
 
   placeUnit(x0, y0, type) {
-    if (x0 < 0 || y0 < 0 || x0 + LANCE > this.w || y0 + LANCE > this.h) return false;
-    for (let y = y0; y < y0 + LANCE; y++)
-      for (let x = x0; x < x0 + LANCE; x++) if (this.cells[y * this.w + x] === BT.HUB) return false;
-    for (let y = y0; y < y0 + LANCE; y++) for (let x = x0; x < x0 + LANCE; x++) this.setCell(x, y, type);
+    const n = unitSize(type);
+    if (x0 < 0 || y0 < 0 || x0 + n > this.w || y0 + n > this.h) return false;
+    for (let y = y0; y < y0 + n; y++)
+      for (let x = x0; x < x0 + n; x++) if (this.cells[y * this.w + x] === BT.HUB) return false;
+    for (let y = y0; y < y0 + n; y++) for (let x = x0; x < x0 + n; x++) this.setCell(x, y, type);
     return true;
   }
 

@@ -1,5 +1,14 @@
 # Large Space Battles with Friends: project context
 
+> **⚠ THIS BRANCH (`fighter-bays`) IS NOT LIVE.** Saved 10 Nov 2026 so a new chat can carry on.
+> The live game runs `main` (Railway deploys only `main`). This branch adds, on top of `main`:
+> fighter bays (6×6, 225 cr, a fighter every 30 s, any range; fighters 450 hp, 45 damage every 1 s,
+> range 60), point defence range 80 against everything at 15 damage every 0.2 s, cannon range 340,
+> missile hp 150. The owner is still tuning fighter numbers (last question: how carriers do against
+> fleets without point defence; see the Fighter bay notes below). **Only merge into `main` (which
+> makes it live) after the owner says "make it live"**: run `npm test` and `npm run bench -- 1000`,
+> rebuild `dist/`, merge, push, then delete this warning.
+
 Read this first, then `docs/ARCHITECTURE.md` for how the battle engine works and
 `docs/SERVER.md` for the online game. **Current phase: bug fixing and balance on the live game**
 (see "Working on the live game" and "Bug fixing and balance" at the end).
@@ -43,11 +52,11 @@ Weapons (numbers in `blocks.js`):
   often into a second ship. Holds fire if a friendly ship is first in line. Drawn as a slim
   team-coloured bolt with an impact flash (kept slim so it can't be mistaken for a heavy laser).
 - **Cannon**: slow visible shell with a bright trail, aimed with lead, then flies dead straight.
-  The main damage dealer. Range 260 (owner, Nov 2026). **Shells fly 30 s and missiles 90 s**
+  The main damage dealer. Range **340** (owner, Nov 2026: was 260, so it still has a reason over point defence at 80). **Shells fly 30 s and missiles 90 s**
   (owner: misses mustn't vanish mid-battle; were 7 s / 45 s), so misses fly on past the fight and
   can still hit something; a shot that does run out fades over its last 2 s in the viewer.
 - **Missile launcher**: huge, slow, unguided missile, range 700, flies over friendly ships,
-  100 hp so point defence can shoot it down, fires every 30 s (owner, Nov 2026: was 40 s, blast
+  150 hp (was 100 until PD reached 80) so point defence can shoot it down, fires every 30 s (owner, Nov 2026: was 40 s, blast
   lowered to compensate). Blast hits everything within
   9 blocks with damage `150 × (1 − d/9)²`: one missile craters, a volley tears ships apart.
   All launchers on one ship fire together as a volley. Lead is capped at 3 s.
@@ -65,9 +74,10 @@ Weapons (numbers in `blocks.js`):
   equal-cost mixed fleet, 4 seeds): unguided 28% of missiles hit, score −0.30; guided 85% hit,
   score +0.35 even at 110 cr; the owner then set 135.
 - **Point defence** (named **Anti-missile point defence** since Nov 2026: a friend didn't know it
-  shoots missiles down; its palette tooltip now says so first): range 30 rapid beam; shoots missiles first, close ships otherwise. Owner
-  (Nov 2026): also a **super close range, high-dps option** against ships: 32 damage every 0.2 s
-  (was 6, then 24 before ship spacing), 25 to missiles (was 10).
+  shoots missiles down; its palette tooltip now says so first): **range 80 against everything, 15 damage
+  every 0.2 s** to ships, fighters and missiles alike (owner, Nov 2026, third round; see below);
+  missiles first, then fighters, then ships.
+  Before: range 30, a burst every 0.2 s, "super close range, high dps" against ships.
 - AI (Nov 2026): missile launchers aim at the biggest ship in range (all launchers on a ship
   agree, so volleys still land together), and a ship whose only guns are missiles sets its
   stance distance from missile range (it used to fall back to 60 and dive in).
@@ -113,6 +123,74 @@ Weapons (numbers in `blocks.js`):
   barely changed (−0.36 → −0.31): their plasma fires only ~1.5 times a battle whatever its hp. At
   the chosen 750 hp: plasma dreadnoughts −0.51 (plain −0.35), first plasma block lost at 29 s,
   3.7 plasma shots per ship.
+- **Fighter bay** (`BT.BAY` = 12, weapon kind `'bay'`; owner, Nov 2026: friends wanted carriers,
+  "more similar to missiles"): a **6×6 multi-block unit** (owner: its role is to take up space inside
+  ships; was 3×3 in the first version), **225 cr** a unit (6.25 a block), 150 hp a block, keeps
+  working while half its blocks survive. Every **30 s, for as long as the battle goes on (no range
+  limit, owner)** it launches one **fighter** at the nearest enemy ship (`e.targets`, else
+  `foeArmed`), along the open line of fire nearest that direction (the same `arcs.js` rule as guns,
+  along the middle of an open slice): a bay on the hull edge launches straight out, one inside
+  needs a **straight empty tunnel** to space. `WEAPON[BT.BAY].range` (600) only sets where a
+  carrier stands (stances), the designer shows range "any". The fighter flies straight until clear
+  of its ship (`ln` ticks), then `steerFighter()`: heads for its target with a little lead, then
+  **circles it `orbit` (14) blocks off its hull** (owner: keep this distance), half each way round; a
+  dead or disarmed target → nearest armed enemy ship (every 5 ticks). **Avoids hulls and debris**
+  (owner; no real collisions, too costly): `solidAt()` box test on the ship grid at its position
+  (inside → turn straight out, 2.5× turn rate) and 0.3 s / 0.7 s ahead (→ steer round, 1.5×).
+  Measured: time spent inside a hull or wreck 5.4% → 0.8%. **Fighters aren't made of blocks**: like
+  missiles they are separate objects with hit points, kept in their **own list** `this.Fi` (not `P`,
+  so removing shells never moves them; dead ones are only removed in `updateFighters()`, which runs
+  before `updateProjectiles()` and rebuilds `fgrid`). **They live until killed; no cap** (owner:
+  Hobby plan; measured 1,003 ships incl. 120 carriers with 4 bays: 582 fighters at once, 4.4 ms a
+  tick, 3.2 MB gzip replay, ~200 MB). Stats (owner, second round): `WEAPON[BT.BAY].fighter` = **hp 150**
+  (2 cannon shells, 5 point-defence bursts), speed 30, turn 3 rad/s, **range 60** (it couldn't reach
+  big ships it circled at 40), **45 damage every 3 s**; drawn about 3 blocks long (owner: bigger),
+  hit radius `FIGHTER_R` 2. Third round (owner): **45 damage every 2.5 s**. Fourth round: **hp 300**
+  (4 cannon shells, 20 point-defence bursts; one laser shot still kills it). Fifth round (owner, "pull
+  the lever harder"): **hp 450, 45 damage every 1 s**. Measured: fighters live ~11–12 s and fire 4–6
+  shots; line 2 bays −0.57, **4 bays −0.38**, heavy armour instead −0.58 (standoff −0.67 / −0.55 /
+  −0.71): bays now clearly worth it, 4-bay carriers strongly. 1,003 ships incl. 120 carriers:
+  630 fighters at once, 5.1 ms a tick, 4.0 MB gzip replay, ~205 MB. Gun (`fighterGun()`): an **enemy fighter in reach first** (dogfights),
+  else a block of the ship it circles; never missiles. **Every weapon can kill them**: shells stop on
+  an enemy fighter met before any hull (`fighterOnSegment`), lasers burn out every enemy fighter
+  along the beam, plasma bolts kill every fighter they pass (friend or foe), missile and cook-off
+  blasts hit fighters in the radius, point defence 15 a burst. **Targeting** (owner): point defence
+  prefers missiles, then fighters, then ships; **any other cannon or laser with no enemy ship it can
+  reach and bear on shoots fighters, gun by gun** (owner chose this over a whole-ship rule: an idle
+  gun should fire). Missiles and plasma never aim at fighters (they only explode on ships).
+  Measured with the second-round rules (PD 30 vs ships / 0.2 s, fire every 3 s; simple 44×22 test carrier, equal-credit fleets vs the usual mixed
+  enemy, 6 seeds, score = enemy value lost share − own): line 2 bays −0.63, 4 bays −0.65, same hull
+  with heavy armour instead −0.61; fighters live ~6 s and fire ~1 shot: most die on the way in to
+  guns with no ship in reach (75% of fighter damage is aimed cannon/laser fire when carriers stand
+  back; a laser kills one with a single 400 shot at 340). A whole-ship rule (guns only turn on
+  fighters while no enemy ship is within the ship's reach) gave fighters 10–14 s and ~7 shots; it
+  was offered and the owner chose gun by gun. Replays: shot kind 4 plus a point every
+  `MISSILE_EVERY` ticks in the guided-missile columns (`gmRec/gmT/gmX/gmY`), beams of kind 3 for
+  fighter guns, explosion size 0 when shot down; the viewer's `fighters()` (`model.js`) turns the
+  points into pieces and `drawFighters()` draws a swept-wing craft in the side's colour with an
+  engine glow, a trail and a launch flash. The bay is drawn as one hangar (shader type 12, unit
+  position via a generalised `unitPos()`): dark deck in a hazard-striped frame with a parked
+  fighter. Designer: key **C**, whole-unit stamps (`ShipEditor.stamp(x, y, type)`, editor
+  generalised from the 10×10-only plasma code), "sealed in" warning and red X for a bay with no
+  way out, hover shows its launch directions, weapon table "1 fighter / 30 s".
+- **Point defence, cannons and missiles, Nov 2026 (owner, two rounds)**: first PD range 80 against
+  missiles and fighters only (30 against ships kept) with missile hp 300; then the owner chose **PD
+  range 80 against everything, a burst every 0.8 s** (was 0.2: "decent but not overpowered against
+  ships", and fighters last longer), **cannon range 260 → 340** (so it's still worth picking over PD),
+  **missile hp 150** (normal and guided). Flanker/raider circling distance is half the shortest
+  weapon range (PD included), so PD flankers now circle at ~40 instead of ~15. Measured (missile
+  boats vs the usual mixed fleet, 3 hulls × 4 seeds, share of missiles shot down / missile fleet
+  score): old rules 22% / −0.29; PD 80 every 0.8 s with hp 100: 30% / −0.33, **hp 150: 19% / −0.27**,
+  hp 200: 12% / −0.31. Fighters (44×22 test carrier, 6 seeds): live ~8–9 s and fire ~2 shots; line
+  2 bays −0.61, 4 bays −0.62, same hull with heavy armour −0.66 (standoff −0.67 / −0.70 / −0.70):
+  bays now slightly better than more armour. Bench 1,000 vs 1,000: ~6.8 ms a tick (was ~5.9, PD looks
+  further and cannons reach more) but battles end sooner (140 s vs 164 s), so the same total work.
+  **Fourth round (owner)**: PD **15 damage every 0.2 s** (ships, fighters and missiles), fighters
+  **300 hp**, missile hp **left at 150** (owner). Measured: missiles shot down 34%, missile fleet
+  score −0.41 (was 22% / −0.29 before any of this: missiles are weaker now; the owner was told);
+  fighters live ~8–10 s, ~2 shots, 60% of their damage taken is aimed cannon/laser fire; line 2 bays
+  −0.68, 4 bays −0.57, heavy armour instead −0.58 (standoff −0.73 / −0.66 / −0.71): about even.
+  Bench 1,000 vs 1,000: 187.5 s, 5.75 ms a tick.
 - Future weapons the owner wants: bigger cannons, a medium laser.
 
 Combat rules:

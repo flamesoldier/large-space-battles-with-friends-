@@ -14,12 +14,14 @@ export const BT = {
   PD: 9, // point defence: short-range rapid laser, kills missiles, also hits close ships
   LANCE: 10, // plasma cannon (was the heavy laser): a 10x10 multi-block gun, slow, long range, its bolt carves through ships
   GUIDED: 11, // guided missile launcher (owner, Nov 2026): the heavy missile, but it steers after its target
+  BAY: 12, // fighter bay (owner, Nov 2026): a 6x6 unit that launches a fighter every 30 s
 };
 
 // Multi-block weapons: footprint in blocks, and the fraction of those blocks that must
 // survive for the gun to keep firing.
 export const MULTIBLOCK = {
   [BT.LANCE]: { size: 10, minIntact: 0.5 },
+  [BT.BAY]: { size: 6, minIntact: 0.5 }, // fighter bay (owner: big, it takes up space inside ships): keeps launching while 18 of its 36 blocks survive
 };
 
 // cost: credits per block, paid once when the design is bought (via its shipyard).
@@ -37,6 +39,7 @@ export const BLOCKS = {
   [BT.MISSILE]: { name: 'Missile launcher', hp: 200, mass: 5, cost: 75 }, // was 120, then 90 (spread-out fleets take fewer ships per blast)
   [BT.PD]: { name: 'Anti-missile point defence', hp: 80, mass: 1.5, cost: 60 }, // renamed (owner, Nov 2026): a friend didn't know it shoots missiles down; cost was 30 (makes missiles better)
   [BT.GUIDED]: { name: 'Guided missile launcher', hp: 200, mass: 5, cost: 135 }, // owner, Nov 2026: the missile launcher's stats, steering missiles, dearer
+  [BT.BAY]: { name: 'Fighter bay', hp: 150, mass: 3, cost: 6.25 }, // owner, Nov 2026: 225 cr a 6x6 unit (asked for 200-250)
   [BT.LANCE]: { name: 'Plasma cannon', hp: 750, mass: 4, cost: 15 }, // hp was 120 (owner, Nov 2026: plasma ships lost their guns at once); 1,500 a 10x10 unit (was 3,500): an anti-capital weapon, see CLAUDE.md
 };
 
@@ -56,18 +59,20 @@ export const WEAPON = {
   // Slow shell that flies dead straight (aimed with lead at firing), small blast on impact.
   // life: owner (Nov 2026) doesn't want misses to vanish mid-battle, so a shell flies on for 30 s
   // (1,350 blocks, well past the fight) and can still hit something far behind its target.
-  [BT.CANNON]: { kind: 'shell', range: 260, damage: 75, cooldown: 2.0, speed: 45, life: 30, splash: 1.6, spread: 0.05 },
+  [BT.CANNON]: { kind: 'shell', range: 340, damage: 75, cooldown: 2.0, speed: 45, life: 30, splash: 1.6, spread: 0.05 },
   // Heavy missile: unguided, crawls across the map in a straight line, flies over friendly
   // ships, devastating blast. Has hit points, so point defence can shoot it down on the way in.
   // Blast damage falls off with distance: peak * (1 - d / splash)^2, applied to every ship
   // (and wreck) in the radius. One missile cratres a hull; a volley tears it apart.
   // All launchers on a ship fire together as a rippling volley at the same target.
-  [BT.MISSILE]: { kind: 'missile', range: 700, damage: 150, cooldown: 30, speed: 23, life: 90, splash: 9, hp: 100, spread: 0.02, maxLead: 3 }, // life was 45: misses fly on; speed was 20 (owner, Nov 2026: +15%, too slow)
+  [BT.MISSILE]: { kind: 'missile', range: 700, damage: 150, cooldown: 30, speed: 23, life: 90, splash: 9, hp: 150, spread: 0.02, maxLead: 3 }, // life was 45: misses fly on; speed was 20 (owner, Nov 2026: +15%, too slow); hp 100 -> 150 when point defence went to range 80, a burst every 0.8 s (Nov 2026)
   // Guided missile (owner, Nov 2026): exactly the heavy missile, but in flight it turns toward its
   // target (leading it, up to `turn` rad/s), and picks the nearest enemy within `seek` if that dies.
-  [BT.GUIDED]: { kind: 'missile', guided: true, range: 700, damage: 150, cooldown: 30, speed: 23, life: 90, splash: 9, hp: 100, spread: 0.02, maxLead: 3, turn: 0.6, seek: 150 },
+  [BT.GUIDED]: { kind: 'missile', guided: true, range: 700, damage: 150, cooldown: 30, speed: 23, life: 90, splash: 9, hp: 150, spread: 0.02, maxLead: 3, turn: 0.6, seek: 150 },
   // Point defence: shoots the nearest enemy missile in range, otherwise any enemy ship that close.
-  [BT.PD]: { kind: 'pd', range: 30, damage: 32, missileDamage: 25, cooldown: 0.2 }, // owner: super close range, high dps (damage was 6, then 24; missileDamage was 10)
+  // Owner, Nov 2026: range 80 against everything (was 30: it must outrange fighters), 15 damage a
+  // burst every 0.2 s, to ships, fighters and missiles alike (was 32 / 25 to missiles).
+  [BT.PD]: { kind: 'pd', range: 80, damage: 15, missileDamage: 15, cooldown: 0.2 }, // damage was 6, then 24, then 32; missileDamage was 10, then 25
   // Heavy laser: a 10x10 gun that fires wherever its unit can see past the rest of the ship. The beam carries a damage budget and
   // burns through block after block (and ship after ship) until the budget is spent.
   // It holds fire if a friendly ship is the first thing in the line of fire.
@@ -78,12 +83,24 @@ export const WEAPON = {
   // block in its path, ship after ship, friend or foe, until the budget is spent. Aimed with lead
   // (capped at maxLead s) along the line through the most enemy ships. Kind stays 'lance' inside.
   [BT.LANCE]: { kind: 'lance', range: 650, damage: 25000, cooldown: 20, width: 1, speed: 60, life: 30, maxLead: 6 },
+  // Fighter bay (owner, Nov 2026): every `cooldown` s, for as long as the battle goes on (any
+  // range), it launches one fighter along an open line out of the ship (the same line-of-fire
+  // rule as guns: a bay on the hull edge launches straight out, one deep inside needs a straight
+  // empty tunnel). `range` is only where a carrier likes to stand (stances), not a launch limit.
+  // Fighters aren't made of blocks: like missiles they are separate objects with their own hit
+  // points. They live until killed (no cap), circle an enemy ship at `orbit` blocks off its hull
+  // shooting at it, and shoot enemy fighters in reach first; never missiles. Every weapon can kill
+  // them: 2 cannon shells or 5 point-defence bursts (owner). Point defence prefers them to ships
+  // (after missiles); any other gun with no enemy ship to shoot turns on them.
+  // damage 0: the bay itself does no damage (the fighters do).
+  [BT.BAY]: { kind: 'bay', range: 600, damage: 0, cooldown: 30,
+    fighter: { hp: 450, speed: 30, turn: 3, range: 60, damage: 45, cooldown: 1, orbit: 14 } },
 };
 
 // Firing arcs: every weapon can fire in any direction where its shot wouldn't pass through its
 // own ship (see arcs.js). The heavy laser looks out from the centre of its 10x10 unit.
 
-export const isWeapon = (t) => t >= BT.LASER && t <= BT.GUIDED;
+export const isWeapon = (t) => t >= BT.LASER && t <= BT.BAY;
 
 // Hull classes come from block count (the ship designer shows which one a design falls in).
 // Ships can be absurdly big: a 350,000-block worldbreaker duel resolves in about 2 s.

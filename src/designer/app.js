@@ -19,14 +19,14 @@ const fmt = (n) => Math.round(n).toLocaleString();
 // Same colours as the replay viewer's Azure side, so a design looks like it will in battle.
 const COLOR = {
   [BT.HUB]: '#86e8ff', [BT.ARMOR]: '#5c7ea3', [BT.HEAVY]: '#41597a', [BT.FRAME]: '#90a6c0', [BT.THRUSTER]: '#3d434f',
-  [BT.LASER]: '#d8f4ff', [BT.CANNON]: '#9aa1ab', [BT.MISSILE]: '#b9b16c', [BT.PD]: '#c2413f', [BT.LANCE]: '#2c3150', [BT.GUIDED]: '#8fb79e',
+  [BT.LASER]: '#d8f4ff', [BT.CANNON]: '#9aa1ab', [BT.MISSILE]: '#b9b16c', [BT.PD]: '#c2413f', [BT.LANCE]: '#2c3150', [BT.GUIDED]: '#8fb79e', [BT.BAY]: '#c9a23c',
 };
 // Palette order and number keys.
 const PALETTE = [
   [BT.FRAME, '1'], [BT.ARMOR, '2'], [BT.HEAVY, '3'], [BT.THRUSTER, '4'], [BT.LASER, '5'],
-  [BT.CANNON, '6'], [BT.PD, '7'], [BT.MISSILE, '8'], [BT.GUIDED, 'g'], [BT.LANCE, '9'], [BT.HUB, '0'], [0, 'x'],
+  [BT.CANNON, '6'], [BT.PD, '7'], [BT.MISSILE, '8'], [BT.GUIDED, 'g'], [BT.BAY, 'c'], [BT.LANCE, '9'], [BT.HUB, '0'], [0, 'x'],
 ];
-const WEAPON_ORDER = [BT.LASER, BT.CANNON, BT.PD, BT.MISSILE, BT.GUIDED, BT.LANCE];
+const WEAPON_ORDER = [BT.LASER, BT.CANNON, BT.PD, BT.MISSILE, BT.GUIDED, BT.BAY, BT.LANCE];
 
 const ed = new ShipEditor();
 // block: the selected palette block (0 = eraser), or null when nothing is selected (Esc).
@@ -50,9 +50,10 @@ let CUR_KEY = SHIP_CUR_KEY;
 // What a block is for, in its palette tooltip (owner, Nov 2026: a friend didn't know point defence
 // shoots missiles down).
 const BLOCK_HINT = {
-  [BT.PD]: 'SHOOTS DOWN ENEMY MISSILES (normal and guided) within 30 blocks: a missile has 100 hp and each burst does 25, so a few of these protect a ship. When no missile is near, it shreds any enemy ship that comes that close: very high damage at very short range.',
+  [BT.PD]: `SHOOTS DOWN ENEMY MISSILES (normal and guided) within ${WEAPON[BT.PD].range} blocks: a missile has ${WEAPON[BT.MISSILE].hp} hp and each burst does ${WEAPON[BT.PD].missileDamage}, so a few of these protect a ship. Then ENEMY FIGHTERS within ${WEAPON[BT.PD].range} (${WEAPON[BT.PD].damage} a burst). When neither is near, it shoots any enemy ship within ${WEAPON[BT.PD].range}.`,
   [BT.MISSILE]: 'A huge, slow, unguided missile: flies straight where it was aimed, over your own ships, and its blast wrecks everything within 9 blocks. Point defence can shoot it down.',
   [BT.GUIDED]: 'The same huge missile, but it steers after its target in flight (and finds a new one nearby if its target dies), so it hits ships that dodge. Point defence can still shoot it down.',
+  [BT.BAY]: `LAUNCHES A FIGHTER every ${WEAPON[BT.BAY].cooldown} s for as long as the battle lasts. Fighters fly out along a straight open line: put the bay on the hull edge, or leave a straight empty tunnel from it to space (hover the bay to see its way out). A fighter circles an enemy ship shooting it (${WEAPON[BT.BAY].fighter.damage} damage every ${WEAPON[BT.BAY].fighter.cooldown} s, range ${WEAPON[BT.BAY].fighter.range}), dogfights enemy fighters, and flies until it's shot down (${WEAPON[BT.BAY].fighter.hp} hp: 2 cannon shells or 5 point-defence bursts). Point defence hunts fighters; any other gun with no ship to shoot turns on them.`,
 };
 const PLASMA_WARNING = "WARNING: HUGE FRIENDLY FIRE. ITS BOLT CARVES THROUGH YOUR OWN SHIPS AS WELL AS THE ENEMY'S, AND ITS BLOCKS EXPLODE WHEN DESTROYED, WRECKING YOUR SHIP AND ANY ALLY NEARBY.";
 
@@ -61,9 +62,10 @@ function blockTitle(t) {
   if (!t) return 'Erase blocks (right drag also erases)';
   const B = BLOCKS[t], W = WEAPON[t];
   let s = `${B.name}: ${B.cost} cr, ${B.hp} hp, mass ${B.mass}`;
-  if (MULTIBLOCK[t]) s = `${B.name}: one 10×10 unit, ${B.cost * 100} cr, ${B.hp} hp per block, keeps firing while half survives. Destroyed blocks explode (${COOKOFF.damage} damage, radius ${COOKOFF.radius}), hurting your own ship and allies`;
+  if (t === BT.LANCE) s = `${B.name}: one 10×10 unit, ${B.cost * 100} cr, ${B.hp} hp per block, keeps firing while half survives. Destroyed blocks explode (${COOKOFF.damage} damage, radius ${COOKOFF.radius}), hurting your own ship and allies`;
+  if (t === BT.BAY) { const n = MULTIBLOCK[t].size; s = `${B.name}: one ${n}×${n} unit, ${B.cost * n * n} cr, ${B.hp} hp per block, keeps launching while half its blocks survive`; }
   if (t === BT.THRUSTER) s += `, thrust ${B.thrust}`;
-  if (W) s += `. Range ${W.range}, ${W.damage} damage every ${W.cooldown} s`;
+  if (W && t !== BT.BAY) s += `. Range ${W.range}, ${W.damage} damage every ${W.cooldown} s`;
   if (t === BT.HUB) s += '. One per ship; placing it moves it. Lose it and the ship breaks apart.';
   if (BLOCK_HINT[t]) s += `.\n\n${BLOCK_HINT[t]}`;
   if (t === BT.LANCE) s += `.\n\n${PLASMA_WARNING}`;
@@ -72,15 +74,15 @@ function blockTitle(t) {
 for (const [t, key] of PALETTE) {
   const b = document.createElement('button');
   b.className = 'blk'; b.dataset.block = t; b.title = `${blockTitle(t)} (${key.toUpperCase()})`;
-  const cost = !t ? '' : MULTIBLOCK[t] ? `${BLOCKS[t].cost * 100}` : `${BLOCKS[t].cost}`;
-  b.innerHTML = `<i style="background:${t ? COLOR[t] : 'transparent'};${t ? '' : 'box-shadow:inset 0 0 0 1px var(--bad)'}"></i><span>${t ? BLOCKS[t].name + (MULTIBLOCK[t] ? ' 10×10' : '') : 'Erase'}</span><em>${cost ? cost + ' cr' : ''}</em>`;
+  const n = MULTIBLOCK[t] ? MULTIBLOCK[t].size : 1, cost = !t ? '' : `${BLOCKS[t].cost * n * n}`;
+  b.innerHTML = `<i style="background:${t ? COLOR[t] : 'transparent'};${t ? '' : 'box-shadow:inset 0 0 0 1px var(--bad)'}"></i><span>${t ? BLOCKS[t].name + (n > 1 ? ` ${n}×${n}` : '') : 'Erase'}</span><em>${cost ? cost + ' cr' : ''}</em>`;
   b.addEventListener('click', () => setBlock(t));
   $('blocks').append(b);
 }
 function setBlock(t) {
   if (t === BT.THRUSTER && defenseMode()) { toast("Defences can't have thrusters: they never move."); return; }
   block = t;
-  if ((t === BT.LANCE || t === BT.HUB || tool === 'pan') && tool !== 'pencil') setTool('pencil'); // picking a block leaves the Hand tool
+  if ((MULTIBLOCK[t] || t === BT.HUB || tool === 'pan') && tool !== 'pencil') setTool('pencil'); // picking a block leaves the Hand tool
   document.querySelectorAll('.blk').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.block) === t)));
   dirty = true;
 }
@@ -88,7 +90,7 @@ function setTool(t) {
   tool = t;
   canvas.style.cursor = t === 'pan' ? 'grab' : '';
   document.querySelectorAll('[data-tool]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tool === t)));
-  if (t !== 'pencil' && (block === BT.LANCE || block === BT.HUB)) setBlock(BT.ARMOR);
+  if (t !== 'pencil' && (MULTIBLOCK[block] || block === BT.HUB)) setBlock(BT.ARMOR);
 }
 document.querySelectorAll('[data-tool]').forEach((b) => b.addEventListener('click', () => setTool(b.dataset.tool)));
 
@@ -189,7 +191,8 @@ function refresh(force = false) {
   $('weapons').innerHTML = WEAPON_ORDER.filter((t) => a.fire[t]).map((t) => {
     const f = a.fire[t];
     const W = WEAPON[t];
-    return `<tr title="${SHOT_HINT[t] || ''}"><td>${BLOCKS[t].name}</td><td>${f.count}${f.buried ? ` <small title="buried">(${f.buried} buried)</small>` : ''}</td><td>${fmt(W.damage)} / ${W.cooldown} s</td><td>${f.range}</td></tr>`;
+    const shot = t === BT.BAY ? `1 fighter / ${W.cooldown} s` : `${fmt(W.damage)} / ${W.cooldown} s`;
+    return `<tr title="${SHOT_HINT[t] || ''}"><td>${BLOCKS[t].name}</td><td>${f.count}${f.buried ? ` <small title="${t === BT.BAY ? 'no way out' : 'buried'}">(${f.buried} ${t === BT.BAY ? 'sealed' : 'buried'})</small>` : ''}</td><td>${shot}</td><td>${t === BT.BAY ? 'any' : f.range}</td></tr>`;
   }).join('') || '<tr><td colspan="4" style="color:var(--dim)">No weapons yet</td></tr>';
   $('stance-hint').textContent = STANCE_INFO[ed.stance].hint;
   $('place-hint').textContent = PLACE_INFO[ed.place][defenseMode() ? 'defHint' : 'hint'];
@@ -220,8 +223,9 @@ const SHOT_HINT = {
   [BT.CANNON]: 'A slow shell aimed ahead of the target; damage splashes onto the blocks around the hit.',
   [BT.MISSILE]: 'Huge slow missile, flies over your own ships. Blast 9 blocks wide, strongest in the middle. Point defence can shoot it down.',
   [BT.GUIDED]: 'Like the missile launcher, but the missile steers after its target in flight. Point defence can shoot it down.',
-  [BT.PD]: 'Anti-missile: shoots down enemy missiles within 30 blocks first (25 damage a burst, a missile has 100 hp), then shreds nearby hulls.',
+  [BT.PD]: `Anti-missile: shoots down enemy missiles within ${WEAPON[BT.PD].range} blocks first (${WEAPON[BT.PD].missileDamage} a burst, a missile has ${WEAPON[BT.MISSILE].hp} hp), then enemy fighters, then enemy hulls, all within ${WEAPON[BT.PD].range}.`,
   [BT.LANCE]: `A blue plasma bolt that carves through ship after ship until its damage is spent.\n\n${PLASMA_WARNING}`,
+  [BT.BAY]: `Launches a fighter every ${WEAPON[BT.BAY].cooldown} s for as long as the battle lasts. Fighters circle enemy ships shooting them (${WEAPON[BT.BAY].fighter.damage} damage every ${WEAPON[BT.BAY].fighter.cooldown} s, range ${WEAPON[BT.BAY].fighter.range}), dogfight enemy fighters, and fly until shot down (${WEAPON[BT.BAY].fighter.hp} hp).`,
 };
 
 // ------------------------------------------------------------ drawing
@@ -303,15 +307,15 @@ function draw() {
       for (let x = vx0, i = y * ed.w + vx0; x <= vx1; x++, i++) {
         const t = cells[i];
         if (!t) continue;
-        if (t === BT.LANCE) paths[t].rect(sx(x) - 0.5, sy(y) - 0.5, z + 1, z + 1);
+        if (MULTIBLOCK[t]) paths[t].rect(sx(x) - 0.5, sy(y) - 0.5, z + 1, z + 1);
         else paths[t].rect(sx(x) + gap, sy(y) + gap, z - gap * 2, z - gap * 2);
       }
     for (const t in COLOR) { g.fillStyle = COLOR[t]; g.fill(paths[t]); }
     if (z >= 7)
       for (let y = vy0; y <= vy1; y++)
-        for (let x = vx0, i = y * ed.w + vx0; x <= vx1; x++, i++) if (cells[i] && cells[i] !== BT.LANCE) glyph(cells[i], sx(x), sy(y), z);
+        for (let x = vx0, i = y * ed.w + vx0; x <= vx1; x++, i++) if (cells[i] && !MULTIBLOCK[cells[i]]) glyph(cells[i], sx(x), sy(y), z);
   }
-  // Plasma cannons: one machine per unit (from the last analysis).
+  // Plasma cannons and fighter bays: one machine per unit (from the last analysis).
   if (info) {
     const ox = design.x0, oy = design.y0;
     const visible = (x0, y0, x1, y1) => x1 + ox >= vx0 && x0 + ox <= vx1 && y1 + oy >= vy0 && y0 + oy <= vy1;
@@ -320,7 +324,7 @@ function draw() {
       const gr = w.group;
       if (!visible(gr.x0, gr.y0, gr.x1, gr.y1)) continue;
       const x = sx(gr.x0 + ox), y = sy(gr.y0 + oy), ww = (gr.x1 - gr.x0 + 1) * z, hh = (gr.y1 - gr.y0 + 1) * z;
-      if (gr.ok && ww > 12) plasmaUnit(x, y, ww, hh, z);
+      if (gr.ok && ww > 12) (gr.type === BT.BAY ? bayUnit : plasmaUnit)(x, y, ww, hh, z);
       g.strokeStyle = gr.ok ? 'rgba(200,205,255,0.4)' : '#ff6b6b'; g.lineWidth = Math.max(1, dpr());
       g.strokeRect(x + 0.5, y + 0.5, ww - 1, hh - 1);
     }
@@ -354,10 +358,10 @@ function draw() {
       if (ed.mirror) { const my0 = ed.mirrorY(y1), my1 = ed.mirrorY(y0); previewRect(x0, my0, x1 - x0 + 1, my1 - my0 + 1, drag.type, true); }
     } else if (block === null) {
       // right drag with nothing selected: nothing to preview until the rectangle starts
-    } else if (block === BT.LANCE) {
-      const [x0, y0] = ShipEditor.stampOrigin(hx, hy);
-      previewRect(x0, y0, 10, 10, BT.LANCE);
-      if (ed.mirror) { const my0 = ed.mirrorY(y0 + 9); if (my0 >= y0 + 10 || my0 + 10 <= y0) previewRect(x0, my0, 10, 10, BT.LANCE, true); }
+    } else if (MULTIBLOCK[block]) {
+      const n = MULTIBLOCK[block].size, [x0, y0] = ShipEditor.stampOrigin(hx, hy, block);
+      previewRect(x0, y0, n, n, block);
+      if (ed.mirror) { const my0 = ed.mirrorY(y0 + n - 1); if (my0 >= y0 + n || my0 + n <= y0) previewRect(x0, my0, n, n, block, true); }
     } else {
       previewRect(hx, hy, 1, 1, block);
       if (ed.mirror && block !== BT.HUB && ed.mirrorY(hy) !== hy) previewRect(hx, ed.mirrorY(hy), 1, 1, block, true);
@@ -439,6 +443,24 @@ function glyph(t, x, y, z) {
   }
 }
 
+/** A fighter bay: a dark hangar deck in a hazard-striped frame, a small fighter on its pad, landing lights. */
+function bayUnit(x, y, ww, hh, z) {
+  const cx = x + ww / 2, cy = y + hh / 2, R = Math.min(ww, hh), f = R * 0.12;
+  g.fillStyle = '#d2a93a'; g.fillRect(x, y, ww, hh);
+  g.save(); g.beginPath(); g.rect(x, y, ww, hh); g.clip();
+  g.strokeStyle = '#1d2026'; g.lineWidth = R * 0.07;
+  for (let k = -3; k <= 3; k++) { g.beginPath(); g.moveTo(x + ww * (k / 3), y + hh); g.lineTo(x + ww * (k / 3 + 1), y); g.stroke(); }
+  g.restore();
+  g.fillStyle = '#23272e'; g.fillRect(x + f, y + f, ww - 2 * f, hh - 2 * f);
+  g.strokeStyle = 'rgba(255,255,255,0.08)'; g.lineWidth = 1;
+  for (let k = 1; k < 3; k++) { g.beginPath(); g.moveTo(x + f, y + (hh * k) / 3); g.lineTo(x + ww - f, y + (hh * k) / 3); g.stroke(); }
+  // the fighter on its pad, nose forward (+x)
+  g.fillStyle = '#c9d2de';
+  g.beginPath(); g.moveTo(cx + R * 0.2, cy); g.lineTo(cx - R * 0.14, cy - R * 0.15); g.lineTo(cx - R * 0.07, cy); g.lineTo(cx - R * 0.14, cy + R * 0.15); g.closePath(); g.fill();
+  g.fillStyle = '#ffb347';
+  for (const [dx, dy] of [[0.25, 0.25], [0.75, 0.25], [0.25, 0.75], [0.75, 0.75]]) { g.beginPath(); g.arc(x + ww * dx, y + hh * dy, R * 0.035, 0, Math.PI * 2); g.fill(); }
+}
+
 /** A plasma cannon unit, drawn as one machine: housing, corner machinery, pipes into a blue orb. */
 function plasmaUnit(x, y, ww, hh, z) {
   const cx = x + ww / 2, cy = y + hh / 2, R = Math.min(ww, hh);
@@ -515,14 +537,14 @@ const SIDES = ['forward', 'forward-starboard', 'starboard', 'aft-starboard', 'af
 function describe(x, y) {
   const i = ed.idx(x, y), t = i < 0 ? 0 : ed.cells[i];
   if (!t) return `${x}, ${y}`;
-  let s = `${BLOCKS[t].name} · ${BLOCKS[t].hp} hp · ${MULTIBLOCK[t] ? BLOCKS[t].cost * 100 + ' cr (unit)' : BLOCKS[t].cost + ' cr'}`;
+  let s = `${BLOCKS[t].name} · ${BLOCKS[t].hp} hp · ${MULTIBLOCK[t] ? BLOCKS[t].cost * MULTIBLOCK[t].size ** 2 + ' cr (unit)' : BLOCKS[t].cost + ' cr'}`;
   if (info && design) {
     const ox = design.x0, oy = design.y0;
     const w = info.weapons.find((v) => v.group ? v.group.cells.some((c) => (c % design.w) + ox === x && ((c / design.w) | 0) + oy === y) : (v.x - 0.5 + ox) === x && (v.y - 0.5 + oy) === y);
     if (w) {
-      if (w.buried) s += ' · buried: every shot would hit your own hull';
+      if (w.buried) s += w.type === BT.BAY ? ' · sealed in: no straight way out for its fighters' : ' · buried: every shot would hit your own hull';
       else if (w.omni) s += ' · fires in any direction';
-      else s += ` · ${Math.round(w.arcDeg)}° arc, mainly ${mainSide(w)}`;
+      else s += w.type === BT.BAY ? ` · fighters launch through ${Math.round(w.arcDeg)}°, mainly ${mainSide(w)}` : ` · ${Math.round(w.arcDeg)}° arc, mainly ${mainSide(w)}`;
     }
     if (info.loose.includes((y - oy) * design.w + (x - ox))) s += ' · not connected to the hub';
   }
@@ -605,9 +627,9 @@ canvas.addEventListener('pointerdown', (e) => {
   const type = e.button === 2 ? 0 : block;
   drag = { x, y, type, started: false };
   last = null;
-  if (tool === 'pencil' || type === BT.LANCE || type === BT.HUB) {
+  if (tool === 'pencil' || MULTIBLOCK[type] || type === BT.HUB) {
     ed.checkpoint(); drag.started = true;
-    if (type === BT.LANCE) { if (!ed.stamp(x, y)) toast('A plasma cannon needs a clear 10×10 space inside the grid, away from the hub.'); drag.once = true; }
+    if (MULTIBLOCK[type]) { if (!ed.stamp(x, y, type)) toast(type === BT.BAY ? `A fighter bay needs a clear ${MULTIBLOCK[type].size}×${MULTIBLOCK[type].size} space inside the grid, away from the hub.` : 'A plasma cannon needs a clear 10×10 space inside the grid, away from the hub.'); drag.once = true; }
     else if (type === BT.HUB) { ed.setCell(x, y, BT.HUB); drag.once = true; }
     else strokeTo(x, y, type);
   } else if (tool === 'fill') {

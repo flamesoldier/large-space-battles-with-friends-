@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { makeDesign, CLASSES } from '../src/shared/designs.js';
 import { Battle } from '../src/sim/battle.js';
-import { BT } from '../src/shared/blocks.js';
+import { BT, MULTIBLOCK } from '../src/shared/blocks.js';
 import { analyzeDesign, cropDesign, encodeDesign, decodeDesign, weaponFacing } from '../src/shared/shipStats.js';
 import { binOf, binOpen, lineOfFire } from '../src/shared/arcs.js';
 import { shipyardPrice } from '../src/shared/economy.js';
@@ -148,6 +148,58 @@ assert.ok(Math.abs(sc.enemyCost - sc.budget) / sc.budget < 0.1, `budgets ${sc.en
       assert.equal(w.m0, fresh.m0, `incremental arc (round ${round}, cell ${w.cell})`); assert.equal(w.m1, fresh.m1);
     }
   }
+}
+
+// ---- fighter bays (owner, Nov 2026)
+{
+  const N = MULTIBLOCK[BT.BAY].size;
+  // A plain hull with a bay on the top edge, one in the middle with a straight tunnel down to
+  // space, and one sealed inside.
+  const w = 50, h = 26, cells = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) cells[y * w + x] = BT.ARMOR;
+  for (let y = 4; y < h - 4; y++) cells[y * w] = BT.THRUSTER;
+  const hub = 13 * w + 25; cells[hub] = BT.HUB;
+  const bay = (x0, y0) => { for (let y = y0; y < y0 + N; y++) for (let x = x0; x < x0 + N; x++) cells[y * w + x] = BT.BAY; };
+  bay(4, 0); // edge
+  bay(14, 10); for (let y = 10 + N; y < h; y++) for (let x = 14; x < 14 + N; x++) cells[y * w + x] = 0; // tunnel down
+  bay(34, 10); // sealed
+  cells[13 * w + w - 1] = BT.CANNON;
+  const d = { name: 'Carrier test', w, h, cells, hub, stance: 'line' };
+  const a = analyzeDesign(d);
+  assert.deepEqual(a.errors, [], 'carrier test design is valid');
+  const bays = a.weapons.filter((x) => x.type === BT.BAY);
+  assert.equal(bays.length, 3, 'three fighter bays');
+  const byX = (x) => bays.find((b) => b.group.x0 === x);
+  assert.ok(!byX(4).buried && byX(4).arcDeg >= 90, 'an edge bay launches straight out');
+  assert.ok(!byX(14).buried && byX(14).arcDeg > 0, 'a bay with a straight tunnel to space can launch');
+  assert.ok(byX(34).buried, 'a bay with no way out is sealed in');
+  assert.ok(a.warnings.some((t) => t.includes('sealed in')), 'sealed bays get a warning');
+  // Designer and sim agree on every bay's way out.
+  const b = new Battle({ designs: [d], ships: [{ design: 0, team: 0, x: 0, y: 0, a: 0 }] });
+  const e = b.ents[0];
+  assert.equal(e.weapons.filter((x) => x.type === BT.BAY).length, 3, 'the sim sees three bays');
+  for (const sw of e.weapons) { const dw = a.weapons.find((x) => x.cell === sw.cell); assert.ok(dw); assert.equal(sw.m0, dw.m0); assert.equal(sw.m1, dw.m1); }
+  // Touching bays are one bad unit.
+  const c2 = cells.slice(); for (let y = 0; y < N; y++) c2[y * w + 4 + N] = BT.BAY;
+  assert.ok(analyzeDesign({ ...d, cells: c2 }).errors.some((t) => t.includes(`Fighter bays must be whole ${N}×${N}`)), 'bad bay units are refused');
+  // The editor places a whole unit round the cursor.
+  const ed = new ShipEditor(30, 30); ed.mirror = false; ed.paint(25, 25, BT.HUB);
+  ed.stamp(10, 10, BT.BAY);
+  assert.equal(ed.cells.filter((t) => t === BT.BAY).length, N * N, 'a bay is stamped as one whole unit');
+  // In battle: fighters launch (at any range), fly, shoot and get shot down; replays record them.
+  const scen = makeTestScenario(d, 8, null, 3, false, []);
+  const bt = new Battle({ designs: scen.designs, ships: scen.ships, seed: 3, maxTime: 240 });
+  let most = 0, first = -1;
+  while (!bt.done) { bt.step(); most = Math.max(most, bt.Fi.n); if (first < 0 && bt.Fi.n) first = bt.tick; }
+  assert.ok(first >= 0 && first < 60, `bays launch from the start, whatever the range (first at tick ${first})`);
+  const R = bt.R, kinds = R.shotKind.a.slice(0, R.shotKind.n);
+  const launched = kinds.filter((k) => k === 4).length;
+  assert.ok(launched >= 8, `fighters launch (${launched})`);
+  assert.ok([...R.lasKind.a.slice(0, R.lasKind.n)].includes(3), 'fighters fire their guns');
+  let down = 0; for (let k = 0; k < kinds.length; k++) if (kinds[k] === 4 && R.shotHit.a[k] === 2) down++;
+  assert.ok(down > 0, 'fighters get shot down');
+  const rep = bt.toReplay();
+  for (let k = 0; k < rep.cols.shotKind.length; k++) if (rep.cols.shotKind[k] === 4) assert.ok(rep.cols.shotFlight[k] > 0, 'every fighter has a flight time in the replay');
 }
 
 console.log(`designer stats match the sim for ${checked} generated designs; validation ok`);

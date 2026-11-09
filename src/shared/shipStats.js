@@ -156,16 +156,20 @@ export function analyzeDesign(d) {
   if (hubs === 1) for (let i = 0; i < cells.length; i++) if (cells[i] && !linked[i]) loose.push(i);
   if (loose.length) errors.push(`${loose.length} block${loose.length > 1 ? 's are' : ' is'} not connected to the hub.`);
   const badGroups = groups.filter((g) => !g.ok);
-  if (badGroups.length) errors.push('Plasma cannons must be whole 10×10 units, not touching each other.');
+  if (badGroups.some((g) => g.type === BT.LANCE)) errors.push('Plasma cannons must be whole 10×10 units, not touching each other.');
+  if (badGroups.some((g) => g.type === BT.BAY)) errors.push(`Fighter bays must be whole ${MULTIBLOCK[BT.BAY].size}×${MULTIBLOCK[BT.BAY].size} units, not touching each other.`);
 
   if (!weapons.length) warnings.push('No weapons: the ship counts as a disarmed hulk in battle.');
-  else if (!weapons.some((x) => x.type !== BT.PD)) warnings.push('Only point defence: it can only hit things within 30.');
-  const buried = weapons.filter((x) => x.buried);
+  else if (!weapons.some((x) => x.type !== BT.PD)) warnings.push(`Only point defence: it can only hit ships within ${WEAPON[BT.PD].range}.`);
+  else if (!weapons.some((x) => x.type !== BT.PD && x.type !== BT.BAY)) warnings.push('Only fighter bays (and point defence): the ship fights through its fighters alone.');
+  const sealed = weapons.filter((x) => x.buried && x.type === BT.BAY);
+  if (sealed.length) warnings.push(`${sealed.length} fighter bay${sealed.length > 1 ? 's are' : ' is'} sealed in: fighters fly out along a straight open line, so give ${sealed.length > 1 ? 'each' : 'it'} a side on the hull edge or a straight empty tunnel to space.`);
+  const buried = weapons.filter((x) => x.buried && x.type !== BT.BAY);
   if (buried.length) warnings.push(`${buried.length} weapon${buried.length > 1 ? 's are' : ' is'} buried: every shot would hit your own hull, so ${buried.length > 1 ? 'they' : 'it'} can't fire until the armour around ${buried.length > 1 ? 'them' : 'it'} is shot away.`);
-  const narrow = weapons.filter((x) => !x.omni && !x.buried && x.arcDeg < 45);
+  const narrow = weapons.filter((x) => !x.omni && !x.buried && x.arcDeg < 45 && x.type !== BT.BAY);
   if (narrow.length) warnings.push(`${narrow.length} weapon${narrow.length > 1 ? 's have' : ' has'} a firing arc under 45°. Guns that stick out of the hull can cover more.`);
   if (!thrust && blocks > 1) warnings.push('No thrusters: the ship crawls on hub jets (2.5 speed).');
-  if (groups.length) warnings.push(`FRIENDLY FIRE: plasma bolts carve through your own ships too. Plasma cannon blocks also explode when destroyed and chain-react, wrecking everything within about ${COOKOFF.radius} blocks of the gun, your own ship included. Armour it well.`);
+  if (groups.some((g) => g.type === BT.LANCE)) warnings.push(`FRIENDLY FIRE: plasma bolts carve through your own ships too. Plasma cannon blocks also explode when destroyed and chain-react, wrecking everything within about ${COOKOFF.radius} blocks of the gun, your own ship included. Armour it well.`);
 
   return {
     blocks, cost, mass, hp, thrust, maxSpeed, turn, turnDeg: (turn * 180) / Math.PI,
