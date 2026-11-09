@@ -36,7 +36,7 @@ export const BLOCKS = {
   [BT.CANNON]: { name: 'Cannon', hp: 150, mass: 3, cost: 50 }, // was 60: slow shells lose a lot to wrecks and overkill
   [BT.MISSILE]: { name: 'Missile launcher', hp: 200, mass: 5, cost: 75 }, // was 120, then 90 (spread-out fleets take fewer ships per blast)
   [BT.PD]: { name: 'Anti-missile point defence', hp: 80, mass: 1.5, cost: 60 }, // renamed (owner, Nov 2026): a friend didn't know it shoots missiles down; cost was 30 (makes missiles better)
-  [BT.GUIDED]: { name: 'Guided missile launcher', hp: 200, mass: 5, cost: 110 }, // owner, Nov 2026: the missile launcher's stats, steering missiles, dearer
+  [BT.GUIDED]: { name: 'Guided missile launcher', hp: 200, mass: 5, cost: 135 }, // owner, Nov 2026: the missile launcher's stats, steering missiles, dearer
   [BT.LANCE]: { name: 'Plasma cannon', hp: 750, mass: 4, cost: 15 }, // hp was 120 (owner, Nov 2026: plasma ships lost their guns at once); 1,500 a 10x10 unit (was 3,500): an anti-capital weapon, see CLAUDE.md
 };
 
