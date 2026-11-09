@@ -122,7 +122,7 @@ Weapons (numbers in `blocks.js`):
   limit, owner)** it launches one **fighter** at the nearest enemy ship (`e.targets`, else
   `foeArmed`), along the open line of fire nearest that direction (the same `arcs.js` rule as guns,
   along the middle of an open slice): a bay on the hull edge launches straight out, one inside
-  needs a **straight empty tunnel** to space. `WEAPON[BT.BAY].range` (600) only sets where a
+  needs a tunnel of empty cells to space (straight at first; since Nov 2026 it can turn corners, see below). `WEAPON[BT.BAY].range` (600) only sets where a
   carrier stands (stances), the designer shows range "any". The fighter flies straight until clear
   of its ship (`ln` ticks), then `steerFighter()`: heads for its target with a little lead, then
   **circles it `orbit` (14) blocks off its hull** (owner: keep this distance), half each way round; a
@@ -213,6 +213,22 @@ Weapons (numbers in `blocks.js`):
     instead of ~12 and do ~2.7× the damage. Carriers win hard there, as role 4 intends.
   - Cost: bench 1,000 vs 1,000 (no bays) unchanged (187.5 s, ~5.5 ms a tick). 1,122 ships incl. 120
     four-bay carriers: 1,440 fighters at once at the opening, 3.6 ms a tick, 5.2 MB gzip replay.
+- **Fighter bay tunnels with corners** (owner, Nov 2026: "it just needs a path out of the ship"):
+  a bay with no straight open line to space can still launch if a path of empty cells (4-connected,
+  corners allowed, 1 cell wide is enough) leads to the edge of the ship's grid. `src/shared/bayRoute.js`
+  (`bayRoute(types, hp, w, h, group)`: breadth-first search, shortest path, returns the unit's
+  centre, the corners and an exit point 2 cells past the edge) is shared by the sim and the
+  designer, so both agree which bays are sealed in. Sim: `bayExit()` runs after `lineOfFire` for
+  bays; a straight line still wins (those bays launch exactly as before: the owner's cruiser test
+  gives the identical result), otherwise the route is stored once in ship-local coordinates
+  (`this.fRoutes[w.route] = { e, pts }`; blocks are never added, so it stays open) and a sealed bay
+  looks again after losing blocks, at most every 2 s (`w.rtT`). A fighter launched along a route
+  **taxis** (`taxiFighter()`, Fi fields `rt`/`rs`/`lx`/`ly`): it follows the points at full speed,
+  moving with its carrier, doesn't shoot or steer, and its position is recorded every tick so the
+  replay's corners stay sharp; past the exit (or if the carrier dies) it flies free. Designer: the
+  hover readout says "fighters taxi out along an N-block tunnel" and draws the route as a dashed
+  line with an arrow; the "sealed in" warning and tooltip say tunnels can turn corners. Test in
+  `tools/test-designer.mjs` (L-shaped tunnel: designer and sim agree, fighters get out).
 - **Point defence, cannons and missiles, Nov 2026 (owner, two rounds)**: first PD range 80 against
   missiles and fighters only (30 against ships kept) with missile hp 300; then the owner chose **PD
   range 80 against everything, a burst every 0.8 s** (was 0.2: "decent but not overpowered against

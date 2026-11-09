@@ -4,6 +4,7 @@
 
 import { BT, BLOCKS, WEAPON, MULTIBLOCK, HULL_CLASSES, COOKOFF } from '../shared/blocks.js';
 import { ARC_BINS, binAngle, binOpen } from '../shared/arcs.js';
+import { routeLength } from '../shared/bayRoute.js';
 import { analyzeDesign, encodeDesign, decodeDesign, designCost, STANCE_INFO, PLACE_INFO } from '../shared/shipStats.js';
 import { shipyardPrice, shipyardPriceAt, crowdingSurcharge, SHIPYARD_INTERVAL_MIN, SHIPYARD_PRICE_MULT, defensePrice, DEFENSE_PRICE_SHARE } from '../shared/economy.js';
 import { makeDesign, CLASSES } from '../shared/designs.js';
@@ -53,7 +54,7 @@ const BLOCK_HINT = {
   [BT.PD]: `SHOOTS DOWN ENEMY MISSILES (normal and guided) within ${WEAPON[BT.PD].range} blocks: a missile has ${WEAPON[BT.MISSILE].hp} hp and each burst does ${WEAPON[BT.PD].missileDamage}, so a few of these protect a ship. Then ENEMY FIGHTERS within ${WEAPON[BT.PD].range} (${WEAPON[BT.PD].damage} a burst). When neither is near, it shoots any enemy ship within ${WEAPON[BT.PD].range}.`,
   [BT.MISSILE]: 'A huge, slow, unguided missile: flies straight where it was aimed, over your own ships, and its blast wrecks everything within 9 blocks. Point defence can shoot it down.',
   [BT.GUIDED]: 'The same huge missile, but it steers after its target in flight (and finds a new one nearby if its target dies), so it hits ships that dodge. Point defence can still shoot it down.',
-  [BT.BAY]: `LAUNCHES FIGHTERS: a squadron of ${WEAPON[BT.BAY].squadron} as the battle opens, then one every ${WEAPON[BT.BAY].cooldown} s for as long as it lasts, at any range. Fighters fly out along a straight open line: put the bay on the hull edge, or leave a straight empty tunnel from it to space (hover the bay to see its way out). A fighter circles the nearest enemy ship shooting it (${WEAPON[BT.BAY].fighter.damage} damage every ${WEAPON[BT.BAY].fighter.cooldown} s, range ${WEAPON[BT.BAY].fighter.range}), dogfights enemy fighters, and flies until it's shot down (${WEAPON[BT.BAY].fighter.hp} hp). Early on they soak up enemy fire; late in a battle they hunt down the long-range ships left at the back. Lasers mostly miss them; point defence goes for them first. They shine in long, drawn-out fights.`,
+  [BT.BAY]: `LAUNCHES FIGHTERS: a squadron of ${WEAPON[BT.BAY].squadron} as the battle opens, then one every ${WEAPON[BT.BAY].cooldown} s for as long as it lasts, at any range. Fighters need a way out: put the bay on the hull edge, or leave a tunnel of empty cells from it to space; the tunnel can turn corners (hover the bay to see its way out). A fighter circles the nearest enemy ship shooting it (${WEAPON[BT.BAY].fighter.damage} damage every ${WEAPON[BT.BAY].fighter.cooldown} s, range ${WEAPON[BT.BAY].fighter.range}), dogfights enemy fighters, and flies until it's shot down (${WEAPON[BT.BAY].fighter.hp} hp). Early on they soak up enemy fire; late in a battle they hunt down the long-range ships left at the back. Lasers mostly miss them; point defence goes for them first. They shine in long, drawn-out fights.`,
 };
 const PLASMA_WARNING = "WARNING: HUGE FRIENDLY FIRE. ITS BOLT CARVES THROUGH YOUR OWN SHIPS AS WELL AS THE ENEMY'S, AND ITS BLOCKS EXPLODE WHEN DESTROYED, WRECKING YOUR SHIP AND ANY ALLY NEARBY.";
 
@@ -345,7 +346,8 @@ function draw() {
       if (!showArcs && !mine) continue;
       const wx = w.x + ox, wy = w.y + oy;
       if (!mine && (wx < vx0 - 20 || wx > vx1 + 20 || wy < vy0 - 20 || wy > vy1 + 20)) continue;
-      drawArc(w, sx(wx), sy(wy), z, mine);
+      if (w.route && !w.m0 && !w.m1) drawRoute(w.route, ox, oy, z, mine);
+      else drawArc(w, sx(wx), sy(wy), z, mine);
     }
   }
 
@@ -483,6 +485,20 @@ function plasmaUnit(x, y, ww, hh, z) {
   g.fillStyle = grad; g.beginPath(); g.arc(cx, cy, R * 0.17, 0, Math.PI * 2); g.fill();
 }
 
+// A fighter bay's way out along a tunnel with corners: a dashed line with an arrow at the exit.
+function drawRoute(pts, ox, oy, z, strong) {
+  g.lineWidth = Math.max(2, z * 0.25);
+  g.strokeStyle = strong ? 'rgba(255,179,92,0.95)' : 'rgba(255,179,92,0.45)';
+  g.setLineDash([Math.max(4, z * 0.6), Math.max(3, z * 0.4)]);
+  g.beginPath();
+  for (let k = 0; k < pts.length; k += 2) { const x = sx(pts[k] + ox), y = sy(pts[k + 1] + oy); if (k) g.lineTo(x, y); else g.moveTo(x, y); }
+  g.stroke();
+  g.setLineDash([]);
+  const n = pts.length, x1 = sx(pts[n - 2] + ox), y1 = sy(pts[n - 1] + oy), a = Math.atan2(pts[n - 1] - pts[n - 3], pts[n - 2] - pts[n - 4]), L = Math.max(8, z * 1.2);
+  g.fillStyle = g.strokeStyle;
+  g.beginPath(); g.moveTo(x1, y1); g.lineTo(x1 - Math.cos(a - 0.45) * L, y1 - Math.sin(a - 0.45) * L); g.lineTo(x1 - Math.cos(a + 0.45) * L, y1 - Math.sin(a + 0.45) * L); g.closePath(); g.fill();
+}
+
 function drawArc(w, x, y, z, strong) {
   // Direction only: real ranges (30 to 700 blocks) dwarf the ship, so arcs are drawn short.
   // A heavy laser's arc starts at the edge of its 10x10 unit, so draw it well past that.
@@ -542,8 +558,9 @@ function describe(x, y) {
     const ox = design.x0, oy = design.y0;
     const w = info.weapons.find((v) => v.group ? v.group.cells.some((c) => (c % design.w) + ox === x && ((c / design.w) | 0) + oy === y) : (v.x - 0.5 + ox) === x && (v.y - 0.5 + oy) === y);
     if (w) {
-      if (w.buried) s += w.type === BT.BAY ? ' · sealed in: no straight way out for its fighters' : ' · buried: every shot would hit your own hull';
+      if (w.buried) s += w.type === BT.BAY ? ' · sealed in: no way out for its fighters' : ' · buried: every shot would hit your own hull';
       else if (w.omni) s += ' · fires in any direction';
+      else if (w.route && !w.m0 && !w.m1) s += ` · fighters taxi out along a ${Math.round(routeLength(w.route))}-block tunnel`;
       else s += w.type === BT.BAY ? ` · fighters launch through ${Math.round(w.arcDeg)}°, mainly ${mainSide(w)}` : ` · ${Math.round(w.arcDeg)}° arc, mainly ${mainSide(w)}`;
     }
     if (info.loose.includes((y - oy) * design.w + (x - ox))) s += ' · not connected to the hub';

@@ -13,6 +13,7 @@
 
 import { BT, BLOCKS, WEAPON, MULTIBLOCK, COOKOFF, isWeapon } from '../shared/blocks.js';
 import { lineOfFire, updateLineOfFire, binOf, binOpen, binAngle, ARC_BINS } from '../shared/arcs.js';
+import { bayRoute } from '../shared/bayRoute.js';
 import { mulberry32 } from '../shared/rng.js';
 import { Col } from '../shared/replayFormat.js';
 import { SpatialGrid } from './spatial.js';
@@ -70,7 +71,7 @@ export const STANCES = {
 };
 
 // Every weapon object gets its line-of-fire fields up front (one object shape, see makeEntity).
-const arcFields = () => ({ sq: 0, omni: false, buried: false, m0: 0, m1: 0, ox: 0, oy: 0, bx0: 1, by0: 1, bx1: 0, by1: 0, blk: null });
+const arcFields = () => ({ sq: 0, route: -1, rtT: 0, omni: false, buried: false, m0: 0, m1: 0, ox: 0, oy: 0, bx0: 1, by0: 1, bx1: 0, by1: 0, blk: null });
 
 export class Battle {
   // maxTime: 4 minutes while testing; the plan for launch is 30 minutes so every battle resolves.
@@ -137,6 +138,7 @@ export class Battle {
     this.queue = new Int32Array(8192);
     this.initProjectiles(8192);
     this.initFighters(256);
+    this.fRoutes = []; // fighter bay routes out of their ships: { e, pts } (see bayExit)
     this.initRecorder();
     this.perf = { ticks: 0, ms: 0, raycasts: 0, peakProjectiles: 0, peakEntities: 0 };
     for (const s of ships) this.spawnShip(s);
@@ -256,7 +258,10 @@ export class Battle {
       for (const c of w.cells) if (e.hp[c] > 0) alive++;
       return alive >= w.cells.length * MULTIBLOCK[w.type].minIntact;
     });
-    for (const w of e.weapons) updateLineOfFire(e.types, e.hp, e.w, e.h, w); // armour shot away can open new arcs
+    for (const w of e.weapons) { // armour shot away can open new arcs (and new ways out for fighter bays)
+      updateLineOfFire(e.types, e.hp, e.w, e.h, w);
+      if (w.type === BT.BAY) this.bayExit(e, w, false);
+    }
     // Point defence doesn't drive positioning. "Direct" range is the main gun: cannons if fitted, else lasers.
     let shortest = Infinity, longest = 0, cannon = 0, laser = 0, far = 0, near = Infinity;
     for (const w of e.weapons) {
@@ -287,6 +292,28 @@ export class Battle {
    */
   facing(e, w) {
     lineOfFire(e.types, e.hp, e.w, e.h, w.cell, w, w.cells);
+    if (w.type === BT.BAY) this.bayExit(e, w, true);
+  }
+
+  /**
+   * Fighter bay with no straight open line to space (owner, Nov 2026): it can still launch if a
+   * path of empty cells, corners allowed, leads out of the ship (`bayRoute`, shared with the
+   * designer). The route is worked out once, in ship-local coordinates, and kept: blocks are never
+   * added in battle, so it stays open. A sealed bay looks again after losing blocks, at most every
+   * 2 s. Sets `w.route` (index into `this.fRoutes`, -1 none) and `w.buried`.
+   */
+  bayExit(e, w, force) {
+    if (w.m0 || w.m1 || w.route >= 0) { w.buried = false; return; }
+    w.buried = true;
+    if (!force && this.now < w.rtT) return;
+    w.rtT = this.now + 20;
+    const r = bayRoute(e.types, e.hp, e.w, e.h, w.cells);
+    if (!r) return;
+    const pts = new Float32Array(r.length);
+    for (let k = 0; k < r.length; k += 2) { pts[k] = r[k] - e.w / 2; pts[k + 1] = r[k + 1] - e.h / 2; }
+    w.route = this.fRoutes.length;
+    this.fRoutes.push({ e, pts });
+    w.buried = false;
   }
 
   /** Can this weapon bear on point (tx, ty)? One rotation, one atan2 and a bit test. */
@@ -1049,6 +1076,8 @@ export class Battle {
       x: new Float64Array(cap), y: new Float64Array(cap), vx: new Float64Array(cap), vy: new Float64Array(cap),
       hp: new Float32Array(cap), team: new Uint8Array(cap), target: new Int32Array(cap), rec: new Int32Array(cap),
       t0: new Int32Array(cap), cd: new Float32Array(cap), ln: new Int32Array(cap),
+      // Taxiing out of its carrier along a bay route: route index (-1 = flying free), next point, local position.
+      rt: new Int32Array(cap), rs: new Int32Array(cap), lx: new Float32Array(cap), ly: new Float32Array(cap),
     };
   }
 
@@ -1064,7 +1093,7 @@ export class Battle {
     const i = Fi.n++;
     Fi.x[i] = x; Fi.y[i] = y; Fi.vx[i] = Math.cos(ang) * FIGHTER.speed; Fi.vy[i] = Math.sin(ang) * FIGHTER.speed;
     Fi.hp[i] = FIGHTER.hp; Fi.team[i] = team; Fi.target[i] = target; Fi.t0[i] = this.now;
-    Fi.cd[i] = 0.5 + this.rng() * 0.5; Fi.ln[i] = ln;
+    Fi.cd[i] = 0.5 + this.rng() * 0.5; Fi.ln[i] = ln; Fi.rt[i] = -1;
     Fi.rec[i] = this.shotStart(K_FIGHTER, team, x, y, ang);
   }
 
@@ -1098,7 +1127,16 @@ export class Battle {
       if (binOpen(w.m0, w.m1, (k0 + s) % ARC_BINS)) k = (k0 + s) % ARC_BINS;
       else if (binOpen(w.m0, w.m1, (k0 - s + ARC_BINS) % ARC_BINS)) k = (k0 - s + ARC_BINS) % ARC_BINS;
     }
-    if (k < 0) return false;
+    if (k < 0) {
+      // No straight line out: taxi out along the bay's route through the hull.
+      if (w.route < 0) return false;
+      const pts = this.fRoutes[w.route].pts;
+      const ax = pts[2] - pts[0], ay = pts[3] - pts[1];
+      this.addFighter(wx, wy, Math.atan2(ax * e.s + ay * e.c, ax * e.c - ay * e.s), e.team, tg.id, 0);
+      const i = this.Fi.n - 1;
+      this.Fi.rt[i] = w.route; this.Fi.rs[i] = 1; this.Fi.lx[i] = pts[0]; this.Fi.ly[i] = pts[1];
+      return true;
+    }
     // Along the middle of the open slice: that's the line the arc check proved is clear.
     const ang = binAngle(k) + e.a;
     const ln = Math.ceil((e.radius + Math.hypot(w.lx, w.ly)) / (FIGHTER.speed * DT)) + 1;
@@ -1120,6 +1158,7 @@ export class Battle {
         this.removeFighter(i--);
         continue;
       }
+      if (Fi.rt[i] >= 0) { this.taxiFighter(i); this.fighterPoint(i, this.now); continue; } // every tick: corners stay sharp
       if (Fi.ln[i] > 0) Fi.ln[i]--; else this.steerFighter(i);
       Fi.x[i] += Fi.vx[i] * DT; Fi.y[i] += Fi.vy[i] * DT;
       if ((this.now - Fi.t0[i]) % MISSILE_EVERY === 0) this.fighterPoint(i, this.now);
@@ -1137,9 +1176,31 @@ export class Battle {
     this.fgrid.build(objs, 0);
     for (let i = 0; i < Fi.n; i++) {
       Fi.cd[i] -= DT;
-      if (Fi.cd[i] > 0) continue;
+      if (Fi.cd[i] > 0 || Fi.rt[i] >= 0) continue; // no shooting while still inside its carrier
       Fi.cd[i] = this.fighterGun(i) ? FIGHTER.cooldown * (0.85 + 0.3 * this.rng()) : 0.2;
     }
+  }
+
+  /**
+   * A fighter still inside its carrier follows the bay's route (ship-local points, so it moves
+   * with the ship) at full speed. Out past the hull, or if the carrier is destroyed, it flies free
+   * along the last leg and steers normally a couple of ticks later.
+   */
+  taxiFighter(i) {
+    const Fi = this.Fi, R = this.fRoutes[Fi.rt[i]], e = R.e, pts = R.pts, n = pts.length / 2;
+    if (e.dead) { Fi.rt[i] = -1; Fi.ln[i] = 2; return; }
+    let step = FIGHTER.speed * DT, lx = Fi.lx[i], ly = Fi.ly[i], k = Fi.rs[i];
+    while (step > 0 && k < n) {
+      const dx = pts[k * 2] - lx, dy = pts[k * 2 + 1] - ly, d = Math.hypot(dx, dy);
+      if (d <= step) { lx = pts[k * 2]; ly = pts[k * 2 + 1]; step -= d; k++; }
+      else { lx += (dx / d) * step; ly += (dy / d) * step; step = 0; }
+    }
+    Fi.lx[i] = lx; Fi.ly[i] = ly; Fi.rs[i] = k;
+    Fi.x[i] = e.x + lx * e.c - ly * e.s; Fi.y[i] = e.y + lx * e.s + ly * e.c;
+    // Heading = the leg it's on (or the last one), turned with the ship; moving with the ship too.
+    const j = Math.min(k, n - 1), ax = pts[j * 2] - pts[j * 2 - 2], ay = pts[j * 2 + 1] - pts[j * 2 - 1], d = Math.hypot(ax, ay) || 1;
+    Fi.vx[i] = ((ax * e.c - ay * e.s) / d) * FIGHTER.speed + e.vx; Fi.vy[i] = ((ax * e.s + ay * e.c) / d) * FIGHTER.speed + e.vy;
+    if (k >= n) { Fi.rt[i] = -1; Fi.ln[i] = 2; }
   }
 
   /**

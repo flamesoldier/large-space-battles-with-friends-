@@ -179,6 +179,28 @@ assert.ok(Math.abs(sc.enemyCost - sc.budget) / sc.budget < 0.1, `budgets ${sc.en
   const e = b.ents[0];
   assert.equal(e.weapons.filter((x) => x.type === BT.BAY).length, 3, 'the sim sees three bays');
   for (const sw of e.weapons) { const dw = a.weapons.find((x) => x.cell === sw.cell); assert.ok(dw); assert.equal(sw.m0, dw.m0); assert.equal(sw.m1, dw.m1); }
+  // A tunnel with corners (owner, Nov 2026): bay 3 gets an L-shaped corridor out, right then down.
+  {
+    const c3 = cells.slice();
+    for (let x = 34 + N; x < 46; x++) c3[12 * w + x] = 0;
+    for (let y = 12; y < h; y++) c3[y * w + 45] = 0;
+    const d3 = { ...d, cells: c3 }, a3 = analyzeDesign(d3);
+    const bay3 = a3.weapons.find((b) => b.type === BT.BAY && b.group.x0 === 34);
+    assert.ok(!bay3.buried && bay3.route && bay3.route.length >= 8, 'a bay with a tunnel that turns a corner can launch');
+    assert.ok(!a3.warnings.some((t) => t.includes('sealed in')), 'no sealed warning for a cornered tunnel');
+    const b3 = new Battle({ designs: [d3, d3], ships: [{ design: 0, team: 0, x: 0, y: 0, a: 0.4 }, { design: 1, team: 1, x: 400, y: 0, a: Math.PI }], maxTime: 30 });
+    const e3 = b3.ents[0], sb = e3.weapons.find((x) => x.type === BT.BAY && x.cell === bay3.cell);
+    assert.ok(sb && !sb.buried && sb.route >= 0, 'the sim finds the same way out');
+    // Its fighters taxi out along the tunnel and come out of the far end, outside the hull.
+    let launched = 0, out = 0;
+    const add = b3.addFighter.bind(b3); b3.addFighter = (...q) => { add(...q); launched++; };
+    for (let t = 0; t < 60; t++) {
+      b3.step();
+      const F = b3.Fi;
+      for (let i = 0; i < F.n; i++) if (F.rt[i] < 0 && F.team[i] === 0) out++;
+    }
+    assert.ok(launched >= 3 * 3 && out > 0, `fighters launched (${launched}) and got out of the tunnel`);
+  }
   // Touching bays are one bad unit.
   const c2 = cells.slice(); for (let y = 0; y < N; y++) c2[y * w + 4 + N] = BT.BAY;
   assert.ok(analyzeDesign({ ...d, cells: c2 }).errors.some((t) => t.includes(`Fighter bays must be whole ${N}×${N}`)), 'bad bay units are refused');

@@ -6,6 +6,7 @@
 // what the designer shows is what the ship does in battle. tools/test-designer.mjs checks that
 // the two agree; if you change the formulas in battle.js, change them here too.
 
+import { bayRoute } from './bayRoute.js';
 import { BT, BLOCKS, WEAPON, MULTIBLOCK, HULL_CLASSES, MAX_BLOCKS, MAX_W, MAX_H, COOKOFF, isWeapon } from './blocks.js';
 import { lineOfFire, openDegrees } from './arcs.js';
 
@@ -130,7 +131,10 @@ export function analyzeDesign(d) {
   for (const g of groups) {
     let sx = 0, sy = 0;
     for (const c of g.cells) { sx += (c % w) + 0.5; sy += ((c / w) | 0) + 0.5; }
-    weapons.push({ type: g.type, cell: g.cells[0], x: sx / g.cells.length, y: sy / g.cells.length, ...weaponFacing(cells, w, h, g.cells[0], g.cells), group: g });
+    const wf = weaponFacing(cells, w, h, g.cells[0], g.cells);
+    // A fighter bay with no straight line out can still launch along a path with corners (bayRoute).
+    if (g.type === BT.BAY && wf.buried) { wf.route = bayRoute(cells, null, w, h, g.cells); if (wf.route) wf.buried = false; }
+    weapons.push({ type: g.type, cell: g.cells[0], x: sx / g.cells.length, y: sy / g.cells.length, ...wf, group: g });
   }
 
   const fire = {};
@@ -163,7 +167,7 @@ export function analyzeDesign(d) {
   else if (!weapons.some((x) => x.type !== BT.PD)) warnings.push(`Only point defence: it can only hit ships within ${WEAPON[BT.PD].range}.`);
   else if (!weapons.some((x) => x.type !== BT.PD && x.type !== BT.BAY)) warnings.push('Only fighter bays (and point defence): the ship fights through its fighters alone.');
   const sealed = weapons.filter((x) => x.buried && x.type === BT.BAY);
-  if (sealed.length) warnings.push(`${sealed.length} fighter bay${sealed.length > 1 ? 's are' : ' is'} sealed in: fighters fly out along a straight open line, so give ${sealed.length > 1 ? 'each' : 'it'} a side on the hull edge or a straight empty tunnel to space.`);
+  if (sealed.length) warnings.push(`${sealed.length} fighter bay${sealed.length > 1 ? 's are' : ' is'} sealed in: fighters need a way out, so give ${sealed.length > 1 ? 'each' : 'it'} a side on the hull edge or a tunnel of empty cells to space (it can turn corners).`);
   const buried = weapons.filter((x) => x.buried && x.type !== BT.BAY);
   if (buried.length) warnings.push(`${buried.length} weapon${buried.length > 1 ? 's are' : ' is'} buried: every shot would hit your own hull, so ${buried.length > 1 ? 'they' : 'it'} can't fire until the armour around ${buried.length > 1 ? 'them' : 'it'} is shot away.`);
   const narrow = weapons.filter((x) => !x.omni && !x.buried && x.arcDeg < 45 && x.type !== BT.BAY);
