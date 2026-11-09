@@ -166,7 +166,7 @@ export class ReplayModel {
       for (let i = 0; i < c.shotT0.length; i++) if (c.shotKind[i] === kind) idx.push(i);
       const n = idx.length, spd = meta.shotSpeed[kind] * dt;
       const S = { n, t0: new Float32Array(n), t1: new Float32Array(n), x: new Float32Array(n), y: new Float32Array(n),
-        vx: new Float32Array(n), vy: new Float32Array(n), hit: new Uint8Array(n), team: new Uint8Array(n), maxFlight: 0 };
+        vx: new Float32Array(n), vy: new Float32Array(n), hit: new Uint8Array(n), team: new Uint8Array(n), a0: new Float32Array(n), maxFlight: 0 };
       idx.forEach((i, k) => {
         const f = c.shotFlight[i] / 10, a = (c.shotAng[i] / 65536) * Math.PI * 2;
         S.t0[k] = c.shotT0[i]; S.t1[k] = c.shotT0[i] + f; S.x[k] = c.shotX[i] / q; S.y[k] = c.shotY[i] / q;
@@ -177,7 +177,7 @@ export class ReplayModel {
       return S;
     };
     this.shell = straight(0);
-    this.missile = straight(1);
+    this.missile = withGuided(straight(1), c, q);
     this.plasma = straight(2); // plasma cannon bolts (none in replays before Nov 2026)
     const nl = c.lasT.length;
     this.laser = { n: nl, t: c.lasT, x0: new Float32Array(nl), y0: new Float32Array(nl), x1: new Float32Array(nl), y1: new Float32Array(nl), team: c.lasTeam, hit: c.lasHit, kind: c.lasKind,
@@ -340,4 +340,44 @@ function unitPos(d) {
     for (const c of group) out[c] = 1 + Math.min(9, (c % w) - x0) * 10 + Math.min(9, ((c / w) | 0) - y0);
   }
   return (d._unit = out);
+}
+
+/**
+ * Guided missiles (shot kind 3, Nov 2026) are recorded as points on their path (gmRec/gmT/gmX/gmY).
+ * Each stretch between two points becomes a straight piece drawn like any heavy missile, with
+ * a0 = the missile's age at the start of the piece (so its smoke trail keeps growing). Merged into
+ * the missile list and sorted by start time. Replays without guided missiles are returned as is.
+ */
+function withGuided(S, c, q) {
+  if (!c.gmRec || !c.gmRec.length) return S;
+  const pts = new Map();
+  for (let k = 0; k < c.gmRec.length; k++) {
+    const r = c.gmRec[k];
+    if (!pts.has(r)) pts.set(r, []);
+    pts.get(r).push(c.gmT[k] / 10, c.gmX[k] / q, c.gmY[k] / q);
+  }
+  const seg = [];
+  for (let i = 0; i < c.shotT0.length; i++) {
+    if (c.shotKind[i] !== 3) continue;
+    const t0 = c.shotT0[i], p = [t0, c.shotX[i] / q, c.shotY[i] / q, ...(pts.get(i) || [])];
+    const last = p.length / 3 - 1;
+    for (let k = 0; k < last; k++) {
+      const ta = p[k * 3], tb = p[k * 3 + 3];
+      if (tb <= ta) continue;
+      const xa = p[k * 3 + 1], ya = p[k * 3 + 2];
+      seg.push([ta, tb, xa, ya, (p[k * 3 + 4] - xa) / (tb - ta), (p[k * 3 + 5] - ya) / (tb - ta), k === last - 1 ? c.shotHit[i] : 1, c.shotTeam[i], ta - t0]);
+    }
+  }
+  if (!seg.length) return S;
+  const all = [];
+  for (let k = 0; k < S.n; k++) all.push([S.t0[k], S.t1[k], S.x[k], S.y[k], S.vx[k], S.vy[k], S.hit[k], S.team[k], 0]);
+  all.push(...seg);
+  all.sort((a, b) => a[0] - b[0]);
+  const n = all.length, out = { n, t0: new Float32Array(n), t1: new Float32Array(n), x: new Float32Array(n), y: new Float32Array(n),
+    vx: new Float32Array(n), vy: new Float32Array(n), hit: new Uint8Array(n), team: new Uint8Array(n), a0: new Float32Array(n), maxFlight: S.maxFlight };
+  all.forEach((r, k) => {
+    out.t0[k] = r[0]; out.t1[k] = r[1]; out.x[k] = r[2]; out.y[k] = r[3]; out.vx[k] = r[4]; out.vy[k] = r[5]; out.hit[k] = r[6]; out.team[k] = r[7]; out.a0[k] = r[8];
+    if (r[1] - r[0] > out.maxFlight) out.maxFlight = r[1] - r[0];
+  });
+  return out;
 }

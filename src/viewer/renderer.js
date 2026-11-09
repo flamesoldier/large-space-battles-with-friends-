@@ -81,11 +81,12 @@ vec3 hullBlock(int code, vec2 p) {
     float bolt = 1.0 - smoothstep(0.05, 0.1, length(abs(p) - 0.74));
     lit *= mix(1.0, 0.8 + rim * (0.55 - sh * 0.5) - bore * 0.72 + bolt * 0.3, d);
     if (!dead) glow = vec3(1.0, 0.45, 0.15) * (1.0 - smoothstep(0.0, 0.25, r)) * 0.35 * d;
-  } else if (type == 8) { // missile launcher: four tubes, hazard stripes round the hatch
+  } else if (type == 8 || type == 11) { // missile launcher: four tubes, hazard stripes round the hatch (guided: green seeker eye)
     float tube = 1.0 - smoothstep(0.17, 0.23, length(abs(p) - 0.36));
     float band = smoothstep(0.74, 0.8, max(abs(p.x), abs(p.y)));
     float stripe = step(0.5, fract((p.x + p.y) * 2.5));
     lit *= mix(1.0, (1.0 - tube * 0.7) * mix(1.0, 0.45 + 0.55 * stripe, band), d);
+    if (type == 11) { lit *= mix(1.0, smoothstep(0.1, 0.16, r), d); if (!dead) glow = vec3(0.35, 1.0, 0.6) * (1.0 - smoothstep(0.03, 0.1, r)) * 0.9 * d; }
   } else if (type == 9) { // point defence: fixed sensor dish, rings and a crosshair, red eye
     float ring = (1.0 - smoothstep(0.03, 0.07, abs(r - 0.62))) + (1.0 - smoothstep(0.03, 0.07, abs(r - 0.38)));
     float cross = (1.0 - smoothstep(0.03, 0.06, min(abs(p.x), abs(p.y)))) * step(r, 0.62);
@@ -187,7 +188,7 @@ function blockPalette(team, dead) {
   const T = TEAM[team], k = dead ? 0.7 : 1; // wrecks stay readable, just burnt
   const p = [];
   p[BT.HUB] = T.hub; p[BT.ARMOR] = T.armor; p[BT.HEAVY] = T.heavy; p[BT.FRAME] = T.frame;
-  p[BT.THRUSTER] = '#3d434f'; p[BT.LASER] = team ? '#ffd9c9' : '#d8f4ff'; p[BT.CANNON] = '#9aa1ab'; p[BT.MISSILE] = '#b9b16c'; p[BT.PD] = PD_COLOR; p[BT.LANCE] = team ? '#8a4f63' : '#5b5f9c';
+  p[BT.THRUSTER] = '#3d434f'; p[BT.LASER] = team ? '#ffd9c9' : '#d8f4ff'; p[BT.CANNON] = '#9aa1ab'; p[BT.MISSILE] = '#b9b16c'; p[BT.PD] = PD_COLOR; p[BT.LANCE] = team ? '#8a4f63' : '#5b5f9c'; p[BT.GUIDED] = '#8fb79e';
   return p.map((c) => (c ? rgba(dead ? shade(c, k) : c) : 0));
 }
 const PAL = [[blockPalette(0, false), blockPalette(1, false)], [blockPalette(0, true), blockPalette(1, true)]];
@@ -211,7 +212,7 @@ function lookFor(hex) {
     const p = [];
     p[BT.HUB] = T.hub; p[BT.ARMOR] = T.armor; p[BT.HEAVY] = T.heavy; p[BT.FRAME] = T.frame;
     p[BT.THRUSTER] = '#3d434f'; p[BT.LASER] = mixHex(hex, '#ffffff', 0.75); p[BT.CANNON] = '#9aa1ab'; p[BT.MISSILE] = '#b9b16c';
-    p[BT.PD] = PD_COLOR; p[BT.LANCE] = shade(mixHex(hex, '#40404a', 0.5), 0.9);
+    p[BT.PD] = PD_COLOR; p[BT.LANCE] = shade(mixHex(hex, '#40404a', 0.5), 0.9); p[BT.GUIDED] = '#8fb79e';
     return p.map((c) => (c ? rgba(dead ? shade(c, 0.7) : c) : 0));
   };
   L = { pal: [make(false), make(true)], lod: rgba(hex), engine: rgba(hex, 150), accent: hex };
@@ -572,7 +573,7 @@ export class Renderer {
       sol.push(x + c * 1.5, y + s * 1.5, a, 0.4, 0.4, 0, C.mTip[S.team[i]]);
       g.push(x - c * 3.2, y - s * 3.2, a, 2.2, Math.max(0.9, minW * 1.5), 2, C.mFlame);
       g.push(x, y, 0, Math.max(3, minW * 4), Math.max(3, minW * 4), 1, alpha2(C.mGlow[S.team[i]], 0.5));
-      const trail = Math.min(age * Math.hypot(vx, vy), 40) / 2;
+      const trail = Math.min((age + (S.a0 ? S.a0[i] : 0)) * Math.hypot(vx, vy), 40) / 2;
       if (trail > 0.5) g.push(x - c * (trail + 3), y - s * (trail + 3), a, trail, Math.max(0.7, minW), 2, alpha2(C.smoke, 0.5));
     }
   }

@@ -149,7 +149,7 @@ export class Battle {
     for (let i = 0; i < e.types.length; i++) {
       const t = e.types[i];
       if (!isWeapon(t) || MULTIBLOCK[t]) continue;
-      const cd = t === BT.MISSILE ? volley + 0.15 * launcher++ : this.rng() * 2;
+      const cd = t === BT.MISSILE || t === BT.GUIDED ? volley + 0.15 * launcher++ : this.rng() * 2;
       e.weapons.push({ cell: i, cells: null, type: t, lx: (i % d.w) + 0.5 - d.w / 2, ly: ((i / d.w) | 0) + 0.5 - d.h / 2, cd, ...arcFields() });
     }
     // Multi-block weapons: each connected group of their blocks is one gun, aimed from its centre.
@@ -241,7 +241,7 @@ export class Battle {
       const r = WEAPON[w.type].range;
       if (w.type === BT.CANNON) cannon = r;
       if (w.type === BT.LASER) laser = r;
-      if (w.type !== BT.MISSILE) shortest = Math.min(shortest, r);
+      if (w.type !== BT.MISSILE && w.type !== BT.GUIDED) shortest = Math.min(shortest, r);
       longest = Math.max(longest, r);
     }
     range = cannon || laser || longest; // missile boats stand off at missile range, not at 60
@@ -758,7 +758,7 @@ export class Battle {
       const t = Math.min(Math.hypot(ax - wx, ay - wy) / W.speed, W.maxLead ?? Infinity);
       const ang = Math.atan2(ay + tg.vy * t - wy, ax + tg.vx * t - wx) + (this.rng() - 0.5) * 2 * W.spread;
       const kind = W.kind === 'shell' ? K_SHELL : K_MISSILE;
-      const rec = this.shotStart(kind, e.team, wx, wy, ang);
+      const rec = this.shotStart(kind, e.team, wx, wy, ang, !!W.guided);
       this.addProjectile(kind, w.type, wx, wy, Math.cos(ang) * W.speed, Math.sin(ang) * W.speed,
         Math.round(W.life / DT), e.id, e.team, tg.id, W.damage, W.hp || 0, rec);
     }
@@ -907,11 +907,13 @@ export class Battle {
       const kind = P.kind[i], rec = P.rec[i];
       if (kind === K_MISSILE && P.hp[i] <= 0) {
         // Shot down by point defence.
+        this.guidedPoint(i, P.x[i], P.y[i], this.now);
         this.shotEnd(rec, this.now, 2);
         this.recExplosion(P.x[i], P.y[i], 0);
         this.removeProjectile(i--);
         continue;
       }
+      if (kind === K_MISSILE && WEAPON[P.wtype[i]].guided) this.steerMissile(i);
       const x0 = P.x[i], y0 = P.y[i], x1 = x0 + P.vx[i] * DT, y1 = y0 + P.vy[i] * DT;
       if (kind === K_PLASMA) {
         if (this.plasmaStep(i, x0, y0, x1, y1)) {
@@ -928,6 +930,7 @@ export class Battle {
         const ok = this.canDamage(this.hitE, P.team[i]);
         if (kind === K_MISSILE) this.blast(hx, hy, WEAPON[P.wtype[i]].splash, P.dmg[i], P.team[i]);
         else if (ok) this.splash(this.hitE, hx, hy, WEAPON[P.wtype[i]].splash, P.dmg[i]);
+        this.guidedPoint(i, hx, hy, this.now - 1 + t);
         this.shotEnd(rec, this.now - 1 + t, 1);
         this.recExplosion(hx, hy, kind === K_MISSILE ? 2 : 1);
         this.removeProjectile(i--);
@@ -935,7 +938,9 @@ export class Battle {
       }
       }
       P.x[i] = x1; P.y[i] = y1;
+      if (kind === K_MISSILE && (this.now - P.t0[i]) % MISSILE_EVERY === 0 && WEAPON[P.wtype[i]].guided) this.guidedPoint(i, x1, y1, this.now);
       if (--P.life[i] <= 0) {
+        this.guidedPoint(i, x1, y1, this.now);
         this.shotEnd(rec, this.now, 0);
         this.removeProjectile(i--);
         continue;
@@ -943,13 +948,52 @@ export class Battle {
     }
   }
 
+  /**
+   * Guided missile: turn toward the target (led, like at launch) at up to W.turn rad/s. If the
+   * target is gone, pick the nearest enemy ship within W.seek; with none, fly straight on.
+   */
+  steerMissile(i) {
+    const P = this.P, W = WEAPON[P.wtype[i]], team = P.team[i];
+    let tg = this.byId[P.target[i]];
+    if (!tg || tg.dead || tg.retired || tg.kind !== SHIP || this.fr[(team << 4) | tg.team]) {
+      tg = null;
+      if ((this.now - P.t0[i]) % 5 === 0) { // look for a new target now and then, not every tick
+        const x = P.x[i], y = P.y[i], R = W.seek;
+        let best = R * R;
+        this.grid.queryBox(x - R, y - R, x + R, y + R, (o) => {
+          if (o.dead || o.retired || o.kind !== SHIP || this.fr[(team << 4) | o.team]) return;
+          const d2 = (o.x - x) ** 2 + (o.y - y) ** 2;
+          if (d2 < best) { best = d2; tg = o; }
+        });
+        P.target[i] = tg ? tg.id : -1;
+      }
+      if (!tg) return;
+    }
+    const x = P.x[i], y = P.y[i], vx = P.vx[i], vy = P.vy[i];
+    const t = Math.min(Math.hypot(tg.x - x, tg.y - y) / W.speed, W.maxLead);
+    const want = Math.atan2(tg.y + tg.vy * t - y, tg.x + tg.vx * t - x), cur = Math.atan2(vy, vx);
+    let d = want - cur;
+    d -= Math.round(d / (2 * Math.PI)) * 2 * Math.PI;
+    const step = W.turn * DT, a = cur + Math.max(-step, Math.min(step, d));
+    P.vx[i] = Math.cos(a) * W.speed; P.vy[i] = Math.sin(a) * W.speed;
+  }
+
+  /** Record a point on a guided missile's path (t in ticks); the viewer draws straight pieces between them. */
+  guidedPoint(i, x, y, t) {
+    const P = this.P;
+    if (P.kind[i] !== K_MISSILE || !WEAPON[P.wtype[i]].guided) return;
+    const R = this.R;
+    R.gmRec.push(P.rec[i]); R.gmT.push(Math.round(t * 10)); R.gmX.push(q16(x)); R.gmY.push(q16(y));
+  }
+
   // Straight projectiles need only launch time, point, angle and flight time: the viewer
-  // recomputes every position, so nothing is recorded while they fly.
-  shotStart(kind, team, x, y, ang) {
+  // recomputes every position, so nothing is recorded while they fly (guided missiles add
+  // a point every MISSILE_EVERY ticks, see guidedPoint).
+  shotStart(kind, team, x, y, ang, guided = false) {
     const R = this.R;
     const rec = R.shotT0.push(this.now);
     R.shotFlight.push(0); R.shotX.push(q16(x)); R.shotY.push(q16(y)); R.shotAng.push(qAng(ang));
-    R.shotHit.push(0); R.shotTeam.push(team); R.shotKind.push(kind === K_MISSILE ? 1 : kind === K_PLASMA ? 2 : 0);
+    R.shotHit.push(0); R.shotTeam.push(team); R.shotKind.push(guided ? 3 : kind === K_MISSILE ? 1 : kind === K_PLASMA ? 2 : 0);
     return rec;
   }
   /** hit: 0 expired, 1 hit something, 2 shot down by point defence. */
@@ -1386,6 +1430,8 @@ export class Battle {
       // Debris pushed by ships: from tick svT the piece is at svX/svY drifting at svVx/svVy.
       // Positions in 1/EV_Q block, velocities in 1/VEL_Q block per second.
       svT: C(Uint16Array), svEnt: C(Uint32Array), svX: C(Int16Array), svY: C(Int16Array), svVx: C(Int16Array), svVy: C(Int16Array),
+      // Guided missiles (shot kind 3): points on their path, gmT in 0.01 s (ticks × 10), for shot gmRec.
+      gmRec: C(Uint32Array), gmT: C(Uint32Array), gmX: C(Int16Array), gmY: C(Int16Array),
     };
   }
 
@@ -1406,7 +1452,10 @@ export class Battle {
     // ends), so the viewer drew none of them: every plasma bolt fired in a battle's last 30 s
     // was invisible. Give them the rest of their life; the replay stops at the battle's end.
     const P = this.P;
-    for (let i = 0; i < P.n; i++) if (this.R.shotFlight.a[P.rec[i]] === 0) this.shotEnd(P.rec[i], this.now + P.life[i], 0);
+    for (let i = 0; i < P.n; i++) if (this.R.shotFlight.a[P.rec[i]] === 0) {
+      if (P.kind[i] === K_MISSILE && WEAPON[P.wtype[i]].guided) { this.guidedPoint(i, P.x[i], P.y[i], this.now); this.shotEnd(P.rec[i], this.now, 1); continue; }
+      this.shotEnd(P.rec[i], this.now + P.life[i], 0);
+    }
     const S = this.shipCount;
     const team = new Uint8Array(S), design = new Uint16Array(S), t1 = new Uint16Array(S);
     const tStart = new Uint32Array(S), tCount = new Uint32Array(S);

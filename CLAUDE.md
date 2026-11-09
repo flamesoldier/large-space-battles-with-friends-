@@ -51,7 +51,21 @@ Weapons (numbers in `blocks.js`):
   lowered to compensate). Blast hits everything within
   9 blocks with damage `150 × (1 − d/9)²`: one missile craters, a volley tears ships apart.
   All launchers on one ship fire together as a volley. Lead is capped at 3 s.
-- **Point defence**: range 30 rapid beam; shoots missiles first, close ships otherwise. Owner
+  **Speed 23** (owner, Nov 2026: +15%, "too slow"; was 20).
+- **Guided missile launcher** (`BT.GUIDED` = 11, owner, Nov 2026: a friend wanted guided missiles):
+  the heavy missile's exact stats (`guided: true` on the same `kind: 'missile'`, so volleys, aiming
+  at the biggest ship, flying over friends and point defence all work the same), **110 cr** a
+  launcher. In flight `steerMissile()` turns it toward its target, led like at launch, at up to
+  `turn` 0.6 rad/s; if the target dies it looks (every 5 ticks) for the nearest enemy ship within
+  `seek` 150, else flies straight. Replays: shot kind 3, plus a point on its path every
+  `MISSILE_EVERY` (3) ticks and at its end (`gmRec/gmT/gmX/gmY`, gmT in 0.01 s); the viewer
+  (`withGuided()` in `model.js`) turns the points into straight pieces drawn like heavy missiles
+  (`a0` = age at the piece's start, so the smoke trail keeps growing). Looks like the missile
+  launcher with a green seeker eye; designer key G. Measured (8 all-missile cruisers vs an
+  equal-cost mixed fleet, 4 seeds): unguided 28% of missiles hit, score −0.30; guided 85% hit,
+  score +0.35 even at 110 cr. Strong: the owner set the price, revisit if it dominates.
+- **Point defence** (named **Anti-missile point defence** since Nov 2026: a friend didn't know it
+  shoots missiles down; its palette tooltip now says so first): range 30 rapid beam; shoots missiles first, close ships otherwise. Owner
   (Nov 2026): also a **super close range, high-dps option** against ships: 32 damage every 0.2 s
   (was 6, then 24 before ship spacing), 25 to missiles (was 10).
 - AI (Nov 2026): missile launchers aim at the biggest ship in range (all launchers on a ship

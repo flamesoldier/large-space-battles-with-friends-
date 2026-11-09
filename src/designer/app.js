@@ -18,14 +18,14 @@ const fmt = (n) => Math.round(n).toLocaleString();
 // Same colours as the replay viewer's Azure side, so a design looks like it will in battle.
 const COLOR = {
   [BT.HUB]: '#86e8ff', [BT.ARMOR]: '#5c7ea3', [BT.HEAVY]: '#41597a', [BT.FRAME]: '#90a6c0', [BT.THRUSTER]: '#3d434f',
-  [BT.LASER]: '#d8f4ff', [BT.CANNON]: '#9aa1ab', [BT.MISSILE]: '#b9b16c', [BT.PD]: '#c2413f', [BT.LANCE]: '#2c3150',
+  [BT.LASER]: '#d8f4ff', [BT.CANNON]: '#9aa1ab', [BT.MISSILE]: '#b9b16c', [BT.PD]: '#c2413f', [BT.LANCE]: '#2c3150', [BT.GUIDED]: '#8fb79e',
 };
 // Palette order and number keys.
 const PALETTE = [
   [BT.FRAME, '1'], [BT.ARMOR, '2'], [BT.HEAVY, '3'], [BT.THRUSTER, '4'], [BT.LASER, '5'],
-  [BT.CANNON, '6'], [BT.PD, '7'], [BT.MISSILE, '8'], [BT.LANCE, '9'], [BT.HUB, '0'], [0, 'x'],
+  [BT.CANNON, '6'], [BT.PD, '7'], [BT.MISSILE, '8'], [BT.GUIDED, 'g'], [BT.LANCE, '9'], [BT.HUB, '0'], [0, 'x'],
 ];
-const WEAPON_ORDER = [BT.LASER, BT.CANNON, BT.PD, BT.MISSILE, BT.LANCE];
+const WEAPON_ORDER = [BT.LASER, BT.CANNON, BT.PD, BT.MISSILE, BT.GUIDED, BT.LANCE];
 
 const ed = new ShipEditor();
 // block: the selected palette block (0 = eraser), or null when nothing is selected (Esc).
@@ -46,6 +46,13 @@ const LIB_KEY = 'lsb.designs.v1';
 // thrusters off a defence never changes the ship you come back to in the ship designer.
 const SHIP_CUR_KEY = 'lsb.designer.current.v1', DEF_CUR_KEY = 'lsb.designer.defence.current.v1';
 let CUR_KEY = SHIP_CUR_KEY;
+// What a block is for, in its palette tooltip (owner, Nov 2026: a friend didn't know point defence
+// shoots missiles down).
+const BLOCK_HINT = {
+  [BT.PD]: 'SHOOTS DOWN ENEMY MISSILES (normal and guided) within 30 blocks: a missile has 100 hp and each burst does 25, so a few of these protect a ship. When no missile is near, it shreds any enemy ship that comes that close: very high damage at very short range.',
+  [BT.MISSILE]: 'A huge, slow, unguided missile: flies straight where it was aimed, over your own ships, and its blast wrecks everything within 9 blocks. Point defence can shoot it down.',
+  [BT.GUIDED]: 'The same huge missile, but it steers after its target in flight (and finds a new one nearby if its target dies), so it hits ships that dodge. Point defence can still shoot it down.',
+};
 const PLASMA_WARNING = "WARNING: HUGE FRIENDLY FIRE. ITS BOLT CARVES THROUGH YOUR OWN SHIPS AS WELL AS THE ENEMY'S, AND ITS BLOCKS EXPLODE WHEN DESTROYED, WRECKING YOUR SHIP AND ANY ALLY NEARBY.";
 
 // ------------------------------------------------------------ UI setup
@@ -57,6 +64,7 @@ function blockTitle(t) {
   if (t === BT.THRUSTER) s += `, thrust ${B.thrust}`;
   if (W) s += `. Range ${W.range}, ${W.damage} damage every ${W.cooldown} s`;
   if (t === BT.HUB) s += '. One per ship; placing it moves it. Lose it and the ship breaks apart.';
+  if (BLOCK_HINT[t]) s += `.\n\n${BLOCK_HINT[t]}`;
   if (t === BT.LANCE) s += `.\n\n${PLASMA_WARNING}`;
   return s;
 }
@@ -207,7 +215,8 @@ const SHOT_HINT = {
   [BT.LASER]: 'Always hits. The beam burns through blocks until its damage is spent, often into a second ship.',
   [BT.CANNON]: 'A slow shell aimed ahead of the target; damage splashes onto the blocks around the hit.',
   [BT.MISSILE]: 'Huge slow missile, flies over your own ships. Blast 9 blocks wide, strongest in the middle. Point defence can shoot it down.',
-  [BT.PD]: 'Very short range. Shoots down missiles first (25 damage to a missile), then shreds nearby hulls.',
+  [BT.GUIDED]: 'Like the missile launcher, but the missile steers after its target in flight. Point defence can shoot it down.',
+  [BT.PD]: 'Anti-missile: shoots down enemy missiles within 30 blocks first (25 damage a burst, a missile has 100 hp), then shreds nearby hulls.',
   [BT.LANCE]: `A blue plasma bolt that carves through ship after ship until its damage is spent.\n\n${PLASMA_WARNING}`,
 };
 
@@ -415,13 +424,14 @@ function glyph(t, x, y, z) {
     ring(z * 0.31, Math.max(1, z * 0.06), 'rgba(255,220,220,0.6)'); ring(z * 0.19, Math.max(1, z * 0.06), 'rgba(255,220,220,0.6)');
     g.strokeStyle = 'rgba(255,220,220,0.45)'; g.beginPath(); g.moveTo(cx - z * 0.31, cy); g.lineTo(cx + z * 0.31, cy); g.moveTo(cx, cy - z * 0.31); g.lineTo(cx, cy + z * 0.31); g.stroke();
     circle(z * 0.08, '#ff3b30');
-  } else if (t === BT.MISSILE) { // four tubes inside hazard stripes
+  } else if (t === BT.MISSILE || t === BT.GUIDED) { // four tubes inside hazard stripes (guided: a green seeker eye in the middle)
     g.save(); g.beginPath(); g.rect(x, y, z, z); g.rect(x + z * 0.16, y + z * 0.16, z * 0.68, z * 0.68); g.clip('evenodd');
     g.strokeStyle = 'rgba(10,10,10,0.6)'; g.lineWidth = Math.max(1, z * 0.1);
     for (let k = -1; k <= 3; k++) { g.beginPath(); g.moveTo(x + k * z * 0.3, y + z); g.lineTo(x + k * z * 0.3 + z, y); g.stroke(); }
     g.restore();
     g.fillStyle = 'rgba(5,7,12,0.75)';
     for (const [dx, dy] of [[0.33, 0.33], [0.67, 0.33], [0.33, 0.67], [0.67, 0.67]]) { g.beginPath(); g.arc(x + z * dx, y + z * dy, z * 0.12, 0, Math.PI * 2); g.fill(); }
+    if (t === BT.GUIDED) { circle(z * 0.11, 'rgba(5,7,12,0.85)'); circle(z * 0.07, '#5dff9a'); }
   }
 }
 
