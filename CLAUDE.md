@@ -213,7 +213,7 @@ Weapons (numbers in `blocks.js`):
     instead of ~12 and do ~2.7× the damage. Carriers win hard there, as role 4 intends.
   - Cost: bench 1,000 vs 1,000 (no bays) unchanged (187.5 s, ~5.5 ms a tick). 1,122 ships incl. 120
     four-bay carriers: 1,440 fighters at once at the opening, 3.6 ms a tick, 5.2 MB gzip replay.
-- **Fighter bay tunnels with corners** (owner, Nov 2026: "it just needs a path out of the ship"):
+- **Fighter bay tunnels with corners** (owner, Nov 2026, live since 10 Nov: "it just needs a path out of the ship"):
   a bay with no straight open line to space can still launch if a path of empty cells (4-connected,
   corners allowed, 1 cell wide is enough) leads to the edge of the ship's grid. `src/shared/bayRoute.js`
   (`bayRoute(types, hp, w, h, group)`: breadth-first search, shortest path, returns the unit's
@@ -265,7 +265,7 @@ Combat rules:
   roughly hull to hull, so giants actually fight.
 - **Stances** chosen per design in the designer (`STANCES` in `battle.js`, `STANCE_INFO` in
   `shipStats.js`). Owner's roles (Nov 2026):
-  - **Holding range (owner, Nov 2026, all stances except Skirmisher, Flanker and Raider)**: the
+  - **Holding range (owner, Nov 2026, live since 10 Nov; all stances except Skirmisher, Flanker and Raider)**: the
     owner saw a few small ships beat many capital ships because the big ones turned and ran to open
     the range and then none of their guns faced the enemy ("people assume ships move forward to
     that range then fight"). Now a ship closes to its distance, then **holds**: it turns so the most
