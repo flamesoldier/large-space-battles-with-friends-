@@ -5,7 +5,7 @@
 // The shipyard then builds that ship for free every SHIPYARD_INTERVAL_MIN minutes, forever,
 // until an enemy takes the world (which destroys every shipyard on it) or the owner sells it.
 // A world can hold any number of shipyards, but each one costs more than the last
-// (SHIPYARD_CROWDING_SHARE), to push players to build on every world they hold rather than
+// (SHIPYARD_CROWDING_VALUE), to push players to build on every world they hold rather than
 // stacking everything on their home world. So the only price a player pays is the shipyard's,
 // and it is set by the price of the ship it makes.
 
@@ -20,13 +20,16 @@ export const SHIPYARD_PRICE_MULT = 10;
 /** List price of a shipyard for this design on an empty world. */
 export const shipyardPrice = (design) => designCost(design) * SHIPYARD_PRICE_MULT;
 
-// Crowding: every shipyard already on a world adds SHIPYARD_CROWDING_SHARE of its list price to
-// the price of the next one there. With 1%, a world's 100th shipyard of the same kind costs 1.99×
-// its first, whatever the ship costs. List prices, not what was paid, so it doesn't compound.
-// Measured per world, so spreading shipyards over your worlds keeps them at list price.
-export const SHIPYARD_CROWDING_SHARE = 0.01;
-export const crowdingSurcharge = (existingListValue) => Math.round(existingListValue * SHIPYARD_CROWDING_SHARE);
-export const shipyardPriceAt = (design, existingListValue) => shipyardPrice(design) + crowdingSurcharge(existingListValue);
+// Crowding (owner, Nov 2026): a new shipyard costs a percentage more than its list price, set by
+// the value of the shipyards already on that world: +100% for every SHIPYARD_CROWDING_VALUE
+// credits of them (750,000 of yards there → 2×, 1.5 million → 3×). A percentage of the new yard's
+// own price, so one big shipyard and many small ones of the same total pay the same share (the
+// old rule, a flat 1% of the yards already there, let big shipyards dodge it). List prices, not
+// what was paid, so it doesn't compound. Measured per world, so spreading out keeps list price.
+export const SHIPYARD_CROWDING_VALUE = 750000;
+export const crowdingMult = (existingListValue) => 1 + existingListValue / SHIPYARD_CROWDING_VALUE;
+export const crowdingSurcharge = (list, existingListValue) => Math.round(list * (existingListValue / SHIPYARD_CROWDING_VALUE));
+export const shipyardPriceAt = (design, existingListValue) => shipyardPrice(design) + crowdingSurcharge(shipyardPrice(design), existingListValue);
 
 // Defences (owner, Nov 2026: a friend lost his home world and wanted static defences): built
 // from the same blocks but with no thrusters, they never move and can't leave their world.

@@ -228,11 +228,15 @@ All money numbers are in `src/shared/economy.js` (placeholders until balanced in
   currently 10× the ship cost, so a shipyard pays for itself in 5 hours). Not yet confirmed by the owner.
 - A world can have any number of shipyards. **All of them are destroyed if an enemy takes the world.**
 - **Shipyards get dearer the more shipyards a world already has** (owner's rule, to make players
-  build on every world instead of stacking their home world), but only gently: each yard already
-  on a world adds 1% of its list price to the next one there (`SHIPYARD_CROWDING_SHARE`). The
-  owner's benchmark: **the 100th shipyard of the same cost on one world is about 2× the first**
-  (1.99×), whatever the ship costs. List prices, not what was paid, so it doesn't compound. (An
-  earlier version used list × (1 + value / 25,000); the owner found that far too steep.)
+  build on every world instead of stacking their home world): since Nov 2026 the next yard costs
+  its list price × (1 + list value of the yards already on that world / `SHIPYARD_CROWDING_VALUE`
+  750,000), i.e. +100% per 750,000 cr of yards there (`crowdingMult`, `crowdingSurcharge(list,
+  existing)` in `economy.js`). Owner's reason: the previous rule (each yard there added a flat 1% of
+  its list price, so the 100th same-cost yard was ~2× the first) let one huge yard pay the
+  surcharge once where 100 small ones paid it 100 times. Now the surcharge is a share of the new
+  yard's own price, so it's the same share whatever sizes the yards are. List prices, not what was
+  paid, so it doesn't compound. (Before that: list × (1 + value / 25,000), far too steep.) Old and
+  new surcharges are equal for a 7,500 cr yard; dearer yards now pay more, cheaper ones less.
 - **Shipyards can be sold**: **95%** of what was actually paid comes back (owner, Nov 2026; was 50%).
 - **Defences** (owner, Nov 2026: a friend lost his home world and wanted static defences): the
   world panel has **Build** for Defences next to Shipyards. A defence is any valid design with

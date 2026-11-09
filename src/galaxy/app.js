@@ -13,7 +13,7 @@
 
 import { BT } from '../shared/blocks.js';
 import { decodeDesign, encodeDesign, analyzeDesign, designCost } from '../shared/shipStats.js';
-import { SHIPYARD_INTERVAL_MIN, SHIPYARD_CROWDING_SHARE, SHIPYARD_SELL_REFUND, crowdingSurcharge, defensePrice, DEFENSE_PRICE_SHARE, MAX_DEFENSE_ORDER } from '../shared/economy.js';
+import { SHIPYARD_INTERVAL_MIN, SHIPYARD_CROWDING_VALUE, SHIPYARD_SELL_REFUND, crowdingMult, defensePrice, DEFENSE_PRICE_SHARE, MAX_DEFENSE_ORDER } from '../shared/economy.js';
 import { Battle, DT } from '../sim/battle.js';
 import { packReplay } from '../shared/replayFormat.js';
 import { mulberry32 } from '../shared/rng.js';
@@ -799,12 +799,12 @@ function openYardDialog(planetId, mode = yardMode) {
   $('yard-design').textContent = def ? 'Design a new defence…' : 'Design a new ship…';
   $('yard-count-row').hidden = !def;
   const count = def ? Math.max(1, Math.min(MAX_DEFENSE_ORDER, Math.floor(Number($('yard-count').value)) || 1)) : 1;
-  const extra = crowdingSurcharge(existing);
+  const pct = Math.round((crowdingMult(existing) - 1) * 100);
   $('yard-info').innerHTML = def
     ? `A defence is built at once and costs <b>${Math.round(DEFENSE_PRICE_SHARE * 100)}%</b> of its blocks' price, paid once. It can't have thrusters, never moves or turns (its front, the right-hand side in the designer, always faces the enemy) and never leaves ${esc(P.name)}. Destroyed is gone for good, and all of them are lost if the world falls. You have <b>${fmt(me().credits)}</b> credits.`
     : P.yards.length
-      ? `${P.name} already has <b>${P.yards.length}</b> shipyard${P.yards.length > 1 ? 's' : ''} worth ${fmt(existing)} cr, so a new one here costs <b>${fmt(extra)} cr</b> more than its list price (${Math.round(SHIPYARD_CROWDING_SHARE * 100)}% of the shipyards already here). Building on your other worlds avoids that. You have <b>${fmt(me().credits)}</b> credits.`
-      : `A shipyard costs 10× the ship it builds, and makes one every ${SHIPYARD_INTERVAL_MIN} min for free. Each shipyard already on a world adds ${Math.round(SHIPYARD_CROWDING_SHARE * 100)}% of its price to the next one there. You have <b>${fmt(me().credits)}</b> credits.`;
+      ? `${P.name} already has <b>${P.yards.length}</b> shipyard${P.yards.length > 1 ? 's' : ''} worth ${fmt(existing)} cr, so a new one here costs <b>${pct}% more</b> than its list price (+100% for every ${fmt(SHIPYARD_CROWDING_VALUE)} cr of shipyards already on a world). Building on your other worlds avoids that. You have <b>${fmt(me().credits)}</b> credits.`
+      : `A shipyard costs 10× the ship it builds, and makes one every ${SHIPYARD_INTERVAL_MIN} min for free. Shipyards already on a world make the next one there dearer: +100% for every ${fmt(SHIPYARD_CROWDING_VALUE)} cr of them. You have <b>${fmt(me().credits)}</b> credits.`;
   // Your designs already in the game, then your designer library. Each can be starred (goes to
   // the top) or removed from this list; removed ones can be brought back. Defences are listed
   // only for defences, ships only for shipyards.

@@ -174,7 +174,7 @@ export const yardListValue = (planet) => planet.yards.reduce((s, y) => s + y.lis
 /** What a shipyard for this design would cost on this world right now: { list, surcharge, mult, price, existing }. */
 export function quoteShipyard(world, planetId, design) {
   const p = world.planets[planetId], existing = yardListValue(p);
-  const list = shipyardPrice(design), surcharge = crowdingSurcharge(existing), price = list + surcharge;
+  const list = shipyardPrice(design), surcharge = crowdingSurcharge(list, existing), price = list + surcharge;
   return { list, surcharge, mult: list ? price / list : 1, price, existing };
 }
 

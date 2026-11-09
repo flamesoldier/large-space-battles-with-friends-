@@ -107,14 +107,25 @@ const resolve = (scen) => {
   ok(q2.mult > 1 && q2.price > shipyardPrice(corv), 'second shipyard on the same world costs more');
   const elsewhere = w.planets.find((p) => p.owner === null);
   ok(quoteShipyard(w, elsewhere.id, corv).mult === 1, 'crowding is per world');
-  // The owner's rule of thumb: on one world, the 100th shipyard of the same kind costs about 2× the first.
+  // The owner's rule (Nov 2026): +100% for every 750,000 cr of shipyards already on the world,
+  // however that value is split (one big yard or many small ones).
   {
-    const t = createWorld({ players: [{ name: 'X' }, { name: 'Y' }], seed: 3 }), h = t.players[0].home;
-    t.players[0].credits = 1e12;
-    const first = quoteShipyard(t, h, dest).price;
-    for (let k = 0; k < 99; k++) ok(buildShipyard(t, 0, h, dest).ok, 'stack yards');
-    const hundredth = quoteShipyard(t, h, dest).price;
-    ok(Math.abs(hundredth / first - 1.99) < 0.005, `100th shipyard costs ~2× the first (${(hundredth / first).toFixed(3)}×)`);
+    const fill = (design, n) => {
+      const t = createWorld({ players: [{ name: 'X' }, { name: 'Y' }], seed: 3 }), h = t.players[0].home;
+      t.players[0].credits = 1e15;
+      for (let k = 0; k < n; k++) ok(buildShipyard(t, 0, h, design).ok, 'stack yards');
+      return { t, h };
+    };
+    const big = { ...dest, cells: dest.cells.slice() }, list = shipyardPrice(big);
+    const nBig = Math.round(750000 / list);
+    const { t, h } = fill(big, nBig);
+    const q = quoteShipyard(t, h, big), m = 1 + (nBig * list) / 750000;
+    ok(Math.abs(q.mult - m) < 0.001, `${nBig} yards worth ${nBig * list} cr: next costs ${q.mult.toFixed(3)}× (want ${m.toFixed(3)}×)`);
+    // Same value in corvette yards gives (about) the same multiplier for the next yard of any kind.
+    const nSmall = Math.round((nBig * list) / shipyardPrice(corv));
+    const s = fill(corv, nSmall), q2 = quoteShipyard(s.t, s.h, big);
+    ok(Math.abs(q2.mult - (1 + (nSmall * shipyardPrice(corv)) / 750000)) < 0.001, 'small yards count by value too');
+    ok(Math.abs(q2.mult - q.mult) < 0.02, `one kind or many: same share (${q.mult.toFixed(3)} vs ${q2.mult.toFixed(3)})`);
   }
   ok(!buildShipyard(w, 0, elsewhere.id, corv).ok, 'can\'t build on a world you don\'t hold');
   ok(!buildShipyard(w, 0, w.players[1].home, corv).ok, 'or on an ally\'s');

@@ -967,7 +967,7 @@ function syncEmbed() {
     $('stance-row').hidden = true; $('stance-hint').hidden = true; $('stance-head').hidden = true;
     return;
   }
-  const price = shipyardPriceAt(design, embed.existing || 0), extra = crowdingSurcharge(embed.existing || 0);
+  const price = shipyardPriceAt(design, embed.existing || 0), extra = crowdingSurcharge(shipyardPrice(design), embed.existing || 0);
   const b = $('use-design');
   b.hidden = false;
   b.textContent = `Build shipyard · ${fmt(price)} cr`;
@@ -975,7 +975,7 @@ function syncEmbed() {
   b.title = !info.ok ? 'Fix the red issues first' : price > embed.credits ? `You have ${fmt(embed.credits)} credits` : `Build a shipyard for this design at ${embed.planet}`;
   $('yard').textContent = fmt(price);
   $('yard-hint').textContent = extra
-    ? `At ${embed.planet}: list price ${fmt(shipyardPrice(design))} cr + ${fmt(extra)} cr for the ${embed.yards} shipyard${embed.yards === 1 ? '' : 's'} already there. Builds one ship free every ${SHIPYARD_INTERVAL_MIN} min.`
+    ? `At ${embed.planet}: list price ${fmt(shipyardPrice(design))} cr + ${fmt(extra)} cr (+${Math.round((extra / shipyardPrice(design)) * 100)}%) for the ${fmt(embed.existing)} cr of shipyards already there. Builds one ship free every ${SHIPYARD_INTERVAL_MIN} min.`
     : `At ${embed.planet}: builds one ship free every ${SHIPYARD_INTERVAL_MIN} min until the world falls. Each shipyard on a world makes the next one there a little dearer.`;
 }
 if (window.parent !== window) {
