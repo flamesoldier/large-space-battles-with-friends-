@@ -199,6 +199,10 @@ Weapons (numbers in `blocks.js`):
     fighters isn't shooting ships, so they still pay as decoys). In the first minute fighters soak
     ~34k hp of enemy fire in the fleet test. Fighters live ~12 s (was ~18). Pure carrier fleets are
     still strong against fleets with little PD: the levers are squadron size and fighter damage.
+  - Against an enemy with **no point defence** (owner asked; the same generated fleet with every PD
+    block turned into armour, 8 seeds): deltas carriers alone +0.79, 30% carriers +0.44, artillery
+    duel +0.24 (vs +0.62 / +0.25 / +0.16 against the normal mixed fleet); fighters live ~20 s
+    instead of ~12 and do ~2.7× the damage. Carriers win hard there, as role 4 intends.
   - Cost: bench 1,000 vs 1,000 (no bays) unchanged (187.5 s, ~5.5 ms a tick). 1,122 ships incl. 120
     four-bay carriers: 1,440 fighters at once at the opening, 3.6 ms a tick, 5.2 MB gzip replay.
 - **Point defence, cannons and missiles, Nov 2026 (owner, two rounds)**: first PD range 80 against
