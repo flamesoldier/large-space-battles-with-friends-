@@ -14,8 +14,9 @@ import { lineOfFire, openDegrees } from './arcs.js';
 // line (decodeDesign, the editor), so ships already in play fight as Front line too. The sim
 // still knows both stances (STANCES in battle.js).
 export const STANCE_INFO = {
-  standoff: { label: 'Artillery', hint: 'Hangs back at 60% of its longest weapon\'s range and backs off if pressed.' },
-  line: { label: 'Front line', hint: 'Holds the front at 45% of its main gun range, where all its guns reach, and trades broadsides.' },
+  standoff: { label: 'Artillery', hint: 'Moves up to 60% of its longest weapon\'s range, then holds there, turned so its guns face the enemy. If enemies get very close it backs away slowly, still facing them.' },
+  skirmish: { label: 'Skirmisher', hint: 'Keeps at 60% of its longest weapon\'s range like Artillery, but when enemies close in it turns and runs to open the range again (kiting). Its guns only fire while they still face the enemy, so put some guns on the back or sides.' },
+  line: { label: 'Front line', hint: 'Moves up to 45% of its main gun range, where all its guns reach, then holds the front, turned so its guns face the enemy.' },
   flank: { label: 'Flanker', hint: 'Charges through the enemy line to their biggest ship and circles it close in at full speed. Point defence shreds hulls up close.' },
   raid: { label: 'Raider', hint: 'Attack runs: flies straight through the enemy at full speed skimming a big ship, out the far side, turns and comes back.' },
   charge: { label: 'Charge', hint: 'Dives straight at the nearest enemy to point blank. For small, fast, cheap ships.' },

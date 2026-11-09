@@ -265,10 +265,30 @@ Combat rules:
   roughly hull to hull, so giants actually fight.
 - **Stances** chosen per design in the designer (`STANCES` in `battle.js`, `STANCE_INFO` in
   `shipStats.js`). Owner's roles (Nov 2026):
+  - **Holding range (owner, Nov 2026, all stances except Skirmisher, Flanker and Raider)**: the
+    owner saw a few small ships beat many capital ships because the big ones turned and ran to open
+    the range and then none of their guns faced the enemy ("people assume ships move forward to
+    that range then fight"). Now a ship closes to its distance, then **holds**: it turns so the most
+    firepower bears on its target (`holdFacing()`: `e.face[64]` = damage/s bearing in each
+    direction, rebuilt in `refit()`; picks the least turn among directions within 90% of the best,
+    so nose guns face it and broadside ships go side on), brakes, and **drifts slowly sideways**
+    round the target (`HOLD_DRIFT`, 30% speed, so lines keep moving; without it battles dragged:
+    600 vs 600 took 466 s instead of 183). Pressed under 60% of its distance it **backs off slowly,
+    still facing the enemy**. Velocity is no longer tied to heading while holding.
+    Measured (generated designs, equal credits 40,000, 5 seeds; old → new): artillery battleships vs
+    destroyers (line) −0.08 → +0.36, vs destroyers (flank) −0.05 → +0.37, vs frigates (charge)
+    +0.35 → +0.56; cruisers artillery vs cruisers line −0.22 → +0.37 (artillery now clearly beats
+    front line of the same hull); line battleships vs destroyers −0.11 → +0.06. 600 vs 600: 183 →
+    207 s. Bench 1,000 vs 1,000: 187.5 → 191.6 s, 167:68 → 170:75 survivors, same ms a tick.
   - **Artillery** (`standoff`): hangs back at **60% of its longest weapon range** (heavy lasers
     and missiles included; owner: not further, or battles become boring long-range duels),
-    backs off if pressed.
-  - **Front line** (`line`): 45% of its main gun range (cannon, else laser), trades broadsides.
+    then holds there as above.
+  - **Skirmisher** (`skirmish`, new Nov 2026, owner): the **old artillery rule on purpose**: 60% of
+    its longest range, and when pressed (under 70%) it turns away and opens the range, orbits at
+    70–80%, angles in at 80–110%. Its forward guns stop bearing while it runs, so it suits ships
+    with guns on the back or sides. Measured with generated (nose-gunned) designs: −0.16 / −0.05 /
+    +0.08 / −0.09 in the tests above, i.e. what the old artillery scored.
+  - **Front line** (`line`): 45% of its main gun range (cannon, else laser), then holds as above.
   - **Flanker** (`flank`): charges through the enemy line to the biggest enemy within reach
     and circles it close in at full speed (`pickGoal`/`steerGoal`, goal = `e.goal`).
   - **Raider** (`raid`): attack runs: straight in skimming a big ship, out the far side

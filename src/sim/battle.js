@@ -47,6 +47,8 @@ const FIGHTER_R = 2; // how close a shot must pass to hit one (blocks)
 const SPACING_GAP = 25, SPACING_TURN = 3, SPACING_SLIDE = 1, SPACING_EVERY = 5;
 // Debris still over the ship it broke off from is pushed out at up to this speed (blocks/s).
 const OWN_CLEAR_SPEED = 6;
+// A ship holding its distance drifts sideways at this share of its back-off speed (see move()).
+const HOLD_DRIFT = 1;
 // Plasma cannon aiming: an ally within this many blocks of the line counts as in the way.
 const LANCE_SPEED = WEAPON[BT.LANCE].speed;
 const LANCE_COOK_SCALE = BLOCKS[BT.LANCE].hp / COOKOFF.refHp;
@@ -64,7 +66,8 @@ export const STANCES = {
   charge:   { label: 'Charge',      range: (e) => e.radius + 14 },            // dive in, point blank
   brawl:    { label: 'Brawler',     range: (e, d, s) => s * 0.4 },           // close range, inside enemy guns
   line:     { label: 'Front line',  range: (e, d) => d * 0.45 },             // holds the front, in range of all its guns
-  standoff: { label: 'Artillery',   range: (e, d, s, l, f) => f * 0.6 },     // hangs back at 60% of its longest weapon, backs off if pressed
+  standoff: { label: 'Artillery',   range: (e, d, s, l, f) => f * 0.6 },     // hangs back at 60% of its longest weapon, holds there guns on target
+  skirmish: { label: 'Skirmisher',  range: (e, d, s, l, f) => f * 0.6 },     // the old artillery: turns and opens the range when pressed (kiting)
   escort:   { label: 'Escort',      range: (e, d) => d * 0.6 },              // screen a big friendly ship
   flank:    { label: 'Flanker',     range: close },                          // through the enemy line, circles their big ships
   raid:     { label: 'Raider',      range: close },                          // attack runs: straight through, out, turn, again
@@ -217,6 +220,7 @@ export class Battle {
       // Collision box: centre (local) and half size, shrunk to the live blocks as they are lost.
       bcx: 0, bcy: 0, bhw: w / 2, bhh: h / 2,
       mass: 1, maxSpeed: 0, turn: 0, agility: 0, prefRange: 60, ward: null,
+      face: null, faceMax: 0, // firepower that bears on a target at each of the 64 directions round the ship (see refit / holdFacing)
       worth: 0, // credit value of the ship's design (rout check)
     };
     this.byId.push(e);
@@ -262,6 +266,18 @@ export class Battle {
       updateLineOfFire(e.types, e.hp, e.w, e.h, w);
       if (w.type === BT.BAY) this.bayExit(e, w, false);
     }
+    // How much firepower bears on a target in each direction (owner, Nov 2026: ships holding their
+    // range turn so their guns face the enemy, instead of turning away from it).
+    if (!e.face) e.face = new Float32Array(ARC_BINS);
+    e.face.fill(0);
+    for (const w of e.weapons) {
+      const W = WEAPON[w.type];
+      if (w.type === BT.PD || w.type === BT.BAY || w.buried) continue;
+      const v = (W.damage || 1) / W.cooldown;
+      for (let k = 0; k < ARC_BINS; k++) if (w.omni || binOpen(w.m0, w.m1, k)) e.face[k] += v;
+    }
+    e.faceMax = 0;
+    for (let k = 0; k < ARC_BINS; k++) if (e.face[k] > e.faceMax) e.faceMax = e.face[k];
     // Point defence doesn't drive positioning. "Direct" range is the main gun: cannons if fitted, else lasers.
     let shortest = Infinity, longest = 0, cannon = 0, laser = 0, far = 0, near = Infinity;
     for (const w of e.weapons) {
@@ -516,7 +532,7 @@ export class Battle {
     let desired = Math.atan2(dy, dx);
     if (disarmed) desired += Math.PI; // crippled: run away from the enemy fleet
     const pr = e.prefRange;
-    let slow = false;
+    let slow = false, hold = false, backX = 0, backY = 0;
     let ward = e.stance === 'escort' && e.ward && !e.ward.dead ? e.ward : null;
     // Escorts break station to attack anything that gets within 250 of their ward.
     if (ward && tg && (tg.x - ward.x) ** 2 + (tg.y - ward.y) ** 2 < 250 * 250) ward = null;
@@ -533,11 +549,25 @@ export class Battle {
       slow = qd < 25;
     } else if (!disarmed && (e.stance === 'flank' || e.stance === 'raid')) {
       [desired, slow] = this.steerGoal(e, desired, pr);
+    } else if (tg && !disarmed && e.stance === 'skirmish') {
+      // Skirmisher (owner, Nov 2026): the old artillery rule, kiting on purpose. Too close, it turns
+      // away and opens the range (its forward guns stop bearing while it runs).
+      if (d < pr * 0.7) { desired += Math.PI - e.orbit * 0.4; }
+      else if (d < pr * 0.8) { desired += e.orbit * Math.PI * 0.5; slow = true; }
+      else if (d < pr * 1.1) { desired += e.orbit * 0.5; slow = true; }
     } else if (tg && !disarmed) {
-      if (e.stance === 'standoff' && d < pr * 0.7) { desired += Math.PI - e.orbit * 0.4; } // too close: open the range
-      else if (e.stance === 'charge' && d > pr) { /* straight at them */ }
-      else if (d < pr * 0.8) { desired += e.orbit * Math.PI * 0.5; slow = e.stance !== 'charge'; } // broadside / orbit
-      else if (d < pr * 1.1) { desired += e.orbit * 0.5; slow = e.stance === 'standoff'; }
+      // Every other stance (owner, Nov 2026: "people assume ships move forward to that range then
+      // fight"): close to its distance, then hold there, turned so the most firepower bears on
+      // the target, braking to a stop. Pressed hard (under 60% of its distance) it backs off
+      // slowly, still facing the enemy, instead of turning and running.
+      if (d > pr) { slow = d < pr * 1.15 && e.stance !== 'charge'; }
+      else {
+        desired = this.holdFacing(e, desired);
+        hold = true;
+        // Drift slowly sideways round the target (each ship its own way), so the line keeps moving.
+        backX = -dy * e.orbit * HOLD_DRIFT; backY = dx * e.orbit * HOLD_DRIFT;
+        if (d < pr * 0.6 && e.stance !== 'charge') { backX -= dx; backY -= dy; }
+      }
     }
     // Spacing (owner, Nov 2026: the front was too crowded to see the shots): every ship steers
     // away from ships crowding it, friend or foe, but only sideways or forwards, never back, so
@@ -553,15 +583,36 @@ export class Battle {
     e.a = wrapAngle(e.a + (da > mt ? mt : da < -mt ? -mt : da));
     e.c = Math.cos(e.a); e.s = Math.sin(e.a);
     {
-      const want = slow && !disarmed ? e.maxSpeed * 0.55 : e.maxSpeed;
+      const want = hold ? 0 : slow && !disarmed ? e.maxSpeed * 0.55 : e.maxSpeed;
       const k = 1 - Math.exp(-e.agility * DT);
       // Manoeuvring jets slide it sideways out of a crowd as well as turning it.
       const lat = e.maxSpeed * SPACING_SLIDE;
-      e.vx += (e.c * want + sx * lat - e.vx) * k;
-      e.vy += (e.s * want + sy * lat - e.vy) * k;
+      // Holding ground: stop, or back away slowly (30% speed) without turning from the enemy.
+      let bx = 0, by = 0;
+      if (backX || backY) { const bl = Math.hypot(backX, backY) || 1, bs = e.maxSpeed * 0.3; bx = (backX / bl) * bs; by = (backY / bl) * bs; }
+      e.vx += (e.c * want + bx + sx * lat - e.vx) * k;
+      e.vy += (e.s * want + by + sy * lat - e.vy) * k;
     }
     this.collide(e);
     e.x += e.vx * DT; e.y += e.vy * DT;
+  }
+
+  /**
+   * Heading for a ship holding its distance: the target sits in the direction (of 64 round the
+   * ship) where the most firepower bears (`e.face`, from refit), choosing among the best ones
+   * (within 90% of the most) the one needing the least turn. Nose guns: face it; broadside guns:
+   * side on. No gun bears anywhere: face it. `to` is the direction to the target.
+   */
+  holdFacing(e, to) {
+    if (!(e.faceMax > 0)) return to;
+    const f = e.face, lim = e.faceMax * 0.9;
+    let best = to, bt = Infinity;
+    for (let k = 0; k < ARC_BINS; k++) {
+      if (f[k] < lim) continue;
+      const h = to - binAngle(k), t = Math.abs(wrapAngle(h - e.a));
+      if (t < bt) { bt = t; best = h; }
+    }
+    return best;
   }
 
   /**
