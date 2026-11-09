@@ -325,6 +325,13 @@ designer's numbers against the sim.
   `designs`). Template designs are named "My <class>" by default. The "Start from" menu also
   gets a **"Your shipyards"** group: the designs your own shipyards build (`yard: true` in that
   message), loaded under their own names.
+- **Test with your other designs** (owner, Nov 2026: a friend wanted to test a new design together
+  with the rest of his fleet): the test dialog's "Also on your side" list adds any number of rows
+  (design + count, default count by hull class) from your designs in this game (yours only;
+  defences marked and kept `fixed`), your saved library and the samples. `makeTestScenario(...,
+  extras)` puts them on team 0 (defences join the rows, ships start behind them), and the enemy
+  budget is your whole side. The result table adds a line per design. Rows stay when the dialog
+  is reopened. With no extras a test is identical to before (same random draws).
 - **Renaming designs** (owner, Nov 2026): a Rename button on your own shipyards in the world
   panel opens a small dialog; `renameDesign()` in `world.js` (owner only, 1–40 chars, control
   characters stripped) renames the design everywhere and logs it; server action

@@ -145,6 +145,13 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
 .bar { height: 2px; background: var(--line); margin-top: 8px; }
 .bar i { display: block; height: 100%; width: 0; background: var(--signal); }
 #test-result { margin-top: 14px; }
+#t-extra-box { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+.t-extra-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.t-extra-head span { font-weight: 600; }
+.t-extra { display: grid; grid-template-columns: 1fr 78px auto; gap: 8px; align-items: center; margin-top: 8px; }
+.t-extra select, .t-extra input { min-width: 0; width: 100%; }
+#t-extra-hint { margin: 8px 0 0; }
+#test-result td.sub { padding-left: 18px; opacity: 0.85; }
 .verdict { font-size: 18px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 8px; }
 .verdict.win { color: var(--azure); } .verdict.loss { color: var(--ember); }
 
@@ -276,6 +283,11 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
       <label for="t-copies" id="t-copies-label">Your ships</label><input id="t-copies" type="number" min="1" max="400" value="10">
       <label for="t-opp">Enemy</label><select id="t-opp"></select>
       <label for="t-seed">Seed</label><input id="t-seed" type="number" min="1" value="1">
+    </div>
+    <div id="t-extra-box">
+      <div class="t-extra-head"><span>Also on your side</span><button id="t-add" type="button">+ Add a design</button></div>
+      <div id="t-extras"></div>
+      <p class="hint" id="t-extra-hint">Add your other designs to test this one alongside the rest of your fleet. The enemy is worth your whole side.</p>
     </div>
     <div id="test-progress" hidden><span id="t-status"></span><div class="bar"><i id="t-bar"></i></div></div>
     <div id="test-result" hidden></div>

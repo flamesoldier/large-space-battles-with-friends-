@@ -17,19 +17,24 @@ const MAX_ENEMY_SHIPS = 2500;
  * `fixed`: your copies are defences. They stand in the same staggered rows as at a real world
  * (they can't move, so scattered at random they'd sit inside each other), fronts toward the
  * enemy, and the enemy starts clear of the rows.
- * Returns { designs, ships, budget, enemyCost, enemyCount }.
+ * `extras`: more of your designs on your side (owner, Nov 2026: test a new design with the rest of
+ * your fleet), as [{ design, count, fixed }]; `fixed` ones are defences and join the rows. The
+ * enemy is worth your whole side. Your designs are designs[0] (this one) and designs[1..extras].
+ * Returns { designs, ships, budget, enemyCost, enemyCount, mineDesigns }.
  */
-export function makeTestScenario(design, copies, opponent = null, seed = 1, fixed = false) {
+export function makeTestScenario(design, copies, opponent = null, seed = 1, fixed = false, extras = []) {
   const r = mulberry32(seed * 977 + 5);
-  const budget = designCost(design) * copies;
-  const designs = [design];
+  extras = extras.filter((x) => x.count > 0);
+  const budget = designCost(design) * copies + extras.reduce((t, x) => t + designCost(x.design) * x.count, 0);
+  const designs = [design, ...extras.map((x) => x.design)];
   const enemy = []; // design indexes for team 1
   let spent = 0;
 
   if (opponent) {
     designs.push(opponent);
+    const oi = designs.length - 1;
     const n = Math.min(MAX_ENEMY_SHIPS, Math.max(1, Math.round(budget / Math.max(1, designCost(opponent)))));
-    for (let k = 0; k < n; k++) enemy.push(1);
+    for (let k = 0; k < n; k++) enemy.push(oi);
     spent = n * designCost(opponent);
   } else {
     // A mixed fleet in the usual class proportions, filled until the money runs out.
@@ -59,14 +64,19 @@ export function makeTestScenario(design, copies, opponent = null, seed = 1, fixe
       ships.push({ design: di, team, x: -dir * (Math.max(220, clear + 60) + depth), y: (r() - 0.5) * spanY, a: team === 0 ? 0 : Math.PI });
     }
   };
-  if (fixed) {
-    // Defences at the origin in rows facing right (angle 0), the enemy coming in from the right.
-    const mine = Array.from({ length: copies }, () => ({ design: 0, team: 0, fixed: true }));
+  // Your side: defences stand at the origin in rows facing right (angle 0), the enemy coming in
+  // from the right; ships start behind them (or on their own, with no defences, as before).
+  const rows = [], flying = [];
+  for (let k = 0; k < copies; k++) (fixed ? rows : flying).push(0);
+  extras.forEach((x, j) => { for (let k = 0; k < x.count; k++) (x.fixed ? rows : flying).push(j + 1); });
+  if (rows.length) {
+    const mine = rows.map((di) => ({ design: di, team: 0, fixed: true }));
     clear = layoutDefences(mine, designs, [0], 2);
     ships.push(...mine);
-  } else place(0, new Array(copies).fill(0));
+  }
+  place(0, flying);
   place(1, enemy);
-  return { designs, ships, budget, enemyCost: spent, enemyCount: enemy.length };
+  return { designs, ships, budget, enemyCost: spent, enemyCount: enemy.length, mineDesigns: 1 + extras.length };
 }
 
 /** Summarise a finished Battle for the designer (credits lost per side, winner). */

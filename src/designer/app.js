@@ -763,6 +763,45 @@ $('import-file').addEventListener('change', async (e) => {
 
 // ------------------------------------------------------------ test battle
 let lastReplay = null;
+// Designs you can add to your own side (owner, Nov 2026): yours in this game, your saved library,
+// and the samples. Each is { label, get() -> design, fixed }. Built when the dialog opens.
+let sideChoices = [];
+function buildSideChoices() {
+  sideChoices = [];
+  (embed?.designs || []).forEach((o) => {
+    if (!o.mine) return;
+    try { const d = { ...decodeDesign(o.data), name: o.name }; if (analyzeDesign(d).ok) sideChoices.push({ label: `${o.defence ? 'Your defence' : 'Your ship'}: ${o.name} (${fmt(designCost(d))} cr)`, get: () => d, fixed: !!o.defence }); } catch { /* skip */ }
+  });
+  library().forEach((o) => { try { const d = decodeDesign(o); if (analyzeDesign(d).ok) sideChoices.push({ label: `Saved: ${d.name} (${fmt(designCost(d))} cr)`, get: () => d, fixed: false }); } catch { /* skip */ } });
+  for (const cls of Object.keys(CLASSES)) { let d = null; sideChoices.push({ label: `Sample ${cls}`, get: () => (d ||= { ...makeDesign(cls, 7), name: `Sample ${cls}` }), fixed: false }); }
+}
+const escapeHtml = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const classOf = (d) => analyzeDesign(d).hullClass?.id || d.cls;
+function addSideRow(pick = 0) {
+  const row = document.createElement('div');
+  row.className = 't-extra';
+  const sel = document.createElement('select');
+  sideChoices.forEach((c, k) => sel.add(new Option(c.label, String(k))));
+  sel.value = String(pick);
+  const n = document.createElement('input');
+  n.type = 'number'; n.min = '0'; n.max = '400'; n.title = 'How many';
+  const setDefault = () => { n.value = DEFAULT_COPIES[classOf(sideChoices[Number(sel.value)].get())] ?? 10; };
+  setDefault();
+  sel.addEventListener('change', setDefault);
+  const del = document.createElement('button');
+  del.type = 'button'; del.textContent = '✕'; del.title = 'Remove';
+  del.addEventListener('click', () => row.remove());
+  row.append(sel, n, del);
+  $('t-extras').append(row);
+}
+$('t-add').addEventListener('click', () => addSideRow());
+function sideExtras() {
+  return [...$('t-extras').children].map((row) => {
+    const c = sideChoices[Number(row.querySelector('select').value)];
+    const count = Math.max(0, Math.min(400, Math.floor(Number(row.querySelector('input').value) || 0)));
+    return c && count ? { design: { ...c.get() }, count, fixed: c.fixed } : null;
+  }).filter(Boolean);
+}
 function openTest() {
   refresh();
   if (!info.ok) return;
@@ -776,6 +815,11 @@ function openTest() {
     try { const d = decodeDesign(o.data); if (analyzeDesign(d).ok) opp.add(new Option(`In this game: ${o.name} (${o.mine ? 'yours' : o.owner}, ${fmt(designCost(d))} cr)`, `g${k}`)); } catch { /* skip */ }
   });
   library().forEach((o, k) => { try { const d = decodeDesign(o); if (analyzeDesign(d).ok) opp.add(new Option(`Saved: ${d.name} (${fmt(designCost(d))} cr)`, String(k))); } catch { /* skip */ } });
+  // Keep the rows you added last time (same choices list), but refresh it in case designs changed.
+  const keep = [...$('t-extras').children].map((row) => [sideChoices[Number(row.querySelector('select').value)]?.label, row.querySelector('input').value]);
+  buildSideChoices();
+  $('t-extras').innerHTML = '';
+  for (const [label, count] of keep) { const k = sideChoices.findIndex((c) => c.label === label); if (k >= 0) { addSideRow(k); $('t-extras').lastChild.querySelector('input').value = count; } }
   $('test-result').hidden = true; $('test-progress').hidden = true; $('t-watch').hidden = true;
   $('t-run').disabled = false;
   $('test').showModal();
@@ -794,7 +838,8 @@ $('t-run').addEventListener('click', async () => {
   const v = $('t-opp').value;
   const mine = { ...design, name: design.name || 'Your design' };
   const opponent = v === 'self' ? { ...mine } : v.startsWith('g') ? { ...decodeDesign(embed.designs[Number(v.slice(1))].data), name: embed.designs[Number(v.slice(1))].name } : v ? decodeDesign(library()[Number(v)]) : null;
-  const scen = makeTestScenario(mine, copies, opponent, seed, defenseMode()); // defences stand in rows and hold still, front to the enemy
+  const extras = sideExtras();
+  const scen = makeTestScenario(mine, copies, opponent, seed, defenseMode(), extras); // defences stand in rows and hold still, front to the enemy
   const b = new Battle({ designs: scen.designs, ships: scen.ships, seed });
   const t0 = performance.now();
   while (!b.done) {
@@ -811,7 +856,18 @@ $('t-run').addEventListener('click', async () => {
   if (!b.done) { $('test-progress').hidden = true; return; }
   const s = summarise(b, scen);
   const rep = b.toReplay();
-  lastReplay = { bytes: packReplay(rep.meta, rep.cols), computeMs, sides: [mine.name, opponent ? opponent.name : 'Mixed fleet'] };
+  lastReplay = { bytes: packReplay(rep.meta, rep.cols), computeMs, sides: [extras.length ? 'Your fleet' : mine.name, opponent ? opponent.name : 'Mixed fleet'] };
+  // With extras on your side, a line per design: how many started, survived and were lost.
+  let perDesign = '';
+  if (extras.length) {
+    const rows = Array.from({ length: scen.mineDesigns }, () => ({ n: 0, alive: 0, value: 0, lost: 0 }));
+    scen.ships.forEach((sh, k) => {
+      if (sh.team !== 0) return;
+      const e = b.byId[k], c = designCost(scen.designs[sh.design]), out = e.dead || e.hubDead || !e.weapons.length, r = rows[sh.design];
+      r.n++; r.value += c; if (out) r.lost += c; else r.alive++;
+    });
+    perDesign = rows.map((r, k) => r.n ? `<tr><td class="sub">${escapeHtml(scen.designs[k].name || 'Your design')}</td><td>${r.n}</td><td>${r.alive}</td><td>${fmt(r.value)}</td><td>${fmt(r.lost)} (${Math.round((r.lost / r.value) * 100)}%)</td></tr>` : '').join('');
+  }
   const verdict = s.winner === 0 ? ['win', 'Victory'] : s.winner === 1 ? ['loss', 'Defeat'] : ['', 'Draw'];
   const pct = (k) => `${Math.round((s.lost[k] / s.start[k]) * 100)}%`;
   $('test-result').innerHTML = `
@@ -819,7 +875,7 @@ $('t-run').addEventListener('click', async () => {
     <table>
       <thead><tr><th></th><th>Ships</th><th>Survived</th><th>Fleet value</th><th>Lost</th></tr></thead>
       <tbody>
-        <tr><td>You</td><td>${s.startCount[0]}</td><td>${s.alive[0]}</td><td>${fmt(s.start[0])}</td><td>${fmt(s.lost[0])} (${pct(0)})</td></tr>
+        <tr><td>You</td><td>${s.startCount[0]}</td><td>${s.alive[0]}</td><td>${fmt(s.start[0])}</td><td>${fmt(s.lost[0])} (${pct(0)})</td></tr>${perDesign}
         <tr><td>Enemy</td><td>${s.startCount[1]}</td><td>${s.alive[1]}</td><td>${fmt(s.start[1])}</td><td>${fmt(s.lost[1])} (${pct(1)})</td></tr>
       </tbody>
     </table>
