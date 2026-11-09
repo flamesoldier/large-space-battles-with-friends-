@@ -89,6 +89,13 @@ Weapons (numbers in `blocks.js`):
   **Its blocks explode when destroyed** (`COOKOFF` in `blocks.js`: 300 peak damage, radius 16,
   ignores friendly fire, hurts its own ship and allies). One destroyed block chain-reacts through
   the whole unit: a battleship loses ~43% of its blocks and an ally flying alongside loses ~260.
+  **Plasma blocks have 1,500 hp** (owner, Nov 2026, was 120: a friend's plasma dreadnoughts lost
+  their guns at once). Cook-off blasts scale their damage to plasma blocks by hp / `COOKOFF.refHp`
+  (120), so a unit still chain-reacts exactly as before once one block goes. Measured (equal-cost
+  mixed fleet, 5 seeds; score = enemy ships lost share − own lost share): plasma dreadnoughts
+  −0.61 → −0.33 (same ship with heavy armour instead: −0.36), first plasma block lost at 14 s → 61 s,
+  plasma shots per ship 1.8 → 5.8; 2,500 hp gave −0.10 (beats the plain ship: too strong). Titans
+  barely changed (−0.36 → −0.31): their plasma fires only ~1.5 times a battle whatever its hp.
 - Future weapons the owner wants: bigger cannons, a medium laser.
 
 Combat rules:

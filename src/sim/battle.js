@@ -45,6 +45,7 @@ const SPACING_GAP = 25, SPACING_TURN = 3, SPACING_SLIDE = 1, SPACING_EVERY = 5;
 const OWN_CLEAR_SPEED = 6;
 // Plasma cannon aiming: an ally within this many blocks of the line counts as in the way.
 const LANCE_SPEED = WEAPON[BT.LANCE].speed;
+const LANCE_COOK_SCALE = BLOCKS[BT.LANCE].hp / COOKOFF.refHp;
 const LANCE_ALLY_MARGIN = 0; // 0: ~1 in 3 shots hits an ally first, 4 enemies killed per ally (owner wants friendly fire); 5: almost never, but it holds fire far more
 const NONE = 0xffffffff; // 'no entity' in replay id columns
 
@@ -1091,7 +1092,9 @@ export class Battle {
           if (!e.types[c] || e.hp[c] <= 0) continue;
           const d = Math.hypot(i + 0.5 - gx, j + 0.5 - gy);
           if (d >= R) continue;
-          const f = 1 - d / R, dmg = peak * f * f;
+          const f = 1 - d / R;
+          let dmg = peak * f * f;
+          if (anyone && e.types[c] === BT.LANCE) dmg *= LANCE_COOK_SCALE; // cook-offs chain through plasma blocks however tough
           if (dmg > 1) this.damageCell(e, c, dmg);
         }
     }
