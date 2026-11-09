@@ -350,6 +350,11 @@ designer's numbers against the sim.
   extras)` puts them on team 0 (defences join the rows, ships start behind them), and the enemy
   budget is your whole side. The result table adds a line per design. Rows stay when the dialog
   is reopened. With no extras a test is identical to before (same random draws).
+- **Battle simulator** (owner, Nov 2026: new players might never find the designer's Test battle):
+  a top-bar button on the galaxy page opens the designer with `mode: 'sim'` (`openDesigner(-1,
+  'sim')`, no world): no Build button, `lsb-design-chosen` ignored, and it opens straight into the
+  test dialog (titled Battle simulator), starting from a sample destroyer if the remembered design
+  can't fight. Everything else is the normal test battle (your side + extras vs any enemy).
 - **Renaming designs** (owner, Nov 2026): a Rename button on your own shipyards in the world
   panel opens a small dialog; `renameDesign()` in `world.js` (owner only, 1–40 chars, control
   characters stripped) renames the design everywhere and logs it; server action

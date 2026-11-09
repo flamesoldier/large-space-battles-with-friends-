@@ -952,8 +952,20 @@ function enterDefenseMode() {
   if (saved) { try { const d = decodeDesign(saved); if (d.cells.some((c) => c && c !== BT.HUB)) { ed.load(d); ed.resetHistory(); loaded = true; } } catch { /* use the one on screen */ } }
   if (loaded) { syncFields(); fit(); dropThrusters(); } else { ed.removeType(BT.THRUSTER); ed.resetHistory(); }
 }
+const simMode = () => embed?.mode === 'sim';
+let simShown = false;
+/** Opened from the galaxy's Battle simulator button: no shipyard to build, straight into a test battle. */
+function enterSimMode() {
+  refresh(true);
+  // A blank design can't fight: start the simulator from a sample destroyer instead.
+  if (!design || !info.ok || !info.weapons.length) { ed.load({ ...makeDesign('destroyer', 7), name: 'Sample destroyer' }); ed.resetHistory(); syncFields(); fit(); refresh(true); }
+  document.querySelector('#test h3').textContent = 'Battle simulator';
+  $('t-hint').textContent = 'Battle simulator: your side is the design on screen (pick another from Start from, or build one) plus anything you add below; the enemy is worth the same number of credits. Real battle sim, nothing is spent.';
+  openTest();
+}
 function syncEmbed() {
   if (!embed || !design) return;
+  if (simMode()) { $('use-design').hidden = true; return; }
   if (defenseMode()) {
     const price = defensePrice(design), thr = info.byType[BT.THRUSTER] || 0;
     const b = $('use-design');
@@ -986,6 +998,7 @@ if (window.parent !== window) {
     $('test-btn').classList.remove('go');
     if (defenseMode() && !defenseShown) { defenseShown = true; enterDefenseMode(); seenVersion = -1; refresh(true); } // re-check the issues list for defences
     syncEmbed();
+    if (simMode() && !simShown) { simShown = true; enterSimMode(); }
   });
   $('use-design').addEventListener('click', () => {
     refresh(true);

@@ -928,7 +928,9 @@ const pageDoc = (body) => `<!doctype html><html lang="en"><head><meta charset="u
 let designerFor = null, designerTimer = 0, designerMode = 'yard';
 function designerInfo(withDesigns = false) {
   const P = world.planets[designerFor];
-  const info = { type: 'lsb-designer-embed', mode: designerMode, planet: P.name, existing: yardListValue(P), credits: Math.floor(me().credits), yards: P.yards.length };
+  // The battle simulator (designerFor -1) has no world: it only tests, nothing is built.
+  const info = P ? { type: 'lsb-designer-embed', mode: designerMode, planet: P.name, existing: yardListValue(P), credits: Math.floor(me().credits), yards: P.yards.length }
+    : { type: 'lsb-designer-embed', mode: 'sim', credits: Math.floor(me().credits) };
   // Every design in play in this galaxy (yours and other players'), so test battles can be fought
   // against the ships people are really building. Sent once, when the designer opens.
   if (withDesigns) {
@@ -940,7 +942,9 @@ function designerInfo(withDesigns = false) {
 function openDesigner(planetId, mode = 'yard') {
   if (!DESIGNER_PAGE) return toast('This build has no ship designer. Run npm run build.', true);
   designerFor = planetId; designerMode = mode;
-  $('designer-for').textContent = mode === 'defense'
+  $('designer-for').textContent = mode === 'sim'
+    ? 'Battle simulator: pick your side and the enemy, then Fight. A practice battle with the real battle sim; nothing is spent and nothing happens in the galaxy.'
+    : mode === 'defense'
     ? `Designing a defence for ${world.planets[planetId].name}: no thrusters, it never moves. Nothing is spent until you press Build defence.`
     : `Designing a ship for a new shipyard at ${world.planets[planetId].name}. Nothing is spent until you press Build shipyard.`;
   $('designer-overlay').hidden = false;
@@ -957,7 +961,7 @@ addEventListener('message', (e) => {
   const frame = $('designer-frame');
   if (e.source !== frame.contentWindow || designerFor === null) return;
   if (e.data?.type === 'lsb-designer-ready') frame.contentWindow.postMessage(designerInfo(true), '*');
-  if (e.data?.type === 'lsb-design-chosen') {
+  if (e.data?.type === 'lsb-design-chosen' && designerMode !== 'sim') {
     let d;
     try { d = decodeDesign(e.data.design); } catch (err) { return toast(err.message, true); }
     (designerMode === 'defense' ? buildDef(designerFor, d, Math.max(1, Math.floor(e.data.count) || 1)) : build(designerFor, d)).then((ok) => { if (ok) closeDesigner(); });
@@ -1047,6 +1051,9 @@ function syncDipBadge() {
   const n = proposalsFor(world, ui.me).length, b = $('dip-badge');
   b.hidden = !n; b.textContent = String(n);
 }
+// Battle simulator (owner, Nov 2026: new players might never find the designer's Test battle):
+// the designer opened with no world, straight into its test battle.
+$('sim-btn').addEventListener('click', () => openDesigner(-1, 'sim'));
 $('dip-btn').addEventListener('click', () => { armedBreak = null; renderDiplomacy(); $('diplomacy').showModal(); });
 $('dip-close').addEventListener('click', () => $('diplomacy').close());
 $('dip-list').addEventListener('click', async (e) => {
