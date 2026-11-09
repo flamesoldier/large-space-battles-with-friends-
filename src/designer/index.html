@@ -123,7 +123,7 @@ td small { color: var(--bad); }
 .issues .warn::before { background: var(--warn); }
 .issues .ok { color: var(--azure); }
 .issues .ok::before { background: var(--azure); }
-#stance-hint { margin-top: 6px; }
+#stance-hint, #place-hint { margin-top: 6px; }
 
 /* dialogs */
 dialog {
@@ -181,6 +181,7 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
     <div class="group">
       <input id="name" type="text" maxlength="40" aria-label="Design name" spellcheck="false">
       <label for="stance" id="stance-row">Stance <select id="stance"></select></label>
+      <label for="place" id="place-row" title="Where this design starts a battle within your side. Auto: the game decides, as before.">Start <select id="place"></select></label>
     </div>
     <div class="grow"></div>
     <div class="group">
@@ -261,6 +262,8 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
     </table>
     <h2 id="stance-head">Stance</h2>
     <p class="hint" id="stance-hint"></p>
+    <h2>Start position</h2>
+    <p class="hint" id="place-hint"></p>
     <h2>Checks</h2>
     <ul class="issues" id="issues"></ul>
   </aside>

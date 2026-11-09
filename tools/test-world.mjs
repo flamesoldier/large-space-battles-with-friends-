@@ -8,7 +8,7 @@ import {
   createWorld, advanceTo, runWorld, buildShipyard, sellShipyard, quoteShipyard, sendFleet, previewFleet,
   shipsAt, incomeOf, allied, YARD_MS, HOLD_MS, designOf, upgradeWorld,
   proposeAlliance, acceptAlliance, breakAlliance, proposalsFor, dueEvent, siegeAt, renameDesign,
-  buildDefense, planEvent, applyEvent,
+  buildDefense, planEvent, applyEvent, registerDesign,
 } from '../src/world/world.js';
 import { writeFileSync } from 'node:fs';
 import { packReplay } from '../src/shared/replayFormat.js';
@@ -16,7 +16,7 @@ import { readBattle, makeBattleScenario, battleOptions, shipColors } from '../sr
 import { Battle } from '../src/sim/battle.js';
 import { makeDesign } from '../src/shared/designs.js';
 import { BT } from '../src/shared/blocks.js';
-import { designCost } from '../src/shared/shipStats.js';
+import { designCost, encodeDesign, decodeDesign } from '../src/shared/shipStats.js';
 import { STARTING_CREDITS, HOME_INCOME, SHIPYARD_SELL_REFUND, shipyardPrice, defensePrice } from '../src/shared/economy.js';
 import { HOUR_MS, HYPERLANE_SPEEDUP, MAX_PLAYERS, PLANET_SPACING } from '../src/world/rules.js';
 
@@ -600,6 +600,42 @@ const resolve = (scen) => {
   w.sieges.push({ ...fake }, { ...fake, id: 901, leader: 1, startsAt: 4000 });
   upgradeWorld(w);
   ok(w.sieges.filter((x) => x.planet === 3).length === 1 && w.sieges[0].id === 901, 'old saves: two sieges at one world merge into the earliest');
+}
+
+// ---- start positions (owner, Nov 2026): picked per design, Auto = as before
+{
+  const base = makeDesign('destroyer', 5);
+  const old = encodeDesign(base);
+  ok(!('place' in old), 'a design on Auto encodes exactly as before (no place field)');
+  ok(decodeDesign(old).place === 'auto', 'designs saved before start positions load as Auto');
+  ok(decodeDesign({ ...old, place: 'sideways' }).place === 'auto', 'an unknown start position loads as Auto');
+  ok(decodeDesign(encodeDesign({ ...base, place: 'top' })).place === 'top', 'a start position survives saving');
+  const w = createWorld({ players: [{ name: 'A' }, { name: 'B' }], seed: 4 });
+  const id1 = registerDesign(w, 0, decodeDesign(old)), id2 = registerDesign(w, 0, { ...decodeDesign(old), place: 'back' });
+  ok(id1 !== id2 && registerDesign(w, 0, { ...decodeDesign(old), place: 'back' }) === id2, 'the same ship with another start position is its own design');
+  ok(designOf(w, id2).place === 'back', 'world designs keep their start position');
+  // Placement: side 0 attacks from the left facing right (its top wing is −y); side 1 holds the world
+  // facing left (top wing +y); side 1's defences face left too.
+  const places = ['auto', 'front', 'middle', 'back', 'top', 'bottom'], ds = {};
+  const noThr = base.cells.map((c) => (c === BT.THRUSTER ? BT.ARMOR : c));
+  for (const p of places) { ds[`s${p}`] = { ...base, place: p }; ds[`f${p}`] = { ...base, cells: noThr, place: p }; }
+  const groups = [];
+  for (const side of [0, 1]) for (const p of places) groups.push({ side, design: `s${p}`, n: 10 });
+  for (const p of places) groups.push({ side: 1, design: `f${p}`, n: 6, fixed: true });
+  const sc = makeBattleScenario(groups, (id) => ds[id], 3);
+  const avg = (side, d, f) => { const g = sc.groups.find((x) => x.side === side && x.design === d); const s = sc.ships.slice(g.start, g.start + g.n); return s.reduce((t, x) => t + f(x), 0) / s.length; };
+  const toEnemy = (side) => (side === 0 ? (s) => s.x : (s) => -s.x), topY = (side) => (side === 0 ? (s) => -s.y : (s) => s.y);
+  for (const side of [0, 1]) {
+    const f = (p) => avg(side, `s${p}`, toEnemy(side)), t = (p) => avg(side, `s${p}`, topY(side));
+    ok(f('front') > f('auto') + 40 && f('auto') > f('back') + 60, `side ${side}: Front ships start nearest the enemy, Back ones furthest`);
+    ok(t('top') > 150 && t('bottom') < -150 && Math.abs(t('auto')) < 80, `side ${side}: flank ships start out on their own wing`);
+  }
+  const fx = (p) => avg(1, `f${p}`, (s) => -s.x), fy = (p) => avg(1, `f${p}`, (s) => s.y);
+  ok(fx('front') > fx('back') + 20, 'Front defences stand in front of Back ones');
+  ok(fy('top') > 120 && fy('bottom') < -120, 'flank defences stand in their own block out on that wing');
+  const all = sc.ships;
+  for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++)
+    if (all[i].fixed && all[j].fixed) ok(Math.hypot(all[i].x - all[j].x, all[i].y - all[j].y) > 8, 'defences never start inside each other');
 }
 
 console.log(`world: ${checks} checks passed`);

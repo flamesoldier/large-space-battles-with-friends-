@@ -7,7 +7,7 @@
 // copy is 650 KB, so 200 undo steps of full copies would eat 130 MB.
 
 import { BT, MULTIBLOCK, MAX_W, MAX_H } from '../shared/blocks.js';
-import { cropDesign, STANCE_INFO } from '../shared/shipStats.js';
+import { cropDesign, STANCE_INFO, placeOf } from '../shared/shipStats.js';
 
 const LANCE = MULTIBLOCK[BT.LANCE].size;
 const UNDO_LIMIT = 300; // actions
@@ -20,6 +20,7 @@ export class ShipEditor {
     this.hubIdx = -1;
     this.name = 'New design';
     this.stance = 'line';
+    this.place = 'auto'; // start position in battle (PLACE_INFO)
     this.mirror = true;
     this.undoStack = []; this.redoStack = [];
     this.rec = null; // the action being recorded: { i: [], o: [], n: [] }
@@ -217,6 +218,7 @@ export class ShipEditor {
       }
     this.name = d.name || 'Unnamed';
     this.stance = STANCE_INFO[d.stance] ? d.stance : 'line';
+    this.place = placeOf(d.place);
     this.changed();
   }
 

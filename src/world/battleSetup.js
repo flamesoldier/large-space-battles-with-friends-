@@ -54,16 +54,41 @@ export function makeBattleScenario(groups, designOf, seed, opts = null) {
     const phi = nCamps <= 1 ? 0 : (2 * Math.PI * camp) / nCamps;
     const c = Math.cos(phi), sn = Math.sin(phi);
     const spanY = Math.max(160, Math.sqrt(list.length) * 45);
+    const k = c < 0 ? -1 : 1; // spread sideways (same layout as before for two sides)
     for (const s of list) {
-      const d = designs[s.design], depth = Math.hypot(d.w, d.h) * 0.6 + r() * (30 + Math.sqrt(list.length) * 10);
-      const along = Math.max(220, ringOut + 60) + depth, across = (r() - 0.5) * spanY;
-      const k = c < 0 ? -1 : 1; // spread sideways (same layout as before for two sides)
+      // k is also which way "top" is across this camp, for the flank start positions.
+      const { depth, across } = startSpot(designs[s.design], list.length, spanY, r(), r(), k);
+      const along = Math.max(220, ringOut + 60) + depth;
       s.x = c * along - k * sn * across; s.y = sn * along + k * c * across;
       s.a = (phi + Math.PI) % (2 * Math.PI); // facing the world
     }
   }
   return { designs, ships, groups: out, seed, teams: opts ? opts.teams : 2 };
 }
+
+/**
+ * Where a ship starts within its fleet, from its design's start position (`place`, picked in the
+ * designer; owner, Nov 2026). Returns { depth, across }: depth is how far back from the front of
+ * the fleet (bigger = further from the enemy), across is sideways from the fleet's middle line.
+ * r1, r2 are the two random draws every ship always takes, so a battle where every design is on
+ * Auto starts exactly as before. `top` is +1 or −1: which sign of `across` is the fleet's top wing
+ * (the top of the ship as drawn in the designer, nose toward the enemy).
+ */
+export function startSpot(d, n, spanY, r1, r2, top) {
+  const size = Math.hypot(d.w, d.h) * 0.6, spread = 30 + Math.sqrt(n) * 10;
+  switch (d.place) {
+    case 'front': return { depth: size - 40 + r1 * spread * 0.25, across: (r2 - 0.5) * spanY };
+    case 'middle': return { depth: size + spread * (0.375 + r1 * 0.25), across: (r2 - 0.5) * spanY };
+    case 'back': return { depth: size + 60 + spread * (0.8 + r1 * 0.3), across: (r2 - 0.5) * spanY };
+    // Flanks: out beyond the edge of the main body, on that wing, anywhere front to back.
+    case 'top': return { depth: size + r1 * spread, across: top * (spanY / 2 + 60 + r2 * spanY * 0.4) };
+    case 'bottom': return { depth: size + r1 * spread, across: -top * (spanY / 2 + 60 + r2 * spanY * 0.4) };
+    default: return { depth: size + r1 * spread, across: (r2 - 0.5) * spanY }; // Auto: as always
+  }
+}
+
+/** Defence order front to back: Back first (it fills the rows by the world), Front last. */
+const PLACE_RANK = { back: 0, front: 2 };
 
 /**
  * Stand defences (fixed ships) in staggered rows, one block of rows per direction in
@@ -83,33 +108,51 @@ export function layoutDefences(fixed, designs, attackAngles, nCamps = attackAngl
     // own width plus a gap about as wide again across the row, rows stand well apart, and every
     // other row is shifted half a slot so back-row guns look through the gaps in front.
     const slot = (s) => wide(s) + Math.max(16, wide(s) * 0.9);
-    const rowGap = 26;
-    fixed.sort((a, b) => D(b).w * D(b).h - D(a).w * D(a).h);
+    const rowGap = 26, wingGap = 40;
+    // Start positions (owner, Nov 2026): Back defences fill the rows by the world first, Front ones
+    // last; within that, biggest first, as before (so with every design on Auto nothing changes).
+    const rank = (s) => PLACE_RANK[D(s).place] ?? 1;
+    fixed.sort((a, b) => rank(a) - rank(b) || D(b).w * D(b).h - D(a).w * D(a).h);
     const blocks = attackAngles.map(() => []);
     fixed.forEach((s, k) => blocks[k % blocks.length].push(s));
+    // Row width for a group: about three times the depth of the whole group.
+    const widthOf = (list) => {
+      if (!list.length) return 0;
+      const span = list.reduce((t, s) => t + slot(s), 0), depth = list.reduce((t, s) => t + deep(s) + rowGap, 0) / list.length;
+      return Math.max(140, Math.sqrt(3 * span * depth));
+    };
     blocks.forEach((list, bi) => {
       if (!list.length) return;
       const ph = attackAngles[bi], ux = Math.cos(ph), uy = Math.sin(ph), vx = -uy, vy = ux;
-      // Row width: about three times the depth of the whole block.
-      const span = list.reduce((t, s) => t + slot(s), 0), depth = list.reduce((t, s) => t + deep(s) + rowGap, 0) / list.length;
-      const width = Math.max(140, Math.sqrt(3 * span * depth));
+      // Top / Bottom flank defences stand in their own block of rows beside the main one. The
+      // defences face along ph, so their top (designer top) is the −v side.
+      const top = list.filter((s) => D(s).place === 'top'), bottom = list.filter((s) => D(s).place === 'bottom');
+      const main = list.filter((s) => D(s).place !== 'top' && D(s).place !== 'bottom');
+      const wM = widthOf(main), wT = widthOf(top), wB = widthOf(bottom);
+      const half = (w) => (w ? w / 2 : 0);
+      const cT = -(half(wM) + (wT ? wingGap + wT / 2 : 0)), cB = half(wM) + (wB ? wingGap + wB / 2 : 0);
       // With several blocks, each sits out from the world far enough to clear its neighbours.
-      let along = blocks.length > 1 ? width / 2 / Math.tan(Math.PI / nCamps) + 15 : 0;
-      for (let k = 0, r = 0; k < list.length; r++) {
-        const row = [];
-        let used = 0;
-        while (k < list.length && (!row.length || used + slot(list[k]) <= width)) { used += slot(list[k]); row.push(list[k++]); }
-        const rowDepth = Math.max(...row.map(deep));
-        const shift = r % 2 ? (used / row.length) / 2 : 0; // stagger alternate rows
-        let across = -used / 2 + shift;
-        for (const s of row) {
-          const h = slot(s), a = along + rowDepth / 2, c = across + h / 2;
-          s.x = ux * a + vx * c; s.y = uy * a + vy * c; s.a = ph;
-          across += h;
-          ringOut = Math.max(ringOut, Math.hypot(s.x, s.y) + Math.hypot(D(s).w, D(s).h) / 2);
+      const reach = Math.max(half(wM), wT ? -cT + wT / 2 : 0, wB ? cB + wB / 2 : 0);
+      const along0 = blocks.length > 1 ? reach / Math.tan(Math.PI / nCamps) + 15 : 0;
+      const lay = (group, width, centre) => {
+        let along = along0;
+        for (let k = 0, r = 0; k < group.length; r++) {
+          const row = [];
+          let used = 0;
+          while (k < group.length && (!row.length || used + slot(group[k]) <= width)) { used += slot(group[k]); row.push(group[k++]); }
+          const rowDepth = Math.max(...row.map(deep));
+          const shift = r % 2 ? (used / row.length) / 2 : 0; // stagger alternate rows
+          let across = centre - used / 2 + shift;
+          for (const s of row) {
+            const h = slot(s), a = along + rowDepth / 2, c = across + h / 2;
+            s.x = ux * a + vx * c; s.y = uy * a + vy * c; s.a = ph;
+            across += h;
+            ringOut = Math.max(ringOut, Math.hypot(s.x, s.y) + Math.hypot(D(s).w, D(s).h) / 2);
+          }
+          along += rowDepth + rowGap;
         }
-        along += rowDepth + rowGap;
-      }
+      };
+      lay(main, wM, 0); lay(top, wT, cT); lay(bottom, wB, cB);
     });
   }
   return ringOut;

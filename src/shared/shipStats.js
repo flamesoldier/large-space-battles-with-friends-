@@ -20,7 +20,22 @@ export const STANCE_INFO = {
   charge: { label: 'Charge', hint: 'Dives straight at the nearest enemy to point blank. For small, fast, cheap ships.' },
 };
 
-export const hullClassFor = (blocks) => HULL_CLASSES.find((c) => blocks <= c.maxBlocks) || null;
+// Where a ship or defence starts a battle within its own side (owner, Nov 2026: more strategy).
+// Picked per design in the designer, saved as `place`; 'auto' (and every design saved before this)
+// starts exactly where it always did. "Top" is the top of the design as drawn in the designer, with
+// the fleet facing the enemy (its nose, the right-hand side in the designer). Used by
+// src/world/battleSetup.js (startSpot, layoutDefences).
+export const PLACE_INFO = {
+  auto: { label: 'Auto', hint: 'The game decides: spread through the fleet as usual.', defHint: 'The game decides: biggest defences in the back rows, smaller ones in front.' },
+  front: { label: 'Front', hint: 'Starts at the very front of the fleet, closest to the enemy.', defHint: 'Stands in the front rows, closest to the enemy.' },
+  middle: { label: 'Middle', hint: 'Starts in the middle of the fleet.', defHint: 'Stands in the middle rows.' },
+  back: { label: 'Back', hint: 'Starts behind the rest of the fleet, furthest from the enemy.', defHint: 'Stands in the back rows, by the world, furthest from the enemy.' },
+  top: { label: 'Top flank', hint: 'Starts out on the fleet\'s top wing (the top side as you see the ship here, nose toward the enemy).', defHint: 'Stands in its own block of rows out on the top wing (the top side as you see it here, front toward the enemy).' },
+  bottom: { label: 'Bottom flank', hint: 'Starts out on the fleet\'s bottom wing (the bottom side as you see the ship here, nose toward the enemy).', defHint: 'Stands in its own block of rows out on the bottom wing (the bottom side as you see it here, front toward the enemy).' },
+};
+export const placeOf = (p) => (PLACE_INFO[p] ? p : 'auto');
+
+export const hullClassFor =(blocks) => HULL_CLASSES.find((c) => blocks <= c.maxBlocks) || null;
 
 export function countBlocks(d) {
   let n = 0;
@@ -162,7 +177,7 @@ export function analyzeDesign(d) {
 
 /**
  * Crop an editor grid to the blocks actually placed and return a saved-format design.
- * `grid` is { w, h, cells, hub, name, stance } at editor size.
+ * `grid` is { w, h, cells, hub, name, stance, place } at editor size.
  */
 export function cropDesign(grid) {
   const { w, h, cells } = grid;
@@ -173,12 +188,12 @@ export function cropDesign(grid) {
     if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
     if (cells[i] === BT.HUB && hub < 0) hub = i;
   }
-  if (x1 < 0) return { name: grid.name, cls: 'corvette', w: 1, h: 1, cells: new Uint8Array(1), hub: 0, stance: grid.stance, x0: 0, y0: 0 };
+  if (x1 < 0) return { name: grid.name, cls: 'corvette', w: 1, h: 1, cells: new Uint8Array(1), hub: 0, stance: grid.stance, place: placeOf(grid.place), x0: 0, y0: 0 };
   const cw = x1 - x0 + 1, ch = y1 - y0 + 1, out = new Uint8Array(cw * ch);
   for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) out[y * cw + x] = cells[(y + y0) * w + x + x0];
   const hubC = hub < 0 ? -1 : (((hub / w) | 0) - y0) * cw + (hub % w) - x0;
   const cls = hullClassFor(countBlocks({ cells: out }));
-  return { name: grid.name, cls: cls ? cls.id : 'titan', w: cw, h: ch, cells: out, hub: hubC, stance: grid.stance, x0, y0 };
+  return { name: grid.name, cls: cls ? cls.id : 'titan', w: cw, h: ch, cells: out, hub: hubC, stance: grid.stance, place: placeOf(grid.place), x0, y0 };
 }
 
 // ---------------------------------------------------------------- save / load (JSON)
@@ -187,7 +202,9 @@ const fromB64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 
 /** Design -> plain JSON object (cells as base64). Round-trips with decodeDesign. */
 export function encodeDesign(d) {
-  return { format: 'lsb-design', version: 1, name: d.name, cls: d.cls, stance: d.stance, w: d.w, h: d.h, hub: d.hub, cells: toB64(d.cells) };
+  // `place` only when it isn't Auto, so designs saved before start positions encode exactly as before.
+  const place = placeOf(d.place);
+  return { format: 'lsb-design', version: 1, name: d.name, cls: d.cls, stance: d.stance, ...(place !== 'auto' ? { place } : {}), w: d.w, h: d.h, hub: d.hub, cells: toB64(d.cells) };
 }
 
 /** JSON object (cells as base64 or a plain array) -> design with a Uint8Array. Throws if malformed. */
@@ -198,5 +215,5 @@ export function decodeDesign(o) {
   const cells = typeof o.cells === 'string' ? fromB64(o.cells) : Uint8Array.from(o.cells || []);
   if (cells.length !== w * h) throw new Error('Design cells don\'t match its size.');
   for (const t of cells) if (t && !BLOCKS[t]) throw new Error(`Unknown block type ${t}.`);
-  return { name: String(o.name || 'Unnamed').slice(0, 40), cls: o.cls, stance: STANCE_INFO[o.stance] ? o.stance : 'line', w, h, cells, hub: o.hub | 0 };
+  return { name: String(o.name || 'Unnamed').slice(0, 40), cls: o.cls, stance: STANCE_INFO[o.stance] ? o.stance : 'line', place: placeOf(o.place), w, h, cells, hub: o.hub | 0 };
 }

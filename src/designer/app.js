@@ -4,7 +4,7 @@
 
 import { BT, BLOCKS, WEAPON, MULTIBLOCK, HULL_CLASSES, COOKOFF } from '../shared/blocks.js';
 import { ARC_BINS, binAngle, binOpen } from '../shared/arcs.js';
-import { analyzeDesign, encodeDesign, decodeDesign, designCost, STANCE_INFO } from '../shared/shipStats.js';
+import { analyzeDesign, encodeDesign, decodeDesign, designCost, STANCE_INFO, PLACE_INFO } from '../shared/shipStats.js';
 import { shipyardPrice, shipyardPriceAt, crowdingSurcharge, SHIPYARD_INTERVAL_MIN, SHIPYARD_PRICE_MULT, defensePrice, DEFENSE_PRICE_SHARE } from '../shared/economy.js';
 import { makeDesign, CLASSES } from '../shared/designs.js';
 import { Battle, DT } from '../sim/battle.js';
@@ -93,6 +93,8 @@ document.querySelectorAll('[data-tool]').forEach((b) => b.addEventListener('clic
 
 for (const [id, s] of Object.entries(STANCE_INFO)) $('stance').add(new Option(s.label, id));
 $('stance').addEventListener('change', () => { ed.stance = $('stance').value; ed.changed(); });
+for (const [id, p] of Object.entries(PLACE_INFO)) $('place').add(new Option(p.label, id));
+$('place').addEventListener('change', () => { ed.place = $('place').value; ed.changed(); });
 $('name').addEventListener('input', () => { ed.name = $('name').value; ed.changed(); });
 
 const tpl = $('template');
@@ -103,7 +105,7 @@ tpl.addEventListener('change', () => {
   const v = tpl.value;
   tpl.value = '';
   if (!v) return;
-  if (v === 'blank') { ed.clear(); ed.name = 'New design'; ed.stance = 'line'; toast('Cleared. Undo to get your design back.'); }
+  if (v === 'blank') { ed.clear(); ed.name = 'New design'; ed.stance = 'line'; ed.place = 'auto'; toast('Cleared. Undo to get your design back.'); }
   else if (v.startsWith('y')) { // one of your shipyards' designs or defences (opened from the galaxy)
     const o = embed.designs[Number(v.slice(1))], d = decodeDesign(o.data);
     ed.load({ ...d, name: o.name }); toast(`Loaded ${o.name}. Undo to go back.`);
@@ -143,7 +145,7 @@ $('undo').addEventListener('click', () => { ed.undo() && syncFields(); });
 $('redo').addEventListener('click', () => { ed.redo() && syncFields(); });
 $('fitbtn').addEventListener('click', fit);
 
-function syncFields() { $('name').value = ed.name; $('stance').value = ed.stance; dirty = true; }
+function syncFields() { $('name').value = ed.name; $('stance').value = ed.stance; $('place').value = ed.place; dirty = true; }
 
 let toastTimer = 0;
 function toast(msg) {
@@ -189,6 +191,7 @@ function refresh(force = false) {
     return `<tr title="${SHOT_HINT[t] || ''}"><td>${BLOCKS[t].name}</td><td>${f.count}${f.buried ? ` <small title="buried">(${f.buried} buried)</small>` : ''}</td><td>${fmt(W.damage)} / ${W.cooldown} s</td><td>${f.range}</td></tr>`;
   }).join('') || '<tr><td colspan="4" style="color:var(--dim)">No weapons yet</td></tr>';
   $('stance-hint').textContent = STANCE_INFO[ed.stance].hint;
+  $('place-hint').textContent = PLACE_INFO[ed.place][defenseMode() ? 'defHint' : 'hint'];
   const errs = [...a.errors], warns = [...a.warnings];
   if (defenseMode()) {
     const n = a.byType[BT.THRUSTER] || 0;

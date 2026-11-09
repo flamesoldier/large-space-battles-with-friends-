@@ -153,7 +153,7 @@ export function designOf(world, id) {
 export function registerDesign(world, owner, design, fixed = false) {
   const data = encodeDesign(design);
   for (const [id, e] of Object.entries(world.designs))
-    if (e.owner === owner && !!e.fixed === fixed && e.data.cells === data.cells && e.data.w === data.w && e.data.stance === data.stance && e.name === data.name) return id;
+    if (e.owner === owner && !!e.fixed === fixed && e.data.cells === data.cells && e.data.w === data.w && e.data.stance === data.stance && (e.data.place || 'auto') === (data.place || 'auto') && e.name === data.name) return id;
   const a = analyzeDesign(design);
   if (!a.ok) throw new Error(`“${design.name}” can't be built: ${a.errors[0]}`);
   const id = `d${newId(world)}`;

@@ -355,6 +355,25 @@ designer's numbers against the sim.
   'sim')`, no world): no Build button, `lsb-design-chosen` ignored, and it opens straight into the
   test dialog (titled Battle simulator), starting from a sample destroyer if the remembered design
   can't fight. Everything else is the normal test battle (your side + extras vs any enemy).
+- **Start positions** (owner, Nov 2026: "giving the player more strategy is always better"): a
+  **Start** picker next to Stance in the ship and defence designers (also explained under "Start
+  position" in the side panel): Auto, Front, Middle, Back, Top flank, Bottom flank. Saved with the
+  design as `place` (`PLACE_INFO`/`placeOf` in `shipStats.js`); `encodeDesign` writes it only when
+  it isn't Auto, so every design saved before (and the live save) loads as Auto with no
+  `upgradeWorld` change. The same ship with another position is its own world design
+  (`registerDesign` compares it). **Auto starts exactly as before**: `startSpot()` in
+  `battleSetup.js` takes the same two random draws per ship, so a battle with every design on Auto
+  is identical (checked against the old code on 80 scenarios). Ships: Front starts at the very front
+  of its fleet, Middle in the middle, Back well behind (+60 blocks plus the back of the spread),
+  Top/Bottom flank out beyond the edge of the fleet's main body on that wing. "Top" is the top of
+  the ship as drawn in the designer with the nose toward the enemy, so two facing fleets' top wings
+  are on opposite sides of the screen. Defences (`layoutDefences`): Back ones fill the rows by the
+  world first, Front ones last (Auto/Middle between, biggest first as before); Top/Bottom flank
+  defences stand in their own block of rows beside the main block (40 apart), on that wing. Used
+  by world battles and the designer's test battle (`makeTestScenario`). Stance still decides what
+  a ship does once the battle starts. One measured battle (182 attackers vs 115 ships + 32
+  defences, seed 7): on Auto the attackers lost (33 vs 109 left); with flank wings, a front line
+  and artillery at the back they won (26 vs 12).
 - **Renaming designs** (owner, Nov 2026): a Rename button on your own shipyards in the world
   panel opens a small dialog; `renameDesign()` in `world.js` (owner only, 1–40 chars, control
   characters stripped) renames the design everywhere and logs it; server action
