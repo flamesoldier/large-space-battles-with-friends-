@@ -15,6 +15,7 @@ export const PATCH_NOTES = [
       'Galaxy on a phone: a smaller top bar, so the map gets more room; swipe the row of buttons sideways to reach them all. After you tap a world to send a fleet to, the Launch button scrolls into view.',
       'Battle replays on a phone open on the whole battle, and the Back button is a bar along the top, so it no longer covers the play controls.',
       'Fixed: pinching to zoom the galaxy map on a phone or tablet made the map fly off the screen. Pinching now zooms in on the spot between your fingers, and you can move the map with two fingers as you zoom.',
+      'NEW: a full-screen button next to − + Fit on the galaxy map (phones and computers). It hides the top bar and side panel so the map fills the screen; tap it again (or press Esc on a computer) to bring them back. You can still tap worlds while full screen: their details are in the panel when you come back.',
       'Turn your phone on its side for more room: the galaxy puts the map and the panel side by side, and the designer puts the blocks down the left.',
     ],
   },

@@ -421,6 +421,7 @@ addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
   if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'].includes(k)) { keys.add(k); if (k.startsWith('arrow')) e.preventDefault(); }
   if (k === 'escape' && move) { cancelMove(); }
+  else if (k === 'escape' && mapOnly) setMapOnly(false);
   else if (k === 'escape' && sel) select(null);
   if (k === '+' || k === '=') zoomAt(1.25);
   if (k === '-') zoomAt(0.8);
@@ -443,6 +444,37 @@ function keyPan(now) {
 $('zoom-in').addEventListener('click', () => zoomAt(1.4));
 $('zoom-out').addEventListener('click', () => zoomAt(1 / 1.4));
 $('fit').addEventListener('click', fit);
+
+// Full-screen map (owner, 11 Nov 2026): hides the top bar and side panel so the map fills the
+// window, and asks the browser for real full screen where it allows it (computers, Android;
+// iPhones don't allow it for pages, so there the map just fills the browser window). Leaving the
+// browser's full screen (Esc on a computer) leaves map-only too. The map keeps working: tapping a
+// world selects it, and its details are in the panel when you come back.
+let mapOnly = false;
+function setMapOnly(on) {
+  if (on === mapOnly) return;
+  mapOnly = on;
+  $('app').classList.toggle('map-only', on);
+  $('full').setAttribute('aria-pressed', String(on));
+  $('full').title = on ? 'Leave full screen (Esc)' : 'Full screen: just the map (Esc to leave)';
+  $('full').setAttribute('aria-label', on ? 'Leave full screen' : 'Full screen map');
+  const doc = document, el = doc.documentElement;
+  const fsNow = doc.fullscreenElement || doc.webkitFullscreenElement;
+  try {
+    if (on && !fsNow) {
+      const req = el.requestFullscreen || el.webkitRequestFullscreen;
+      const p = req && req.call(el, { navigationUI: 'hide' });
+      if (p && p.catch) p.catch(() => {}); // refused (iPhone, some embedded pages): map-only still works
+    } else if (!on && fsNow) {
+      const p = (doc.exitFullscreen || doc.webkitExitFullscreen).call(doc);
+      if (p && p.catch) p.catch(() => {});
+    }
+  } catch { /* not allowed here: map-only still works */ }
+}
+$('full').addEventListener('click', () => setMapOnly(!mapOnly));
+for (const ev of ['fullscreenchange', 'webkitfullscreenchange']) {
+  document.addEventListener(ev, () => { if (!(document.fullscreenElement || document.webkitFullscreenElement)) setMapOnly(false); });
+}
 
 function showTip(sx, sy) {
   const tip = $('tip');

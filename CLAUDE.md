@@ -814,6 +814,11 @@ game: identical apart from animation. **Keep new phone styling inside these quer
   work): during a pinch the one-finger drag measured from the other finger's position, so each step
   jumped the map by the fingers' spread. Now two fingers zoom with their spread and pan with their
   midpoint; the one-finger drag is off while two touches are down and restarts from its own finger.
+- **Full-screen map button** (owner, 11 Nov 2026, phones and computers; the one deliberate computer
+  change): `#full` in `.nav` after Fit. `setMapOnly()` toggles `#app.map-only` (top bar and side panel
+  hidden, map fills the window) and asks for browser full screen where allowed (iPhones refuse for
+  pages; map-only still works there). Leaving browser full screen (Esc) leaves map-only; Esc also
+  leaves it (after cancelling a move, before deselecting).
 - The admin page already worked on phones.
 
 ## Working on the live game

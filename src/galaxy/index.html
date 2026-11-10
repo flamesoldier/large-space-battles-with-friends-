@@ -309,6 +309,16 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
   aside { border-left: 1px solid var(--line); border-top: 0; padding-right: env(safe-area-inset-right, 0px); }
   .topbtns { flex: 0 1 auto; min-width: 0; }
 }
+/* Full-screen map (owner, 11 Nov 2026): the top bar and side panel step aside and the map fills
+   the screen; where the browser allows it, the page goes properly full screen too. */
+.nav button.full { display: inline-grid; place-items: center; }
+.full svg { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; display: block; }
+.full .shrink-ico, .full[aria-pressed="true"] .grow-ico { display: none; }
+.full[aria-pressed="true"] .shrink-ico { display: inline; }
+#app.map-only { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); grid-template-areas: "map"; }
+#app.map-only > .top, #app.map-only > aside { display: none; }
+#app.map-only .nav { right: max(12px, env(safe-area-inset-right, 0px)); bottom: max(12px, env(safe-area-inset-bottom, 0px)); }
+#app.map-only #events-win { top: max(12px, env(safe-area-inset-top, 0px)); left: max(12px, env(safe-area-inset-left, 0px)); }
 @media (prefers-reduced-motion: reduce) { #toast { transition: none; } }
 </style>
 
@@ -358,6 +368,7 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
       <button id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
       <button id="zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
       <button id="fit" title="Show the whole galaxy">Fit</button>
+      <button id="full" class="full" title="Full screen: just the map (Esc to leave)" aria-label="Full screen map" aria-pressed="false"><svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path class="grow-ico" d="M1.5 5.5v-4h4M10.5 1.5h4v4M14.5 10.5v4h-4M5.5 14.5h-4v-4"/><path class="shrink-ico" d="M5.5 1.5v4h-4M14.5 5.5h-4v-4M10.5 14.5v-4h4M1.5 10.5h4v4"/></svg></button>
     </div>
   </main>
 
