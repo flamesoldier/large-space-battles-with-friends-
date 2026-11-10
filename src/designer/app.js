@@ -36,7 +36,7 @@ let block = BT.ARMOR, tool = 'pencil', showArcs = false;
 let design = null, info = null, seenVersion = -1;
 const canvas = $('grid'), g = canvas.getContext('2d');
 const cam = { x: ed.w / 2, y: ed.h / 2, zoom: 12 };
-let dirty = true, hover = null;
+let dirty = true, hover = null, touchInspect = false; // touchInspect: a Hand-tool tap is showing a cell's readout (touch screens)
 
 // ------------------------------------------------------------ storage (never fatal)
 const store = {
@@ -154,11 +154,11 @@ $('fitbtn').addEventListener('click', fit);
 function syncFields() { $('name').value = ed.name; $('stance').value = ed.stance; $('place').value = ed.place; dirty = true; }
 
 let toastTimer = 0;
-function toast(msg) {
+function toast(msg, ms = 2600) {
   const t = $('toast');
   t.textContent = msg; t.classList.add('on');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('on'), 2600);
+  toastTimer = setTimeout(() => t.classList.remove('on'), ms);
 }
 
 // ------------------------------------------------------------ analysis -> stats panel
@@ -176,6 +176,8 @@ function refresh(force = false) {
   dirty = true;
   const a = info;
   $('cost').textContent = fmt(a.cost);
+  $('stats-cost').textContent = `${fmt(a.cost)} cr`; // phone Stats button (hidden on computers)
+  $('stats-btn').classList.toggle('bad', !a.ok);
   $('yard').textContent = fmt(shipyardPrice(design));
   $('yard-hint').textContent = `A shipyard costs ${SHIPYARD_PRICE_MULT}× the ship and builds one free every ${SHIPYARD_INTERVAL_MIN} min until the world falls. It pays for itself in ${(SHIPYARD_PRICE_MULT * SHIPYARD_INTERVAL_MIN / 60).toFixed(0)} h.`;
   const cls = a.hullClass || HULL_CLASSES[HULL_CLASSES.length - 1];
@@ -354,7 +356,7 @@ function draw() {
   }
 
   // Cursor preview (none when no block is selected, unless erasing a rectangle with a right drag).
-  if (hover && !panning && (block !== null || drag)) {
+  if (hover && !panning && !touchInspect && (block !== null || drag)) {
     const [hx, hy] = hover;
     if (drag && tool === 'rect') {
       const x0 = Math.min(drag.x, hx), y0 = Math.min(drag.y, hy), x1 = Math.max(drag.x, hx), y1 = Math.max(drag.y, hy);
@@ -697,7 +699,35 @@ const endPointer = (e) => {
 };
 canvas.addEventListener('pointerup', endPointer);
 canvas.addEventListener('pointercancel', endPointer);
-canvas.addEventListener('pointerleave', () => { if (!drag) { hover = null; $('hover').hidden = true; dirty = true; } });
+canvas.addEventListener('pointerleave', () => { if (!drag && !touchInspect) { hover = null; $('hover').hidden = true; dirty = true; } });
+
+// Touch screens have no hover, so with the Hand tool a tap on a cell shows what the mouse
+// would show there (the readout and, for a gun, its firing arc) until the next touch.
+let tapStart = null;
+canvas.addEventListener('pointerdown', (e) => {
+  touchInspect = false;
+  tapStart = e.pointerType === 'touch' && tool === 'pan' && pointers.size === 1 ? { id: e.pointerId, x: e.clientX, y: e.clientY } : null;
+});
+canvas.addEventListener('pointerup', (e) => {
+  if (!tapStart || tapStart.id !== e.pointerId) return;
+  const moved = Math.hypot(e.clientX - tapStart.x, e.clientY - tapStart.y) > 8;
+  tapStart = null;
+  if (moved) return;
+  const [x, y] = toCell(e.clientX, e.clientY), el = $('hover');
+  if (x < 0 || y < 0 || x >= ed.w || y >= ed.h) return;
+  hover = [x, y]; touchInspect = true; dirty = true;
+  el.textContent = describe(x, y); el.hidden = false;
+});
+
+// Phones: the stats sit behind the Stats button and open over the grid.
+$('stats-btn').addEventListener('click', () => {
+  const on = $('app').classList.toggle('show-stats');
+  $('stats-btn').setAttribute('aria-pressed', String(on));
+});
+if (matchMedia('(pointer: coarse)').matches && !store.get('lsb.designer.touchhint.v1', false)) {
+  store.set('lsb.designer.touchhint.v1', true);
+  setTimeout(() => toast('One finger draws. Two fingers move and zoom. Pick Erase to remove blocks, and the Hand tool to tap a block and see what it does.', 9000), 600);
+}
 // The mouse wheel (and a trackpad pinch) zooms towards the cursor. Moving around is WASD /
 // arrow keys, the Hand tool, Space + drag, middle drag or the minimap.
 canvas.addEventListener('wheel', (e) => {

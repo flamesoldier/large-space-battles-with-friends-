@@ -788,6 +788,30 @@ Still open with the owner: the exact block prices and the shipyard multiplier (p
 until there's an income number to balance against), and whether hull class should matter beyond
 the block limit.
 
+## Phones (owner, 11 Nov 2026: "make it so I can do everything on my phone, but don't change how it plays on computer")
+
+Every phone change is behind one condition, so computers never see it: CSS
+`@media (max-width: 640px), (pointer: coarse) and (max-height: 500px)` (portrait phones, and
+touch screens on their side), JS `PHONE` in `galaxy/app.js` with the same query. Phone-only extras:
+`(pointer: coarse) and (max-height: 500px) and (min-width: 641px)` (landscape). Checked by
+screenshotting the old and new build at 1440×900, 1100×800 and 800×900 against the same saved
+game: identical apart from animation. **Keep new phone styling inside these queries.**
+- Galaxy: slim top bar, buttons in one swipeable row (`.topbtns`, `display: contents` on computers);
+  "Tap" instead of "Click" in hints when there's no mouse (`CLICK`, `(hover: none) and (pointer: coarse)`);
+  after picking a move target the Launch button scrolls into view; inputs 16 px (stops iPhone
+  zoom-on-focus); landscape puts map and panel side by side. Replay overlays (galaxy and designer)
+  get their Back button as a bar along the top instead of floating over the viewer's controls.
+- Designer: header is one swipeable row with Test battle / Build shipyard first; grid fills the
+  screen; blocks are a two-row swipeable strip and tools a one-row strip (`.tools`,
+  `display: contents` on computers); the phone-only **Stats** button (shows the price, red when the
+  design isn't valid) opens `#stats` over the grid (`#app.show-stats`). Touch: one finger draws, two
+  fingers pan/zoom (already there), Erase is in the palette; with the Hand tool **a tap shows the
+  cell's readout and gun arc** until the next touch (`touchInspect`, never set by a mouse). A
+  one-time toast explains the touch controls (`lsb.designer.touchhint.v1`). Landscape: palette down the left.
+- Viewer: under 760 px wide, or a touch screen on its side, a replay opens on the whole battle
+  (the 2.2 px/block minimum zoom left phones looking at empty space between fleets).
+- The admin page already worked on phones.
+
 ## Working on the live game
 
 - **Patch notes (owner, Nov 2026): every update that goes live adds an entry** to

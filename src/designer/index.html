@@ -163,14 +163,58 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
   #app { grid-template-columns: 200px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; grid-template-areas: "top top" "pal grid" "stats stats"; }
   #stats { border-left: 0; border-top: 1px solid var(--line); max-height: 34vh; }
 }
-@media (max-width: 640px) {
-  #app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto auto; grid-template-areas: "top" "grid" "pal" "stats"; }
-  #palette { border-right: 0; border-top: 1px solid var(--line); max-height: 30vh; }
-  #palette .hint { display: none; }
-  .blocks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  #stats { max-height: 26vh; }
-  .brand span { display: none; }
-  #name { width: 130px; }
+/* Phones (portrait, or landscape with a touch screen). Computers never match this.
+   The grid gets most of the screen; blocks and tools are two swipeable strips under it; the
+   header is one swipeable row; the stats open over the grid from the Stats button. */
+.tools { display: contents; }
+.phone-only { display: none; }
+@media (max-width: 640px), (pointer: coarse) and (max-height: 500px) {
+  #app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; grid-template-areas: "top" "grid" "pal"; }
+  .top { flex-wrap: nowrap; overflow-x: auto; gap: 6px; padding-block: 6px; scrollbar-width: none; }
+  .top::-webkit-scrollbar, .blocks::-webkit-scrollbar, .tools::-webkit-scrollbar { display: none; }
+  .top .group { display: contents; }
+  .top .grow, .brand { display: none; }
+  #test-btn, #use-design { order: -1; }
+  .top input, .top select, .top button, .top label { flex: none; white-space: nowrap; }
+  #template { width: 150px; }
+  #name { width: 140px; }
+  /* 16 px stops iPhones zooming the page in when a field is tapped. */
+  input[type=text], input[type=number], select { font-size: 16px; }
+  button { touch-action: manipulation; }
+  #palette { border-right: 0; border-top: 1px solid var(--line); padding: 6px 8px max(6px, env(safe-area-inset-bottom, 0px)); overflow: hidden; display: grid; gap: 6px; }
+  #palette h2, #palette .hint { display: none; }
+  .blocks { grid-auto-flow: column; grid-template-rows: repeat(2, auto); grid-auto-columns: max-content; overflow-x: auto; scrollbar-width: none; }
+  .blk { grid-template-columns: 16px auto auto; gap: 6px; padding: 7px 9px; white-space: nowrap; }
+  .blk i { width: 16px; height: 16px; }
+  .tools { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+  .tools .row { flex-wrap: nowrap; flex: none; margin: 0 !important; }
+  .tools .row button { flex: none; padding: 8px 11px; }
+  .tools .phone-only { display: inline-block; flex: none; padding: 8px 11px; }
+  #stats-btn.bad #stats-cost { color: var(--bad); }
+  #stats-cost { font-family: var(--mono); font-weight: 500; letter-spacing: 0; color: var(--azure); margin-left: 4px; }
+  #stats { grid-area: grid; position: relative; z-index: 5; max-height: none; border: 0; display: none; background: #0b111b; }
+  #app.show-stats #stats { display: block; }
+  #grid { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+  #hover { bottom: auto; top: 8px; left: 8px; max-width: calc(100% - 16px); white-space: normal; }
+  #minimap { width: 112px; height: 70px; }
+  .nav { right: 8px; bottom: 8px; }
+  .zoom button { padding: 7px 12px; }
+  dialog { padding: 14px; width: calc(100% - 20px); max-height: calc(100% - 20px); }
+  #test-result { overflow-x: auto; }
+  .lib .item { grid-template-columns: 64px 1fr auto; gap: 8px; }
+  .lib img { width: 64px; height: 32px; }
+  /* the way back from a test replay: a slim bar along the top, clear of the replay's controls */
+  #replay { display: flex; flex-direction: column; }
+  #replay iframe { flex: 1; height: auto; min-height: 0; }
+  #replay-close { order: -1; position: static; transform: none; box-shadow: none; border-radius: 0; width: 100%; padding: 9px; padding-top: max(9px, env(safe-area-inset-top, 0px)); }
+}
+/* Phones on their side: the blocks and tools go down the left so the grid keeps its height. */
+@media (pointer: coarse) and (max-height: 500px) and (min-width: 641px) {
+  #app { grid-template-columns: 200px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); grid-template-areas: "top top" "pal grid"; }
+  #palette { border-top: 0; border-right: 1px solid var(--line); overflow-y: auto; align-content: start; padding-left: max(8px, env(safe-area-inset-left, 0px)); }
+  .blocks { grid-auto-flow: row; grid-template-rows: none; grid-template-columns: minmax(0, 1fr); grid-auto-columns: auto; overflow-x: visible; }
+  .blk { grid-template-columns: 16px 1fr auto; white-space: normal; padding: 5px 8px; }
+  .tools, .tools .row { flex-wrap: wrap; overflow-x: visible; }
 }
 @media (prefers-reduced-motion: reduce) { #toast { transition: none; } }
 </style>
@@ -199,6 +243,8 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
   <aside id="palette">
     <h2>Blocks</h2>
     <div class="blocks" id="blocks" role="group" aria-label="Block to place"></div>
+    <div class="tools">
+    <button id="stats-btn" class="phone-only" aria-pressed="false" title="Cost, stats and checks">Stats<span id="stats-cost"></span></button>
     <h2>Tool</h2>
     <div class="row" role="group" aria-label="Tool">
       <button data-tool="pencil" title="Pencil (B)">Pencil</button>
@@ -215,6 +261,7 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
       <button id="undo" title="Undo (Ctrl+Z)">Undo</button>
       <button id="redo" title="Redo (Ctrl+Shift+Z)">Redo</button>
       <button id="fitbtn" title="Fit the ship in view">Fit</button>
+    </div>
     </div>
     <h2>Controls</h2>
     <p class="hint"><b>Left drag</b> places blocks, <b>right drag</b> on blocks erases, <b>right-click an empty cell</b> for the <b>Hand</b> tool (drag to move around; right-click the ship or pick a block to build again), and Esc deselects the block. <b>Mouse wheel</b> or pinch zooms. <b>W A S D</b> or the <b>arrow keys</b> move around (hold Shift to go faster); so do the <b>Hand</b> tool (H), <b>Space + drag</b>, middle drag and the <b>minimap</b>. Keys <b>1–0</b> pick blocks, <b>Q</b> shows all firing arcs. The nose points <b>right</b>.</p>

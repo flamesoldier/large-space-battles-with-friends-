@@ -276,18 +276,52 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
   .brand span { display: none; }
   .top { gap: 6px 10px; }
 }
+/* Phones (portrait, or landscape with a touch screen). Computers never match this. */
+.topbtns { display: contents; }
+@media (max-width: 640px), (pointer: coarse) and (max-height: 500px) {
+  .top { gap: 4px 12px; padding-block: 6px; padding-top: max(6px, env(safe-area-inset-top, 0px)); }
+  .brand, .pa, .top .grow { display: none; }
+  .readout small { font-size: 9px; }
+  .readout strong { font-size: 14px; }
+  /* the buttons: one row you can swipe sideways */
+  .topbtns { display: flex; gap: 6px; flex: 1 0 100%; overflow-x: auto; scrollbar-width: none; }
+  .topbtns::-webkit-scrollbar { display: none; }
+  .topbtns > * { flex: none; white-space: nowrap; }
+  .topbtns button { padding: 7px 10px; }
+  #events-win { max-height: 30%; }
+  /* 16 px stops iPhones zooming the page in when a field is tapped. */
+  input[type=text], input[type=number], input[type=password], select { font-size: 16px; }
+  button { touch-action: manipulation; }
+  #map { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+  .nav button { padding: 7px 13px; }
+  aside { padding-bottom: env(safe-area-inset-bottom, 0px); }
+  dialog { width: calc(100% - 20px); max-height: calc(100% - 20px); padding: 14px; }
+  /* the way back from the designer and from replays: a slim bar along the top */
+  .overlay-bar { gap: 10px; padding: 6px 10px; padding-top: max(6px, env(safe-area-inset-top, 0px)); }
+  .overlay-bar button { white-space: nowrap; padding: 7px 12px; font-size: 13px; }
+  #replay-overlay { display: flex; flex-direction: column; }
+  #replay-overlay iframe { flex: 1; height: auto; min-height: 0; }
+  #replay-overlay > button { order: -1; position: static; transform: none; box-shadow: none; border-radius: 0; width: 100%; padding: 9px; padding-top: max(9px, env(safe-area-inset-top, 0px)); }
+}
+/* Phones on their side: map and panel side by side, as on a computer. */
+@media (pointer: coarse) and (max-height: 500px) and (min-width: 641px) {
+  #app { grid-template-columns: minmax(0, 1fr) 300px; grid-template-rows: auto minmax(0, 1fr); grid-template-areas: "top top" "map side"; }
+  aside { border-left: 1px solid var(--line); border-top: 0; padding-right: env(safe-area-inset-right, 0px); }
+  .topbtns { flex: 0 1 auto; min-width: 0; }
+}
 @media (prefers-reduced-motion: reduce) { #toast { transition: none; } }
 </style>
 
 <div id="app">
   <header class="top">
     <div class="brand"><b>Galaxy</b><span>Hold worlds, build shipyards, send fleets.</span></div>
-    <label for="me" id="me-pick" title="Hot-seat: whose turn at the keyboard. Online, this is your login.">Playing as <span class="swatch" id="me-swatch"></span><select id="me"></select><span id="me-name" hidden></span></label>
+    <label for="me" id="me-pick" title="Hot-seat: whose turn at the keyboard. Online, this is your login."><span class="pa">Playing as</span> <span class="swatch" id="me-swatch"></span><select id="me"></select><span id="me-name" hidden></span></label>
     <div class="readout"><small>Credits</small><strong id="credits">0</strong></div>
     <div class="readout"><small>Income</small><strong id="income">0</strong></div>
     <div class="grow"></div>
     <div class="readout"><small>Galaxy time</small><strong id="clock">Day 1</strong></div>
     <div class="group speed" role="group" aria-label="Game speed" id="speed"></div>
+    <div class="topbtns">
     <button id="sim-btn" title="Test any designs against each other in a practice battle. Nothing is spent.">Battle simulator</button>
     <button id="notes-btn" title="What's changed in each update">Patch notes<span class="badge" id="notes-badge" hidden>new</span></button>
     <button id="dip-btn" title="Allies and enemies">Diplomacy<span class="badge" id="dip-badge" hidden>0</span></button>
@@ -295,6 +329,7 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
     <span id="net" hidden role="status">Reconnecting…</span>
     <button id="new-btn">New game</button>
     <button id="logout-btn" hidden title="Log out of this browser">Log out</button>
+    </div>
   </header>
 
   <main>

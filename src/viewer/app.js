@@ -82,7 +82,10 @@ function show(bytes) {
   drawStrength();
   // Open close enough to see individual blocks, centred on the line of contact.
   fitView();
-  cam.zoom = Math.max(cam.zoom, 2.2);
+  // Phones (under 760 px wide, or a touch screen on its side) open on the whole battle instead:
+  // that close in, a phone showed empty space between the fleets. Computers open as before.
+  const phone = canvas.clientWidth < 760 || matchMedia('(pointer: coarse) and (max-height: 500px)').matches;
+  if (!phone) cam.zoom = Math.max(cam.zoom, 2.2);
   t = 0; playing = true; setPlayIcon();
   $('progress').hidden = true;
 }

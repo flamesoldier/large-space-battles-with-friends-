@@ -8,6 +8,16 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-11b', date: '11 Nov 2026', title: 'Play on your phone',
+    items: [
+      'The whole game now works on a phone. Nothing changes on a computer.',
+      'Ship designer on a phone: the grid takes most of the screen, with the blocks and tools in two rows underneath that you swipe sideways. One finger draws; two fingers move around and zoom. Pick Erase to remove blocks. With the Hand tool, tap a block to see what it does and, for a gun, where it can fire. The Stats button (it shows the ship\'s price, in red while the design has a problem) opens the stats and checks over the grid; tap it again to close them.',
+      'Galaxy on a phone: a smaller top bar, so the map gets more room; swipe the row of buttons sideways to reach them all. After you tap a world to send a fleet to, the Launch button scrolls into view.',
+      'Battle replays on a phone open on the whole battle, and the Back button is a bar along the top, so it no longer covers the play controls.',
+      'Turn your phone on its side for more room: the galaxy puts the map and the panel side by side, and the designer puts the blocks down the left.',
+    ],
+  },
+  {
     id: '2026-11-11', date: '11 Nov 2026', title: 'Replay colours fixed, fleets start spread out',
     items: [
       'Fixed: in battle replays, each player\'s fighters, missiles, laser beams and the colour by their name were shown in the OTHER player\'s colour. Everything now matches the player\'s own ships. This fixes old replays too.',

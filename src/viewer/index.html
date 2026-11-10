@@ -112,13 +112,16 @@ button[aria-pressed="true"] { border-color: var(--azure); color: var(--azure); }
 .bar { height: 2px; background: var(--line); margin-top: 12px; }
 #progress-bar { height: 100%; width: 0; background: var(--signal); }
 
-@media (max-width: 760px) {
+@media (max-width: 760px), (pointer: coarse) and (max-height: 500px) {
   .readout { display: none; }
   #minimap {
   background: rgba(8, 12, 19, 0.96) !important; width: 150px; height: 96px; bottom: 116px; }
   .side { min-width: 96px; }
   .side strong { font-size: 16px; }
   .brand span { display: none; }
+  #view { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+  button { touch-action: manipulation; }
+  select, input[type=number] { font-size: 16px; }
 }
 @media (prefers-reduced-motion: reduce) { .meter i { transition: none; } }
 </style>

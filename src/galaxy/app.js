@@ -37,6 +37,10 @@ const ONLINE = typeof __ONLINE__ !== 'undefined' && __ONLINE__;
 const net = ONLINE ? new Net() : null;
 const $ = (id) => document.getElementById(id);
 const fmt = (n) => Math.floor(n).toLocaleString();
+// Phones: touch screens with no mouse say "Tap"; PHONE matches the phone layout in index.html.
+const TOUCH = matchMedia('(hover: none) and (pointer: coarse)').matches;
+const CLICK = TOUCH ? 'Tap' : 'Click';
+const PHONE = matchMedia('(max-width: 640px), (pointer: coarse) and (max-height: 500px)');
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 // Same block colours as the designer, for design thumbnails.
@@ -576,7 +580,7 @@ function movePanel(P, myShips) {
   html += `<label class="check"><input type="checkbox" data-act="lanes" ${move.lanes ? 'checked' : ''}> Use hyperlanes (${HYPERLANE_SPEEDUP}× faster)</label>`;
   html += `<label class="check" title="Fleets stop at every world on their route, and defenders at worlds you don't hold will fight them"><input type="checkbox" data-act="avoid" ${move.avoid ? 'checked' : ''}> Avoid worlds you don't hold</label>`;
   if (move.to === null) {
-    html += `<div class="route">${move.picking ? '<b>Click a world on the map</b> to send them there. Esc cancels.' : 'Pick where to send them.'}${move.preview && !move.preview.ok ? `<br><span style="color:var(--bad)">${esc(move.preview.error)}</span>` : ''}</div>`;
+    html += `<div class="route">${move.picking ? `<b>${CLICK} a world on the map</b> to send them there.${TOUCH ? '' : ' Esc cancels.'}` : 'Pick where to send them.'}${move.preview && !move.preview.ok ? `<br><span style="color:var(--bad)">${esc(move.preview.error)}</span>` : ''}</div>`;
     html += `<div class="row"><button data-act="cancel-move">Cancel</button><button class="go" data-act="pick" ${move.picking ? 'disabled' : ''}>Choose destination</button></div>`;
   } else {
     const T = world.planets[move.to], pv = move.preview;
@@ -639,7 +643,7 @@ function overviewPanel() {
   const mine = world.planets.filter((p) => p.owner === ui.me);
   let html = `<h1><span class="swatch" style="background:${P.color}"></span>${esc(P.name)}</h1>
     <div class="sub">${alliesText(ui.me)}${P.eliminated ? ' · <span style="color:var(--bad)">knocked out</span>' : ''}</div>
-    <p class="hint">Click a world to see it. Build shipyards on your worlds; select a world with your ships on it to move them. Hyperlanes (bright lines) are ${HYPERLANE_SPEEDUP}× faster than normal space.</p>
+    <p class="hint">${CLICK} a world to see it. Build shipyards on your worlds; select a world with your ships on it to move them. Hyperlanes (bright lines) are ${HYPERLANE_SPEEDUP}× faster than normal space.</p>
     <h2>Your worlds</h2><div class="list">`;
   html += mine.map((p) => `<button data-act="goto" data-planet="${p.id}"><span class="swatch" style="background:${P.color}"></span><span>${esc(p.name)}</span><em>${fmt(p.income)}/h · ${p.yards.length} yd · ${shipTotal(p)} sh</em></button>`).join('') || '<p class="hint">None.</p>';
   html += '</div>';
@@ -675,7 +679,7 @@ $('panel').addEventListener('click', (e) => {
     const have = shipsAt(world.planets[move.from], ui.me);
     for (const d of Object.keys(have)) if (world.designs[d].speed >= MIN_FLEET_SPEED) move.ships[d] = act === 'all' ? have[d] : 0;
     refreshPreview(); renderPanel(true);
-  } else if (act === 'pick') { move.picking = true; move.to = null; refreshPreview(); renderPanel(true); toast('Click a world to send the fleet there.'); }
+  } else if (act === 'pick') { move.picking = true; move.to = null; refreshPreview(); renderPanel(true); toast(`${CLICK} a world to send the fleet there.`); }
   else if (act === 'cancel-move') cancelMove();
   else if (act === 'launch') launchMove();
   else if (act === 'use-lanes') { move.lanes = true; move.avoid = false; refreshPreview(); renderPanel(true); }
@@ -710,7 +714,7 @@ function startMove(from) {
   for (const [d, n] of Object.entries(have)) ships[d] = world.designs[d].speed >= MIN_FLEET_SPEED ? n : 0;
   move = { from, ships, to: null, lanes: true, avoid: false, picking: true, preview: null, hoverTo: null }; // avoid off by default (owner, Nov 2026)
   renderPanel(true);
-  toast('Click a world to send the fleet there.');
+  toast(`${CLICK} a world to send the fleet there.`);
 }
 function cancelMove() { move = null; renderPanel(true); }
 function refreshPreview() {
@@ -724,6 +728,8 @@ function setMoveTarget(to, commit) {
   if (commit) move.picking = false;
   refreshPreview();
   if (commit) renderPanel(true);
+  // Phones: the panel is short, so bring the Launch button into view once a world is picked.
+  if (commit && PHONE.matches) document.querySelector('#panel [data-act=launch]')?.scrollIntoView({ block: 'nearest' });
 }
 /**
  * Do an action: hot-seat runs the world function here; online sends it to the server, which runs
@@ -757,7 +763,7 @@ async function sellYard(planetId, yardId) {
   if (armedSell !== yardId) {
     armedSell = yardId;
     const b = $('panel').querySelector(`[data-act=sell][data-yard="${yardId}"]`);
-    if (b) b.textContent = `Click again: sell in ${SELL_HOURS} hours`;
+    if (b) b.textContent = `${CLICK} again: sell in ${SELL_HOURS} hours`;
     setTimeout(() => { if (armedSell === yardId) { armedSell = null; renderPanel(true); } }, 3000);
     return;
   }
@@ -1053,7 +1059,7 @@ function renderDiplomacy() {
     if (iAsked) status += ' <span class="tag">you proposed</span>';
     let acts = '';
     if (out) acts = '<span class="hint">Out of the game</span>';
-    else if (al) acts = `<button class="small danger" data-dip="break" data-p="${p.id}">${armedBreak === p.id ? 'Click again: declare war' : 'Break alliance'}</button>`;
+    else if (al) acts = `<button class="small danger" data-dip="break" data-p="${p.id}">${armedBreak === p.id ? `${CLICK} again: declare war` : 'Break alliance'}</button>`;
     else if (theyAsked) acts = `<button class="small go" data-dip="accept" data-p="${p.id}">Accept</button><button class="small" data-dip="decline" data-p="${p.id}">Decline</button>`;
     else if (iAsked) acts = `<button class="small" data-dip="decline" data-p="${p.id}">Withdraw</button>`;
     else acts = `<button class="small go" data-dip="propose" data-p="${p.id}">Propose alliance</button>`;
