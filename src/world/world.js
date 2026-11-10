@@ -511,8 +511,8 @@ export function fmtHours(h) {
 // (its destination) or flies on. At any other world:
 //  - if a siege is under way there, it joins it (its destination), or stops for it if anyone there
 //    is its enemy (a world it is passing);
-//  - else if this is its destination, or there are defenders, it starts a siege;
-//  - otherwise (passing a world nobody defends) it flies on.
+//  - else it starts a siege, even passing a world nobody defends (owner, 11 Nov 2026): after the
+//    hold it takes the world and flies on.
 // There is at most one siege per world. It holds for BATTLE_HOLD_MIN, so everyone can bring
 // reinforcements (the owner's and allies' fleets join the garrison, and shipyards keep building).
 //
@@ -587,8 +587,10 @@ export function planEvent(world, ev) {
     if (allied(world, f.owner, P.owner)) return { kind: final ? 'join' : 'pass' };
     const s = siegeAt(world, P.id)[0];
     if (s) return final || enemyHere(world, P, f.owner) ? { kind: 'hold', siege: s.id } : { kind: 'pass' };
-    if (final || defendersAt(world, P, f.owner).length) return { kind: 'siege' };
-    return { kind: 'pass' };
+    // Any world on the route not held by the fleet's side is besieged and, if nobody defends it,
+    // taken when the hold ends, then the fleet flies on (owner, 11 Nov 2026: it used to fly past
+    // empty enemy worlds; "it's supposed to conquer each one on the way").
+    return { kind: 'siege' };
   }
   const s = ev.siege, P = world.planets[s.planet];
   const parties = siegeParties(world, s), fighters = parties.filter((q) => q.enemy);

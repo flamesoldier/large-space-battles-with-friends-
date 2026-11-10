@@ -728,6 +728,30 @@ const resolve = (scen) => {
   ok(again.every((p, i) => p.depth === sp[i].depth && p.across === sp[i].across), 'the same battle starts the same way');
 }
 
+// ---- passing fleets take empty enemy worlds on the way (owner, 11 Nov 2026)
+{
+  const w = createWorld({ players: [{ name: 'A' }, { name: 'B' }], seed: 5 });
+  const home = w.players[0].home;
+  const did = registerDesign(w, 0, { ...makeDesign('destroyer', 4), name: 'Runner' });
+  w.planets[home].garrison.push({ owner: 0, design: did, n: 3 });
+  // Find a target whose fastest route stops at other worlds; hand those to B with nobody home,
+  // and empty the target too.
+  let pick = null;
+  for (const T of w.planets) {
+    if (T.id === home) continue;
+    const pv = previewFleet(w, home, T.id, { [did]: 3 }, { owner: 0, lanes: true, avoid: false });
+    if (pv.ok && pv.legs.length >= 3) { pick = { T, via: pv.legs.slice(0, -1).map((l) => l.to) }; break; }
+  }
+  ok(pick, 'found a route with stops on the way');
+  for (const id of [...pick.via, pick.T.id]) { w.planets[id].owner = 1; w.planets[id].garrison = []; w.planets[id].yards = []; }
+  const f = sendFleet(w, 0, home, pick.T.id, { [did]: 3 }, { lanes: true, avoid: false });
+  ok(f.ok, `send through empty enemy worlds: ${f.error}`);
+  runWorld(w, f.fleet.arrive + (pick.via.length + 1) * (HOLD_MS + 1), resolve);
+  ok(pick.via.every((id) => w.planets[id].owner === 0), `every empty enemy world on the way taken (${pick.via.map((id) => w.planets[id].owner)})`);
+  ok(w.planets[pick.T.id].owner === 0 && shipsAt(w.planets[pick.T.id], 0)[did] === 3, 'and the fleet still reached its target with every ship');
+  ok(pick.via.every((id) => !countShipsT(shipsAt(w.planets[id], 0))), 'it left the worlds on the way empty and flew on');
+}
+
 // ---- bounties and credit gifts (owner, Nov 2026)
 {
   const w = createWorld({ players: [{ name: 'P1' }, { name: 'P2' }, { name: 'P3' }, { name: 'P4' }], seed: 11 });

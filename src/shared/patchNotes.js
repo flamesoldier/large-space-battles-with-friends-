@@ -8,6 +8,13 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-11f', date: '11 Nov 2026', title: 'Fleets take empty worlds on the way, plasma fires faster',
+    items: [
+      'Fleets now take every enemy world on their route, not just the ones with defenders. At an empty enemy world (or an empty unclaimed one) the fleet stops for the usual 30 minutes, takes it (destroying its shipyards) and flies on. The owner gets the same 30 minutes\' warning to rush ships in. Plan for 30 minutes per world on the way.',
+      'Plasma cannons now fire every 17 seconds (was 20).',
+    ],
+  },
+  {
     id: '2026-11-11e', date: '11 Nov 2026', title: 'Plasma rebalanced, fleets start closer behind big defences',
     items: [
       'Plasma cannon bolts now carry 5,000 damage (was 25,000). They still cut big ships and defences into pieces, but a giant defence now lasts minutes instead of about 20 seconds. Plasma is still the best answer to titans and battleships.',

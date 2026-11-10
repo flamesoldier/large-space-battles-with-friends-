@@ -644,7 +644,7 @@ function movePanel(P, myShips) {
       html += `<br><span class="hint">Battles start ${fmtHours(HOLD_MS / HOUR_MS)} after the fleet arrives, so reinforcements can join.</span>`;
       if (pv.stops.length) {
         const list = pv.stops.map((id) => { const S = world.planets[id], n = shipTotal(S); return `${esc(S.name)} (${esc(playerName(world, S.owner))}${n ? `, ${n} ships` : ''})`; }).join(', ');
-        html += `<br><span style="color:var(--warn)">Passes worlds you don't hold: ${list}. Defenders there will fight this fleet: if it wins it takes that world and flies on, if it loses the survivors turn back.</span>`;
+        html += `<br><span style="color:var(--warn)">Passes worlds you don't hold: ${list}. The fleet stops at each for the usual hold. It fights any defenders there: if it wins, or nobody defends it, it takes that world and flies on; if it loses, the survivors turn back.</span>`;
       }
     } else html += `<span style="color:var(--bad)">${esc(pv?.error || '')}</span>`;
     html += `</div><div class="row"><button data-act="cancel-move">Cancel</button><button data-act="pick">Change</button><button class="go" data-act="launch" ${pv?.ok && !busy ? '' : 'disabled'}>Launch</button></div>`;

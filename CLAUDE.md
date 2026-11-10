@@ -75,7 +75,7 @@ Weapons (numbers in `blocks.js`):
   stance distance from missile range (it used to fall back to 60 and dive in).
 - **Plasma cannon** (block `BT.LANCE`, weapon kind `'lance'` in code; **was the heavy laser**
   until Nov 2026, when the owner asked for it to be a projectile "to make its destructiveness more
-  obvious and cool"): 10×10 multi-block turret, range 650, every 20 s, a **5,000-damage budget**
+  obvious and cool"): 10×10 multi-block turret, range 650, every **17 s** (owner, 11 Nov 2026, was 20: "a bit weaker now"), a **5,000-damage budget**
   (owner, 11 Nov 2026, was 25,000: a colossus defence fell in ~20 s. Almost all of it is pieces
   cut off from the hub, not blocks burnt: 25,000 burnt ~5% and ~90% broke off. Measured with
   `/tmp`-style harnesses, generated plasma battleships vs the same ship with heavy armour in place
@@ -707,8 +707,9 @@ economy, fleets, captures, with real battles).
   straight to any world through normal space too; the planner (Dijkstra) picks the fastest mix
   and the player can turn lanes off. Fleets can't be recalled.
 - **Fleets stop at every world on their route** (owner's rule, so enemies can block or ambush
-  them). Passing a friendly world, or one with nobody defending it, they fly straight on. At a
-  world they don't hold with defenders there, they fight (`battle.passing`): **win and they take
+  them). Passing a friendly world they fly straight on. **At any world they don't hold** (owner, 11
+  Nov 2026: empty enemy worlds used to be flown past; now a siege, taken at the end of the hold, then
+  fly on: `planEvent` returns `siege` for every non-allied stop) they fight any defenders (`battle.passing`): **win and they take
   that world** (owner's rule) and fly on with the survivors, leaving it empty; lose and the
   survivors fall back.
 - **Battles wait 30 minutes** (`BATTLE_HOLD_MIN`, owner's rule) so reinforcements can join. A
