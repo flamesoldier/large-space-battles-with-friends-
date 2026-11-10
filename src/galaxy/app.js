@@ -539,10 +539,17 @@ function garrisonTable(P) {
   if (!byOwner.size) return '<p class="hint">No ships here.</p>';
   let html = '';
   for (const [owner, list] of byOwner) {
-    const total = list.reduce((a, s) => a + s.n, 0), value = list.reduce((a, s) => a + s.n * worthOf(world, s.design), 0);
+    // Ships and defences counted separately (owner, Nov 2026), each at its full block price.
+    const sum = (fixed, f) => list.reduce((a, s) => a + (!!world.designs[s.design].fixed === fixed ? f(s) : 0), 0);
+    const nShip = sum(false, (s) => s.n), nDef = sum(true, (s) => s.n);
+    const vShip = sum(false, (s) => s.n * worthOf(world, s.design)), vDef = sum(true, (s) => s.n * worthOf(world, s.design));
+    const parts = [];
+    if (nShip) parts.push(`${fmt(nShip)} ship${nShip === 1 ? '' : 's'}: <b>${fmt(vShip)} cr</b>`);
+    if (nDef) parts.push(`<span title="Defences count at their full block price, not the 1/5 they cost to build">${fmt(nDef)} defence${nDef === 1 ? '' : 's'}: <b>${fmt(vDef)} cr</b></span>`);
+    if (nShip && nDef) parts.push(`total ${fmt(vShip + vDef)} cr`);
     html += `<table><thead><tr><th>${who(owner)}${owner !== P.owner && P.owner !== null ? ' <span class="tag">guest</span>' : ''}</th><th>Ships</th><th>Speed</th></tr></thead><tbody>`;
     html += list.map((s) => { const d = world.designs[s.design]; return `<tr><td title="${esc(d.cls)} · worth ${fmt(worthOf(world, s.design))} cr each${d.fixed ? ` (built for ${fmt(d.cost)} cr)` : ''}">${esc(d.name)}</td><td>${fmt(s.n)}</td><td>${d.fixed ? '<span title="A defence: never moves or leaves this world">defence</span>' : d.speed < MIN_FLEET_SPEED ? 'fixed' : d.speed.toFixed(1)}</td></tr>`; }).join('');
-    html += `</tbody></table><p class="hint" style="margin:2px 0 10px">${fmt(total)} ships · ${fmt(value)} cr of hulls</p>`;
+    html += `</tbody></table><p class="hint" style="margin:2px 0 10px">${parts.join(' · ')}</p>`;
   }
   return html;
 }

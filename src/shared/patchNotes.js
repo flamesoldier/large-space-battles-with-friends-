@@ -8,6 +8,12 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-11g', date: '11 Nov 2026', title: 'Ships and defences valued separately',
+    items: [
+      'A world\'s panel now shows how many credits are in ships and how many are in defences for each player there, plus the total. Defences count at their full block price.',
+    ],
+  },
+  {
     id: '2026-11-11f', date: '11 Nov 2026', title: 'Fleets take empty worlds on the way, plasma fires faster',
     items: [
       'Fleets now take every enemy world on their route, not just the ones with defenders. At an empty enemy world (or an empty unclaimed one) the fleet stops for the usual 30 minutes, takes it (destroying its shipyards) and flies on. The owner gets the same 30 minutes\' warning to rush ships in. Plan for 30 minutes per world on the way.',
