@@ -344,11 +344,12 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
 
   <main>
     <canvas id="map" tabindex="0" aria-label="Galaxy map. Click a world to select it. Drag or W A S D to move, mouse wheel to zoom."></canvas>
-    <section id="events-win" aria-label="Events">
+    <section id="events-win" aria-label="Battles">
       <header>
-        <b>Events</b>
-        <button class="small" id="ev-mine" aria-pressed="false" title="Only events involving you">Mine</button>
-        <button class="small" id="ev-toggle" aria-expanded="true" title="Hide or show events">Hide</button>
+        <b id="ev-title">Battles</b>
+        <button class="small" id="ev-all" aria-pressed="false" title="Show everything that happens, not just battles">All</button>
+        <button class="small" id="ev-mine" aria-pressed="false" title="Only battles involving you or your allies">Mine</button>
+        <button class="small" id="ev-toggle" aria-expanded="true" title="Hide or show battles">Hide</button>
       </header>
       <ul id="events"></ul>
     </section>

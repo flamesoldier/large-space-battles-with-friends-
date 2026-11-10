@@ -657,7 +657,9 @@ economy, fleets, captures, with real battles).
   offline tests: a "Playing as" selector picks the player. Speed buttons (pause, 1×, 60×,
   600×, 3,600×; 60× by default) are for testing; time with the page closed counts at 1×, like a
   server. The clock stops while a battle is resolved (in the page, with a progress card).
-  Layout: map with a small collapsible **Events** window in its top-left corner; the right-hand
+  Layout: map with a small collapsible **Battles** window in its top-left corner (owner, 11 Nov 2026: only
+  fought battles, entries with `e.battle`, so players can scan and watch them; its **All** button,
+  `ui.allEvents`, brings back every log entry, since fleets, yards and diplomacy appear nowhere else); the right-hand
   panel is all for the selected world or fleet. In the world panel the ships and move controls
   come first and the **Shipyards** section sits below them, collapsible (owner's request: yards
   were pushing the move controls down; `ui.yardsOpen` is remembered, Build stays in the header).

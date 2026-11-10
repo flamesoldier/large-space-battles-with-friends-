@@ -1064,12 +1064,18 @@ $('replay-close').addEventListener('click', () => {
 // ------------------------------------------------------------ events list
 function renderEvents() {
   const list = $('events');
-  const items = world.log.filter((e) => !ui.mine || (e.players || []).some((p) => allied(world, p, ui.me))).slice(-120).reverse();
+  // Battles only by default (owner, 11 Nov 2026: "one look when you log in, scan it for battles
+  // and watch the interesting ones"): entries with a fought battle, won or lost. All (ui.allEvents)
+  // brings back everything, since fleets, shipyards and diplomacy are shown nowhere else.
+  const all = !!ui.allEvents;
+  $('ev-title').textContent = all ? 'Events' : 'Battles';
+  $('ev-all').setAttribute('aria-pressed', String(all));
+  const items = world.log.filter((e) => (all || e.battle) && (!ui.mine || (e.players || []).some((p) => allied(world, p, ui.me)))).slice(-120).reverse();
   list.innerHTML = items.map((e) => {
     const c = colorOf(e.players?.[0]);
     const btn = e.battle && hasReplay(e.battle.id) ? `<button class="small" data-watch="${e.battle.id}">Watch</button>` : '';
     return `<li class="${e.kind}" style="${e.kind === 'battle' ? '' : `border-left-color:${hexA(c, 0.6)}`}" ${e.planet !== undefined ? `data-planet="${e.planet}"` : ''}><span>${esc(e.text)}</span>${btn}<time>${clockText(e.t)}</time></li>`;
-  }).join('') || '<li><span class="hint">Nothing yet.</span></li>';
+  }).join('') || `<li><span class="hint">${all ? 'Nothing yet' : 'No battles yet'}${ui.mine ? ' involving you or your allies' : ''}.</span></li>`;
 }
 $('events').addEventListener('click', (e) => {
   const w = e.target.closest('[data-watch]');
@@ -1077,6 +1083,7 @@ $('events').addEventListener('click', (e) => {
   const li = e.target.closest('[data-planet]');
   if (li) { const P = world.planets[Number(li.dataset.planet)]; cam.x = P.x; cam.y = P.y; select({ kind: 'planet', id: P.id }); }
 });
+$('ev-all').addEventListener('click', () => { ui.allEvents = !ui.allEvents; renderEvents(); store.set(UI_KEY, ui); });
 $('ev-mine').addEventListener('click', () => { ui.mine = !ui.mine; $('ev-mine').setAttribute('aria-pressed', String(ui.mine)); renderEvents(); store.set(UI_KEY, ui); });
 function syncEventsWin() {
   $('events-win').classList.toggle('closed', !ui.evOpen);

@@ -8,6 +8,13 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-11c', date: '11 Nov 2026', title: 'Battles box',
+    items: [
+      'The Events box on the galaxy map is now the Battles box: it lists only battles, newest first, each with its Watch button, so one look when you log in shows what\'s been fought. Tap a battle to jump to that world. Mine shows only battles you or your allies were in.',
+      'Want everything back (fleets sent, shipyards, alliances, worlds taken without a fight)? Press All in the box. Press it again for battles only. Your choice is remembered.',
+    ],
+  },
+  {
     id: '2026-11-11b', date: '11 Nov 2026', title: 'Play on your phone',
     items: [
       'The whole game now works on a phone. Nothing changes on a computer.',
