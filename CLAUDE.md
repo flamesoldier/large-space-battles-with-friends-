@@ -411,9 +411,9 @@ All money numbers are in `src/shared/economy.js` (placeholders until balanced in
   defences lost ("N unfinished defences lost" in the log).
 - **Defences** (owner, Nov 2026: a friend lost his home world and wanted static defences): the
   world panel has **Build** for Defences next to Shipyards. A defence is any valid design with
-  **no thrusters**, bought outright at **1/5 of its block price** (`DEFENSE_PRICE_SHARE`,
+  **no thrusters**, bought at **1/5 of its block price** (`DEFENSE_PRICE_SHARE`,
   `defensePrice()` in `economy.js`), any number per order (`MAX_DEFENSE_ORDER` 1,000), built
-  at once into the garrison (`buildDefense()` in `world.js`, server action
+  into the garrison 5 hours after ordering (see above; `buildDefense()` in `world.js`, server action
   `{ type: 'defend', planet, design, count }`). Stored as its own world design with
   `fixed: true`, `speed: 0` and `cost` = the defence price. Defences can't be sent
   (`previewFleet` refuses), count as defenders (a world held only by defences still stops and
