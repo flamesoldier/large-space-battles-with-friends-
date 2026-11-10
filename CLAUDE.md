@@ -320,7 +320,10 @@ Combat rules:
   blast, so missiles 90 → 75.
 - **Debris** must stay clearly visible (wrecks keep most of their colour).
 - **Ships are drawn in their player's colour** in replays (owner, Nov 2026), militia in
-  `NEUTRAL_COLOR`. `planEvent` puts `color` on each group, the worker / hot-seat page write
+  `NEUTRAL_COLOR`. **Fixed 11 Nov 2026** (owner: fighters and the name labels showed the other
+  player's colour): the galaxy log's `sideColors` are [attacker, defender], but since free-for-all
+  battles the world's side is team 0, so `applyColors()` now ignores `sideColors` whenever the
+  replay has `meta.colors` and takes each side's colour from its own ships (fixes old replays too). `planEvent` puts `color` on each group, the worker / hot-seat page write
   `meta.colors` = `[start, n, colour]` per group (`shipColors()` in `battleSetup.js`), and the
   viewer's `applyColors()` (`renderer.js`) builds a palette per colour; debris keeps its ship's.
   Beams, missiles and the strength graph use each side's leading colour. Older replays get side
@@ -541,7 +544,15 @@ designer's numbers against the sim.
   are on opposite sides of the screen. Defences (`layoutDefences`): Back ones fill the rows by the
   world first, Front ones last (Auto/Middle between, biggest first as before); Top/Bottom flank
   defences stand in their own block of rows beside the main block (40 apart), on that wing. Used
-  by world battles and the designer's test battle (`makeTestScenario`). Stance still decides what
+  by world battles and the designer's test battle (`makeTestScenario`). **Fleets start spread out** (owner, 11 Nov
+  2026: ships started in a blob and spread out once the battle began; measured 62–100% of ships
+  overlapping another at the start, now none): `fleetSpots()` in `battleSetup.js` sizes each camp's
+  area from its ships' real footprints (Σ (w+20)(h+20) × 1.25, about 3:1 wide), takes each ship's
+  `startSpot()` as before, then, biggest ships first, moves any ship overlapping one already
+  placed to the nearest spot with **`START_GAP` (20) blocks clear** all round (never more than its
+  own length forward). Used by world battles and the designer test battle; the bench and
+  `designs.js` scenarios keep their old layout. 2,342 ships placed in ~0.35 s. Battles start a
+  little further apart (300 v 300 mixed: 115 → 150 s). Stance still decides what
   a ship does once the battle starts. One measured battle (182 attackers vs 115 ships + 32
   defences, seed 7): on Auto the attackers lost (33 vs 109 left); with flank wings, a front line
   and artillery at the back they won (26 vs 12).

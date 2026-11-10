@@ -53,15 +53,15 @@ export function makeBattleScenario(groups, designOf, seed, opts = null) {
     // Camp direction from the world: camp 0 at angle 0 (right), the others round the circle.
     const phi = nCamps <= 1 ? 0 : (2 * Math.PI * camp) / nCamps;
     const c = Math.cos(phi), sn = Math.sin(phi);
-    const spanY = Math.max(160, Math.sqrt(list.length) * 45);
     const k = c < 0 ? -1 : 1; // spread sideways (same layout as before for two sides)
-    for (const s of list) {
-      // k is also which way "top" is across this camp, for the flank start positions.
-      const { depth, across } = startSpot(designs[s.design], list.length, spanY, r(), r(), k);
+    // k is also which way "top" is across this camp, for the flank start positions.
+    const spots = fleetSpots(list.map((s) => designs[s.design]), r, k);
+    list.forEach((s, i) => {
+      const { depth, across } = spots[i];
       const along = Math.max(220, ringOut + 60) + depth;
       s.x = c * along - k * sn * across; s.y = sn * along + k * c * across;
       s.a = (phi + Math.PI) % (2 * Math.PI); // facing the world
-    }
+    });
   }
   return { designs, ships, groups: out, seed, teams: opts ? opts.teams : 2 };
 }
@@ -74,8 +74,8 @@ export function makeBattleScenario(groups, designOf, seed, opts = null) {
  * Auto starts exactly as before. `top` is +1 or −1: which sign of `across` is the fleet's top wing
  * (the top of the ship as drawn in the designer, nose toward the enemy).
  */
-export function startSpot(d, n, spanY, r1, r2, top) {
-  const size = Math.hypot(d.w, d.h) * 0.6, spread = 30 + Math.sqrt(n) * 10;
+export function startSpot(d, n, spanY, r1, r2, top, spread = 30 + Math.sqrt(n) * 10) {
+  const size = Math.hypot(d.w, d.h) * 0.6;
   switch (d.place) {
     case 'front': return { depth: size - 40 + r1 * spread * 0.25, across: (r2 - 0.5) * spanY };
     case 'middle': return { depth: size + spread * (0.375 + r1 * 0.25), across: (r2 - 0.5) * spanY };
@@ -85,6 +85,72 @@ export function startSpot(d, n, spanY, r1, r2, top) {
     case 'bottom': return { depth: size + r1 * spread, across: -top * (spanY / 2 + 60 + r2 * spanY * 0.4) };
     default: return { depth: size + r1 * spread, across: (r2 - 0.5) * spanY }; // Auto: as always
   }
+}
+
+// Fleets start spread out (owner, Nov 2026: ships used to start in a blob and spread out once the
+// battle began). Every ship keeps at least START_GAP blocks of open space to its neighbours,
+// about what Battle.spacing() leaves between hulls (it pushes apart inside 25), and the fleet's
+// area is sized from its ships' real footprints, so a fleet of battleships gets more room than
+// the same number of corvettes. Ships in one camp all face the same way, so footprints are
+// boxes: w along the depth, h across.
+const START_GAP = 20, START_ROOM = 1.25; // ROOM: area to spare, so random spots can be found
+
+/**
+ * Start spots for one camp's fleet: [{ depth, across }] per ship, in the order given (ds: its
+ * decoded designs). Each ship first takes its spot from startSpot() (its start position and two
+ * random draws, in order, as before), then, biggest ships first, any ship overlapping one already
+ * placed moves to the nearest free spot, never more than its own length forward (toward the
+ * enemy), so Front ships stay at the front and Back ships at the back.
+ */
+export function fleetSpots(ds, r, top) {
+  const n = ds.length;
+  let area = 0;
+  for (const d of ds) area += (d.w + START_GAP) * (d.h + START_GAP);
+  area *= START_ROOM;
+  // About three times as wide as deep, like a battle line; never smaller than before.
+  const spanY = Math.max(160, Math.sqrt(n) * 45, Math.sqrt(area * 3));
+  const spread = Math.max(30 + Math.sqrt(n) * 10, area / spanY);
+  const spots = ds.map((d) => startSpot(d, n, spanY, r(), r(), top, spread));
+  const order = ds.map((_, i) => i).sort((a, b) => ds[b].w * ds[b].h - ds[a].w * ds[a].h || a - b);
+  // Placed boxes in a grid hash (each box listed in every cell it covers).
+  const CELL = 64, cells = new Map(), placed = [];
+  const keys = (x0, y0, x1, y1, f) => {
+    for (let cx = Math.floor(x0 / CELL); cx <= Math.floor(x1 / CELL); cx++)
+      for (let cy = Math.floor(y0 / CELL); cy <= Math.floor(y1 / CELL); cy++) f(cx * 73856093 ^ cy * 19349663);
+  };
+  const free = (x, y, hw, hh) => {
+    let ok = true;
+    keys(x - hw - START_GAP, y - hh - START_GAP, x + hw + START_GAP, y + hh + START_GAP, (key) => {
+      if (!ok) return;
+      for (const q of cells.get(key) || []) {
+        const b = placed[q];
+        if (Math.abs(b.x - x) < b.hw + hw + START_GAP && Math.abs(b.y - y) < b.hh + hh + START_GAP) { ok = false; return; }
+      }
+    });
+    return ok;
+  };
+  for (const i of order) {
+    const d = ds[i], hw = d.w / 2, hh = d.h / 2, sp = spots[i];
+    let x = sp.depth, y = sp.across;
+    if (!free(x, y, hw, hh)) {
+      // Rings of candidates round the wanted spot, nearest first; none further forward than the
+      // ship's own length. There's room to spare, so this ends quickly.
+      const step = Math.max(4, (Math.min(d.w, d.h) + START_GAP) / 2);
+      search: for (let ring = 1; ring < 400; ring++) {
+        const m = Math.max(8, Math.ceil(2 * Math.PI * ring));
+        for (let j = 0; j < m; j++) {
+          const ang = (2 * Math.PI * j) / m, cx = sp.depth + Math.cos(ang) * ring * step, cy = sp.across + Math.sin(ang) * ring * step;
+          if (cx < sp.depth - d.w) continue;
+          if (free(cx, cy, hw, hh)) { x = cx; y = cy; break search; }
+        }
+      }
+    }
+    sp.depth = x; sp.across = y;
+    const q = placed.length;
+    placed.push({ x, y, hw, hh });
+    keys(x - hw, y - hh, x + hw, y + hh, (key) => { let a = cells.get(key); if (!a) cells.set(key, (a = [])); a.push(q); });
+  }
+  return spots;
 }
 
 /** Defence order front to back: Back first (it fills the rows by the world), Front last. */

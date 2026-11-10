@@ -8,6 +8,13 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-11', date: '11 Nov 2026', title: 'Replay colours fixed, fleets start spread out',
+    items: [
+      'Fixed: in battle replays, each player\'s fighters, missiles, laser beams and the colour by their name were shown in the OTHER player\'s colour. Everything now matches the player\'s own ships. This fixes old replays too.',
+      'Fleets now start a battle already spread out, instead of starting in a blob and spreading out once the battle begins. Every ship starts at least 20 blocks from its neighbours, and fleets of big ships get more room. Start positions (Front, Back, flanks) work as before.',
+    ],
+  },
+  {
     id: '2026-11-10b', date: '10 Nov 2026', title: 'Slower selling and building, patch notes',
     items: [
       'NEW: this Patch notes window. Every update to the game will be listed here.',

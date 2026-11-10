@@ -245,7 +245,13 @@ const DEFAULT_SIDES = TEAM.map((T) => T.accent), DEFAULT_ENGINE = ['#58b8ff', '#
  */
 export function applyColors(model, sideColors) {
   const nT = model.teams || 2;
-  const sides = Array.from({ length: nT }, (_, t) => sideColors?.[t] || null);
+  // sideColors come from the galaxy log as [attacker, defender], which is only the side order of
+  // the old two-sided replays. Since free-for-all battles the world's side is team 0 and the
+  // attackers come after it, so a replay that records its players' colours (meta.colors) must
+  // take each side's colour from its own ships (fixed Nov 2026: fighters, missiles, beams and
+  // the name labels were drawn in the other player's colour).
+  const own = (model.meta.colors || []).length > 0;
+  const sides = Array.from({ length: nT }, (_, t) => (own ? null : sideColors?.[t] || null));
   const byShip = new Array(model.meta.shipCount).fill(null);
   for (const [start, n, col] of model.meta.colors || []) for (let k = start; k < start + n && k < byShip.length; k++) byShip[k] = col;
   // A side with no colour given takes the colour of its first ship (the leader's group comes first).

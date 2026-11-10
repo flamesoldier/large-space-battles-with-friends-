@@ -12,7 +12,8 @@ import {
 } from '../src/world/world.js';
 import { writeFileSync } from 'node:fs';
 import { packReplay } from '../src/shared/replayFormat.js';
-import { readBattle, makeBattleScenario, battleOptions, shipColors } from '../src/world/battleSetup.js';
+import { readBattle, makeBattleScenario, battleOptions, shipColors, fleetSpots } from '../src/world/battleSetup.js';
+import { mulberry32 } from '../src/shared/rng.js';
 import { Battle } from '../src/sim/battle.js';
 import { makeDesign } from '../src/shared/designs.js';
 import { makeTestScenario } from '../src/designer/testBattle.js';
@@ -707,6 +708,24 @@ const resolve = (scen) => {
   }
   ok(ranWith < 0 || ranWith < 0.2, `a side only runs once under 20% of its value is still armed (ran with ${(ranWith * 100).toFixed(0)}%)`);
   ok(b.teamStartWorth[0] > 0 && b.armedWorth.length === b.nT, 'the battle tracks each side\'s value');
+}
+
+// ---- fleets start spread out (owner, Nov 2026: no blob that spreads out once the battle starts)
+{
+  const mk = (cls, place, n, sd) => Array.from({ length: n }, () => ({ ...makeDesign(cls, sd), ...(place ? { place } : {}) }));
+  const ds = [...mk('corvette', null, 80, 1), ...mk('destroyer', 'front', 40, 2), ...mk('battleship', null, 25, 3), ...mk('titan', 'back', 4, 4), ...mk('frigate', 'top', 20, 5)];
+  const sp = fleetSpots(ds, mulberry32(3), 1);
+  let worst = Infinity;
+  for (let i = 0; i < ds.length; i++) for (let j = i + 1; j < ds.length; j++) {
+    const gap = Math.max(Math.abs(sp[i].depth - sp[j].depth) - (ds[i].w + ds[j].w) / 2, Math.abs(sp[i].across - sp[j].across) - (ds[i].h + ds[j].h) / 2);
+    worst = Math.min(worst, gap);
+  }
+  ok(worst >= 20 - 1e-9, `every ship starts at least 20 blocks from the next (closest ${worst.toFixed(1)})`);
+  const avg = (pl, f) => { const v = ds.map((d, i) => (d.place === pl ? f(sp[i]) : null)).filter((x) => x !== null); return v.reduce((a, b) => a + b, 0) / v.length; };
+  ok(avg('front', (p) => p.depth) < avg(undefined, (p) => p.depth) && avg('back', (p) => p.depth) > avg(undefined, (p) => p.depth), 'Front ships still start in front, Back ships behind');
+  ok(avg('top', (p) => p.across) > 150, 'Top flank ships still start out on their wing');
+  const again = fleetSpots(ds, mulberry32(3), 1);
+  ok(again.every((p, i) => p.depth === sp[i].depth && p.across === sp[i].across), 'the same battle starts the same way');
 }
 
 console.log(`world: ${checks} checks passed`);

@@ -4,7 +4,7 @@
 import { makeDesign, CLASS_MIX } from '../shared/designs.js';
 import { designCost } from '../shared/shipStats.js';
 import { mulberry32 } from '../shared/rng.js';
-import { layoutDefences, startSpot } from '../world/battleSetup.js';
+import { layoutDefences, fleetSpots } from '../world/battleSetup.js';
 
 // How many copies to field by default, so a test is a proper fleet fight but stays quick.
 export const DEFAULT_COPIES = { corvette: 30, frigate: 20, destroyer: 12, cruiser: 6, battleship: 3, titan: 1, dreadnought: 1, leviathan: 1, colossus: 1, worldbreaker: 1 };
@@ -58,13 +58,14 @@ export function makeTestScenario(design, copies, opponent = null, seed = 1, fixe
   const ships = [];
   let clear = 0; // how far the defence rows reach toward the enemy
   const place = (team, list) => {
-    const dir = team === 0 ? 1 : -1, spanY = Math.max(160, Math.sqrt(list.length) * 45);
-    // Start positions picked in the designer (startSpot). Your side faces right, so its top wing is
-    // −y; the enemy faces left, so theirs is +y.
-    for (const di of list) {
-      const { depth, across } = startSpot(designs[di], list.length, spanY, r(), r(), team === 0 ? -1 : 1);
+    const dir = team === 0 ? 1 : -1;
+    // Start positions picked in the designer, spread out like a real battle (fleetSpots). Your side
+    // faces right, so its top wing is −y; the enemy faces left, so theirs is +y.
+    const spots = fleetSpots(list.map((di) => designs[di]), r, team === 0 ? -1 : 1);
+    list.forEach((di, i) => {
+      const { depth, across } = spots[i];
       ships.push({ design: di, team, x: -dir * (Math.max(220, clear + 60) + depth), y: across, a: team === 0 ? 0 : Math.PI });
-    }
+    });
   };
   // Your side: defences stand at the origin in rows facing right (angle 0), the enemy coming in
   // from the right; ships start behind them (or on their own, with no defences, as before).
