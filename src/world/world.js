@@ -21,7 +21,7 @@ import { makeDesign } from '../shared/designs.js';
 import { mulberry32 } from '../shared/rng.js';
 import {
   SHIPYARD_INTERVAL_MIN, shipyardPrice, crowdingSurcharge, SHIPYARD_SELL_REFUND,
-  defensePrice, MAX_DEFENSE_ORDER, STARTING_CREDITS, NEUTRAL_GARRISON_HOURS,
+  defensePrice, MAX_DEFENSE_ORDER, STARTING_CREDITS, NEUTRAL_GARRISON_HOURS, SELL_HOURS, DEFENSE_BUILD_HOURS,
 } from '../shared/economy.js';
 import { generateGalaxy, linkHomesInward } from './galaxyGen.js';
 import { planRoute, travelSpeed, laneMap } from './routes.js';
@@ -61,6 +61,7 @@ export function createWorld({ players, seed = 1, planetsPerPlayer, clock = 0 }) 
     sieges: [],
     relations: {},
     proposals: [],
+    jobs: [],
     log: [],
   };
   // Starting teams only decide who begins allied; diplomacy can change it later.
@@ -195,17 +196,64 @@ export function buildShipyard(world, pid, planetId, design) {
   return { ok: true, yard };
 }
 
-/** Sell a shipyard: it's removed and SHIPYARD_SELL_REFUND of what was paid comes back. */
+// Jobs (owner, Nov 2026): selling a shipyard and building defences take SELL_HOURS /
+// DEFENSE_BUILD_HOURS, so they can't be done in reaction to an attack. Each is an entry in
+// world.jobs, { id, kind: 'sell' | 'defence', planet, owner, done, ... }, finished by a 'job'
+// event (dueEvent) at `done`. If the world changes hands first, capture() cancels them: the
+// shipyard is destroyed with the rest and the defences under construction are lost.
+const SELL_MS = SELL_HOURS * HOUR_MS, DEFENSE_BUILD_MS = DEFENSE_BUILD_HOURS * HOUR_MS;
+
+/** Jobs under way at a world (all, or one kind). */
+export const jobsAt = (world, planetId, kind) => (world.jobs || []).filter((j) => j.planet === planetId && (!kind || j.kind === kind));
+
+/**
+ * Start selling a shipyard: it stops building at once and, SELL_HOURS later, is removed and
+ * SHIPYARD_SELL_REFUND of what was paid comes back (cancelSale stops it).
+ */
 export function sellShipyard(world, pid, planetId, yardId) {
   const p = world.planets[planetId], pl = world.players[pid];
   if (!p || p.owner !== pid) return { ok: false, error: 'You don\'t hold that world.' };
-  const k = p.yards.findIndex((y) => y.id === yardId);
-  if (k < 0) return { ok: false, error: 'No such shipyard.' };
-  const [y] = p.yards.splice(k, 1);
-  const refund = Math.round(y.paid * SHIPYARD_SELL_REFUND);
-  pl.credits += refund;
-  log(world, 'yard', `${pl.name} sold the ${world.designs[y.design].name} shipyard at ${p.name} for ${refund.toLocaleString()} cr.`, { planet: p.id, players: [pid] });
-  return { ok: true, refund };
+  const y = p.yards.find((x) => x.id === yardId);
+  if (!y) return { ok: false, error: 'No such shipyard.' };
+  if (y.sellAt != null) return { ok: false, error: 'That shipyard is already being sold.' };
+  const refund = sellValue(y);
+  y.sellAt = world.clock + SELL_MS;
+  const job = { id: newId(world), kind: 'sell', planet: p.id, owner: pid, yard: y.id, refund, done: y.sellAt };
+  world.jobs.push(job);
+  log(world, 'yard', `${pl.name} started selling the ${world.designs[y.design].name} shipyard at ${p.name}: +${refund.toLocaleString()} cr in ${SELL_HOURS} hours.`, { planet: p.id, players: [pid] });
+  return { ok: true, refund, done: y.sellAt, job };
+}
+
+/** Stop selling a shipyard: it starts building again (its next ship a full interval from now). */
+export function cancelSale(world, pid, planetId, yardId) {
+  const p = world.planets[planetId], pl = world.players[pid];
+  if (!p || p.owner !== pid) return { ok: false, error: 'You don\'t hold that world.' };
+  const y = p.yards.find((x) => x.id === yardId);
+  if (!y || y.sellAt == null) return { ok: false, error: 'That shipyard isn\'t being sold.' };
+  world.jobs = world.jobs.filter((j) => !(j.kind === 'sell' && j.yard === yardId));
+  delete y.sellAt;
+  y.next = world.clock + YARD_MS;
+  log(world, 'yard', `${pl.name} kept the ${world.designs[y.design].name} shipyard at ${p.name} (sale called off).`, { planet: p.id, players: [pid] });
+  return { ok: true };
+}
+
+/** A job's time is up: pay out the sale, or put the finished defences in the garrison. */
+function finishJob(world, job) {
+  world.jobs = world.jobs.filter((j) => j !== job);
+  const p = world.planets[job.planet], pl = world.players[job.owner];
+  if (!p || !pl || p.owner !== job.owner) return null; // the world changed hands: capture() should have removed it
+  if (job.kind === 'sell') {
+    const k = p.yards.findIndex((y) => y.id === job.yard);
+    if (k < 0) return null;
+    const [y] = p.yards.splice(k, 1);
+    pl.credits += job.refund;
+    log(world, 'yard', `${pl.name} sold the ${world.designs[y.design].name} shipyard at ${p.name} for ${job.refund.toLocaleString()} cr.`, { planet: p.id, players: [job.owner] });
+  } else {
+    addShips(p, job.owner, job.design, job.count);
+    const name = world.designs[job.design].name;
+    log(world, 'yard', `${job.count === 1 ? `A ${name} defence is` : `${job.count.toLocaleString()} ${name} defences are`} ready at ${p.name} (${pl.name}).`, { planet: p.id, players: [job.owner] });
+  }
+  return lastLog(world);
 }
 
 export const sellValue = (yard) => Math.round(yard.paid * SHIPYARD_SELL_REFUND);
@@ -219,9 +267,10 @@ export function defenseProblem(design) {
 }
 
 /**
- * Build `count` defences of `design` (a decoded design, no thrusters) on one of your worlds. They
- * join the garrison at once, never move, and cost defensePrice() each, paid once: a defence that's
- * destroyed is gone. Returns { ok, error?, design?, count?, price? }.
+ * Order `count` defences of `design` (a decoded design, no thrusters) on one of your worlds. They
+ * cost defensePrice() each, paid now, and join the garrison DEFENSE_BUILD_HOURS later (lost if
+ * the world falls first); they never move, and a defence that's destroyed is gone.
+ * Returns { ok, error?, design?, count?, price?, done? }.
  */
 export function buildDefense(world, pid, planetId, design, count = 1) {
   const p = world.planets[planetId], pl = world.players[pid];
@@ -236,9 +285,10 @@ export function buildDefense(world, pid, planetId, design, count = 1) {
   let id;
   try { id = registerDesign(world, pid, design, true); } catch (e) { return { ok: false, error: e.message }; }
   pl.credits -= price;
-  addShips(p, pid, id, count);
-  log(world, 'yard', `${pl.name} built ${count === 1 ? 'a' : count.toLocaleString()} ${world.designs[id].name} defence${count > 1 ? 's' : ''} at ${p.name} (${price.toLocaleString()} cr).`, { planet: p.id, players: [pid] });
-  return { ok: true, design: id, count, price };
+  const done = world.clock + DEFENSE_BUILD_MS;
+  world.jobs.push({ id: newId(world), kind: 'defence', planet: p.id, owner: pid, design: id, count, price, done });
+  log(world, 'yard', `${pl.name} started building ${count === 1 ? 'a' : count.toLocaleString()} ${world.designs[id].name} defence${count > 1 ? 's' : ''} at ${p.name} (${price.toLocaleString()} cr, ready in ${DEFENSE_BUILD_HOURS} hours).`, { planet: p.id, players: [pid] });
+  return { ok: true, design: id, count, price, done };
 }
 
 /**
@@ -273,7 +323,7 @@ export function advanceTo(world, t) {
     if (p.owner === null) continue;
     world.players[p.owner].credits += (p.income * dt) / HOUR_MS;
     for (const y of p.yards) {
-      if (y.next > t) continue;
+      if (y.next > t || y.sellAt != null) continue; // a shipyard being sold has stopped building
       const k = Math.floor((t - y.next) / YARD_MS) + 1;
       addShips(p, p.owner, y.design, k);
       y.next += k * YARD_MS; y.built += k;
@@ -284,15 +334,21 @@ export function advanceTo(world, t) {
 
 /**
  * The next thing due at or before t, or null:
+ *  { kind: 'job', job, at }      a shipyard sale or a defence order is finished
  *  { kind: 'fleet', fleet, at }  a fleet reaches the next world on its route
  *  { kind: 'siege', siege, at }  a siege's hold is over: the battle starts
- * At the same moment fleets go first, so a fleet arriving exactly on time still joins the fight.
+ * At the same moment jobs go first (defences finished on time fight), then fleets, so a fleet
+ * arriving exactly on time still joins the fight.
  */
 export function dueEvent(world, t) {
   let ev = null;
+  for (const j of world.jobs || []) {
+    if (j.done > t) continue;
+    if (!ev || j.done < ev.at || (j.done === ev.at && j.id < ev.job.id)) ev = { kind: 'job', job: j, at: j.done };
+  }
   for (const f of world.fleets) {
     if (f.wait != null || f.next > t) continue;
-    if (!ev || f.next < ev.at || (f.next === ev.at && f.id < ev.fleet.id)) ev = { kind: 'fleet', fleet: f, at: f.next };
+    if (!ev || f.next < ev.at || (f.next === ev.at && ev.kind === 'fleet' && f.id < ev.fleet.id)) ev = { kind: 'fleet', fleet: f, at: f.next };
   }
   for (const s of world.sieges) {
     if (s.startsAt > t) continue;
@@ -413,6 +469,7 @@ export function upgradeWorld(world) {
     world.sieges.splice(world.sieges.indexOf(sg), 1);
   }
   world.proposals ??= [];
+  world.jobs ??= []; // Nov 2026: selling shipyards and building defences take time
   // Nov 2026: every home world gets a hyperlane inward (some only had lanes along the rim).
   const newLanes = linkHomesInward(world.planets, world.lanes);
   if (newLanes.length) {
@@ -438,8 +495,8 @@ export const fleetValue = (world, ships) => Object.entries(ships).reduce((s, [d,
 
 export function fmtHours(h) {
   if (h < 1 / 60) return 'under a minute';
-  if (h < 1) return `${Math.round(h * 60)} min`;
-  if (h < 48) return `${Math.floor(h)} h ${Math.round((h % 1) * 60)} min`;
+  if (h < 59.5 / 60) return `${Math.round(h * 60)} min`;
+  if (h < 48) { const m = Math.round(h * 60); return `${Math.floor(m / 60)} h ${m % 60} min`; } // (was "4 h 60 min" just under a whole hour)
   return `${(h / 24).toFixed(1)} days`;
 }
 
@@ -519,6 +576,7 @@ function pickWinner(world, s, cands, ships) {
  *          { kind: 'battle', battle }  a Battle scenario: one side per player who has an enemy there
  */
 export function planEvent(world, ev) {
+  if (ev.kind === 'job') return { kind: 'job' };
   if (ev.kind === 'fleet') {
     const f = ev.fleet, L = f.legs[f.leg], final = f.leg >= f.legs.length - 1, P = world.planets[L.to];
     if (allied(world, f.owner, P.owner)) return { kind: final ? 'join' : 'pass' };
@@ -573,7 +631,8 @@ export function planEvent(world, ev) {
 /** Apply an event. `result` is readBattle()'s output for a battle, else null. Returns the log entry written, if any. */
 export function applyEvent(world, ev, plan, result) {
   let entry = null;
-  if (ev.kind === 'fleet') entry = fleetArrives(world, ev.fleet, plan);
+  if (ev.kind === 'job') entry = finishJob(world, ev.job);
+  else if (ev.kind === 'fleet') entry = fleetArrives(world, ev.fleet, plan);
   else entry = siegeEnds(world, ev.siege, plan, result);
   checkPlayers(world);
   return entry;
@@ -727,6 +786,11 @@ function siegeEnds(world, s, plan, result) {
 function capture(world, P, owner, ships, battleInfo) {
   const old = P.owner, yards = P.yards.length;
   P.yards = [];
+  // Unfinished jobs here are lost with the world: shipyards being sold (destroyed above, no
+  // payout) and defences still being built (already paid for).
+  const lostJobs = (world.jobs || []).filter((j) => j.planet === P.id);
+  const unbuilt = lostJobs.reduce((s, j) => s + (j.kind === 'defence' ? j.count : 0), 0);
+  if (lostJobs.length) world.jobs = world.jobs.filter((j) => j.planet !== P.id);
   P.owner = owner;
   // Defences can't leave: any not on the new owner's side are destroyed with the world.
   let razed = 0;
@@ -744,7 +808,7 @@ function capture(world, P, owner, ships, battleInfo) {
   const me = playerName(world, owner);
   const from = old === null ? '' : ` from ${playerName(world, old)}`;
   const how = battleInfo ? 'won the battle for' : 'took';
-  const ruin = (yards ? ` ${yards} shipyard${yards > 1 ? 's' : ''} destroyed.` : '') + (razed ? ` ${razed} defence${razed > 1 ? 's' : ''} destroyed.` : '');
+  const ruin = (yards ? ` ${yards} shipyard${yards > 1 ? 's' : ''} destroyed.` : '') + (razed ? ` ${razed} defence${razed > 1 ? 's' : ''} destroyed.` : '') + (unbuilt ? ` ${unbuilt} unfinished defence${unbuilt > 1 ? 's' : ''} lost.` : '');
   const tail = fled.length ? ` ${fled.join('; ')}.` : '';
   log(world, battleInfo ? 'battle' : 'capture', `${me} ${how} ${P.name}${from}.${ruin} +${P.income.toLocaleString()} cr/h.${tail}`, { planet: P.id, players: old === null ? [owner] : [owner, old], capture: { by: owner, from: old, yards }, ...(battleInfo || {}) });
   return world.log[world.log.length - 1];

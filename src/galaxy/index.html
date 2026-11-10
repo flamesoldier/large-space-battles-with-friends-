@@ -142,6 +142,9 @@ td input[type=number] { width: 64px; padding: 3px 5px; text-align: right; }
 .yard b { font-size: 13.5px; }
 .yard span { font-family: var(--mono); font-size: 11px; color: var(--dim); }
 .yard button { grid-row: span 2; }
+.yard.sold, .yard.building { border-style: dashed; }
+.yard.building { grid-template-columns: 1fr; }
+.yard .selling { color: var(--warn); }
 .route { border: 1px solid var(--azure); padding: 8px 10px; margin-top: 10px; font-size: 12.5px; line-height: 1.5; }
 .route .eta { font-family: var(--mono); font-size: 18px; color: var(--azure); }
 .check { text-transform: none; letter-spacing: 0.02em; font-size: 12.5px; color: var(--ink); margin-top: 6px; }
@@ -201,6 +204,15 @@ dialog {
   background: #0b111b; color: var(--ink); border: 1px solid var(--line); padding: 18px 20px; width: min(600px, calc(100% - 32px));
   max-height: calc(100% - 48px);
 }
+#notes { width: min(640px, 94vw); }
+.notes { max-height: 70vh; overflow-y: auto; padding-right: 6px; }
+.notes section { border-top: 1px solid var(--line); padding: 10px 0 4px; }
+.notes section:first-child { border-top: 0; padding-top: 0; }
+.notes h4 { margin: 0 0 6px; font-size: 14px; }
+.notes h4 small { font: 11px var(--mono); color: var(--dim); margin-right: 8px; letter-spacing: 0.04em; }
+.notes h4 .tag { margin-left: 6px; }
+.notes ul { margin: 0 0 6px; padding-left: 18px; }
+.notes li { font-size: 13px; line-height: 1.45; margin-bottom: 4px; }
 dialog::backdrop { background: rgba(2, 4, 8, 0.72); }
 dialog h3 { margin: 0 0 12px; font-size: 15px; letter-spacing: 0.08em; text-transform: uppercase; }
 dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; flex-wrap: wrap; }
@@ -277,6 +289,7 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
     <div class="readout"><small>Galaxy time</small><strong id="clock">Day 1</strong></div>
     <div class="group speed" role="group" aria-label="Game speed" id="speed"></div>
     <button id="sim-btn" title="Test any designs against each other in a practice battle. Nothing is spent.">Battle simulator</button>
+    <button id="notes-btn" title="What's changed in each update">Patch notes<span class="badge" id="notes-badge" hidden>new</span></button>
     <button id="dip-btn" title="Allies and enemies">Diplomacy<span class="badge" id="dip-badge" hidden>0</span></button>
     <button id="combat-btn" title="Every battle and captured world, with replays">Combat log<span class="badge" id="combat-badge" hidden>0</span></button>
     <span id="net" hidden role="status">Reconnecting…</span>
@@ -343,6 +356,14 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
     <h2>Who is allied with whom</h2>
     <div id="dip-grid" class="grid-wrap"></div>
     <p class="hint">Allies can station ships on each other's worlds, defend them together and join each other's attacks. Everyone else is an enemy. An alliance needs both players to agree; either one can break it, which sends their ships on each other's worlds home.</p>
+  </dialog>
+
+  <dialog id="notes">
+    <div class="head">
+      <h3>Patch notes</h3>
+      <button class="small" id="notes-close">Close</button>
+    </div>
+    <div id="notes-list" class="notes"></div>
   </dialog>
 
   <dialog id="combat">

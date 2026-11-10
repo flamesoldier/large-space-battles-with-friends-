@@ -17,7 +17,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import {
-  advanceTo, dueEvent, planEvent, applyEvent, upgradeWorld, sendFleet, buildShipyard, sellShipyard, renameDesign, buildDefense,
+  advanceTo, dueEvent, planEvent, applyEvent, upgradeWorld, sendFleet, buildShipyard, sellShipyard, cancelSale, renameDesign, buildDefense,
   proposeAlliance, acceptAlliance, declineAlliance, breakAlliance, playerName, claimPlayer,
 } from '../src/world/world.js';
 import { decodeDesign } from '../src/shared/shipStats.js';
@@ -228,6 +228,11 @@ export class Game {
         const planet = index(a.planet, nP);
         if (planet === null || typeof a.yard !== 'string') return { ok: false, error: 'No such shipyard.' };
         return sellShipyard(W, pid, planet, a.yard);
+      }
+      case 'unsell': {
+        const planet = index(a.planet, nP);
+        if (planet === null || typeof a.yard !== 'string') return { ok: false, error: 'No such shipyard.' };
+        return cancelSale(W, pid, planet, a.yard);
       }
       case 'rename': {
         if (typeof a.design !== 'string' || !Object.hasOwn(W.designs, a.design)) return { ok: false, error: 'No such ship design.' };

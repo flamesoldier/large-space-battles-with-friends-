@@ -13,7 +13,7 @@
 
 import { BT } from '../shared/blocks.js';
 import { decodeDesign, encodeDesign, analyzeDesign, designCost } from '../shared/shipStats.js';
-import { SHIPYARD_INTERVAL_MIN, SHIPYARD_CROWDING_VALUE, SHIPYARD_SELL_REFUND, crowdingMult, defensePrice, DEFENSE_PRICE_SHARE, MAX_DEFENSE_ORDER } from '../shared/economy.js';
+import { SHIPYARD_INTERVAL_MIN, SHIPYARD_CROWDING_VALUE, SHIPYARD_SELL_REFUND, crowdingMult, defensePrice, DEFENSE_PRICE_SHARE, MAX_DEFENSE_ORDER, SELL_HOURS, DEFENSE_BUILD_HOURS } from '../shared/economy.js';
 import { Battle, DT } from '../sim/battle.js';
 import { packReplay } from '../shared/replayFormat.js';
 import { mulberry32 } from '../shared/rng.js';
@@ -22,13 +22,14 @@ import {
   sendFleet, previewFleet, shipsAt, incomeOf, allied, playerName, designOf, fleetValue, countShips, fmtHours,
   sellValue, yardListValue, YARD_MS, HOLD_MS, upgradeWorld,
   proposeAlliance, acceptAlliance, declineAlliance, breakAlliance, proposalsFor, hasProposed,
-  isOpenSeat, freeColors, renameDesign, buildDefense, defenseProblem,
+  isOpenSeat, freeColors, renameDesign, buildDefense, defenseProblem, cancelSale, jobsAt,
 } from '../world/world.js';
 import { readBattle, shipColors, battleOptions } from '../world/battleSetup.js';
 import { fleetPosition } from '../world/routes.js';
 import { PlanetSprites, planetLook } from './planetArt.js';
 import { ReplayStore } from './replayStore.js';
 import { Net } from './net.js';
+import { PATCH_NOTES } from '../shared/patchNotes.js';
 import { HOUR_MS, PLAYER_COLORS, NEUTRAL_COLOR, MIN_PLAYERS, MAX_PLAYERS, HYPERLANE_SPEEDUP, MIN_FLEET_SPEED } from '../world/rules.js';
 
 /* global __ONLINE__ */
@@ -476,7 +477,7 @@ function panelSignature() {
   const s = [ui.me, sel?.kind, sel?.id, move ? `${move.from}>${move.to}:${move.picking}:${move.lanes}:${move.avoid}:${JSON.stringify(move.ships)}` : '', busy];
   if (sel?.kind === 'planet') {
     const P = world.planets[sel.id];
-    s.push(P.owner, JSON.stringify(P.garrison), P.yards.map((y) => y.id).join(), Math.floor(me().credits / 500), JSON.stringify(siegeAt(world, P.id).map((x) => x.fleets)), JSON.stringify(world.relations));
+    s.push(P.owner, JSON.stringify(P.garrison), P.yards.map((y) => `${y.id}:${y.sellAt ?? ''}`).join(), jobsAt(world, P.id).map((j) => j.id).join(), Math.floor(me().credits / 500), JSON.stringify(siegeAt(world, P.id).map((x) => x.fleets)), JSON.stringify(world.relations));
   } else if (sel?.kind === 'fleet') s.push(world.fleets.length, world.fleets.find((f) => f.id === sel.id)?.wait, world.fleets.find((f) => f.id === sel.id)?.leg);
   else s.push(world.log.length, Object.keys(world.relations).join(), world.planets.map((p) => p.owner).join(), world.fleets.length, world.planets.reduce((a, p) => a + shipTotal(p), 0));
   return s.join('|');
@@ -540,8 +541,11 @@ function planetPanel(P) {
   // choice is remembered in ui.yardsOpen). The Build button stays in the header either way.
   if (mine) {
     const n = defenseCount(P, ui.me);
-    html += `<h2>Defences (${fmt(n)})<button class="small go" data-act="defend" ${busy || me().eliminated ? 'disabled' : ''}>Build</button></h2>
-      <p class="hint">${n ? 'Listed with the ships above. ' : ''}Defences are built at once for ${Math.round(DEFENSE_PRICE_SHARE * 100)}% of their blocks' price, never move and fight for this world. When one is destroyed it's gone, and they're all lost if the world falls.</p>`;
+    html += `<h2>Defences (${fmt(n)})<button class="small go" data-act="defend" ${busy || me().eliminated ? 'disabled' : ''}>Build</button></h2>`;
+    for (const j of jobsAt(world, P.id, 'defence')) {
+      html += `<div class="yard building"><b>${fmt(j.count)} × ${esc(world.designs[j.design].name)}</b><span>under construction · ready in <span data-arrive="${j.done}"></span></span></div>`;
+    }
+    html += `<p class="hint">${n ? 'Listed with the ships above. ' : ''}Defences cost ${Math.round(DEFENSE_PRICE_SHARE * 100)}% of their blocks' price and take <b>${DEFENSE_BUILD_HOURS} hours</b> to build, so build them before you're attacked. They never move and fight for this world. When one is destroyed it's gone, and they're all lost (finished or not) if the world falls.</p>`;
   }
   if (mine || P.yards.length) {
     const open = ui.yardsOpen !== false;
@@ -549,9 +553,13 @@ function planetPanel(P) {
     if (open) {
       if (!P.yards.length) html += `<p class="hint">None yet. A shipyard builds one ship of its design every ${SHIPYARD_INTERVAL_MIN} min, for free, forever, and the ships guard this world.</p>`;
       for (const y of P.yards) {
-        const d = world.designs[y.design];
-        html += `<div class="yard"><b>${esc(d.name)}</b>${mine && d.owner === ui.me ? `<button class="small" data-act="rename" data-design="${esc(y.design)}" ${busy ? 'disabled' : ''} title="Rename this ship design (everywhere it appears)">Rename</button>` : ''}${mine ? `<button class="small danger" data-act="sell" data-yard="${y.id}" ${busy ? 'disabled' : ''} title="Sell for ${Math.round(SHIPYARD_SELL_REFUND * 100)}% of what you paid">Sell +${fmt(sellValue(y))}</button>` : ''}
-        <span>${esc(d.cls)} · next in <span data-next="${y.next}"></span> · ${fmt(y.built)} built${mine ? ` · paid ${fmt(y.paid)}` : ''}</span></div>`;
+        const d = world.designs[y.design], selling = y.sellAt != null;
+        const sellBtn = !mine ? ''
+          : selling ? `<button class="small" data-act="unsell" data-yard="${y.id}" ${busy ? 'disabled' : ''} title="Call off the sale: the shipyard starts building again">Keep it</button>`
+          : `<button class="small danger" data-act="sell" data-yard="${y.id}" ${busy ? 'disabled' : ''} title="Sell for ${Math.round(SHIPYARD_SELL_REFUND * 100)}% of what you paid. Selling takes ${SELL_HOURS} hours: the shipyard stops building now and pays out at the end, unless the world falls first.">Sell +${fmt(sellValue(y))}</button>`;
+        const status = selling ? `<span class="selling">selling: +${fmt(sellValue(y))} cr in <span data-arrive="${y.sellAt}"></span></span>` : `next in <span data-next="${y.next}"></span>`;
+        html += `<div class="yard${selling ? ' sold' : ''}"><b>${esc(d.name)}</b>${mine && d.owner === ui.me ? `<button class="small" data-act="rename" data-design="${esc(y.design)}" ${busy ? 'disabled' : ''} title="Rename this ship design (everywhere it appears)">Rename</button>` : ''}${sellBtn}
+        <span>${esc(d.cls)} · ${status} · ${fmt(y.built)} built${mine ? ` · paid ${fmt(y.paid)}` : ''}</span></div>`;
       }
     }
   }
@@ -660,6 +668,7 @@ $('panel').addEventListener('click', (e) => {
   else if (act === 'defend') { $('yard-count').value = 1; openYardDialog(sel.id, 'defense'); }
   else if (act === 'fold-yards') { ui.yardsOpen = ui.yardsOpen === false; store.set(UI_KEY, ui); renderPanel(true); }
   else if (act === 'sell') sellYard(sel.id, b.dataset.yard);
+  else if (act === 'unsell') keepYard(sel.id, b.dataset.yard);
   else if (act === 'rename') openRename(b.dataset.design);
   else if (act === 'move') startMove(sel.id);
   else if (act === 'all' || act === 'none') {
@@ -748,14 +757,21 @@ async function sellYard(planetId, yardId) {
   if (armedSell !== yardId) {
     armedSell = yardId;
     const b = $('panel').querySelector(`[data-act=sell][data-yard="${yardId}"]`);
-    if (b) b.textContent = 'Click again to sell';
+    if (b) b.textContent = `Click again: sell in ${SELL_HOURS} hours`;
     setTimeout(() => { if (armedSell === yardId) { armedSell = null; renderPanel(true); } }, 3000);
     return;
   }
   armedSell = null;
   const r = await perform({ type: 'sell', planet: planetId, yard: yardId }, () => sellShipyard(world, ui.me, planetId, yardId));
   if (!r.ok) return toast(r.error, true);
-  toast(`Sold for ${fmt(r.refund)} credits.`);
+  toast(`Selling: it has stopped building, and ${fmt(r.refund)} credits come in ${SELL_HOURS} hours.`);
+  save(); renderPanel(true); renderEvents(); updateTop();
+}
+async function keepYard(planetId, yardId) {
+  if (busy) return;
+  const r = await perform({ type: 'unsell', planet: planetId, yard: yardId }, () => cancelSale(world, ui.me, planetId, yardId));
+  if (!r.ok) return toast(r.error, true);
+  toast('Sale called off: the shipyard is building again.');
   save(); renderPanel(true); renderEvents(); updateTop();
 }
 
@@ -801,7 +817,7 @@ function openYardDialog(planetId, mode = yardMode) {
   const count = def ? Math.max(1, Math.min(MAX_DEFENSE_ORDER, Math.floor(Number($('yard-count').value)) || 1)) : 1;
   const pct = Math.round((crowdingMult(existing) - 1) * 100);
   $('yard-info').innerHTML = def
-    ? `A defence is built at once and costs <b>${Math.round(DEFENSE_PRICE_SHARE * 100)}%</b> of its blocks' price, paid once. It can't have thrusters, never moves or turns (its front, the right-hand side in the designer, always faces the enemy) and never leaves ${esc(P.name)}. Destroyed is gone for good, and all of them are lost if the world falls. You have <b>${fmt(me().credits)}</b> credits.`
+    ? `A defence takes <b>${DEFENSE_BUILD_HOURS} hours</b> to build (paid now) and costs <b>${Math.round(DEFENSE_PRICE_SHARE * 100)}%</b> of its blocks' price, paid once. It can't have thrusters, never moves or turns (its front, the right-hand side in the designer, always faces the enemy) and never leaves ${esc(P.name)}. Destroyed is gone for good, and all of them, finished or not, are lost if the world falls. You have <b>${fmt(me().credits)}</b> credits.`
     : P.yards.length
       ? `${P.name} already has <b>${P.yards.length}</b> shipyard${P.yards.length > 1 ? 's' : ''} worth ${fmt(existing)} cr, so a new one here costs <b>${pct}% more</b> than its list price (+100% for every ${fmt(SHIPYARD_CROWDING_VALUE)} cr of shipyards already on a world). Building on your other worlds avoids that. You have <b>${fmt(me().credits)}</b> credits.`
       : `A shipyard costs 10× the ship it builds, and makes one every ${SHIPYARD_INTERVAL_MIN} min for free. Shipyards already on a world make the next one there dearer: +100% for every ${fmt(SHIPYARD_CROWDING_VALUE)} cr of them. You have <b>${fmt(me().credits)}</b> credits.`;
@@ -904,7 +920,7 @@ async function build(planetId, design) {
 async function buildDef(planetId, design, count) {
   const r = await perform({ type: 'defend', planet: planetId, design: encodeDesign(design), count }, () => buildDefense(world, ui.me, planetId, design, count));
   if (!r.ok) { toast(r.error, true); return false; }
-  toast(`${r.count === 1 ? 'Defence' : `${fmt(r.count)} defences`} built at ${world.planets[planetId].name} (${fmt(r.price)} cr).`);
+  toast(`${r.count === 1 ? 'Defence' : `${fmt(r.count)} defences`} ordered at ${world.planets[planetId].name} (${fmt(r.price)} cr): ready in ${DEFENSE_BUILD_HOURS} hours.`);
   save(); renderPanel(true); renderEvents(); updateTop();
   return true;
 }
@@ -1054,6 +1070,25 @@ function syncDipBadge() {
 // Battle simulator (owner, Nov 2026: new players might never find the designer's Test battle):
 // the designer opened with no world, straight into its test battle.
 $('sim-btn').addEventListener('click', () => openDesigner(-1, 'sim'));
+
+// ------------------------------------------------------------ patch notes
+// Owner, Nov 2026: every update is listed (src/shared/patchNotes.js). The button shows "new"
+// until this browser has opened the newest entry.
+const NOTES_SEEN_KEY = 'lsb.patchnotes.seen.v1';
+function syncNotesBadge() { $('notes-badge').hidden = !PATCH_NOTES.length || store.get(NOTES_SEEN_KEY, null) === PATCH_NOTES[0].id; }
+$('notes-btn').addEventListener('click', () => {
+  const seen = store.get(NOTES_SEEN_KEY, null);
+  const fresh = new Set();
+  for (const n of PATCH_NOTES) { if (n.id === seen) break; fresh.add(n.id); }
+  if (seen === null) fresh.clear(); // first visit: don't mark the whole history as new
+  $('notes-list').innerHTML = PATCH_NOTES.map((n) => `<section><h4><small>${esc(n.date)}</small>${esc(n.title)}${fresh.has(n.id) ? '<span class="tag">new</span>' : ''}</h4><ul>${n.items.map((t) => `<li>${esc(t)}</li>`).join('')}</ul></section>`).join('');
+  if (PATCH_NOTES.length) store.set(NOTES_SEEN_KEY, PATCH_NOTES[0].id);
+  syncNotesBadge();
+  $('notes').showModal();
+  $('notes-list').scrollTop = 0;
+});
+$('notes-close').addEventListener('click', () => $('notes').close());
+syncNotesBadge();
 $('dip-btn').addEventListener('click', () => { armedBreak = null; renderDiplomacy(); $('diplomacy').showModal(); });
 $('dip-close').addEventListener('click', () => $('diplomacy').close());
 $('dip-list').addEventListener('click', async (e) => {

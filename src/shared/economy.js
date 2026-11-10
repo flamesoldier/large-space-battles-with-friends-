@@ -43,6 +43,13 @@ export const MAX_DEFENSE_ORDER = 1000;
 // Selling a shipyard gives back this share of what was actually paid for it.
 export const SHIPYARD_SELL_REFUND = 0.95; // owner, Nov 2026 (was 0.5)
 
+// Selling a shipyard and building defences take time (owner, Nov 2026: so neither can be done
+// as a reaction to an attack, which only gives 30 minutes' warning). A shipyard being sold stops
+// building and pays out when the time is up; defences are paid for up front and join the garrison
+// when they're finished. If the world falls first, both are lost.
+export const SELL_HOURS = 5;
+export const DEFENSE_BUILD_HOURS = 5;
+
 // Income: every world pays a fixed number of credits per hour into its owner's global pool.
 // Home worlds pay HOME_INCOME; every other world rolls a fixed value in PLANET_INCOME (in
 // steps of 50) when the galaxy is made, and keeps it whoever owns it.

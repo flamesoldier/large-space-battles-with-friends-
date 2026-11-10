@@ -181,6 +181,12 @@ try {
   const yard = after.planets[annHome].yards[0].id;
   r = await ben.act({ type: 'sell', planet: annHome, yard });
   ok(!r.body.ok, 'Ben can\'t sell Ann\'s shipyard');
+  r = await ann.act({ type: 'sell', planet: annHome, yard });
+  ok(r.body.ok && r.body.state.world.planets[annHome].yards[0].sellAt > 0 && r.body.state.world.jobs.length === 1, 'Ann starts selling her shipyard (it takes hours)');
+  r = await ben.act({ type: 'unsell', planet: annHome, yard });
+  ok(!r.body.ok, 'Ben can\'t call off Ann\'s sale');
+  r = await ann.act({ type: 'unsell', planet: annHome, yard });
+  ok(r.body.ok && r.body.state.world.planets[annHome].yards[0].sellAt === undefined && !r.body.state.world.jobs.length, 'Ann calls the sale off');
   const dId = after.planets[annHome].yards[0].design;
   r = await ben.act({ type: 'rename', design: dId, name: 'Ben was here' });
   ok(!r.body.ok, 'Ben can\'t rename Ann\'s design');
@@ -198,7 +204,7 @@ try {
   ok(!r.body.ok, 'defence counts must be whole numbers');
   r = await ann.act({ type: 'defend', planet: annHome, design: fort, count: 2 });
   const fortId = r.body.ok && Object.values(r.body.state.world.designs).find((d) => d.fixed)?.id;
-  ok(fortId && r.body.state.world.planets[annHome].garrison.some((g) => g.design === fortId && g.n === 2 && g.owner === 0), 'Ann builds 2 defences on her world');
+  ok(fortId && r.body.state.world.jobs.some((j) => j.kind === 'defence' && j.design === fortId && j.count === 2 && j.owner === 0 && j.planet === annHome), 'Ann orders 2 defences on her world');
   r = await ann.act({ type: 'fleet', from: annHome, to: benHome, ships: { [fortId]: 1 } });
   ok(!r.body.ok, 'defences can\'t be sent');
   r = await ben.act({ type: 'fleet', from: annHome, to: benHome, ships: { [after.planets[annHome].yards[0].design]: 1 } });

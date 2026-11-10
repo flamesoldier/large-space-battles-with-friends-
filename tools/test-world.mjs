@@ -8,7 +8,7 @@ import {
   createWorld, advanceTo, runWorld, buildShipyard, sellShipyard, quoteShipyard, sendFleet, previewFleet,
   shipsAt, incomeOf, allied, YARD_MS, HOLD_MS, designOf, upgradeWorld,
   proposeAlliance, acceptAlliance, breakAlliance, proposalsFor, dueEvent, siegeAt, renameDesign,
-  buildDefense, planEvent, applyEvent, registerDesign,
+  buildDefense, planEvent, applyEvent, registerDesign, cancelSale, jobsAt,
 } from '../src/world/world.js';
 import { writeFileSync } from 'node:fs';
 import { packReplay } from '../src/shared/replayFormat.js';
@@ -18,7 +18,7 @@ import { makeDesign } from '../src/shared/designs.js';
 import { makeTestScenario } from '../src/designer/testBattle.js';
 import { BT } from '../src/shared/blocks.js';
 import { designCost, encodeDesign, decodeDesign } from '../src/shared/shipStats.js';
-import { STARTING_CREDITS, HOME_INCOME, SHIPYARD_SELL_REFUND, shipyardPrice, defensePrice } from '../src/shared/economy.js';
+import { STARTING_CREDITS, HOME_INCOME, SHIPYARD_SELL_REFUND, shipyardPrice, defensePrice, SELL_HOURS, DEFENSE_BUILD_HOURS } from '../src/shared/economy.js';
 import { HOUR_MS, HYPERLANE_SPEEDUP, MAX_PLAYERS, PLANET_SPACING } from '../src/world/rules.js';
 
 let checks = 0;
@@ -138,13 +138,28 @@ const resolve = (scen) => {
   const did = r1.yard.design;
   ok(shipsAt(P, 0)[did] === 10, `shipyard built 10 ships in 5 hours (${shipsAt(P, 0)[did]})`);
 
-  // Selling refunds half of what was paid.
+  // Selling takes SELL_HOURS: the yard stops building at once and pays SHIPYARD_SELL_REFUND at the end.
   const r2 = buildShipyard(w, 0, home, corv);
   ok(r2.ok, 'second yard');
-  const c0 = w.players[0].credits;
   const s = sellShipyard(w, 0, home, r2.yard.id);
-  ok(s.ok && Math.abs(w.players[0].credits - c0 - Math.round(r2.yard.paid * SHIPYARD_SELL_REFUND)) < 1e-6, 'selling refunds');
-  ok(P.yards.length === 1, 'sold yard is gone');
+  ok(s.ok && P.yards.length === 2 && r2.yard.sellAt === w.clock + SELL_HOURS * HOUR_MS, 'a sale starts and the yard stays until it\'s done');
+  ok(!sellShipyard(w, 0, home, r2.yard.id).ok, 'can\'t sell a yard twice');
+  const builtAtSale = r2.yard.built, c0 = w.players[0].credits, inc = incomeOf(w, 0);
+  const t0 = w.clock;
+  runWorld(w, r2.yard.sellAt - 1, resolve);
+  ok(P.yards.length === 2 && r2.yard.built === builtAtSale, 'a yard being sold builds nothing and is still there just before the end');
+  runWorld(w, s.done, resolve);
+  const earned = (inc * (w.clock - t0)) / HOUR_MS;
+  ok(P.yards.length === 1 && Math.abs(w.players[0].credits - c0 - earned - Math.round(r2.yard.paid * SHIPYARD_SELL_REFUND)) < 1e-3, 'the sale pays out when the time is up and the yard is gone');
+  ok(!w.jobs.length, 'the sale job is finished');
+  // Calling a sale off: it builds again, a full interval later, and no refund comes.
+  const keep = P.yards[0];
+  ok(sellShipyard(w, 0, home, keep.id).ok && cancelSale(w, 0, home, keep.id).ok, 'a sale can be called off');
+  ok(keep.sellAt === undefined && keep.next === w.clock + YARD_MS && !w.jobs.length, 'the kept yard builds again');
+  ok(!cancelSale(w, 0, home, keep.id).ok, 'nothing to call off now');
+  ok(!sellShipyard(w, 1, home, keep.id).ok && !cancelSale(w, 1, home, keep.id).ok, 'can\'t sell or keep another player\'s yard');
+  // The other yard kept building during those 5 hours: put its stack back to 10 for the fleet checks below.
+  P.garrison.find((g) => g.owner === 0 && g.design === did).n = 10;
 
   // Renaming a design: owner only, shows everywhere, survives decoding.
   ok(!renameDesign(w, 1, did, 'Stolen').ok, 'can\'t rename someone else\'s design');
@@ -529,10 +544,17 @@ const resolve = (scen) => {
   ok(!buildDefense(w, A, bHome.id, fort, 1).ok, 'only on your own worlds');
   ok(!buildDefense(w, A, aHome.id, fort, 0).ok && !buildDefense(w, A, aHome.id, fort, 2.5).ok, 'whole numbers only');
   const r = buildDefense(w, A, aHome.id, fort, 12);
-  ok(r.ok && shipsAt(aHome, A)[r.design] === 12, `12 defences built at once (${r.error})`);
-  ok(Math.abs(w.players[A].credits - (c0 - 12 * defensePrice(fort))) < 1e-6, 'paid once, at a fifth of the price');
+  ok(r.ok && !shipsAt(aHome, A)[r.design] && jobsAt(w, aHome.id, 'defence').length === 1, `12 defences ordered, not there yet (${r.error})`);
+  ok(Math.abs(w.players[A].credits - (c0 - 12 * defensePrice(fort))) < 1e-6, 'paid up front, at a fifth of the price');
+  ok(r.done === w.clock + DEFENSE_BUILD_HOURS * HOUR_MS, 'they take DEFENSE_BUILD_HOURS');
+  runWorld(w, r.done - 1, resolve);
+  ok(!shipsAt(aHome, A)[r.design], 'still building just before the time is up');
+  runWorld(w, r.done, resolve);
+  ok(shipsAt(aHome, A)[r.design] === 12 && !w.jobs.length && /12 Bastion fort defences are ready/.test(w.log.at(-1).text), 'finished on time, into the garrison, logged');
   ok(w.designs[r.design].fixed && w.designs[r.design].speed === 0 && w.designs[r.design].cost === defensePrice(fort), 'stored as a defence, valued at what it cost');
-  ok(buildDefense(w, A, aHome.id, fort, 3).design === r.design && shipsAt(aHome, A)[r.design] === 15, 'more of the same defence stack up');
+  const r3 = buildDefense(w, A, aHome.id, fort, 3);
+  runWorld(w, r3.done, resolve);
+  ok(r3.design === r.design && shipsAt(aHome, A)[r.design] === 15, 'more of the same defence stack up');
   const near = w.planets.find((p) => p.owner === null);
   const sent = sendFleet(w, A, aHome.id, near.id, { [r.design]: 1 });
   ok(!sent.ok && /defence/.test(sent.error), 'defences can\'t be sent anywhere');
@@ -577,6 +599,7 @@ const resolve = (scen) => {
   const fort = { ...makeDesign('frigate', 3), name: 'Picket fort' };
   fort.cells = fort.cells.map((t) => (t === BT.THRUSTER ? BT.ARMOR : t));
   const r = buildDefense(w, 0, P.id, fort, 4);
+  runWorld(w, r.done, resolve);
   P.garrison = P.garrison.filter((g) => g.design === r.design);
   const y = buildShipyard(w, 1, bHome.id, { ...makeDesign('destroyer', 8), name: 'Hammer' });
   bHome.garrison = [{ owner: 1, design: y.yard.design, n: 5 }];
@@ -592,6 +615,39 @@ const resolve = (scen) => {
   ok(P.owner === 1, 'B takes the world when A routs');
   ok(!(shipsAt(P, 0)[r.design] > 0) && !w.fleets.some((x) => x.owner === 0), 'A\'s surviving defences are destroyed, not sent home');
   ok(/4 defences destroyed/.test(w.log.filter((e) => e.battle).at(-1).text), 'the log counts the destroyed defences');
+}
+
+// ---- unfinished jobs are lost with the world: no payout for a yard being sold, no defences
+{
+  const w = createWorld({ players: [{ name: 'A' }, { name: 'B' }], seed: 14 });
+  const P = w.planets[w.players[0].home], bHome = w.planets[w.players[1].home];
+  w.players[0].credits = 1e6; w.players[1].credits = 1e7;
+  const fort = { ...makeDesign('frigate', 3), name: 'Picket fort' };
+  fort.cells = fort.cells.map((t) => (t === BT.THRUSTER ? BT.ARMOR : t));
+  const y = buildShipyard(w, 1, bHome.id, { ...makeDesign('destroyer', 8), name: 'Hammer' });
+  bHome.garrison = [{ owner: 1, design: y.yard.design, n: 30 }];
+  const f = sendFleet(w, 1, bHome.id, P.id, { [y.yard.design]: 30 }, { avoid: true, lanes: false });
+  runWorld(w, f.fleet.arrive, resolve);
+  P.garrison = [];
+  const yd = buildShipyard(w, 0, P.id, { ...makeDesign('corvette', 2), name: 'Gnat' });
+  const sg = siegeAt(w, P.id)[0];
+  ok(sg && yd.ok, 'siege on an empty world');
+  // Under attack, with 30 minutes to go: A tries to sell up and throw up defences. Neither is done in time.
+  const sold = sellShipyard(w, 0, P.id, yd.yard.id), def = buildDefense(w, 0, P.id, fort, 20);
+  ok(sold.ok && def.ok && sold.done > sg.startsAt && def.done > sg.startsAt, 'both take longer than the siege');
+  const credits = w.players[0].credits;
+  runWorld(w, sg.startsAt + 1, resolve);
+  ok(P.owner === 1, 'B takes the world');
+  ok(!jobsAt(w, P.id).length && !(shipsAt(P, 0)[def.design] > 0), 'the jobs are cancelled');
+  const capLog = w.log.filter((e) => e.capture).at(-1).text;
+  ok(/20 unfinished defences lost/.test(capLog), `the log says the unfinished defences were lost (${capLog})`);
+  const c1 = w.players[0].credits, t1 = w.clock, inc1 = incomeOf(w, 0);
+  runWorld(w, def.done + HOUR_MS, resolve);
+  ok(Math.abs(w.players[0].credits - c1 - (inc1 * (w.clock - t1)) / HOUR_MS) < 1e-3 && credits > 0, 'no sale payout after the world fell');
+  ok(!(shipsAt(P, 0)[def.design] > 0) && !(shipsAt(P, 1)[def.design] > 0), 'and no defences appear later');
+  // Old saves have no jobs list.
+  delete w.jobs; upgradeWorld(w);
+  ok(Array.isArray(w.jobs) && !w.jobs.length, 'upgradeWorld adds an empty jobs list');
 }
 
 // ---- a fleet only passing a siege world stops only if someone there is its enemy; old saves merge sieges

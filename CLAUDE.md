@@ -399,6 +399,16 @@ All money numbers are in `src/shared/economy.js` (placeholders until balanced in
   paid, so it doesn't compound. (Before that: list × (1 + value / 25,000), far too steep.) Old and
   new surcharges are equal for a 7,500 cr yard; dearer yards now pay more, cheaper ones less.
 - **Shipyards can be sold**: **95%** of what was actually paid comes back (owner, Nov 2026; was 50%).
+- **Selling a shipyard and building defences take 5 hours** (owner, Nov 2026: so neither can be
+  done in reaction to an attack, which gives only 30 minutes' warning; `SELL_HOURS`,
+  `DEFENSE_BUILD_HOURS` in `economy.js`). Both are **jobs** in `world.jobs` (`{ id, kind: 'sell' |
+  'defence', planet, owner, done, ... }`, added by `upgradeWorld`), finished by a `'job'` event in
+  `dueEvent` (at the same moment jobs go before fleets and sieges, so defences finished on time
+  fight). A yard being sold has `sellAt`, **stops building at once** and pays out at the end;
+  **Keep it** (`cancelSale`, server action `unsell`) calls it off and it builds again a full
+  interval later (my choice, offered to the owner). Defences are **paid up front** and join the
+  garrison when done. If the world falls first, `capture()` drops its jobs: no payout, unfinished
+  defences lost ("N unfinished defences lost" in the log).
 - **Defences** (owner, Nov 2026: a friend lost his home world and wanted static defences): the
   world panel has **Build** for Defences next to Shipyards. A defence is any valid design with
   **no thrusters**, bought outright at **1/5 of its block price** (`DEFENSE_PRICE_SHARE`,
@@ -544,6 +554,8 @@ designer's numbers against the sim.
   Put back button. Kept per browser, per game and player (`lsb.yardlist.v1.<online|local>.<seed>.<player>`
   in localStorage: `{ fav, hidden }` lists of `name|cells` keys); nothing on the server changes.
   New designs get onto the list by being built or saved to the designer library.
+- The **Thruster** palette tooltip (and the Top speed stat's hover text) says thrusters also set
+  galaxy map speed: a fleet travels at its slowest ship's top speed (owner, Nov 2026).
 - Plasma cannon tooltips (palette and weapon table) end with a capitals warning about friendly
   fire and exploding blocks (`PLASMA_WARNING`), and the designer's check list starts its plasma
   warning with "FRIENDLY FIRE".
@@ -766,6 +778,12 @@ until there's an income number to balance against), and whether hull class shoul
 the block limit.
 
 ## Working on the live game
+
+- **Patch notes (owner, Nov 2026): every update that goes live adds an entry** to
+  `src/shared/patchNotes.js` (newest first, written for players, new unique `id`; or add lines to
+  today's entry). The galaxy page's **Patch notes** button (next to Battle simulator and
+  Diplomacy) shows them, with a "new" badge until the browser has opened the newest one
+  (`lsb.patchnotes.seen.v1`). History was written back from the commit log from launch (4 Nov).
 
 The game is **live on Railway** and the owner and friends play it. Railway redeploys
 automatically on every push to `main` (about 2–3 minutes, roughly a minute of downtime); the

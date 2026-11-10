@@ -6,7 +6,7 @@ import { BT, BLOCKS, WEAPON, MULTIBLOCK, HULL_CLASSES, COOKOFF } from '../shared
 import { ARC_BINS, binAngle, binOpen } from '../shared/arcs.js';
 import { routeLength } from '../shared/bayRoute.js';
 import { analyzeDesign, encodeDesign, decodeDesign, designCost, STANCE_INFO, PLACE_INFO } from '../shared/shipStats.js';
-import { shipyardPrice, shipyardPriceAt, crowdingSurcharge, SHIPYARD_INTERVAL_MIN, SHIPYARD_PRICE_MULT, defensePrice, DEFENSE_PRICE_SHARE } from '../shared/economy.js';
+import { shipyardPrice, shipyardPriceAt, crowdingSurcharge, SHIPYARD_INTERVAL_MIN, SHIPYARD_PRICE_MULT, defensePrice, DEFENSE_PRICE_SHARE, DEFENSE_BUILD_HOURS } from '../shared/economy.js';
 import { makeDesign, CLASSES } from '../shared/designs.js';
 import { Battle, DT } from '../sim/battle.js';
 import { packReplay } from '../shared/replayFormat.js';
@@ -52,6 +52,8 @@ let CUR_KEY = SHIP_CUR_KEY;
 // shoots missiles down).
 const BLOCK_HINT = {
   [BT.PD]: `SHOOTS DOWN ENEMY MISSILES (normal and guided) within ${WEAPON[BT.PD].range} blocks: a missile has ${WEAPON[BT.MISSILE].hp} hp and each burst does ${WEAPON[BT.PD].missileDamage}, so a few of these protect a ship. Then ENEMY FIGHTERS within ${WEAPON[BT.PD].range} (${WEAPON[BT.PD].damage} a burst). When neither is near, it shoots any enemy ship within ${WEAPON[BT.PD].range}.`,
+  // Owner, Nov 2026: players didn't know thrusters also set galaxy map speed.
+  [BT.THRUSTER]: 'Moves the ship. More thrust for the ship\'s mass means a higher top speed and faster turning in battle.\n\nIT ALSO SETS SPEED ON THE GALAXY MAP: a fleet crosses the map at the top speed of its SLOWEST ship, so one under-powered ship slows the whole fleet down. Top speed (in the stats panel) is the same number in battle and on the map; a ship with almost no thrust can\'t leave its world.',
   [BT.MISSILE]: 'A huge, slow, unguided missile: flies straight where it was aimed, over your own ships, and its blast wrecks everything within 9 blocks. Point defence can shoot it down.',
   [BT.GUIDED]: 'The same huge missile, but it steers after its target in flight (and finds a new one nearby if its target dies), so it hits ships that dodge. Point defence can still shoot it down.',
   [BT.BAY]: `LAUNCHES FIGHTERS: a squadron of ${WEAPON[BT.BAY].squadron} as the battle opens, then one every ${WEAPON[BT.BAY].cooldown} s for as long as it lasts, at any range. Fighters need a way out: put the bay on the hull edge, or leave a tunnel of empty cells from it to space; the tunnel can turn corners (hover the bay to see its way out). A fighter circles the nearest enemy ship shooting it (${WEAPON[BT.BAY].fighter.damage} damage every ${WEAPON[BT.BAY].fighter.cooldown} s, range ${WEAPON[BT.BAY].fighter.range}), dogfights enemy fighters, and flies until it's shot down (${WEAPON[BT.BAY].fighter.hp} hp). Early on they soak up enemy fire; late in a battle they hunt down the long-range ships left at the back. Lasers mostly miss them; point defence goes for them first. They shine in long, drawn-out fights.`,
@@ -1018,7 +1020,7 @@ function syncEmbed() {
     b.title = !info.ok || thr ? 'Fix the red issues first' : price > embed.credits ? `You have ${fmt(embed.credits)} credits` : `Build one of these defences at ${embed.planet} (build more from the Build defences list)`;
     $('yard-label').textContent = 'Defence';
     $('yard').textContent = fmt(price);
-    $('yard-hint').textContent = `At ${embed.planet}: built at once for ${Math.round(DEFENSE_PRICE_SHARE * 100)}% of the blocks' price. It never moves, and when it's destroyed it's gone.`;
+    $('yard-hint').textContent = `At ${embed.planet}: takes ${DEFENSE_BUILD_HOURS} hours to build and costs ${Math.round(DEFENSE_PRICE_SHARE * 100)}% of the blocks' price. It never moves, and when it's destroyed it's gone.`;
     $('stance-row').hidden = true; $('stance-hint').hidden = true; $('stance-head').hidden = true;
     return;
   }
