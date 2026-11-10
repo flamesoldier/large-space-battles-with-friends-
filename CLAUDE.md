@@ -75,7 +75,16 @@ Weapons (numbers in `blocks.js`):
   stance distance from missile range (it used to fall back to 60 and dive in).
 - **Plasma cannon** (block `BT.LANCE`, weapon kind `'lance'` in code; **was the heavy laser**
   until Nov 2026, when the owner asked for it to be a projectile "to make its destructiveness more
-  obvious and cool"): 10×10 multi-block turret, range 650, every 20 s, a 25,000-damage budget,
+  obvious and cool"): 10×10 multi-block turret, range 650, every 20 s, a **5,000-damage budget**
+  (owner, 11 Nov 2026, was 25,000: a colossus defence fell in ~20 s. Almost all of it is pieces
+  cut off from the hub, not blocks burnt: 25,000 burnt ~5% and ~90% broke off. Measured with
+  `/tmp`-style harnesses, generated plasma battleships vs the same ship with heavy armour in place
+  of the plasma, 60,000 cr a side, 3 seeds, advantage 25k → 5k: vs titans +0.93 → +0.96,
+  battleships +0.49 → +0.35, cruisers +0.10 → +0.13, destroyers ≈ 0 both; a generated 97k-block
+  colossus defence vs 90k cr of plasma battleships: destroyed in ~20 s → 4–6 min (10,000: 1–1.5
+  min). Replays sent of "Bastion", a frame-cored 51k-block fortress with plasma at its nose: it
+  still falls in under a minute at 5,000 (frame 45 hp is cut ~100 deep, its own nose plasma cooks
+  off, hub reachable): design decides. NB `battle.now` counts ticks (0.1 s), not seconds),
   1 block wide. Now a **big glowing blue bolt with a long trail** (`K_PLASMA`, replay shot kind 2,
   `drawPlasma` in `renderer.js`; blue for every side) flying at **60 blocks/s** (cannon shells:
   45), aimed with lead (cap 6 s), life 30 s. Each tick `plasmaStep()` burns every live block on
@@ -559,7 +568,11 @@ designer's numbers against the sim.
   the ship as drawn in the designer with the nose toward the enemy, so two facing fleets' top wings
   are on opposite sides of the screen. Defences (`layoutDefences`): Back ones fill the rows by the
   world first, Front ones last (Auto/Middle between, biggest first as before); Top/Bottom flank
-  defences stand in their own block of rows beside the main block (40 apart), on that wing. Used
+  defences stand in their own block of rows beside the main block (40 apart), on that wing.
+  **Each camp starts clear of the defences on its own side only** (`defenceReach(fixed, designs,
+  phi)`, owner, 11 Nov 2026: behind a colossus defence the owner's fleet started ~700 blocks too
+  far back because every camp cleared the defences' furthest corner in any direction); same in
+  the designer test battle. Small defences: identical starts. Used
   by world battles and the designer's test battle (`makeTestScenario`). **Fleets start spread out** (owner, 11 Nov
   2026: ships started in a blob and spread out once the battle began; measured 62–100% of ships
   overlapping another at the start, now none): `fleetSpots()` in `battleSetup.js` sizes each camp's

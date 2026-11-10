@@ -8,6 +8,14 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-11e', date: '11 Nov 2026', title: 'Plasma rebalanced, fleets start closer behind big defences',
+    items: [
+      'Plasma cannon bolts now carry 5,000 damage (was 25,000). They still cut big ships and defences into pieces, but a giant defence now lasts minutes instead of about 20 seconds. Plasma is still the best answer to titans and battleships.',
+      'Tip for big defences: plasma slices through frame (only 45 hp) far more easily than heavy armour (240 hp), and anything cut off from the hub breaks away. Use heavy armour for the core, keep the hub deep inside, and don\'t put your own plasma cannons where they take the first hits: they explode.',
+      'Fixed: behind a very big defence (like a colossus) the world\'s own ships started far too far back, so they took ages to join the fight. They now start the same distance behind the defences as they do behind small ones. Same fix in the designer\'s test battle.',
+    ],
+  },
+  {
     id: '2026-11-11d', date: '11 Nov 2026', title: 'Bounties and credit gifts',
     items: [
       'NEW: bounties. After every battle, each group of allies that fought earns 20% of the value of everything its enemies lost there (ships, defences and militia), shared evenly between the allies. You get paid even if you lose the battle, so fighting a bigger player is never a total loss. The battle\'s log entry shows who earned what.',

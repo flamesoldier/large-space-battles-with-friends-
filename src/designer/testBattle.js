@@ -4,7 +4,7 @@
 import { makeDesign, CLASS_MIX } from '../shared/designs.js';
 import { designCost } from '../shared/shipStats.js';
 import { mulberry32 } from '../shared/rng.js';
-import { layoutDefences, fleetSpots } from '../world/battleSetup.js';
+import { layoutDefences, defenceReach, fleetSpots } from '../world/battleSetup.js';
 
 // How many copies to field by default, so a test is a proper fleet fight but stays quick.
 export const DEFAULT_COPIES = { corvette: 30, frigate: 20, destroyer: 12, cruiser: 6, battleship: 3, titan: 1, dreadnought: 1, leviathan: 1, colossus: 1, worldbreaker: 1 };
@@ -56,7 +56,7 @@ export function makeTestScenario(design, copies, opponent = null, seed = 1, fixe
   }
 
   const ships = [];
-  let clear = 0; // how far the defence rows reach toward the enemy
+  let clear = [0, 0]; // how far the defence rows reach toward each side (behind for yours, in front for the enemy)
   const place = (team, list) => {
     const dir = team === 0 ? 1 : -1;
     // Start positions picked in the designer, spread out like a real battle (fleetSpots). Your side
@@ -64,7 +64,7 @@ export function makeTestScenario(design, copies, opponent = null, seed = 1, fixe
     const spots = fleetSpots(list.map((di) => designs[di]), r, team === 0 ? -1 : 1);
     list.forEach((di, i) => {
       const { depth, across } = spots[i];
-      ships.push({ design: di, team, x: -dir * (Math.max(220, clear + 60) + depth), y: across, a: team === 0 ? 0 : Math.PI });
+      ships.push({ design: di, team, x: -dir * (Math.max(220, clear[team] + 60) + depth), y: across, a: team === 0 ? 0 : Math.PI });
     });
   };
   // Your side: defences stand at the origin in rows facing right (angle 0), the enemy coming in
@@ -74,7 +74,8 @@ export function makeTestScenario(design, copies, opponent = null, seed = 1, fixe
   extras.forEach((x, j) => { for (let k = 0; k < x.count; k++) (x.fixed ? rows : flying).push(j + 1); });
   if (rows.length) {
     const mine = rows.map((di) => ({ design: di, team: 0, fixed: true }));
-    clear = layoutDefences(mine, designs, [0], 2);
+    layoutDefences(mine, designs, [0], 2);
+    clear = [defenceReach(mine, designs, Math.PI), defenceReach(mine, designs, 0)]; // your side starts behind (−x), the enemy in front
     ships.push(...mine);
   }
   place(0, flying);

@@ -43,7 +43,8 @@ export function makeBattleScenario(groups, designOf, seed, opts = null) {
   const attackAngles = [];
   for (let c = 1; c < nCamps; c++) attackAngles.push((2 * Math.PI * c) / nCamps);
   if (!attackAngles.length) attackAngles.push(Math.PI);
-  const ringOut = layoutDefences(ships.filter((s) => s.fixed), designs, attackAngles, nCamps);
+  const fixedShips = ships.filter((s) => s.fixed);
+  layoutDefences(fixedShips, designs, attackAngles, nCamps);
   const order = [];
   for (let c = 1; c < nCamps; c++) order.push(c);
   order.push(0); // same draw order as before for two sides: attackers first
@@ -56,9 +57,10 @@ export function makeBattleScenario(groups, designOf, seed, opts = null) {
     const k = c < 0 ? -1 : 1; // spread sideways (same layout as before for two sides)
     // k is also which way "top" is across this camp, for the flank start positions.
     const spots = fleetSpots(list.map((s) => designs[s.design]), r, k);
+    const clear = Math.max(220, defenceReach(fixedShips, designs, phi) + 60);
     list.forEach((s, i) => {
       const { depth, across } = spots[i];
-      const along = Math.max(220, ringOut + 60) + depth;
+      const along = clear + depth;
       s.x = c * along - k * sn * across; s.y = sn * along + k * c * across;
       s.a = (phi + Math.PI) % (2 * Math.PI); // facing the world
     });
@@ -162,6 +164,22 @@ const PLACE_RANK = { back: 0, front: 2 };
  * block stands when there are several. Returns how far out the rows reach from (0, 0), so fleets
  * can start clear of them. Used by world battles and the designer's defence test battle.
  */
+/**
+ * How far laid-out defences reach out from the world in direction phi (owner, Nov 2026: behind a
+ * colossus-sized defence the owner's fleet started far too far back, because every camp used to
+ * start beyond the defences' furthest corner in any direction). Each camp only clears the defences
+ * on its own side of the world. 0 with no defences.
+ */
+export function defenceReach(fixed, designs, phi) {
+  const ux = Math.cos(phi), uy = Math.sin(phi);
+  let out = 0;
+  for (const s of fixed) {
+    const d = designs[s.design], da = s.a - phi;
+    out = Math.max(out, s.x * ux + s.y * uy + (d.w / 2) * Math.abs(Math.cos(da)) + (d.h / 2) * Math.abs(Math.sin(da)));
+  }
+  return out;
+}
+
 export function layoutDefences(fixed, designs, attackAngles, nCamps = attackAngles.length + 1) {
   let ringOut = 0;
   if (fixed.length) {

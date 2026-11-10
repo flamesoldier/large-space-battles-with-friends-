@@ -79,10 +79,10 @@ export const WEAPON = {
   // width: the beam burns a channel this many blocks wide (odd). The owner wants 1: a thin cut
   // slices off bigger pieces of ship than a wide one that vaporises them.
   // Plasma cannon (owner, Nov 2026: was the heavy laser, an instant beam): same range, rate and
-  // 25,000 damage budget, but a big glowing bolt that flies at `speed` and carves through every
+  // damage budget (5,000; was 25,000 until 11 Nov 2026, owner: a colossus defence fell in ~20 s),  but a big glowing bolt that flies at `speed` and carves through every
   // block in its path, ship after ship, friend or foe, until the budget is spent. Aimed with lead
   // (capped at maxLead s) along the line through the most enemy ships. Kind stays 'lance' inside.
-  [BT.LANCE]: { kind: 'lance', range: 650, damage: 25000, cooldown: 20, width: 1, speed: 60, life: 30, maxLead: 6 },
+  [BT.LANCE]: { kind: 'lance', range: 650, damage: 5000, cooldown: 20, width: 1, speed: 60, life: 30, maxLead: 6 },
   // Fighter bay (owner, Nov 2026): every `cooldown` s, for as long as the battle goes on (any
   // range), it launches one fighter along an open line out of the ship (the same line-of-fire
   // rule as guns: a bay on the hull edge launches straight out, one deep inside needs a straight
