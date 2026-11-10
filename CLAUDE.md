@@ -535,7 +535,7 @@ designer's numbers against the sim.
   design as `place` (`PLACE_INFO`/`placeOf` in `shipStats.js`); `encodeDesign` writes it only when
   it isn't Auto, so every design saved before (and the live save) loads as Auto with no
   `upgradeWorld` change. The same ship with another position is its own world design
-  (`registerDesign` compares it). **Auto starts exactly as before**: `startSpot()` in
+  (`registerDesign` compares it). **Auto started exactly as before** (until fleets were spread out on 11 Nov, below): `startSpot()` in
   `battleSetup.js` takes the same two random draws per ship, so a battle with every design on Auto
   is identical (checked against the old code on 80 scenarios). Ships: Front starts at the very front
   of its fleet, Middle in the middle, Back well behind (+60 blocks plus the back of the spread),
