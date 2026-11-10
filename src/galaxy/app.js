@@ -358,7 +358,8 @@ canvas.addEventListener('pointermove', (e) => {
   if (drag && drag.id === e.pointerId) {
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
     if (!drag.moved && Math.hypot(dx, dy) > 5) drag.moved = true;
-    if (drag.moved) { cam.x = drag.cx - dx / cam.zoom; cam.y = drag.cy - dy / cam.zoom; canvas.style.cursor = 'grabbing'; }
+    // With two fingers down the pinch handler below moves the map instead.
+    if (drag.moved && touches.size < 2) { cam.x = drag.cx - dx / cam.zoom; cam.y = drag.cy - dy / cam.zoom; canvas.style.cursor = 'grabbing'; }
   }
   if (!world) return;
   hover = drag?.moved ? null : pick(sx, sy);
@@ -387,7 +388,9 @@ canvas.addEventListener('wheel', (e) => {
   const r = canvas.getBoundingClientRect();
   zoomAt(Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0015)), e.clientX - r.left, e.clientY - r.top);
 }, { passive: false });
-// Pinch zoom.
+// Pinch zoom: two fingers zoom with their spread and move the map with their midpoint. Fixed
+// 11 Nov 2026 (owner: zooming made the map disappear): the one-finger drag measured from the
+// other finger's position during a pinch, so every step jumped the map by the fingers' spread.
 const touches = new Map();
 canvas.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') touches.set(e.pointerId, [e.clientX, e.clientY]); });
 canvas.addEventListener('pointermove', (e) => {
@@ -398,8 +401,15 @@ canvas.addEventListener('pointermove', (e) => {
     const after = [...touches.values()];
     const d0 = Math.hypot(before[0][0] - before[1][0], before[0][1] - before[1][1]), d1 = Math.hypot(after[0][0] - after[1][0], after[0][1] - after[1][1]);
     const r = canvas.getBoundingClientRect();
-    if (d0 > 0) zoomAt(d1 / d0, (after[0][0] + after[1][0]) / 2 - r.left, (after[0][1] + after[1][1]) / 2 - r.top);
-    if (drag) { drag.moved = true; drag.x = e.clientX; drag.y = e.clientY; drag.cx = cam.x; drag.cy = cam.y; }
+    const m0x = (before[0][0] + before[1][0]) / 2, m0y = (before[0][1] + before[1][1]) / 2;
+    const m1x = (after[0][0] + after[1][0]) / 2, m1y = (after[0][1] + after[1][1]) / 2;
+    cam.x -= (m1x - m0x) / cam.zoom; cam.y -= (m1y - m0y) / cam.zoom;
+    if (d0 > 0) zoomAt(d1 / d0, m1x - r.left, m1y - r.top);
+    // Restart the one-finger drag from where its own finger is now, so lifting the other
+    // finger carries on smoothly.
+    const own = drag && touches.get(drag.id);
+    if (own) { drag.moved = true; drag.x = own[0]; drag.y = own[1]; drag.cx = cam.x; drag.cy = cam.y; }
+    else if (drag) drag.moved = true;
   }
 });
 for (const ev of ['pointerup', 'pointercancel']) canvas.addEventListener(ev, (e) => touches.delete(e.pointerId));

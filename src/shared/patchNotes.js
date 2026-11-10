@@ -14,6 +14,7 @@ export const PATCH_NOTES = [
       'Ship designer on a phone: the grid takes most of the screen, with the blocks and tools in two rows underneath that you swipe sideways. One finger draws; two fingers move around and zoom. Pick Erase to remove blocks. With the Hand tool, tap a block to see what it does and, for a gun, where it can fire. The Stats button (it shows the ship\'s price, in red while the design has a problem) opens the stats and checks over the grid; tap it again to close them.',
       'Galaxy on a phone: a smaller top bar, so the map gets more room; swipe the row of buttons sideways to reach them all. After you tap a world to send a fleet to, the Launch button scrolls into view.',
       'Battle replays on a phone open on the whole battle, and the Back button is a bar along the top, so it no longer covers the play controls.',
+      'Fixed: pinching to zoom the galaxy map on a phone or tablet made the map fly off the screen. Pinching now zooms in on the spot between your fingers, and you can move the map with two fingers as you zoom.',
       'Turn your phone on its side for more room: the galaxy puts the map and the panel side by side, and the designer puts the blocks down the left.',
     ],
   },

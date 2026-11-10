@@ -810,6 +810,10 @@ game: identical apart from animation. **Keep new phone styling inside these quer
   one-time toast explains the touch controls (`lsb.designer.touchhint.v1`). Landscape: palette down the left.
 - Viewer: under 760 px wide, or a touch screen on its side, a replay opens on the whole battle
   (the 2.2 px/block minimum zoom left phones looking at empty space between fleets).
+- **Galaxy pinch fixed** (owner: "zoomed in and the map disappeared"; an older bug, not from the phone
+  work): during a pinch the one-finger drag measured from the other finger's position, so each step
+  jumped the map by the fingers' spread. Now two fingers zoom with their spread and pan with their
+  midpoint; the one-finger drag is off while two touches are down and restarts from its own finger.
 - The admin page already worked on phones.
 
 ## Working on the live game
