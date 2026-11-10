@@ -21,7 +21,7 @@ import { makeDesign } from '../shared/designs.js';
 import { mulberry32 } from '../shared/rng.js';
 import {
   SHIPYARD_INTERVAL_MIN, shipyardPrice, crowdingSurcharge, SHIPYARD_SELL_REFUND,
-  defensePrice, MAX_DEFENSE_ORDER, STARTING_CREDITS, NEUTRAL_GARRISON_HOURS, SELL_HOURS, DEFENSE_BUILD_HOURS,
+  defensePrice, MAX_DEFENSE_ORDER, BOUNTY_SHARE, STARTING_CREDITS, NEUTRAL_GARRISON_HOURS, SELL_HOURS, DEFENSE_BUILD_HOURS,
 } from '../shared/economy.js';
 import { generateGalaxy, linkHomesInward } from './galaxyGen.js';
 import { planRoute, travelSpeed, laneMap } from './routes.js';
@@ -159,8 +159,8 @@ export function registerDesign(world, owner, design, fixed = false) {
   if (!a.ok) throw new Error(`“${design.name}” can't be built: ${a.errors[0]}`);
   const id = `d${newId(world)}`;
   world.designs[id] = fixed
-    ? { id, owner, name: data.name, cls: a.hullClass?.id ?? design.cls, cost: defensePrice(design), speed: 0, blocks: a.blocks, data, fixed: true }
-    : { id, owner, name: data.name, cls: a.hullClass?.id ?? design.cls, cost: a.cost, speed: a.maxSpeed, blocks: a.blocks, data };
+    ? { id, owner, name: data.name, cls: a.hullClass?.id ?? design.cls, cost: defensePrice(design), worth: a.cost, speed: 0, blocks: a.blocks, data, fixed: true }
+    : { id, owner, name: data.name, cls: a.hullClass?.id ?? design.cls, cost: a.cost, worth: a.cost, speed: a.maxSpeed, blocks: a.blocks, data };
   return id;
 }
 
@@ -484,14 +484,19 @@ export function upgradeWorld(world) {
   // blocks.js, so ship values in the panels and combat log match what a new shipyard for it
   // costs. Shipyards already bought keep what was paid for them.
   for (const d of Object.values(world.designs || {})) {
-    try { const dd = decodeDesign(d.data); d.cost = d.fixed ? defensePrice(dd) : designCost(dd); } catch { /* keep the stored price */ }
+    try { const dd = decodeDesign(d.data); d.cost = d.fixed ? defensePrice(dd) : designCost(dd); d.worth = designCost(dd); } catch { /* keep the stored price */ }
+    d.worth ??= d.cost;
   }
   world.version = 3;
   return world;
 }
 
 export const countShips = (ships) => Object.values(ships).reduce((s, n) => s + n, 0);
-export const fleetValue = (world, ships) => Object.entries(ships).reduce((s, [d, n]) => s + world.designs[d].cost * n, 0);
+// A design's worth is its full block price, for defences too (owner, Nov 2026: a defence bought
+// for 2,000 cr that fights like 10,000 cr of ships is worth 10,000). `cost` stays what it costs to
+// buy (a defence's 1/5 price). Worth is what battle values, losses, world strength and bounties use.
+export const worthOf = (world, id) => world.designs[id].worth ?? world.designs[id].cost;
+export const fleetValue = (world, ships) => Object.entries(ships).reduce((s, [d, n]) => s + worthOf(world, d) * n, 0);
 
 export function fmtHours(h) {
   if (h < 1 / 60) return 'under a minute';
@@ -718,7 +723,7 @@ function siegeEnds(world, s, plan, result) {
   const byFleet = new Map();
   const fought = new Set();
   for (const g of result.groups) {
-    const cost = world.designs[g.design].cost, q = per[g.team];
+    const cost = worthOf(world, g.design), q = per[g.team];
     q.side = g.side; q.ships += g.n; q.survived += g.survived; q.value += g.n * cost; q.lost += (g.n - g.survived) * cost;
     value[g.side] += g.n * cost; lost[g.side] += (g.n - g.survived) * cost; ships[g.side] += g.n; survived[g.side] += g.survived;
     if (g.fleet !== undefined) {
@@ -742,10 +747,16 @@ function siegeEnds(world, s, plan, result) {
   const attackers = per.filter((q) => !defends(q.id)).map((q) => q.id);
   const defenders = per.filter((q) => defends(q.id) && q.id !== null).map((q) => q.id);
   const passing = B.passing;
+  // Defences that survived the battle but are razed when the world falls still count as lost for
+  // the bounty (they're destroyed all the same).
+  const razed = new Map();
+  if (won) for (const st of P.garrison) if (st.n > 0 && world.designs[st.design]?.fixed && !allied(world, st.owner, winner))
+    razed.set(st.owner, (razed.get(st.owner) || 0) + st.n * worthOf(world, st.design));
+  const bounty = payBounties(world, per, razed);
   const battle = {
     id: `b${newId(world)}`, attacker: won ? winner : s.leader, leader: s.leader, attackers, defender: P.owner, defenders, won,
     winner, passing, captured: won, seconds: result.seconds, ships, survived, value, lost, target: P.id, players: per,
-    camps: B.camps || 2,
+    camps: B.camps || 2, bounty,
   };
   const who = [...new Set(per.map((q) => q.id).filter((x) => x !== null))];
   const ownerTxt = P.owner === null ? ' (militia)' : ` (${playerName(world, P.owner)})`;
@@ -779,7 +790,35 @@ function siegeEnds(world, s, plan, result) {
     log(world, 'battle', `${by} attacked ${P.name}${ownerTxt}${way} and ${attackers.length > 1 ? 'were' : 'was'} beaten off.${tail}${sat}`, { planet: P.id, players: who, battle });
     entry = lastLog(world);
   }
+  const paid = Object.entries(bounty).filter(([, c]) => c > 0);
+  if (paid.length) entry.text += ` Bounty (${Math.round(BOUNTY_SHARE * 100)}% of enemy losses): ${paid.map(([id, c]) => `${playerName(world, +id)} +${c.toLocaleString()} cr`).join(', ')}.`;
   return entry;
+}
+
+/**
+ * Pay the battle bounty (owner, Nov 2026). Players who fought are put in groups of mutual allies;
+ * each group gets BOUNTY_SHARE of everything lost by the players (and militia) at war with it,
+ * split evenly between its players, whatever each brought. `extra` adds losses after the battle
+ * (defences razed with the world). Militia is never paid. Returns { playerId: credits }.
+ */
+export function payBounties(world, per, extra = new Map()) {
+  const lostBy = new Map();
+  for (const q of per) lostBy.set(q.id, (lostBy.get(q.id) || 0) + q.lost);
+  for (const [o, v] of extra) lostBy.set(o, (lostBy.get(o) || 0) + v);
+  const players = [...lostBy.keys()].filter((o) => o !== null && world.players[o]);
+  const groups = [];
+  for (const o of players) {
+    const g = groups.find((m) => m.every((u) => allied(world, u, o)));
+    if (g) g.push(o); else groups.push([o]);
+  }
+  const out = {};
+  for (const g of groups) {
+    let enemyLoss = 0;
+    for (const [o, v] of lostBy) if (!g.includes(o) && g.some((u) => hostile(world, u, o))) enemyLoss += v;
+    const each = Math.floor((enemyLoss * BOUNTY_SHARE) / g.length);
+    for (const o of g) { out[o] = each; if (each > 0) world.players[o].credits += each; }
+  }
+  return out;
 }
 
 /** Take a world: every shipyard on it is destroyed, the income moves, the ships garrison it. */
@@ -936,6 +975,22 @@ export function claimPlayer(world, pid, name, color) {
   pl.name = name; pl.color = color; pl.claimed = true;
   log(world, 'join', `${old} is now ${name}.`, { players: [pid] });
   return { ok: true };
+}
+
+/**
+ * Send credits to another player (owner, Nov 2026), ally or enemy, straight away. Whole credits,
+ * at least 1, at most what the sender has. Logged for both of them.
+ */
+export function giveCredits(world, from, to, amount) {
+  const A = world.players[from], B = world.players[to];
+  if (!A || !B || from === to) return { ok: false, error: 'No such player.' };
+  if (A.eliminated || B.eliminated) return { ok: false, error: 'That player is out of the game.' };
+  const n = Math.floor(Number(amount));
+  if (!Number.isFinite(n) || n < 1) return { ok: false, error: 'Type how many credits to send.' };
+  if (n > Math.floor(A.credits)) return { ok: false, error: `You only have ${Math.floor(A.credits).toLocaleString()} credits.` };
+  A.credits -= n; B.credits += n;
+  log(world, 'gift', `${A.name} sent ${n.toLocaleString()} cr to ${B.name}.`, { players: [from, to], gift: { from, to, amount: n } });
+  return { ok: true, amount: n };
 }
 
 /** End an alliance: the two players are enemies from now on. */

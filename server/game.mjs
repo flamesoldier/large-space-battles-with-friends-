@@ -17,7 +17,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import {
-  advanceTo, dueEvent, planEvent, applyEvent, upgradeWorld, sendFleet, buildShipyard, sellShipyard, cancelSale, renameDesign, buildDefense,
+  advanceTo, dueEvent, planEvent, applyEvent, upgradeWorld, sendFleet, buildShipyard, sellShipyard, cancelSale, renameDesign, buildDefense, giveCredits,
   proposeAlliance, acceptAlliance, declineAlliance, breakAlliance, playerName, claimPlayer,
 } from '../src/world/world.js';
 import { decodeDesign } from '../src/shared/shipStats.js';
@@ -243,6 +243,11 @@ export class Game {
         if (other === null || other === pid) return { ok: false, error: 'No such player.' };
         const fn = { propose: proposeAlliance, accept: acceptAlliance, decline: declineAlliance, break: breakAlliance }[a.type];
         return fn(W, pid, other);
+      }
+      case 'gift': {
+        const other = index(a.player, nPl);
+        if (other === null || other === pid) return { ok: false, error: 'No such player.' };
+        return giveCredits(W, pid, other, a.amount);
       }
       case 'claim': return claimPlayer(W, pid, typeof a.name === 'string' ? a.name.slice(0, 100) : '', typeof a.color === 'string' ? a.color : '');
       default: return { ok: false, error: 'Unknown action.' };

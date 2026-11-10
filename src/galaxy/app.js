@@ -19,9 +19,9 @@ import { packReplay } from '../shared/replayFormat.js';
 import { mulberry32 } from '../shared/rng.js';
 import {
   createWorld, advanceTo, dueEvent, planEvent, applyEvent, siegeAt, siegeParties, hostile, defendersAt, buildShipyard, sellShipyard, quoteShipyard,
-  sendFleet, previewFleet, shipsAt, incomeOf, allied, playerName, designOf, fleetValue, countShips, fmtHours,
+  sendFleet, previewFleet, shipsAt, incomeOf, allied, playerName, designOf, fleetValue, worthOf, countShips, fmtHours,
   sellValue, yardListValue, YARD_MS, HOLD_MS, upgradeWorld,
-  proposeAlliance, acceptAlliance, declineAlliance, breakAlliance, proposalsFor, hasProposed,
+  proposeAlliance, acceptAlliance, declineAlliance, breakAlliance, proposalsFor, hasProposed, giveCredits,
   isOpenSeat, freeColors, renameDesign, buildDefense, defenseProblem, cancelSale, jobsAt,
 } from '../world/world.js';
 import { readBattle, shipColors, battleOptions } from '../world/battleSetup.js';
@@ -539,9 +539,9 @@ function garrisonTable(P) {
   if (!byOwner.size) return '<p class="hint">No ships here.</p>';
   let html = '';
   for (const [owner, list] of byOwner) {
-    const total = list.reduce((a, s) => a + s.n, 0), value = list.reduce((a, s) => a + s.n * world.designs[s.design].cost, 0);
+    const total = list.reduce((a, s) => a + s.n, 0), value = list.reduce((a, s) => a + s.n * worthOf(world, s.design), 0);
     html += `<table><thead><tr><th>${who(owner)}${owner !== P.owner && P.owner !== null ? ' <span class="tag">guest</span>' : ''}</th><th>Ships</th><th>Speed</th></tr></thead><tbody>`;
-    html += list.map((s) => { const d = world.designs[s.design]; return `<tr><td title="${esc(d.cls)} · ${fmt(d.cost)} cr each">${esc(d.name)}</td><td>${fmt(s.n)}</td><td>${d.fixed ? '<span title="A defence: never moves or leaves this world">defence</span>' : d.speed < MIN_FLEET_SPEED ? 'fixed' : d.speed.toFixed(1)}</td></tr>`; }).join('');
+    html += list.map((s) => { const d = world.designs[s.design]; return `<tr><td title="${esc(d.cls)} · worth ${fmt(worthOf(world, s.design))} cr each${d.fixed ? ` (built for ${fmt(d.cost)} cr)` : ''}">${esc(d.name)}</td><td>${fmt(s.n)}</td><td>${d.fixed ? '<span title="A defence: never moves or leaves this world">defence</span>' : d.speed < MIN_FLEET_SPEED ? 'fixed' : d.speed.toFixed(1)}</td></tr>`; }).join('');
     html += `</tbody></table><p class="hint" style="margin:2px 0 10px">${fmt(total)} ships · ${fmt(value)} cr of hulls</p>`;
   }
   return html;
@@ -1095,7 +1095,7 @@ $('ev-toggle').addEventListener('click', () => { ui.evOpen = !ui.evOpen; syncEve
 // ------------------------------------------------------------ diplomacy
 // Allies station ships on each other's worlds, defend them together and join each other's
 // attacks. Anyone else is an enemy. An alliance needs both players to agree; either can end it.
-let armedBreak = null;
+let armedBreak = null, giftTo = null;
 function renderDiplomacy() {
   const meP = me(), others = world.players.filter((p) => p.id !== ui.me);
   $('dip-who').innerHTML = `${who(ui.me)} · ${alliesText(ui.me)}`;
@@ -1112,7 +1112,12 @@ function renderDiplomacy() {
     else if (theyAsked) acts = `<button class="small go" data-dip="accept" data-p="${p.id}">Accept</button><button class="small" data-dip="decline" data-p="${p.id}">Decline</button>`;
     else if (iAsked) acts = `<button class="small" data-dip="decline" data-p="${p.id}">Withdraw</button>`;
     else acts = `<button class="small go" data-dip="propose" data-p="${p.id}">Propose alliance</button>`;
-    return `<div class="dip ${p.eliminated ? 'out' : ''}"><div class="who-col">${who(p.id)}<span class="hint">${worlds} world${worlds === 1 ? '' : 's'} · ${fmt(incomeOf(world, p.id))} cr/h</span></div><div>${status}</div><div class="acts">${acts}</div></div>`;
+    // Credit gifts (owner, Nov 2026): to anyone, ally or enemy.
+    if (!out) acts += `<button class="small" data-dip="gift" data-p="${p.id}">Send credits</button>`;
+    const gift = giftTo === p.id && !out
+      ? `<div class="gift" style="grid-column:1/-1;display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px"><span class="hint">Send to ${esc(p.name)} (you have ${fmt(Math.floor(meP.credits))} cr):</span><input id="gift-amt" type="number" min="1" step="1" max="${Math.floor(meP.credits)}" placeholder="credits" style="width:9em"><button class="small go" data-dip="send" data-p="${p.id}">Send</button><button class="small" data-dip="nogift" data-p="${p.id}">Cancel</button></div>`
+      : '';
+    return `<div class="dip ${p.eliminated ? 'out' : ''}"><div class="who-col">${who(p.id)}<span class="hint">${worlds} world${worlds === 1 ? '' : 's'} · ${fmt(incomeOf(world, p.id))} cr/h</span></div><div>${status}</div><div class="acts">${acts}</div>${gift}</div>`;
   }).join('');
   // Everyone's relations at a glance.
   const ps = world.players;
@@ -1144,7 +1149,7 @@ $('notes-btn').addEventListener('click', () => {
 });
 $('notes-close').addEventListener('click', () => $('notes').close());
 syncNotesBadge();
-$('dip-btn').addEventListener('click', () => { armedBreak = null; renderDiplomacy(); $('diplomacy').showModal(); });
+$('dip-btn').addEventListener('click', () => { armedBreak = null; giftTo = null; renderDiplomacy(); $('diplomacy').showModal(); });
 $('dip-close').addEventListener('click', () => $('diplomacy').close());
 $('dip-list').addEventListener('click', async (e) => {
   const b = e.target.closest('[data-dip]');
@@ -1152,6 +1157,17 @@ $('dip-list').addEventListener('click', async (e) => {
   const other = Number(b.dataset.p), act = b.dataset.dip;
   if (act === 'break' && armedBreak !== other) { armedBreak = other; renderDiplomacy(); setTimeout(() => { if (armedBreak === other) { armedBreak = null; if ($('diplomacy').open) renderDiplomacy(); } }, 3000); return; }
   armedBreak = null;
+  if (act === 'gift') { giftTo = other; renderDiplomacy(); $('gift-amt')?.focus(); return; }
+  if (act === 'nogift') { giftTo = null; renderDiplomacy(); return; }
+  if (act === 'send') {
+    const amount = Math.floor(Number($('gift-amt')?.value));
+    const r = await perform({ type: 'gift', player: other, amount }, () => giveCredits(world, ui.me, other, amount));
+    if (!r.ok) return toast(r.error, true);
+    giftTo = null;
+    toast(`Sent ${fmt(r.amount ?? amount)} cr to ${world.players[other].name}.`);
+    renderDiplomacy(); afterEvent();
+    return;
+  }
   const fn = { propose: proposeAlliance, accept: acceptAlliance, decline: declineAlliance, break: breakAlliance }[act];
   if (!fn) return;
   const r = await perform({ type: act, player: other }, () => fn(world, ui.me, other));

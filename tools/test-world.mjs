@@ -8,7 +8,7 @@ import {
   createWorld, advanceTo, runWorld, buildShipyard, sellShipyard, quoteShipyard, sendFleet, previewFleet,
   shipsAt, incomeOf, allied, YARD_MS, HOLD_MS, designOf, upgradeWorld,
   proposeAlliance, acceptAlliance, breakAlliance, proposalsFor, dueEvent, siegeAt, renameDesign,
-  buildDefense, planEvent, applyEvent, registerDesign, cancelSale, jobsAt,
+  buildDefense, planEvent, applyEvent, registerDesign, cancelSale, jobsAt, payBounties, giveCredits, worthOf, fleetValue,
 } from '../src/world/world.js';
 import { writeFileSync } from 'node:fs';
 import { packReplay } from '../src/shared/replayFormat.js';
@@ -726,6 +726,44 @@ const resolve = (scen) => {
   ok(avg('top', (p) => p.across) > 150, 'Top flank ships still start out on their wing');
   const again = fleetSpots(ds, mulberry32(3), 1);
   ok(again.every((p, i) => p.depth === sp[i].depth && p.across === sp[i].across), 'the same battle starts the same way');
+}
+
+// ---- bounties and credit gifts (owner, Nov 2026)
+{
+  const w = createWorld({ players: [{ name: 'P1' }, { name: 'P2' }, { name: 'P3' }, { name: 'P4' }], seed: 11 });
+  proposeAlliance(w, 0, 1); acceptAlliance(w, 1, 0);
+  ok(allied(w, 0, 1) && !allied(w, 0, 2) && !allied(w, 2, 3), 'bounty test: P1+P2 allied, P3 and P4 at war with everyone');
+  const before = w.players.map((p) => p.credits);
+  // The owner's example: P1 100k and P2 50k (allies) vs P3 200k vs P4 100k. P3 wins, losing
+  // 100k; everyone else is wiped out.
+  const per = [
+    { id: 0, lost: 100000 }, { id: 1, lost: 50000 }, { id: 2, lost: 100000 }, { id: 3, lost: 100000 }, { id: null, lost: 0 },
+  ];
+  const b = payBounties(w, per);
+  ok(b[0] === 20000 && b[1] === 20000, `allies P1 and P2 split 40,000 evenly (${b[0]}, ${b[1]})`);
+  ok(b[2] === 50000 && b[3] === 50000, `P3 and P4 each get 20% of 250,000 (${b[2]}, ${b[3]})`);
+  ok(w.players.every((p, i) => p.credits === before[i] + b[i]), 'bounties are paid into credits');
+  // Militia losses pay too; militia is never paid.
+  const m = payBounties(w, [{ id: 2, lost: 0 }, { id: null, lost: 30000 }]);
+  ok(m[2] === 6000 && !(null in m), 'killing 30,000 cr of militia pays 6,000');
+  // Defences razed with the world count as lost.
+  const r = payBounties(w, [{ id: 2, lost: 0 }, { id: 3, lost: 1000 }], new Map([[3, 9000]]));
+  ok(r[2] === 2000, 'defences razed after the battle count towards the bounty');
+  // A defence is worth its full block price.
+  const dd = { ...makeDesign('frigate', 5), name: 'Wall' };
+  for (let i = 0; i < dd.cells.length; i++) if (dd.cells[i] === BT.THRUSTER) dd.cells[i] = BT.ARMOR;
+  const did = registerDesign(w, 2, dd, true);
+  ok(worthOf(w, did) === designCost(dd) && w.designs[did].cost === defensePrice(dd), 'defences: worth = block price, cost = build price');
+  ok(fleetValue(w, { [did]: 3 }) === 3 * designCost(dd), 'hull value counts defences at block price');
+  delete w.designs[did].worth; upgradeWorld(w);
+  ok(w.designs[did].worth === designCost(dd), 'old saves get each design\'s worth when loaded');
+  // Gifts.
+  const c0 = w.players[2].credits, c1 = w.players[0].credits;
+  ok(giveCredits(w, 2, 0, 1234.9).ok && w.players[2].credits === c0 - 1234 && w.players[0].credits === c1 + 1234, 'gift moves whole credits');
+  ok(!giveCredits(w, 2, 0, w.players[2].credits + 1).ok, 'cannot send more than you have');
+  ok(!giveCredits(w, 2, 0, 0).ok && !giveCredits(w, 2, 0, -5).ok && !giveCredits(w, 2, 0, 'x').ok, 'gift must be at least 1');
+  ok(!giveCredits(w, 2, 2, 10).ok && !giveCredits(w, 2, 9, 10).ok, 'no gifts to yourself or nobody');
+  ok(w.log.some((e) => e.gift && e.gift.from === 2 && e.gift.amount === 1234), 'gifts are logged');
 }
 
 console.log(`world: ${checks} checks passed`);

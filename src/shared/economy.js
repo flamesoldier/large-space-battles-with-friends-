@@ -40,6 +40,12 @@ export const defensePrice = (design) => Math.max(1, Math.round(designCost(design
 // Most defences one order can buy (just a guard against typos).
 export const MAX_DEFENSE_ORDER = 1000;
 
+// Bounty (owner, Nov 2026): after every battle each group of allies that fought is paid this share
+// of the value (full block price, defences and militia included) its enemies lost there, split
+// evenly between the group's players. Nobody tracks who killed whom: in a free-for-all every
+// enemy group is paid for the same losses, and the losing side is paid too.
+export const BOUNTY_SHARE = 0.2;
+
 // Selling a shipyard gives back this share of what was actually paid for it.
 export const SHIPYARD_SELL_REFUND = 0.95; // owner, Nov 2026 (was 0.5)
 

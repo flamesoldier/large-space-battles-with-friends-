@@ -8,6 +8,15 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-11d', date: '11 Nov 2026', title: 'Bounties and credit gifts',
+    items: [
+      'NEW: bounties. After every battle, each group of allies that fought earns 20% of the value of everything its enemies lost there (ships, defences and militia), shared evenly between the allies. You get paid even if you lose the battle, so fighting a bigger player is never a total loss. The battle\'s log entry shows who earned what.',
+      'Free-for-alls pay every side: each group is paid for its own enemies\' losses.',
+      'Defences now count at their full block price everywhere: in a world\'s "cr of hulls", in battle results and in bounties. A defence bought for 2,000 cr that is 10,000 cr of blocks counts as 10,000. Hover a defence in a world panel to see what it cost to build.',
+      'NEW: Send credits. In the Diplomacy window, press Send credits next to any player, type an amount and press Send. It arrives at once and shows in the log.',
+    ],
+  },
+  {
     id: '2026-11-11c', date: '11 Nov 2026', title: 'Battles box',
     items: [
       'The Events box on the galaxy map is now the Battles box: it lists only battles, newest first, each with its Watch button, so one look when you log in shows what\'s been fought. Tap a battle to jump to that world. Mine shows only battles you or your allies were in.',

@@ -447,6 +447,22 @@ All money numbers are in `src/shared/economy.js` (placeholders until balanced in
   Designer reopens with. None of this applies in ship mode. Its "Start from" menu lists **Your defences** first (your own `fixed` world designs, `defence: true`
   in the embed message's `designs`), then Your shipyards; the ship designer doesn't list defences. Measured: 400 attackers (480k cr) beat 86 defences + 90 ships
   (137k cr counting defences at 1/5) in 95 s (`/tmp`-style script; replay sent to the owner).
+- **Bounty** (owner, Nov 2026, `BOUNTY_SHARE` 0.2 in `economy.js`, `payBounties()` in `world.js`,
+  called from `siegeEnds`): after every battle the players who fought are put in groups of mutual
+  allies; each group is paid 20% of everything lost there by the players and militia at war with
+  it, split **evenly** between the group's players whatever each brought (owner turned down an
+  underdog multiplier as favouritism). Nobody tracks who killed whom: in a free-for-all every
+  enemy group is paid for the same losses, and losers are paid too. Militia kills pay (owner:
+  "keeps the rule consistent"); militia is never paid. Defences razed when the world falls count
+  as lost. Log entry text ends "Bounty (20% of enemy losses): A +n cr, …"; `battle.bounty` =
+  `{ playerId: credits }`. Owner's worked example is a test in `tools/test-world.mjs`.
+- **A design's worth is its full block price** (owner, Nov 2026: "I might have paid 2,000 for
+  defences but it is equal to 10,000 of ships"): `world.designs[id].worth` (`worthOf()`), set in
+  `registerDesign` and refreshed by `upgradeWorld`; `cost` stays the purchase price (a defence's
+  1/5). Battle `value`/`lost`, `fleetValue`, a world's "cr of hulls" and bounties use worth.
+- **Credit gifts** (owner, Nov 2026): Send credits in the Diplomacy window, to any player, ally or
+  enemy, whole credits up to what you have, instant, logged (`giveCredits()`, server action
+  `{ type: 'gift', player, amount }`).
 - Ships a shipyard builds garrison its world and defend it.
 - Every ship part has a credit cost (`cost` in `blocks.js`); a ship's price is the sum of its blocks.
   Owner's direction: **weapons and thrusters are expensive, armour and frame cheap**, to push
