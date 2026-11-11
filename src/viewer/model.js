@@ -128,7 +128,12 @@ export class ReplayModel {
       if (e.kind === 1) { let m = 0; for (const d of e.death) m = Math.max(m, d); e.t1 = m; }
     }
     // Sparks: where and how fast each destroyed (not merely detached) block was moving.
-    const sp = [];
+    // Filled straight into a typed array: a battle of thousands of giant ships destroys tens of
+    // millions of blocks, more than a plain list can hold.
+    let ns = 0;
+    for (let k = 0; k < n; k++) if (c.bdCause[k] === 0) ns++;
+    const sp = new Float32Array(ns * 7);
+    let o = 0;
     const tr = { x: 0, y: 0, a: 0 }, tr2 = { x: 0, y: 0, a: 0 };
     for (let k = 0; k < n; k++) {
       if (c.bdCause[k] !== 0) continue;
@@ -136,8 +141,8 @@ export class ReplayModel {
       const li = e.map[c.bdCell[k]];
       this.transform(e, t, tr); this.transform(e, t - 1, tr2);
       const cs = Math.cos(tr.a), sn = Math.sin(tr.a);
-      sp.push(t, tr.x + e.lx[li] * cs - e.ly[li] * sn, tr.y + e.lx[li] * sn + e.ly[li] * cs,
-        (tr.x - tr2.x) / this.dt, (tr.y - tr2.y) / this.dt, k, e.type[li]);
+      sp[o++] = t; sp[o++] = tr.x + e.lx[li] * cs - e.ly[li] * sn; sp[o++] = tr.y + e.lx[li] * sn + e.ly[li] * cs;
+      sp[o++] = (tr.x - tr2.x) / this.dt; sp[o++] = (tr.y - tr2.y) / this.dt; sp[o++] = k; sp[o++] = e.type[li];
     }
     // Thrusters of each ship, with the block directly behind each one (toward the stern), so the
     // renderer can draw a flame on every working thruster that has open space behind it.
@@ -152,7 +157,7 @@ export class ReplayModel {
       e.thr = Int32Array.from(thr); e.thrBehind = Int32Array.from(behind);
     }
     for (const e of this.ents) { neighbours(e); e.map = null; } // the grid map is only needed until here
-    this.spark = new Float32Array(sp);
+    this.spark = sp;
     this.sparkT = new Float32Array(sp.length / 7);
     for (let i = 0; i < this.sparkT.length; i++) this.sparkT[i] = sp[i * 7];
   }
@@ -413,7 +418,7 @@ function withGuided(S, c, q) {
   if (!seg.length) return S;
   const all = [];
   for (let k = 0; k < S.n; k++) all.push([S.t0[k], S.t1[k], S.x[k], S.y[k], S.vx[k], S.vy[k], S.hit[k], S.team[k], 0]);
-  all.push(...seg);
+  for (const x of seg) all.push(x); // not push(...seg): a big battle has far more pieces than a call can take arguments
   all.sort((a, b) => a[0] - b[0]);
   const n = all.length, out = { n, t0: new Float32Array(n), t1: new Float32Array(n), x: new Float32Array(n), y: new Float32Array(n),
     vx: new Float32Array(n), vy: new Float32Array(n), hit: new Uint8Array(n), team: new Uint8Array(n), a0: new Float32Array(n), maxFlight: S.maxFlight };

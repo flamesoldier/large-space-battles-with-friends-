@@ -8,6 +8,13 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-11i', date: '11 Nov 2026', title: 'Huge battle replays open again',
+    items: [
+      'Fixed: replays of very big battles with lots of guided missiles got stuck on "Loading the replay". They open now, including battles that were already fought: just press Watch again.',
+      'If a replay ever can\'t be opened, the viewer now says so (with a message to send to the game\'s owner) instead of loading for ever.',
+    ],
+  },
+  {
     id: '2026-11-11h', date: '11 Nov 2026', title: 'Trips through several worlds can be called off',
     items: [
       'A fleet on its way through several worlds can now be stopped. Select the fleet and press "Stop at …" (press twice to confirm). It still flies on to the world it is heading for right now, and fights there if that world isn\'t yours or an ally\'s, but it won\'t leave for the worlds after it. Example: a fleet going A → B → C → D, stopped on its way to B, ends its trip at B.',

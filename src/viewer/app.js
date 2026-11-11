@@ -265,7 +265,13 @@ if (host) {
     info.computeMs = e.data.computeMs || 0;
     pendingSides = e.data.sideColors || null;
     pendingNames = Array.isArray(e.data.teams) && e.data.teams.length ? e.data.teams : null;
-    show(new Uint8Array(e.data.bytes));
+    // A replay that can't be opened says so instead of sitting on "Loading" for ever.
+    try { show(new Uint8Array(e.data.bytes)); } catch (err) {
+      console.error(err);
+      model = null;
+      $('progress-title').textContent = 'This replay couldn\'t be opened';
+      $('progress-detail').textContent = `Please send this to the game's owner: ${err?.message || err}`;
+    }
   });
   host.postMessage({ type: 'lsb-viewer-ready' }, '*');
 } else resolve();

@@ -385,6 +385,12 @@ Battle end:
   re-cast per hit was fine for 50 guns but not for a giant with 1,000.
 - Replay block indexes (`bdCell`, `chCells`) are 32-bit, because giant ships have more than
   65,535 cells.
+- **Never spread a big list into a call** (`a.push(...b)`, `Math.max(...b)`) in the viewer or sim:
+  past ~100k items it throws "Maximum call stack size exceeded". `withGuided()` did this with
+  guided-missile pieces, so a few-thousand-ship battle with guided missiles stuck on "Loading the
+  replay" for everyone (11 Nov 2026; fixed in the viewer, so old replays open too). Collect big
+  results in typed arrays sized up front (sparks are now one `Float32Array`), and the viewer now
+  shows "This replay couldn't be opened" with the error instead of hanging.
 - The demo page re-runs the sim in the browser, so results differ slightly from Node
   (`Math.sin`/`cos` aren't identical across engines). The real game records replays on the
   server, so that's fine.
