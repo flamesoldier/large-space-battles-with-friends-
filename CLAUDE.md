@@ -705,7 +705,12 @@ economy, fleets, captures, with real battles).
   `galaxyGen.js`; owner, Nov 2026: about 1 home world in 3 only had lanes along the rim). It also
   runs in `upgradeWorld()`, so running games got the missing lanes, logged as "New hyperlane". **Moving along a lane is 10× faster** than normal space. Fleets can fly
   straight to any world through normal space too; the planner (Dijkstra) picks the fastest mix
-  and the player can turn lanes off. Fleets can't be recalled.
+  and the player can turn lanes off. Fleets can't be recalled, **but a multi-world trip can be
+  called off** (owner, 11 Nov 2026; friends agreed, for the late-game fight): `stopFleet()` in
+  `world.js` (server action `{ type: 'stop', fleet }`, "Stop at <next world>" button in the fleet
+  panel, two clicks) cuts `legs` after the leg in flight and sets `to`/`arrive` to that stop, so the
+  fleet still arrives there on time (and fights if it isn't its side's) but goes no further. A fleet
+  holding in a siege on the way stays for it, then stops there. Not for retreating fleets.
 - **Fleets stop at every world on their route** (owner's rule, so enemies can block or ambush
   them). Passing a friendly world they fly straight on. **At any world they don't hold** (owner, 11
   Nov 2026: empty enemy worlds used to be flown past; now a siege, taken at the end of the hold, then

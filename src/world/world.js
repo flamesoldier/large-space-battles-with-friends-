@@ -436,6 +436,26 @@ export function sendFleet(world, pid, from, to, ships, opts = {}) {
 }
 
 /**
+ * Cut a fleet's route short (owner, 11 Nov 2026: fleets still can't be recalled, but a trip through
+ * several worlds can be called off). It still finishes the leg it is on, so it arrives at its next
+ * stop exactly as planned (and fights there if that world isn't its side's), then goes no further.
+ * A fleet holding in a siege on the way stays in that siege and stops at that world afterwards.
+ * Retreating fleets can't be stopped. Returns { ok, error?, stop }.
+ */
+export function stopFleet(world, pid, fleetId) {
+  const f = world.fleets.find((x) => x.id === fleetId);
+  if (!f || f.owner !== pid) return { ok: false, error: 'That isn\'t one of your fleets.' };
+  if (f.retreat) return { ok: false, error: 'A retreating fleet can\'t change course.' };
+  if (f.leg >= f.legs.length - 1) return { ok: false, error: 'It is already on its way to its last stop.' };
+  const L = f.legs[f.leg], dest = world.planets[f.to], P = world.planets[L.to];
+  f.legs = f.legs.slice(0, f.leg + 1);
+  f.to = L.to;
+  f.arrive = L.at;
+  log(world, 'fleet', `${playerName(world, pid)} called off their fleet's trip to ${dest.name}: its ${countShips(f.ships)} ships will stop at ${P.name}.`, { planet: P.id, players: [pid] });
+  return { ok: true, stop: P.id };
+}
+
+/**
  * Fleets move leg by leg: `leg` is the leg in flight and `next` the game time it ends. Each leg
  * records `at`, the time it ends, so the schedule never drifts.
  */

@@ -240,6 +240,10 @@ try {
   const target = st.world.planets.filter((p) => p.owner === null).sort((a, b) => Math.hypot(a.x - home.x, a.y - home.y) - Math.hypot(b.x - home.x, b.y - home.y))[0];
   r = await ann.act({ type: 'fleet', from: annHome, to: target.id, ships: { [mine[0].design]: mine[0].n } });
   ok(r.body.ok && r.body.fleet.owner === 0, 'Ann launches a fleet');
+  r = await ben.act({ type: 'stop', fleet: r.body.fleet.id });
+  ok(!r.body.ok, 'Ben can\'t call off Ann\'s fleet');
+  r = await ann.act({ type: 'stop', fleet: 'x' });
+  ok(!r.body.ok, 'stop needs a fleet id');
   let battle = null;
   for (let k = 0; k < 600 && !battle; k++) {
     await sleep(250);

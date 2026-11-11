@@ -8,7 +8,7 @@ import {
   createWorld, advanceTo, runWorld, buildShipyard, sellShipyard, quoteShipyard, sendFleet, previewFleet,
   shipsAt, incomeOf, allied, YARD_MS, HOLD_MS, designOf, upgradeWorld,
   proposeAlliance, acceptAlliance, breakAlliance, proposalsFor, dueEvent, siegeAt, renameDesign,
-  buildDefense, planEvent, applyEvent, registerDesign, cancelSale, jobsAt, payBounties, giveCredits, worthOf, fleetValue,
+  buildDefense, planEvent, applyEvent, registerDesign, cancelSale, jobsAt, payBounties, giveCredits, worthOf, fleetValue, stopFleet,
 } from '../src/world/world.js';
 import { writeFileSync } from 'node:fs';
 import { packReplay } from '../src/shared/replayFormat.js';
@@ -276,6 +276,40 @@ const resolve = (scen) => {
   upgradeWorld(old);
   const of = old.fleets.find((x) => x.id === 9999);
   ok(of.leg === of.legs.length - 1 && of.next === of.arrive, 'old fleets fly straight to their target');
+}
+
+// ---- calling off a multi-world trip (owner, 11 Nov 2026): the fleet still reaches its next stop, then stops there
+{
+  const w = createWorld({ players: [{ name: 'A' }, { name: 'B' }], seed: 11, planetsPerPlayer: 8 });
+  const home = w.players[0].home;
+  w.players[0].credits = 1e8;
+  const yard = buildShipyard(w, 0, home, { ...makeDesign('cruiser', 5), name: 'Line' });
+  advanceTo(w, w.clock + YARD_MS * 10 + 1);
+  const did = yard.yard.design;
+  // Give A every world but B's home, emptied of militia, so the trip just flies through.
+  for (const P of w.planets) if (P.owner === null) { P.owner = 0; P.garrison = []; }
+  const far = w.planets.filter((p) => p.owner === 0 && p.id !== home)
+    .map((p) => ({ p, pv: previewFleet(w, home, p.id, { [did]: 2 }, { owner: 0 }) }))
+    .sort((a, b) => b.pv.legs.length - a.pv.legs.length)[0];
+  ok(far.pv.legs.length >= 3, `a trip through several worlds (${far.pv.legs.length} legs)`);
+  const r = sendFleet(w, 0, home, far.p.id, { [did]: 2 }), f = r.fleet;
+  const firstStop = f.legs[0].to, firstAt = f.legs[0].at;
+  ok(!stopFleet(w, 1, f.id).ok, 'only the owner can call off a trip');
+  const s = stopFleet(w, 0, f.id);
+  ok(s.ok && s.stop === firstStop && f.to === firstStop && f.legs.length === 1 && f.arrive === firstAt, 'called off: it now ends at its next stop, on time');
+  ok(!stopFleet(w, 0, f.id).ok, 'nothing left to call off on the last leg');
+  const before = shipsAt(w.planets[firstStop], 0)[did] || 0;
+  runWorld(w, firstAt + 1, null);
+  ok(!w.fleets.includes(f) && (shipsAt(w.planets[firstStop], 0)[did] || 0) === before + 2, 'it arrives at that stop and joins the garrison');
+  ok(w.log.some((e) => /called off/.test(e.text)), 'logged');
+  // Mid-route: a fleet already past its first stop stops at the one it is flying to now.
+  const r2 = sendFleet(w, 0, home, far.p.id, { [did]: 2 }), g = r2.fleet;
+  runWorld(w, g.legs[0].at + 1, null);
+  ok(g.leg === 1, 'flew past its first stop');
+  const s2 = stopFleet(w, 0, g.id);
+  ok(s2.ok && s2.stop === g.legs[1].to && g.legs.length === 2, 'stops at the world it is flying to now');
+  // Retreating fleets can't be stopped.
+  g.retreat = true; ok(!stopFleet(w, 0, g.id).ok, 'retreating fleets keep going'); g.retreat = false;
 }
 
 // ---- allies: guests defend, allies attack together, reinforcements join during the hold

@@ -17,7 +17,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import {
-  advanceTo, dueEvent, planEvent, applyEvent, upgradeWorld, sendFleet, buildShipyard, sellShipyard, cancelSale, renameDesign, buildDefense, giveCredits,
+  advanceTo, dueEvent, planEvent, applyEvent, upgradeWorld, sendFleet, stopFleet, buildShipyard, sellShipyard, cancelSale, renameDesign, buildDefense, giveCredits,
   proposeAlliance, acceptAlliance, declineAlliance, breakAlliance, playerName, claimPlayer,
 } from '../src/world/world.js';
 import { decodeDesign } from '../src/shared/shipStats.js';
@@ -209,6 +209,10 @@ export class Game {
           if (n > 0) ships[d] = n;
         }
         return sendFleet(W, pid, from, to, ships, { lanes: a.lanes !== false, avoid: a.avoid !== false });
+      }
+      case 'stop': {
+        if (!Number.isInteger(a.fleet)) return { ok: false, error: 'No such fleet.' };
+        return stopFleet(W, pid, a.fleet);
       }
       case 'build': {
         const planet = index(a.planet, nP);

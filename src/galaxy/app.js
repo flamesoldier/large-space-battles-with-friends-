@@ -19,7 +19,7 @@ import { packReplay } from '../shared/replayFormat.js';
 import { mulberry32 } from '../shared/rng.js';
 import {
   createWorld, advanceTo, dueEvent, planEvent, applyEvent, siegeAt, siegeParties, hostile, defendersAt, buildShipyard, sellShipyard, quoteShipyard,
-  sendFleet, previewFleet, shipsAt, incomeOf, allied, playerName, designOf, fleetValue, worthOf, countShips, fmtHours,
+  sendFleet, stopFleet, previewFleet, shipsAt, incomeOf, allied, playerName, designOf, fleetValue, worthOf, countShips, fmtHours,
   sellValue, yardListValue, YARD_MS, HOLD_MS, upgradeWorld,
   proposeAlliance, acceptAlliance, declineAlliance, breakAlliance, proposalsFor, hasProposed, giveCredits,
   isOpenSeat, freeColors, renameDesign, buildDefense, defenseProblem, cancelSale, jobsAt,
@@ -663,6 +663,8 @@ function fleetPanel(f) {
   const T = world.planets[f.to], F = world.planets[f.from];
   const rows = Object.entries(f.ships).map(([d, n]) => `<tr><td>${esc(world.designs[d].name)}</td><td>${fmt(n)}</td></tr>`).join('');
   const lanes = f.legs.filter((l) => l.lane).length;
+  const N = world.planets[f.legs[f.leg].to];
+  const canStop = f.owner === ui.me && !f.retreat && f.leg < f.legs.length - 1;
   return `<h1><span class="swatch" style="background:${colorOf(f.owner)}"></span>Fleet${f.retreat ? ' <span class="tag">retreating</span>' : ''}</h1>
     <div class="sub">${who(f.owner)}</div>
     <dl class="kv">
@@ -678,8 +680,8 @@ function fleetPanel(f) {
     </dl>
     <h2>Ships</h2><table><tbody>${rows}</tbody></table>
     ${f.legs.length > 1 ? `<p class="hint">Route: ${[f.from, ...f.legs.map((l) => l.to)].map((id, k) => { const N = esc(world.planets[id].name); return k === f.leg + 1 ? `<b>${N}</b>` : N; }).join(' → ')}</p>` : ''}
-    <p class="hint">Fleets stop at every world on their route. At a world they mean to attack, or where defenders bar the way, the battle starts ${fmtHours(HOLD_MS / HOUR_MS)} after they arrive, so both sides can bring reinforcements. Winning takes the world. Fleets can't be recalled once launched.</p>
-    <div class="row"><button data-act="goto" data-planet="${T.id}">Show destination</button></div>`;
+    <p class="hint">Fleets stop at every world on their route. At a world they mean to attack, or where defenders bar the way, the battle starts ${fmtHours(HOLD_MS / HOUR_MS)} after they arrive, so both sides can bring reinforcements. Winning takes the world. Fleets can't be recalled once launched, but a trip through several worlds can be called off: the fleet still reaches its next stop, then goes no further.</p>
+    <div class="row"><button data-act="goto" data-planet="${T.id}">Show destination</button>${canStop ? `<button data-act="stop-fleet" data-fleet="${f.id}" ${busy ? 'disabled' : ''} title="The fleet still arrives at ${esc(N.name)} (and fights there if it isn't yours), then goes no further">${armedStop === f.id ? `${CLICK} again: stop at ${esc(N.name)}` : `Stop at ${esc(N.name)}`}</button>` : ''}</div>`;
 }
 
 function alliesText(pid) {
@@ -722,6 +724,7 @@ $('panel').addEventListener('click', (e) => {
   else if (act === 'fold-yards') { ui.yardsOpen = ui.yardsOpen === false; store.set(UI_KEY, ui); renderPanel(true); }
   else if (act === 'sell') sellYard(sel.id, b.dataset.yard);
   else if (act === 'unsell') keepYard(sel.id, b.dataset.yard);
+  else if (act === 'stop-fleet') stopTrip(Number(b.dataset.fleet));
   else if (act === 'rename') openRename(b.dataset.design);
   else if (act === 'move') startMove(sel.id);
   else if (act === 'all' || act === 'none') {
@@ -801,6 +804,22 @@ async function launchMove() {
   move = null;
   select({ kind: 'fleet', id: r.fleet.id });
   save(); renderEvents();
+}
+
+// Call off the rest of a multi-world trip: the fleet still reaches its next stop. Two clicks.
+let armedStop = null;
+async function stopTrip(fleetId) {
+  if (busy) return;
+  if (armedStop !== fleetId) {
+    armedStop = fleetId; renderPanel(true);
+    setTimeout(() => { if (armedStop === fleetId) { armedStop = null; renderPanel(true); } }, 3000);
+    return;
+  }
+  armedStop = null;
+  const r = await perform({ type: 'stop', fleet: fleetId }, () => stopFleet(world, ui.me, fleetId));
+  if (!r.ok) return toast(r.error, true);
+  toast(`Trip called off: the fleet stops at ${world.planets[r.stop].name}.`);
+  save(); renderPanel(true); renderEvents(); updateTop();
 }
 
 // ------------------------------------------------------------ shipyards
