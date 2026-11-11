@@ -717,6 +717,19 @@ economy, fleets, captures, with real battles).
   panel, two clicks) cuts `legs` after the leg in flight and sets `to`/`arrive` to that stop, so the
   fleet still arrives there on time (and fights if it isn't its side's) but goes no further. A fleet
   holding in a siege on the way stays for it, then stops there. Not for retreating fleets.
+- **Rally points** (owner, 12 Nov 2026: "late game with so many ships being built it's hard to gather
+  them"): `P.rally = { to, owner }` (optional, no `upgradeWorld` change), set with `setRally()` /
+  `rallyAll()` in `world.js` (server actions `{ type: 'rally', planet, to | null }`, `{ type:
+  'rallyAll', to, on }`); must be the owner's or an ally's world, not itself. `advanceTo()` collects
+  ships its yards build at worlds with a rally point and `sendToRally()` launches them as one fleet
+  per world (`fleet.rally = true`), routed with lanes and **avoid on** (never fights on the way).
+  Only new ships move. Stay home while the world has a siege. A rally point that isn't friendly
+  any more is cancelled (logged) at the next build; `capture()` drops the fallen world's own.
+  `advanceTo` returns the number of fleets launched: the server's `catchUp()` saves and tells
+  clients; the **online page calls `advanceTo(..., { rally: false })`** so only the server launches
+  them. UI: "Rally point" section in the world panel (picker; on friendly worlds "Send new ships
+  from all my shipyards here" / "Stop sending them here"), dashed arrow on the map for the
+  selected world. Tests in `tools/test-world.mjs` and `tools/test-server.mjs`.
 - **Fleets stop at every world on their route** (owner's rule, so enemies can block or ambush
   them). Passing a friendly world they fly straight on. **At any world they don't hold** (owner, 11
   Nov 2026: empty enemy worlds used to be flown past; now a siege, taken at the end of the hold, then

@@ -8,7 +8,7 @@ import {
   createWorld, advanceTo, runWorld, buildShipyard, sellShipyard, quoteShipyard, sendFleet, previewFleet,
   shipsAt, incomeOf, allied, YARD_MS, HOLD_MS, designOf, upgradeWorld,
   proposeAlliance, acceptAlliance, breakAlliance, proposalsFor, dueEvent, siegeAt, renameDesign,
-  buildDefense, planEvent, applyEvent, registerDesign, cancelSale, jobsAt, payBounties, giveCredits, worthOf, fleetValue, stopFleet,
+  buildDefense, planEvent, applyEvent, registerDesign, cancelSale, jobsAt, payBounties, giveCredits, worthOf, fleetValue, stopFleet, setRally, rallyAll,
 } from '../src/world/world.js';
 import { writeFileSync } from 'node:fs';
 import { packReplay } from '../src/shared/replayFormat.js';
@@ -310,6 +310,65 @@ const resolve = (scen) => {
   ok(s2.ok && s2.stop === g.legs[1].to && g.legs.length === 2, 'stops at the world it is flying to now');
   // Retreating fleets can't be stopped.
   g.retreat = true; ok(!stopFleet(w, 0, g.id).ok, 'retreating fleets keep going'); g.retreat = false;
+}
+
+// ---- rally points (owner, 12 Nov 2026): new ships from a world's shipyards fly on to a friendly world
+{
+  const w = createWorld({ players: [{ name: 'A' }, { name: 'B' }], seed: 12, planetsPerPlayer: 8 });
+  const home = w.players[0].home, bHome = w.players[1].home;
+  w.players[0].credits = 1e8;
+  const yard = buildShipyard(w, 0, home, { ...makeDesign('cruiser', 5), name: 'Line' });
+  const did = yard.yard.design;
+  for (const P of w.planets) if (P.owner === null) { P.owner = 0; P.garrison = []; }
+  const mineOthers = w.planets.filter((p) => p.owner === 0 && p.id !== home);
+  const T = mineOthers[0], T2 = mineOthers[1];
+  ok(!setRally(w, 1, home, T.id).ok, 'only the owner sets a world\'s rally point');
+  ok(!setRally(w, 0, home, home).ok, 'not to the world itself');
+  ok(!setRally(w, 0, home, bHome).ok, 'not to an enemy world');
+  ok(setRally(w, 0, T.id, T2.id).ok && T.rally?.to === T2.id, 'any world of yours can have one, shipyard or not');
+  setRally(w, 0, T.id, null);
+  ok(setRally(w, 0, home, T.id).ok && w.planets[home].rally.to === T.id, 'rally point set');
+  const before = shipsAt(w.planets[home], 0)[did] || 0, fleets0 = w.fleets.length;
+  runWorld(w, yard.yard.next + 1, null);
+  const rf = w.fleets.filter((f) => f.rally);
+  ok(rf.length === 1 && rf[0].ships[did] === 1 && rf[0].to === T.id && rf[0].from === home, 'the new ship leaves at once for the rally point');
+  ok((shipsAt(w.planets[home], 0)[did] || 0) === before, 'ships already at the world stay');
+  ok(rf[0].legs.every((l) => l.to === T.id || allied(w, w.planets[l.to].owner, 0)), 'the route only passes friendly worlds');
+  const atT = shipsAt(T, 0)[did] || 0;
+  runWorld(w, rf[0].arrive + 1, null);
+  ok((shipsAt(T, 0)[did] || 0) >= atT + 1, 'it arrives and joins the garrison there');
+  // A few build cycles at once (a long jump): one fleet with all of them.
+  const n0 = w.fleets.filter((f) => f.rally).length, b0 = yard.yard.built;
+  advanceTo(w, w.clock + YARD_MS * 3);
+  const jump = w.fleets.filter((f) => f.rally).slice(n0);
+  ok(jump.length === 1 && jump[0].ships[did] === yard.yard.built - b0, 'several ships built at once leave together');
+  // Rally all my shipyard worlds here / stop.
+  const y2 = buildShipyard(w, 0, T2.id, { ...makeDesign('destroyer', 6), name: 'Escort' });
+  const ra = rallyAll(w, 0, mineOthers[2].id, true);
+  ok(ra.ok && ra.n === 2 && w.planets[home].rally.to === mineOthers[2].id && T2.rally.to === mineOthers[2].id && !T.rally, 'rally all: every world with a shipyard points here');
+  const rn = rallyAll(w, 0, mineOthers[2].id, false);
+  ok(rn.n === 2 && !w.planets[home].rally && !T2.rally, 'stop rallying here clears them');
+  ok(!rallyAll(w, 0, bHome, true).ok, 'rally all to an enemy world is refused');
+  // Under attack: new ships stay home to defend.
+  setRally(w, 0, home, T.id);
+  w.sieges.push({ id: 999999, planet: home, startsAt: w.clock + YARD_MS * 10, leader: 1 });
+  const k0 = w.fleets.filter((f) => f.rally).length;
+  advanceTo(w, yard.yard.next + 1);
+  ok(w.fleets.filter((f) => f.rally).length === k0, 'while its world is under siege, new ships stay to defend it');
+  w.sieges = w.sieges.filter((sg) => sg.id !== 999999);
+  // The rally point stops being friendly: cancelled at the next build, ships stay.
+  T.owner = 1;
+  const stay = shipsAt(w.planets[home], 0)[did] || 0;
+  advanceTo(w, yard.yard.next + 1);
+  ok(!w.planets[home].rally && (shipsAt(w.planets[home], 0)[did] || 0) === stay + 1, 'a rally point that fell to an enemy is cancelled and the ship stays');
+  ok(w.log.some((e) => /rally point at .* is cancelled/.test(e.text)), 'and that is logged');
+  // An ally's world is fine.
+  w.relations['0|1'] = 'ally';
+  ok(setRally(w, 0, home, T.id).ok, 'an ally\'s world can be a rally point');
+  // The page's own clock (online) never launches rally fleets.
+  const k1 = w.fleets.length;
+  advanceTo(w, yard.yard.next + 1, { rally: false });
+  ok(w.fleets.length === k1, 'advanceTo(..., { rally: false }) leaves new ships home');
 }
 
 // ---- allies: guests defend, allies attack together, reinforcements join during the hold

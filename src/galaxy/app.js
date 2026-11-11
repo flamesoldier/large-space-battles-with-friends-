@@ -19,7 +19,7 @@ import { packReplay } from '../shared/replayFormat.js';
 import { mulberry32 } from '../shared/rng.js';
 import {
   createWorld, advanceTo, dueEvent, planEvent, applyEvent, siegeAt, siegeParties, hostile, defendersAt, buildShipyard, sellShipyard, quoteShipyard,
-  sendFleet, stopFleet, previewFleet, shipsAt, incomeOf, allied, playerName, designOf, fleetValue, worthOf, countShips, fmtHours,
+  sendFleet, stopFleet, setRally, rallyAll, previewFleet, shipsAt, incomeOf, allied, playerName, designOf, fleetValue, worthOf, countShips, fmtHours,
   sellValue, yardListValue, YARD_MS, HOLD_MS, upgradeWorld,
   proposeAlliance, acceptAlliance, declineAlliance, breakAlliance, proposalsFor, hasProposed, giveCredits,
   isOpenSeat, freeColors, renameDesign, buildDefense, defenseProblem, cancelSale, jobsAt,
@@ -225,6 +225,21 @@ function draw(now) {
     const T = world.planets[move.to], [x, y] = toScreen(T.x, T.y);
     g.font = '600 12px "JetBrains Mono", monospace'; g.textAlign = 'center';
     label(`ETA ${fmtHours(move.preview.hours)}`, x, y - outerR(planetR(T) * z) - 22, '#e6eeff');
+  }
+
+  // Rally points touching the selected world (yours): a dashed line from each world to where its
+  // new ships go, with a small arrowhead at the rally point.
+  if (sel?.kind === 'planet') {
+    g.save(); g.setLineDash([6, 5]); g.lineWidth = 1.5; g.strokeStyle = g.fillStyle = hexA(colorOf(ui.me), 0.85);
+    for (const P of world.planets) {
+      if (P.owner !== ui.me || !P.rally || (P.id !== sel.id && P.rally.to !== sel.id)) continue;
+      const T = world.planets[P.rally.to], [x0, y0] = toScreen(P.x, P.y), [x1, y1] = toScreen(T.x, T.y);
+      const a = Math.atan2(y1 - y0, x1 - x0), r1 = outerR(Math.max(3.5, planetR(T) * z)) + 6;
+      const ex = x1 - Math.cos(a) * r1, ey = y1 - Math.sin(a) * r1;
+      g.beginPath(); g.moveTo(x0, y0); g.lineTo(ex, ey); g.stroke();
+      g.beginPath(); g.moveTo(ex, ey); g.lineTo(ex - Math.cos(a - 0.45) * 9, ey - Math.sin(a - 0.45) * 9); g.lineTo(ex - Math.cos(a + 0.45) * 9, ey - Math.sin(a + 0.45) * 9); g.closePath(); g.fill();
+    }
+    g.restore();
   }
 
   // Planets.
@@ -616,6 +631,36 @@ function planetPanel(P) {
       }
     }
   }
+  html += rallyPanel(P, mine, friendly);
+  return html;
+}
+
+// Rally points (owner, 12 Nov 2026): new ships from a world's shipyards fly on to a friendly world.
+function rallyPanel(P, mine, friendly) {
+  if (!world || me().eliminated) return '';
+  let html = '';
+  const here = world.planets.filter((Q) => Q.owner === ui.me && Q.rally?.to === P.id);
+  if (mine) {
+    const R = P.rally ? world.planets[P.rally.to] : null, bad = R && !allied(world, R.owner, ui.me);
+    const opts = world.planets.filter((Q) => Q.id !== P.id && Q.owner !== null && allied(world, Q.owner, ui.me))
+      .sort((a, b) => (a.owner === ui.me ? 0 : 1) - (b.owner === ui.me ? 0 : 1) || a.name.localeCompare(b.name));
+    html += `<h2>Rally point</h2>
+      <label class="rally">New ships from here go to
+        <select data-act="rally" ${busy ? 'disabled' : ''} aria-label="Rally point for ${esc(P.name)}">
+          <option value="">Nowhere: they stay here</option>
+          ${opts.map((Q) => `<option value="${Q.id}" ${P.rally?.to === Q.id ? 'selected' : ''}>${esc(Q.name)}${Q.owner === ui.me ? '' : ` (${esc(playerName(world, Q.owner))})`}</option>`).join('')}
+        </select></label>
+      ${R ? `<div class="row"><button class="small" data-act="goto" data-planet="${R.id}">Show ${esc(R.name)}</button></div>` : ''}
+      <p class="hint">${bad ? `<b style="color:var(--bad)">${esc(R.name)} isn't yours or an ally's any more: this rally point will be cancelled when the next ship is built.</b> ` : ''}${P.yards.length ? '' : 'No shipyards here yet. '}Ships this world's shipyards build leave straight away for the rally point (one of your worlds or an ally's). They go round worlds your side doesn't hold, and stay here while this world is under attack. Ships already here don't move.</p>`;
+  }
+  if (friendly) {
+    const yardWorlds = world.planets.filter((Q) => Q.owner === ui.me && Q.id !== P.id && Q.yards.length);
+    if (here.length || yardWorlds.length) {
+      if (!mine) html += '<h2>Rally point</h2>';
+      if (here.length) html += `<p class="hint">New ships from ${here.map((Q) => `<b>${esc(Q.name)}</b>`).join(', ')} come here.</p>`;
+      html += `<div class="row">${yardWorlds.some((Q) => Q.rally?.to !== P.id) ? `<button class="small go" data-act="rally-all" ${busy ? 'disabled' : ''} title="Every one of your worlds with a shipyard sends its new ships here">Send new ships from all my shipyards here</button>` : ''}${here.length ? `<button class="small" data-act="rally-none" ${busy ? 'disabled' : ''}>Stop sending them here</button>` : ''}</div>`;
+    }
+  }
   return html;
 }
 
@@ -725,6 +770,8 @@ $('panel').addEventListener('click', (e) => {
   else if (act === 'sell') sellYard(sel.id, b.dataset.yard);
   else if (act === 'unsell') keepYard(sel.id, b.dataset.yard);
   else if (act === 'stop-fleet') stopTrip(Number(b.dataset.fleet));
+  else if (act === 'rally-all') rallyHere(sel.id, true);
+  else if (act === 'rally-none') rallyHere(sel.id, false);
   else if (act === 'rename') openRename(b.dataset.design);
   else if (act === 'move') startMove(sel.id);
   else if (act === 'all' || act === 'none') {
@@ -737,6 +784,7 @@ $('panel').addEventListener('click', (e) => {
   else if (act === 'use-lanes') { move.lanes = true; move.avoid = false; refreshPreview(); renderPanel(true); }
 });
 $('panel').addEventListener('change', (e) => {
+  if (e.target.dataset.act === 'rally') setRallyPoint(sel.id, e.target.value === '' ? null : Number(e.target.value));
   if (e.target.dataset.act === 'lanes') { move.lanes = e.target.checked; refreshPreview(); renderPanel(true); }
   if (e.target.dataset.act === 'avoid') { move.avoid = e.target.checked; refreshPreview(); renderPanel(true); }
 });
@@ -804,6 +852,21 @@ async function launchMove() {
   move = null;
   select({ kind: 'fleet', id: r.fleet.id });
   save(); renderEvents();
+}
+
+async function setRallyPoint(planetId, to) {
+  if (busy) return;
+  const r = await perform({ type: 'rally', planet: planetId, to }, () => setRally(world, ui.me, planetId, to));
+  if (!r.ok) { toast(r.error, true); return renderPanel(true); }
+  toast(to === null ? 'Rally point removed: new ships stay here.' : `New ships from ${world.planets[planetId].name} will go to ${world.planets[to].name}.`);
+  save(); renderPanel(true); renderEvents();
+}
+async function rallyHere(to, on) {
+  if (busy) return;
+  const r = await perform({ type: 'rallyAll', to, on }, () => rallyAll(world, ui.me, to, on));
+  if (!r.ok) return toast(r.error, true);
+  toast(on ? `New ships from ${r.n} world${r.n === 1 ? '' : 's'} will come to ${world.planets[to].name}.` : `${r.n} world${r.n === 1 ? '' : 's'} stopped sending new ships to ${world.planets[to].name}.`);
+  save(); renderPanel(true); renderEvents();
 }
 
 // Call off the rest of a multi-world trip: the fleet still reaches its next stop. Two clicks.
@@ -1397,7 +1460,7 @@ async function pump(now) {
   if (ONLINE) {
     // The server runs events and battles; between its updates, income and shipyards tick on here
     // (pure functions of time), so the numbers move smoothly.
-    if (world && net.state) advanceTo(world, Math.max(world.clock, net.gameNow()));
+    if (world && net.state) advanceTo(world, Math.max(world.clock, net.gameNow()), { rally: false }); // the server sends rally fleets
     return;
   }
   if (busy || !world) return;
@@ -1415,7 +1478,7 @@ async function pump(now) {
       afterEvent();
     }
   }
-  advanceTo(world, gameTarget);
+  if (advanceTo(world, gameTarget)) afterEvent(); // new ships left for a rally point
 }
 
 /** Each battle side's name, for the replay viewer (one side per player in a free-for-all). */

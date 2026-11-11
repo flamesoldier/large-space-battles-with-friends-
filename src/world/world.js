@@ -316,9 +316,10 @@ export function renameDesign(world, pid, designId, name) {
  * Accrue income and shipyard production up to game time t (ms). Doesn't process events: the
  * caller makes sure nothing is due before t (runWorld does).
  */
-export function advanceTo(world, t) {
+export function advanceTo(world, t, { rally = true } = {}) {
   const dt = t - world.clock;
-  if (dt <= 0) return;
+  if (dt <= 0) return 0;
+  let fresh = null; // ships just built at worlds with a rally point: Map(planet → { design: n })
   for (const p of world.planets) {
     if (p.owner === null) continue;
     world.players[p.owner].credits += (p.income * dt) / HOUR_MS;
@@ -327,9 +328,94 @@ export function advanceTo(world, t) {
       const k = Math.floor((t - y.next) / YARD_MS) + 1;
       addShips(p, p.owner, y.design, k);
       y.next += k * YARD_MS; y.built += k;
+      if (rally && p.rally) {
+        fresh ??= new Map();
+        const m = fresh.get(p) || {};
+        m[y.design] = (m[y.design] || 0) + k;
+        fresh.set(p, m);
+      }
     }
   }
   world.clock = t;
+  return fresh ? sendToRally(world, fresh) : 0;
+}
+
+// ---------------------------------------------------------------- rally points
+// Owner, 12 Nov 2026 ("late game with so many ships being built it's hard to gather them"): a world
+// can have a rally point, P.rally = { to, owner }, one of its owner's worlds or an ally's. Ships its
+// shipyards build then leave for it at once, as one fleet per world (ships already there stay).
+// They go round worlds the owner's side doesn't hold, like "Avoid worlds you don't hold", so new
+// ships never wander into a fight on the way. While the world itself is under siege they stay to
+// defend it. A rally point that stops being friendly (the world fell, an alliance ended) is cancelled
+// the next time ships are built, and the ships stay home.
+
+/** Is `to` a world `pid` may rally to? */
+const rallyOk = (world, pid, to) => { const T = world.planets[to]; return !!T && T.owner !== null && allied(world, T.owner, pid); };
+
+/** Set (or with to = null, clear) the rally point of one of your worlds. Returns { ok, error? }. */
+export function setRally(world, pid, planetId, to) {
+  const P = world.planets[planetId];
+  if (!P || P.owner !== pid) return { ok: false, error: 'You can only set rally points on your own worlds.' };
+  if (to === null) {
+    if (!P.rally) return { ok: true };
+    const old = world.planets[P.rally.to];
+    delete P.rally;
+    log(world, 'fleet', `${playerName(world, pid)}: new ships from ${P.name} stay there (rally point at ${old?.name ?? '?'} removed).`, { planet: P.id, players: [pid] });
+    return { ok: true };
+  }
+  if (to === planetId) return { ok: false, error: 'Pick another world: new ships already stay here without a rally point.' };
+  if (!rallyOk(world, pid, to)) return { ok: false, error: 'A rally point must be one of your worlds or an ally\'s.' };
+  P.rally = { to, owner: pid };
+  log(world, 'fleet', `${playerName(world, pid)}: new ships from ${P.name} will go to ${world.planets[to].name}.`, { planet: P.id, players: [pid] });
+  return { ok: true };
+}
+
+/**
+ * Point every one of your worlds that has a shipyard at `to` (or, with on = false, clear the rally
+ * points that lead to `to`). Returns { ok, error?, n } (n = worlds changed).
+ */
+export function rallyAll(world, pid, to, on = true) {
+  if (on && !rallyOk(world, pid, to)) return { ok: false, error: 'A rally point must be one of your worlds or an ally\'s.' };
+  if (!world.planets[to]) return { ok: false, error: 'No such world.' };
+  let n = 0;
+  for (const P of world.planets) {
+    if (P.owner !== pid || P.id === to) continue;
+    if (on && P.yards.length && P.rally?.to !== to) { P.rally = { to, owner: pid }; n++; }
+    if (!on && P.rally?.to === to) { delete P.rally; n++; }
+  }
+  if (n) log(world, 'fleet', on ? `${playerName(world, pid)}: new ships from ${n} world${n > 1 ? 's' : ''} will go to ${world.planets[to].name}.`
+    : `${playerName(world, pid)} stopped rallying ${n} world${n > 1 ? 's' : ''} to ${world.planets[to].name}.`, { planet: to, players: [pid] });
+  return { ok: true, n };
+}
+
+/** Send freshly built ships on to their worlds' rally points. Returns how many fleets left. */
+function sendToRally(world, fresh) {
+  let sent = 0;
+  for (const [P, ships] of fresh) {
+    const r = P.rally;
+    if (!r) continue;
+    if (r.owner !== P.owner) { delete P.rally; continue; } // the world changed hands
+    const T = world.planets[r.to];
+    if (!rallyOk(world, P.owner, r.to)) {
+      delete P.rally;
+      log(world, 'fleet', `${playerName(world, P.owner)}'s rally point at ${T?.name ?? '?'} is cancelled: it isn't their world or an ally's any more. New ships stay at ${P.name}.`, { planet: P.id, players: [P.owner] });
+      continue;
+    }
+    if (world.sieges.some((sg) => sg.planet === P.id)) continue; // under attack: stay and defend
+    const have = shipsAt(P, P.owner);
+    const go = {};
+    for (const [d, n] of Object.entries(ships)) { const k = Math.min(n, have[d] || 0); if (k > 0) go[d] = k; }
+    if (!Object.keys(go).length) continue;
+    const plan = previewFleet(world, P.id, r.to, go, { owner: P.owner, lanes: true, avoid: true });
+    if (!plan.ok) continue; // e.g. a design too slow to leave: those ships stay
+    for (const [d, n] of Object.entries(go)) P.garrison.find((s) => s.owner === P.owner && s.design === d).n -= n;
+    tidyGarrison(P);
+    const f = launch(world, P.owner, P.id, r.to, go, plan, false);
+    f.rally = true;
+    log(world, 'fleet', `${countShips(go)} new ship${countShips(go) > 1 ? 's' : ''} left ${P.name} for the rally point at ${T.name}, arriving in ${fmtHours(plan.hours)}.`, { planet: r.to, players: [P.owner] });
+    sent++;
+  }
+  return sent;
 }
 
 /**
@@ -847,6 +933,7 @@ export function payBounties(world, per, extra = new Map()) {
 function capture(world, P, owner, ships, battleInfo) {
   const old = P.owner, yards = P.yards.length;
   P.yards = [];
+  delete P.rally; // the old owner's rally point goes with the world
   // Unfinished jobs here are lost with the world: shipyards being sold (destroyed above, no
   // payout) and defences still being built (already paid for).
   const lostJobs = (world.jobs || []).filter((j) => j.planet === P.id);

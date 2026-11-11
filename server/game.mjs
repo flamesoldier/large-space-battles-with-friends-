@@ -17,7 +17,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import {
-  advanceTo, dueEvent, planEvent, applyEvent, upgradeWorld, sendFleet, stopFleet, buildShipyard, sellShipyard, cancelSale, renameDesign, buildDefense, giveCredits,
+  advanceTo, dueEvent, planEvent, applyEvent, upgradeWorld, sendFleet, stopFleet, setRally, rallyAll, buildShipyard, sellShipyard, cancelSale, renameDesign, buildDefense, giveCredits,
   proposeAlliance, acceptAlliance, declineAlliance, breakAlliance, playerName, claimPlayer,
 } from '../src/world/world.js';
 import { decodeDesign } from '../src/shared/shipStats.js';
@@ -117,7 +117,8 @@ export class Game {
       // Tell everyone after each event, so a long string of battles shows up as it happens.
       this.save(); this.changed();
     }
-    advanceTo(this.world, Math.max(this.world.clock, target));
+    // New ships leaving for a rally point change the world: tell everyone.
+    if (advanceTo(this.world, Math.max(this.world.clock, target))) { this.save(); this.changed(); }
     return n;
   }
 
@@ -209,6 +210,15 @@ export class Game {
           if (n > 0) ships[d] = n;
         }
         return sendFleet(W, pid, from, to, ships, { lanes: a.lanes !== false, avoid: a.avoid !== false });
+      }
+      case 'rally': { // one world's rally point; to = null clears it
+        const okId = (x) => Number.isInteger(x) && x >= 0 && x < W.planets.length;
+        if (!okId(a.planet) || !(a.to === null || okId(a.to))) return { ok: false, error: 'No such world.' };
+        return setRally(W, pid, a.planet, a.to);
+      }
+      case 'rallyAll': { // every world of yours with a shipyard → here (on), or stop rallying here
+        if (!Number.isInteger(a.to) || a.to < 0 || a.to >= W.planets.length) return { ok: false, error: 'No such world.' };
+        return rallyAll(W, pid, a.to, a.on !== false);
       }
       case 'stop': {
         if (!Number.isInteger(a.fleet)) return { ok: false, error: 'No such fleet.' };

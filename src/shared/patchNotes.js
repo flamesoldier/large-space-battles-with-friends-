@@ -8,6 +8,15 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-12b', date: '12 Nov 2026', title: 'Rally points',
+    items: [
+      'Each of your worlds can now have a rally point: one of your worlds or an ally\'s. Ships its shipyards build then fly straight there as soon as they\'re finished, so your new ships gather in one place by themselves. Ships already at the world don\'t move.',
+      'Set it at the bottom of a world\'s panel under "Rally point". On any friendly world, "Send new ships from all my shipyards here" points every world with a shipyard at it in one go, and "Stop sending them here" undoes that. Select a world to see its rally point as a dashed arrow on the map.',
+      'New ships on their way to a rally point go round worlds your side doesn\'t hold, so they never get into a fight on the way. While a world is under attack, its new ships stay to defend it.',
+      'If the rally point is taken by an enemy (or an alliance ends), it\'s cancelled when the next ship is built and new ships stay at home.',
+    ],
+  },
+  {
     id: '2026-11-12a', date: '12 Nov 2026', title: 'Refresh when the game is updated',
     items: [
       'When the game is updated while you have it open, a bar at the top asks you to refresh. Press "Refresh now" and you\'re on the new version.',
