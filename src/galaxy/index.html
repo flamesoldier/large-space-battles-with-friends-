@@ -78,6 +78,14 @@ main { grid-area: map; position: relative; min-width: 0; min-height: 0; }
   position: absolute; left: 50%; top: 14px; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--line);
   padding: 7px 14px; font-size: 13px; pointer-events: none; transition: opacity .25s; opacity: 0; z-index: 3; max-width: calc(100% - 32px); text-align: center;
 }
+#update {
+  position: absolute; left: 50%; top: 14px; transform: translateX(-50%); background: var(--panel); border: 2px solid var(--azure);
+  padding: 10px 14px; font-size: 13.5px; z-index: 6; display: flex; gap: 12px; align-items: center; width: max-content; max-width: calc(100% - 32px);
+  box-shadow: 0 6px 30px rgba(0,0,0,0.6);
+}
+#update[hidden] { display: none; }
+#update button { white-space: nowrap; }
+#update:not([hidden]) ~ #toast { display: none; } /* every order fails with the same message as the bar */
 #toast.on { opacity: 1; }
 #toast.bad { border-color: var(--bad); }
 #banner {
@@ -355,6 +363,7 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
     </section>
     <div id="tip" hidden></div>
     <div id="banner" hidden></div>
+    <div id="update" role="alert" hidden><span>The game has been updated. Refresh to keep playing: orders from this page won't go through until you do.</span><button id="update-go">Refresh now</button></div>
     <div id="toast" role="status" aria-live="polite"></div>
     <div id="fight" hidden role="status">
       <div id="fight-title">Battle</div>

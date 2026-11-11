@@ -884,6 +884,15 @@ game in progress carries on because it lives on the volume (`/data`: `game.json`
   logins, every event and battle, admin actions, and errors with stack traces.
 - **Pushing to `main` changes the live game.** Run `npm test` (and `npm run bench -- 1000` after sim
   changes) before pushing. Keep `dist/` built and committed (`npm run build`); Railway also builds.
+- **Out-of-date pages are told to refresh** (owner, 12 Nov 2026, a friend's idea: old pages could
+  send outdated or invalid orders). `tools/build-viewer.mjs` stamps `dist/play.html` with
+  `<meta name="lsb-build" content="<sha256 of the page, 12 hex>">`; the server reads it from the page
+  it serves (`currentBuild()` in `server.mjs`, re-read when the file changes) and adds `build` to
+  every `/api/state` and `/api/act` answer. The page sends its own as the `X-LSB-Build` header
+  (`BUILD` in `net.js`). `/api/act` with another or no build id → **409 `{ outdated: true }`, not
+  carried out**; the page then shows the `#update` bar ("Refresh now", `location.reload()`), and also
+  as soon as a state answer carries another build. Server-only changes don't change the page hash, so
+  they don't prompt. Tests: `tools/test-server.mjs` sends the header and checks refusals.
 - **Never break the live save.** `game.json` is `{ world, anchor, speed }` (older: `{ world, wall }`).
   Any change to the world format must load an existing world: add defaults in `upgradeWorld()`
   (`src/world/world.js`) the way `sieges`, `proposals`, `relations` and `fleet.leg` were added.

@@ -178,10 +178,18 @@ function pageFile(file) {
   try { m = statSync(file).mtimeMs; } catch { /* missing */ }
   const c = pages.get(file);
   if (c && c.m === m) return c.gz;
-  const gz = gzipSync(readFileSync(file), { level: 9 });
-  pages.set(file, { m, gz });
+  const raw = readFileSync(file);
+  const gz = gzipSync(raw, { level: 9 });
+  const b = /<meta name="lsb-build" content="([0-9a-f]+)">/.exec(raw.subarray(0, 2000).toString('utf8'));
+  pages.set(file, { m, gz, build: b ? b[1] : null });
   return gz;
 }
+/** Build id of the game page being served now (null for a page built before build ids). */
+function currentBuild() {
+  try { pageFile(PAGE_FILE); } catch { return null; }
+  return pages.get(PAGE_FILE)?.build ?? null;
+}
+const OUTDATED = 'The game has been updated while you were playing. Refresh the page to keep playing (that order wasn\'t sent).';
 const html = (req, res, file) => send(req, res, 200, pageFile(file), { 'Content-Type': 'text/html; charset=utf-8', 'Content-Encoding': 'gzip', 'Cache-Control': 'no-cache' });
 
 // ------------------------------------------------------------------ admin
@@ -307,9 +315,12 @@ async function handle(req, res) {
     if (path === '/api/act') {
       const pid = sessionPlayer(req);
       if (pid === null) return fail(req, res, 401, 'Please log in again.');
+      // A page from an older build may send orders this server reads differently: refuse them.
+      const build = currentBuild();
+      if (build && req.headers['x-lsb-build'] !== build) return send(req, res, 409, { ok: false, outdated: true, build, error: OUTDATED });
       const g = game, r = await g.act(pid, body);
       if (g !== game) return fail(req, res, 401, 'A new game has started. Please log in again.');
-      return send(req, res, r.ok ? 200 : 400, { ...r, state: g.snapshot(pid, -1) });
+      return send(req, res, r.ok ? 200 : 400, { ...r, state: { ...g.snapshot(pid, -1), build } });
     }
     return fail(req, res, 404, 'Not found.');
   }
@@ -323,14 +334,14 @@ async function handle(req, res) {
   if (path === '/api/state') {
     // Long poll: answer as soon as something changed since the client's version `v`, or after POLL_MS.
     const v = Number(url.searchParams.get('v')), wv = Number(url.searchParams.get('wv'));
-    if (!Number.isFinite(v) || v !== g.version) return send(req, res, 200, g.snapshot(pid, wv));
+    if (!Number.isFinite(v) || v !== g.version) return send(req, res, 200, { ...g.snapshot(pid, wv), build: currentBuild() });
     let done = false;
     const finish = () => {
       if (done) return;
       done = true; g.watchers.delete(finish); clearTimeout(timer);
       if (res.writableEnded || res.destroyed) return;
       if (g !== game) fail(req, res, 401, 'A new game has started. Please log in again.');
-      else send(req, res, 200, g.snapshot(pid, wv));
+      else send(req, res, 200, { ...g.snapshot(pid, wv), build: currentBuild() });
     };
     const timer = setTimeout(finish, POLL_MS);
     g.watchers.add(finish);

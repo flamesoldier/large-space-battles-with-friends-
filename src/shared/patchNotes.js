@@ -8,6 +8,13 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-12a', date: '12 Nov 2026', title: 'Refresh when the game is updated',
+    items: [
+      'When the game is updated while you have it open, a bar at the top asks you to refresh. Press "Refresh now" and you\'re on the new version.',
+      'Until you refresh, orders from the old page aren\'t accepted, so nothing you send can go wrong because of the update. Nothing is lost: just refresh and give the order again.',
+    ],
+  },
+  {
     id: '2026-11-11i', date: '11 Nov 2026', title: 'Huge battle replays open again',
     items: [
       'Fixed: replays of very big battles with lots of guided missiles got stuck on "Loading the replay". They open now, including battles that were already fought: just press Watch again.',

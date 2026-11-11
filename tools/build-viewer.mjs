@@ -7,6 +7,7 @@
 // Usage: node tools/build-viewer.mjs [viewer|designer|galaxy|play]   (no argument builds them all)
 import { build } from 'esbuild';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 
 const PAGES = {
   viewer: { entry: 'src/viewer/app.js', html: 'src/viewer/index.html', artifact: 'dist/artifact.html' },
@@ -31,6 +32,9 @@ for (const [name, p] of Object.entries(PAGES)) {
   built[name] = page;
   if (only && only !== name) continue;
   if (p.artifact) writeFileSync(p.artifact, page);
-  writeFileSync(`dist/${name}.html`, `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"></head><body style="margin:0">\n${page}\n</body></html>\n`);
+  // The online page carries a build id (a hash of its own code). The server reads it from the page
+  // it serves and refuses actions from pages of another build, which are told to refresh.
+  const stamp = p.online ? `<meta name="lsb-build" content="${createHash('sha256').update(page).digest('hex').slice(0, 12)}">` : '';
+  writeFileSync(`dist/${name}.html`, `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">${stamp}</head><body style="margin:0">\n${page}\n</body></html>\n`);
   console.log(`dist/${name}.html ${(page.length / 1024).toFixed(0)} KB`);
 }

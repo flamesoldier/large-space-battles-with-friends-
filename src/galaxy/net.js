@@ -2,6 +2,11 @@
 // world; this keeps a copy up to date with a long poll and sends the player's actions. Which
 // player you are comes from your login session on the server, never from the page.
 
+// This page's build id (see tools/build-viewer.mjs). Sent with every request; when the server is
+// running a newer build, onOutdated fires and the page asks the player to refresh.
+export const BUILD = (typeof document !== 'undefined' && document.querySelector('meta[name="lsb-build"]')?.content) || '';
+const H = BUILD ? { 'X-LSB-Build': BUILD } : {};
+
 const json = async (res) => { try { return await res.json(); } catch { return { ok: false, error: `Server error (${res.status}).` }; } };
 
 export class Net {
@@ -13,6 +18,7 @@ export class Net {
     this.onState = null; // (snapshot with or without .world) → void
     this.onLoggedOut = null;
     this.polling = false;
+    this.onOutdated = null; // () → void: the server runs a newer build than this page
   }
 
   /** Game time now, extrapolated from the last snapshot (capped, so a lost connection doesn't run away). */
@@ -37,12 +43,13 @@ export class Net {
     if (s.world) this.wv = s.wv;
     this.state = { ...s, world: undefined };
     this.online = true;
+    if (s.build && BUILD && s.build !== BUILD) this.onOutdated?.();
     this.onState?.(s);
   }
 
   /** First load: resolves true with the state applied, or false when not logged in. */
   async fetchState() {
-    const res = await fetch(`/api/state?wv=${this.wv}`, { credentials: 'same-origin' });
+    const res = await fetch(`/api/state?wv=${this.wv}`, { headers: H, credentials: 'same-origin' });
     if (res.status === 401) return false;
     if (res.status === 503) { this.noGame = true; return false; } // nothing set up on the server yet
     if (!res.ok) throw new Error(`Server error (${res.status})`);
@@ -57,7 +64,7 @@ export class Net {
     let backoff = 1000;
     while (this.polling) {
       try {
-        const res = await fetch(`/api/state?v=${this.v}&wv=${this.wv}`, { credentials: 'same-origin' });
+        const res = await fetch(`/api/state?v=${this.v}&wv=${this.wv}`, { headers: H, credentials: 'same-origin' });
         if (res.status === 401) { this.polling = false; this.onLoggedOut?.(); return; }
         if (!res.ok) throw new Error(String(res.status));
         this.take(await res.json());
@@ -75,10 +82,11 @@ export class Net {
   async act(action) {
     let res;
     try {
-      res = await fetch('/api/act', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(action), credentials: 'same-origin' });
+      res = await fetch('/api/act', { method: 'POST', headers: { 'Content-Type': 'application/json', ...H }, body: JSON.stringify(action), credentials: 'same-origin' });
     } catch { return { ok: false, error: 'Can\'t reach the server. Check your connection and try again.' }; }
     if (res.status === 401) { this.polling = false; this.onLoggedOut?.(); return { ok: false, error: 'Please log in again.' }; }
     const r = await json(res);
+    if (r.outdated) this.onOutdated?.();
     if (r.state) { this.take(r.state); delete r.state; }
     return r;
   }

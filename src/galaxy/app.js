@@ -1341,6 +1341,7 @@ function updateTop() {
   else if (p.eliminated) { b.hidden = false; b.innerHTML = `<span>${esc(p.name)} has been knocked out.${ONLINE ? ' You can still watch the galaxy and its battles.' : ' Pick another player above, or start a new game.'}</span>`; }
   else b.hidden = true;
 }
+$('update-go').addEventListener('click', () => location.reload());
 $('banner').addEventListener('click', (e) => { if (e.target.id === 'banner-new') openNewGame(); });
 
 // ------------------------------------------------------------ new game
@@ -1561,6 +1562,7 @@ function showLogin(msg = '') {
 async function onlineStart() {
   net.onState = applyServerState;
   net.onLoggedOut = () => { location.reload(); };
+  net.onOutdated = () => { $('update').hidden = false; };
   try {
     if (await net.fetchState()) { $('login').hidden = true; net.poll(); return; }
   } catch { return showLogin('Can\'t reach the game server. Try again in a moment.'); }

@@ -4,7 +4,7 @@
 // its replay served back. Needs dist/play.html (npm run build).
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
@@ -49,6 +49,9 @@ async function stopServer() {
 }
 
 let ip = 1;
+// The build id stamped into the page the server serves (tools/build-viewer.mjs); the page sends it.
+const BUILD = /<meta name="lsb-build" content="([0-9a-f]+)">/.exec(readFileSync('dist/play.html', 'utf8'))?.[1];
+
 /** A client with its own cookie jar and (via X-Forwarded-For) its own address. */
 function client() {
   const c = { cookie: '', ip: `10.0.0.${ip++}` };
@@ -62,7 +65,7 @@ function client() {
     return res;
   };
   c.json = async (method, path, body, headers) => { const r = await c.req(method, path, body, headers); return { status: r.status, body: await r.json(), res: r }; };
-  c.act = (a) => c.json('POST', '/api/act', a);
+  c.act = (a, build = BUILD) => c.json('POST', '/api/act', a, build ? { 'X-LSB-Build': build } : {});
   c.state = () => c.json('GET', '/api/state');
   return c;
 }
@@ -239,6 +242,15 @@ try {
   ok(mine.length && mine[0].n >= 2, `the shipyard has built ships (${mine[0]?.n})`);
   const target = st.world.planets.filter((p) => p.owner === null).sort((a, b) => Math.hypot(a.x - home.x, a.y - home.y) - Math.hypot(b.x - home.x, b.y - home.y))[0];
   r = await ann.act({ type: 'fleet', from: annHome, to: target.id, ships: { [mine[0].design]: mine[0].n } });
+  // Out-of-date pages (another build, or one from before build ids) can't send orders.
+  ok(!!BUILD, 'the game page carries a build id');
+  const stBefore = (await ann.state()).body;
+  ok(stBefore.build === BUILD, 'the server tells pages which build it runs');
+  for (const [b, what] of [['0123456789ab', 'another build'], ['', 'no build id']]) {
+    const o = await ann.act({ type: 'propose', player: 1 }, b);
+    ok(o.status === 409 && o.body.outdated && /Refresh/.test(o.body.error) && o.body.build === BUILD, `orders from a page with ${what} are refused with "refresh"`);
+  }
+  ok((await ann.state()).body.v === stBefore.v, '…and not carried out (nothing changed)');
   ok(r.body.ok && r.body.fleet.owner === 0, 'Ann launches a fleet');
   r = await ben.act({ type: 'stop', fleet: r.body.fleet.id });
   ok(!r.body.ok, 'Ben can\'t call off Ann\'s fleet');
