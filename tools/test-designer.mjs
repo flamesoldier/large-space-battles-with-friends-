@@ -10,6 +10,8 @@ import { binOf, binOpen, lineOfFire } from '../src/shared/arcs.js';
 import { shipyardPrice } from '../src/shared/economy.js';
 import { ShipEditor } from '../src/designer/editor.js';
 import { makeTestScenario } from '../src/designer/testBattle.js';
+import { FORTRESSES, loadFortress } from '../src/shared/fortresses.js';
+import { defensePrice } from '../src/shared/economy.js';
 
 let checked = 0;
 const close = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, `${msg}: ${a} vs ${b}`);
@@ -224,4 +226,19 @@ assert.ok(Math.abs(sc.enemyCost - sc.budget) / sc.budget < 0.1, `budgets ${sc.en
   for (let k = 0; k < rep.cols.shotKind.length; k++) if (rep.cols.shotKind[k] === 4) assert.ok(rep.cols.shotFlight[k] > 0, 'every fighter has a flight time in the replay');
 }
 
+// The ready-made Aegis fortresses in the defence designer's Start from menu: valid 150,000 cr
+// defences (750,000 cr of blocks, no thrusters, nothing buried or sealed in), and they survive a
+// save/load round trip like any design.
+for (let k = 0; k < FORTRESSES.length; k++) {
+  const d = await loadFortress(k), a = analyzeDesign(d);
+  assert.ok(a.ok, `${d.name}: ${a.errors.join('; ')}`);
+  assert.equal(a.cost, 750000, `${d.name} costs 750,000 cr of blocks`);
+  assert.equal(defensePrice(d), 150000, `${d.name} is a 150,000 cr defence`);
+  assert.ok(!a.byType[BT.THRUSTER], `${d.name} has no thrusters`);
+  assert.equal(a.weapons.filter((w) => w.buried).length, 0, `${d.name}: no buried weapons or sealed bays`);
+  const back = decodeDesign(JSON.parse(JSON.stringify(encodeDesign(d))));
+  assert.deepEqual([...back.cells], [...d.cells], `${d.name} round-trips`);
+}
+
 console.log(`designer stats match the sim for ${checked} generated designs; validation ok`);
+console.log(`${FORTRESSES.length} Aegis fortresses are valid 150,000 cr defences`);

@@ -8,6 +8,15 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-12c', date: '12 Nov 2026', title: 'Ready-made Aegis fortresses',
+    items: [
+      'Four giant ready-made defences are now in the Defence Designer: open a world\'s Defences, press Build, then "Design a new defence…", and pick one from "Start from" under "Aegis fortresses". Each costs 150,000 credits and takes 5 hours to build, like any defence.',
+      'Aegis Star Citadel: a classic star fort with eight armoured bastions. Aegis Star Citadel II: hollow, with three rings of guns that fire out down six open lanes, and hangars deep inside. Aegis Star Citadel III: five arms fanned forward with a carrier deck in the back. Aegis Star Citadel IV: a giant harpoon nearly 1,000 blocks long, 44 plasma cannons, every gun facing the front.',
+      'Remember a defence\'s front (the right-hand side in the designer) always faces the enemy. III and IV put almost everything at the front, so they are weaker if a second enemy comes from behind; I and II are good all round.',
+      'You can change them like any design before building: load one, edit it, then build.',
+    ],
+  },
+  {
     id: '2026-11-12b', date: '12 Nov 2026', title: 'Rally points',
     items: [
       'Each of your worlds can now have a rally point: one of your worlds or an ally\'s. Ships its shipyards build then fly straight there as soon as they\'re finished, so your new ships gather in one place by themselves. Ships already at the world don\'t move.',

@@ -8,6 +8,7 @@ import { routeLength } from '../shared/bayRoute.js';
 import { analyzeDesign, encodeDesign, decodeDesign, designCost, STANCE_INFO, PLACE_INFO } from '../shared/shipStats.js';
 import { shipyardPrice, shipyardPriceAt, crowdingSurcharge, SHIPYARD_INTERVAL_MIN, SHIPYARD_PRICE_MULT, defensePrice, DEFENSE_PRICE_SHARE, DEFENSE_BUILD_HOURS } from '../shared/economy.js';
 import { makeDesign, CLASSES } from '../shared/designs.js';
+import { FORTRESSES, loadFortress } from '../shared/fortresses.js';
 import { Battle, DT } from '../sim/battle.js';
 import { packReplay } from '../shared/replayFormat.js';
 import { ShipEditor } from './editor.js';
@@ -111,6 +112,13 @@ tpl.addEventListener('change', () => {
   const v = tpl.value;
   tpl.value = '';
   if (!v) return;
+  if (v.startsWith('f')) { // a ready-made Aegis fortress (defence designer only)
+    const f = FORTRESSES[Number(v.slice(1))];
+    toast(`Loading ${f.name}…`);
+    loadFortress(Number(v.slice(1))).then((d) => { ed.load(d); dropThrusters(); syncFields(); fit(); toast(`Loaded ${f.name}. Undo to go back.`); })
+      .catch((err) => toast(`Couldn't load ${f.name}: ${err.message}`));
+    return;
+  }
   if (v === 'blank') { ed.clear(); ed.name = 'New design'; ed.stance = 'line'; ed.place = 'auto'; toast('Cleared. Undo to get your design back.'); }
   else if (v.startsWith('y')) { // one of your shipyards' designs or defences (opened from the galaxy)
     const o = embed.designs[Number(v.slice(1))], d = decodeDesign(o.data);
@@ -136,6 +144,18 @@ function addYardTemplates(list, defence = false) {
   if (defs) tpl.insertBefore(defs, blank);
   const yards = group('Your shipyards', (o) => o.yard);
   if (yards) tpl.insertBefore(yards, blank);
+}
+
+// Defence designer: the ready-made Aegis fortresses (owner, 12 Nov 2026), after your own defences.
+let fortressesShown = false;
+function addFortressTemplates() {
+  if (fortressesShown) return;
+  fortressesShown = true;
+  const grp = document.createElement('optgroup');
+  grp.label = 'Aegis fortresses (150,000 cr each)';
+  FORTRESSES.forEach((f, k) => { const o = new Option(`${f.name}: ${f.blurb}`, `f${k}`); grp.append(o); });
+  const yards = [...tpl.querySelectorAll('optgroup')].find((g) => g.label === 'Your shipyards');
+  tpl.insertBefore(grp, yards || [...tpl.options].find((o) => o.value === 'blank'));
 }
 
 const toggle = (id, get, set) => {
@@ -1071,6 +1091,7 @@ if (window.parent !== window) {
     if (e.data.designs && !embed?.designs?.length) addYardTemplates(e.data.designs, e.data.mode === 'defense');
     embed = { ...e.data, designs: e.data.designs || embed?.designs || [] }; // designs come with the first message only
     $('test-btn').classList.remove('go');
+    if (defenseMode()) addFortressTemplates();
     if (defenseMode() && !defenseShown) { defenseShown = true; enterDefenseMode(); seenVersion = -1; refresh(true); } // re-check the issues list for defences
     syncEmbed();
     if (simMode() && !simShown) { simShown = true; enterSimMode(); }

@@ -462,6 +462,24 @@ All money numbers are in `src/shared/economy.js` (placeholders until balanced in
   Designer reopens with. None of this applies in ship mode. Its "Start from" menu lists **Your defences** first (your own `fixed` world designs, `defence: true`
   in the embed message's `designs`), then Your shipyards; the ship designer doesn't list defences. Measured: 400 attackers (480k cr) beat 86 defences + 90 ships
   (137k cr counting defences at 1/5) in 95 s (`/tmp`-style script; replay sent to the owner).
+- **Aegis fortresses** (owner, 12 Nov 2026: a friend said you couldn't build giant fortresses):
+  four ready-made defences in the **Defence Designer's Start from menu** (group "Aegis fortresses",
+  `addFortressTemplates()` in `designer/app.js`, defence mode only), each exactly 750,000 cr of blocks
+  = a 150,000 cr defence, no thrusters. `src/shared/fortresses.js` holds them (cells gzip + base64,
+  ~100 KB for all four; `loadFortress(k)` unpacks with DecompressionStream). Made by generator
+  scripts in `tools/fortress-gen/` (README there has the exact commands; they reproduce the packed
+  designs exactly); `tools/test-designer.mjs` checks they stay valid (cost, no buried weapons or
+  sealed bays). I: Vauban star fort, 8 bastions + ravelins, solid core. II: hollow, 6 arms, keep +
+  courtyard + middle wall + bastions, guns in three rings firing down 6 open lanes, hangars deep
+  inside with tunnels. III: 5 arms fanned forward (0, ±40, ±80°) + rear shield carrier deck (201
+  bays). IV: the owner's pick of "no wasted back": harpoon 999 × 626, 44 plasma (closest pair 13
+  blocks apart, past cook-off reach), only forward-bearing guns, PD thinned, 46 bays, thick spear
+  neck (a thin one was cut and the front half broke off). Measured (fortress vs a generated mixed
+  fleet, designer test layout, 8-min limit; enemy value lost): at 750,000 cr (508 ships) I is
+  disarmed (105k), II holds 8 min (395–440k), III routs them (~605k), IV routs them (607k, 235–320 s);
+  at 150,000 cr all rout the attackers in 1–2 min. Facing backwards (enemy behind), 400k: II routs,
+  III holds (232k), IV holds (116k). Defences at 1/5 of block value make a good giant defence beat ~5×
+  its price in ships; the owner was told the lever is `DEFENSE_PRICE_SHARE`.
 - **Bounty** (owner, Nov 2026, `BOUNTY_SHARE` 0.2 in `economy.js`, `payBounties()` in `world.js`,
   called from `siegeEnds`): after every battle the players who fought are put in groups of mutual
   allies; each group is paid 20% of everything lost there by the players and militia at war with
