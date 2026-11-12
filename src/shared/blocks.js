@@ -34,11 +34,11 @@ export const BLOCKS = {
   [BT.HEAVY]: { name: 'Heavy armor', hp: 240, mass: 4, cost: 7 },
   [BT.FRAME]: { name: 'Frame', hp: 45, mass: 1, cost: 1 },
   [BT.THRUSTER]: { name: 'Thruster', hp: 60, mass: 1.5, thrust: 10, cost: 20 },
-  [BT.LASER]: { name: 'Laser', hp: 130, mass: 2, cost: 80 }, // was 45: lasers out-fought everything at equal cost (tools/balance.mjs)
-  [BT.CANNON]: { name: 'Cannon', hp: 150, mass: 3, cost: 50 }, // was 60: slow shells lose a lot to wrecks and overkill
-  [BT.MISSILE]: { name: 'Missile launcher', hp: 200, mass: 5, cost: 75 }, // was 120, then 90 (spread-out fleets take fewer ships per blast)
-  [BT.PD]: { name: 'Anti-missile point defence', hp: 80, mass: 1.5, cost: 60 }, // renamed (owner, Nov 2026): a friend didn't know it shoots missiles down; cost was 30 (makes missiles better)
-  [BT.GUIDED]: { name: 'Guided missile launcher', hp: 200, mass: 5, cost: 135 }, // owner, Nov 2026: the missile launcher's stats, steering missiles, dearer
+  [BT.LASER]: { name: 'Laser', hp: 300, mass: 2, cost: 80 }, // was 45: lasers out-fought everything at equal cost (tools/balance.mjs)
+  [BT.CANNON]: { name: 'Cannon', hp: 300, mass: 3, cost: 50 }, // hp 300 (owner, 12 Nov 2026: every weapon except plasma and bays; laser was 130, cannon 150, missile/guided 200, PD 80); was 60: slow shells lose a lot to wrecks and overkill
+  [BT.MISSILE]: { name: 'Missile launcher', hp: 300, mass: 5, cost: 75 }, // was 120, then 90 (spread-out fleets take fewer ships per blast)
+  [BT.PD]: { name: 'Anti-missile point defence', hp: 300, mass: 1.5, cost: 60 }, // renamed (owner, Nov 2026): a friend didn't know it shoots missiles down; cost was 30 (makes missiles better)
+  [BT.GUIDED]: { name: 'Guided missile launcher', hp: 300, mass: 5, cost: 135 }, // owner, Nov 2026: the missile launcher's stats, steering missiles, dearer
   [BT.BAY]: { name: 'Fighter bay', hp: 150, mass: 3, cost: 6.25 }, // owner, Nov 2026: 225 cr a 6x6 unit (asked for 200-250)
   [BT.LANCE]: { name: 'Plasma cannon', hp: 750, mass: 4, cost: 15 }, // hp was 120 (owner, Nov 2026: plasma ships lost their guns at once); 1,500 a 10x10 unit (was 3,500): an anti-capital weapon, see CLAUDE.md
 };
@@ -59,7 +59,7 @@ export const WEAPON = {
   // Slow shell that flies dead straight (aimed with lead at firing), small blast on impact.
   // life: owner (Nov 2026) doesn't want misses to vanish mid-battle, so a shell flies on for 30 s
   // (1,350 blocks, well past the fight) and can still hit something far behind its target.
-  [BT.CANNON]: { kind: 'shell', range: 340, damage: 75, cooldown: 2.0, speed: 45, life: 30, splash: 1.6, spread: 0.05 },
+  [BT.CANNON]: { kind: 'shell', range: 340, damage: 100, cooldown: 2.0, speed: 45, life: 30, splash: 1.6, spread: 0.05 },
   // Heavy missile: unguided, crawls across the map in a straight line, flies over friendly
   // ships, devastating blast. Has hit points, so point defence can shoot it down on the way in.
   // Blast damage falls off with distance: peak * (1 - d / splash)^2, applied to every ship
@@ -72,17 +72,17 @@ export const WEAPON = {
   // Point defence: shoots the nearest enemy missile in range, otherwise any enemy ship that close.
   // Owner, Nov 2026: range 80 against everything (was 30: it must outrange fighters), 15 damage a
   // burst every 0.2 s, to ships, fighters and missiles alike (was 32 / 25 to missiles).
-  [BT.PD]: { kind: 'pd', range: 80, damage: 15, missileDamage: 15, fighterDamage: 15, cooldown: 0.2 }, // fighterDamage: owner, Nov 2026: 15 like everything else (40 was tried: too good); 40 bursts, 8 s, a fighter // damage was 6, then 24, then 32; missileDamage was 10, then 25
+  [BT.PD]: { kind: 'pd', range: 80, damage: 25, missileDamage: 25, fighterDamage: 25, cooldown: 0.2 }, // owner, 12 Nov 2026: 15 -> 25 to everything (weapon buff). fighterDamage: owner, Nov 2026: 15 like everything else (40 was tried: too good); 40 bursts, 8 s, a fighter // damage was 6, then 24, then 32; missileDamage was 10, then 25
   // Heavy laser: a 10x10 gun that fires wherever its unit can see past the rest of the ship. The beam carries a damage budget and
   // burns through block after block (and ship after ship) until the budget is spent.
   // It holds fire if a friendly ship is the first thing in the line of fire.
   // width: the beam burns a channel this many blocks wide (odd). The owner wants 1: a thin cut
   // slices off bigger pieces of ship than a wide one that vaporises them.
   // Plasma cannon (owner, Nov 2026: was the heavy laser, an instant beam): same range, rate and
-  // damage budget (5,000; was 25,000 until 11 Nov 2026, owner: a colossus defence fell in ~20 s; reload 20 → 17 s the same day, owner: a bit weak),  but a big glowing bolt that flies at `speed` and carves through every
+  // damage budget (5,000; was 25,000 until 11 Nov 2026, owner: a colossus defence fell in ~20 s; reload 20 → 17 s the same day, owner: a bit weak; 17 → 15 s on 12 Nov 2026),  but a big glowing bolt that flies at `speed` and carves through every
   // block in its path, ship after ship, friend or foe, until the budget is spent. Aimed with lead
   // (capped at maxLead s) along the line through the most enemy ships. Kind stays 'lance' inside.
-  [BT.LANCE]: { kind: 'lance', range: 650, damage: 5000, cooldown: 17, width: 1, speed: 60, life: 30, maxLead: 6 },
+  [BT.LANCE]: { kind: 'lance', range: 650, damage: 5000, cooldown: 15, width: 1, speed: 60, life: 30, maxLead: 6 },
   // Fighter bay (owner, Nov 2026): every `cooldown` s, for as long as the battle goes on (any
   // range), it launches one fighter along an open line out of the ship (the same line-of-fire
   // rule as guns: a bay on the hull edge launches straight out, one deep inside needs a straight

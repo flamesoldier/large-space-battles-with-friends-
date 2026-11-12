@@ -8,6 +8,16 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-12d', date: '12 Nov 2026', title: 'Stronger point defence, cannons and plasma',
+    items: [
+      'Anti-missile point defence now does 25 damage a burst (was 15), to missiles, fighters and ships alike. It shoots down more missiles and kills fighters faster.',
+      'Cannon shells now do 100 damage (was 75).',
+      'Plasma cannons now fire every 15 seconds (was 17).',
+      'Weapons are tougher: lasers, cannons, point defence, missile launchers and guided missile launchers all have 300 hit points now (were 80 to 200). Plasma cannons and fighter bays are unchanged.',
+      'This applies to every ship and defence already in play, from the next battle on.',
+    ],
+  },
+  {
     id: '2026-11-12c', date: '12 Nov 2026', title: 'Ready-made Aegis fortresses',
     items: [
       'Four giant ready-made defences are now in the Defence Designer: open a world\'s Defences, press Build, then "Design a new defence…", and pick one from "Start from" under "Aegis fortresses". Each costs 150,000 credits and takes 5 hours to build, like any defence.',

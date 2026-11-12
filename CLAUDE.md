@@ -256,6 +256,12 @@ Weapons (numbers in `blocks.js`):
   fighters live ~8–10 s, ~2 shots, 60% of their damage taken is aimed cannon/laser fire; line 2 bays
   −0.68, 4 bays −0.57, heavy armour instead −0.58 (standoff −0.73 / −0.66 / −0.71): about even.
   Bench 1,000 vs 1,000: 187.5 s, 5.75 ms a tick.
+- **Weapon buff, 12 Nov 2026 (owner: "point defence, cannons and plasma cannons are not good
+  enough")**: PD **25 damage a burst** (was 15; `damage`, `missileDamage` and `fighterDamage` all
+  25), cannon shell **100** (was 75), plasma reload **15 s** (was 17), and **300 hp for laser,
+  cannon, PD, missile and guided launcher blocks** (were 130 / 150 / 80 / 200 / 200; plasma and
+  bays unchanged). Where the numbers above disagree, these win. Bench 1,000 vs 1,000: 244 s → 182 s,
+  missiles shot down 27% → 33%, 4.7 → 6.4 ms a tick (same total work, shorter battles).
 - Future weapons the owner wants: bigger cannons, a medium laser.
 
 Combat rules:
