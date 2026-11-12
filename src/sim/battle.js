@@ -47,6 +47,13 @@ const FIGHTER_R = 2; // how close a shot must pass to hit one (blocks)
 const SPACING_GAP = 25, SPACING_TURN = 3, SPACING_SLIDE = 1, SPACING_EVERY = 5;
 // Debris still over the ship it broke off from is pushed out at up to this speed (blocks/s).
 const OWN_CLEAR_SPEED = 6;
+// Hulls with at least this many grid cells (80 × 80) get two exact checks that small ships don't
+// need (owner, 13 Nov 2026, Aegis fortresses): collisions against a coarse map of where their
+// blocks really are (TILE × TILE cells per tile) instead of their outline box, so ships and
+// fighters can fly into a hollow fortress's courtyards and lanes; and a check of the real shot
+// line through their own blocks before a gun fires, since a 5.6° arc slice is tens of blocks wide
+// across a 1,000-block hull and shots were leaving through a gap and flying through the far arm.
+const BIG_HULL_CELLS = 6400, TILE = 4;
 // A ship holding its distance drifts sideways at this share of its back-off speed (see move()).
 const HOLD_DRIFT = 1;
 // Plasma cannon aiming: an ally within this many blocks of the line counts as in the way.
@@ -133,6 +140,8 @@ export class Battle {
     this._ft = 0;
     this._ax = 0; this._ay = 0;
     this._near = []; // collision candidates, reused every call
+    this._tbx = 0; this._tby = 0; // push direction from tileOverlap
+    this._ntx = 0; this._nty = 0; // nearest block square from nearTile
     this._collect = (o) => { this._near.push(o); };
     this.shoved = []; // debris pushed by ships since its last shove record
     this.cookoffs = []; // world x, y pairs of heavy-laser blocks destroyed this tick
@@ -219,6 +228,8 @@ export class Battle {
       still: false, // can't move under its own power: a defence, or a ship with every thruster gone (see refit)
       // Collision box: centre (local) and half size, shrunk to the live blocks as they are lost.
       bcx: 0, bcy: 0, bhw: w / 2, bhh: h / 2,
+      tiles: null, tw: 0, th: 0, // big hulls: which TILE × TILE squares hold a live block (see buildTiles)
+      gapTo: -1, gapT: -1000, gap: 0, // cached distance to the first real block of a big target (see gapTo)
       mass: 1, maxSpeed: 0, turn: 0, agility: 0, prefRange: 60, ward: null,
       face: null, faceMax: 0, // firepower that bears on a target at each of the 64 directions round the ship (see refit / holdFacing)
       worth: 0, // credit value of the ship's design (rout check)
@@ -242,15 +253,37 @@ export class Battle {
     for (let i = 0, x = 0, y = 0; i < e.types.length; i++, x === e.w - 1 ? (x = 0, y++) : x++)
       if (e.types[i] && e.hp[i] > 0) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
     this.setBox(e, x0, x1, y0, y1);
+    this.buildTiles(e);
+  }
+
+  /** Big hulls only: a cleared tile map to fill in (null for small hulls). */
+  prepTiles(e) {
+    if (e.w * e.h < BIG_HULL_CELLS) return null;
+    const tw = Math.ceil(e.w / TILE), th = Math.ceil(e.h / TILE);
+    if (!e.tiles) { e.tiles = new Uint8Array(tw * th); e.tw = tw; e.th = th; } else e.tiles.fill(0);
+    return e.tiles;
+  }
+
+  /** Big hulls only: mark the TILE × TILE squares of the grid that still hold a live block. */
+  buildTiles(e) {
+    const T = this.prepTiles(e);
+    if (!T) return;
+    const tw = e.tw, w = e.w, types = e.types, hp = e.hp;
+    for (let y = 0; y < e.h; y++) {
+      const row = y * w, trow = ((y / TILE) | 0) * tw;
+      for (let x = 0; x < w; x++) if (types[row + x] && hp[row + x] > 0) T[trow + ((x / TILE) | 0)] = 1;
+    }
   }
 
   /** Recompute mobility and weapon list after blocks are lost. */
   refit(e) {
     let mass = 0, thrust = 0, range = 0;
     let x0 = e.w, x1 = -1, y0 = e.h, y1 = -1;
+    const T = this.prepTiles(e), tw = e.tw; // big hulls: the tile map is filled in the same pass
     for (let i = 0, x = 0, y = 0; i < e.types.length; i++, x === e.w - 1 ? (x = 0, y++) : x++) {
       const t = e.types[i];
       if (!t || e.hp[i] <= 0) continue;
+      if (T) T[((y / TILE) | 0) * tw + ((x / TILE) | 0)] = 1;
       mass += BLOCKS[t].mass;
       if (t === BT.THRUSTER) thrust += BLOCKS[t].thrust;
       if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
@@ -528,7 +561,10 @@ export class Battle {
     const dx = tx - e.x, dy = ty - e.y;
     // Stance distances are roughly hull to hull: a giant's guns and its target's hull are a long
     // way from their centres. (No effect on small ships.)
-    const d = Math.max(1, Math.hypot(dx, dy) - (tg ? Math.max(0, tg.radius - 12) * 0.8 : 0) - Math.max(0, e.radius - 12) * 0.8);
+    // A big hollow target (a fortress): the distance to its first real block along the way in,
+    // so ships fly into its open lanes and courtyards instead of stopping at its outline.
+    const d = tg && tg.tiles ? Math.max(1, this.gapTo(e, tg) - Math.max(0, e.radius - 12) * 0.8)
+      : Math.max(1, Math.hypot(dx, dy) - (tg ? Math.max(0, tg.radius - 12) * 0.8 : 0) - Math.max(0, e.radius - 12) * 0.8);
     let desired = Math.atan2(dy, dx);
     if (disarmed) desired += Math.PI; // crippled: run away from the enemy fleet
     const pr = e.prefRange;
@@ -634,6 +670,14 @@ export class Battle {
     let sx = 0, sy = 0;
     for (const o of near) {
       if (o === e || o === skip || o.kind !== SHIP || o.dead || ((knife || o.closeIn) && !fr[tb | o.team])) continue;
+      if (o.tiles) { // a big hollow hull: keep clear of its real blocks, not a circle round it
+        const reach = er + SPACING_GAP, t = this.nearTile(o, e.x, e.y, reach);
+        if (t < 0) continue;
+        const dx = e.x - this._ntx, dy = e.y - this._nty, dc = Math.hypot(dx, dy) || 0.01;
+        const push = (1 - dc / reach) * (2 * o.mass) / (o.mass + e.mass);
+        sx += (dx / dc) * push; sy += (dy / dc) * push;
+        continue;
+      }
       const dx = e.x - o.x, dy = e.y - o.y, dc = Math.hypot(dx, dy) || 0.01;
       const want = er + o.radius * 0.7 + SPACING_GAP;
       if (dc >= want) continue;
@@ -657,7 +701,7 @@ export class Battle {
     const g = e.goal;
     if (!g || g.dead) return [desired, false];
     const dx = g.x - e.x, dy = g.y - e.y, dc = Math.hypot(dx, dy) || 1;
-    const to = Math.atan2(dy, dx), d = dc - g.radius * 0.8 - e.radius * 0.5;
+    const to = Math.atan2(dy, dx), d = (g.tiles ? this.gapTo(e, g) : dc - g.radius * 0.8) - e.radius * 0.5;
     if (e.stance !== 'raid') {
       if (d > pr * 1.6) return [to, false];
       // Circle it: tangent, bent in or out to hold the distance.
@@ -716,6 +760,12 @@ export class Battle {
         if (pen <= 0) { best = 0; break; }
         if (pen < best) { best = pen; bx = dist > 0 ? -ux : ux; by = dist > 0 ? -uy : uy; }
       }
+      // A big hollow hull (a fortress with courtyards and lanes) collides by the squares that
+      // really hold blocks, not its outline box: ships can fly into the open space inside it.
+      if (!own && best > 0 && (e.tiles || o.tiles)) {
+        best = this.tileOverlap(e, o, ex, ey);
+        bx = this._tbx; by = this._tby;
+      }
       if (own) {
         if (best <= 0) { o.parent = -1; continue; }
         // Still over the ship it broke off from (owner: debris sitting on its own ship looks
@@ -743,6 +793,139 @@ export class Battle {
         if (!o.shoved) { o.shoved = true; this.shoved.push(o); }
       }
     }
+  }
+
+  /**
+   * Distance from e to the first square of big target tg that holds a block, along the straight
+   * line from e to tg's centre (walked square by square over tg's tile map). Cached for 5 ticks.
+   * If the line meets no block (shouldn't happen: the hub is at the centre), the centre distance.
+   */
+  gapTo(e, tg) {
+    if (e.gapTo === tg.id && this.now - e.gapT < 5) return e.gap;
+    const dx = e.x - tg.x, dy = e.y - tg.y, full = Math.hypot(dx, dy);
+    let gap = full;
+    // e's position in tg's grid, in tile units; walk toward the centre.
+    const gx = (dx * tg.c + dy * tg.s + tg.w / 2) / TILE, gy = (-dx * tg.s + dy * tg.c + tg.h / 2) / TILE;
+    const ex = tg.w / 2 / TILE, ey = tg.h / 2 / TILE, ddx = ex - gx, ddy = ey - gy;
+    // clip the start to the grid
+    let t0 = 0;
+    if (ddx !== 0) { const a = (0 - gx) / ddx, b = (tg.tw - gx) / ddx; t0 = Math.max(t0, Math.min(a, b)); }
+    if (ddy !== 0) { const a = (0 - gy) / ddy, b = (tg.th - gy) / ddy; t0 = Math.max(t0, Math.min(a, b)); }
+    if (t0 < 1) {
+      let ix = Math.floor(gx + ddx * t0), iy = Math.floor(gy + ddy * t0);
+      const stx = ddx > 0 ? 1 : -1, sty = ddy > 0 ? 1 : -1;
+      const tdx = ddx !== 0 ? Math.abs(1 / ddx) : Infinity, tdy = ddy !== 0 ? Math.abs(1 / ddy) : Infinity;
+      const sx0 = gx + ddx * t0, sy0 = gy + ddy * t0;
+      let tmx = ddx > 0 ? (ix + 1 - sx0) / ddx + t0 : ddx < 0 ? (ix - sx0) / ddx + t0 : Infinity;
+      let tmy = ddy > 0 ? (iy + 1 - sy0) / ddy + t0 : ddy < 0 ? (iy - sy0) / ddy + t0 : Infinity;
+      let t = t0;
+      for (let guard = tg.tw + tg.th + 2; guard > 0 && t <= 1; guard--) {
+        if (ix >= 0 && iy >= 0 && ix < tg.tw && iy < tg.th && tg.tiles[iy * tg.tw + ix]) { gap = full * t; break; }
+        if (tmx < tmy) { t = tmx; ix += stx; tmx += tdx; } else { t = tmy; iy += sty; tmy += tdy; }
+      }
+    }
+    e.gapTo = tg.id; e.gapT = this.now; e.gap = gap;
+    return gap;
+  }
+
+  /** Nearest square of big hull o that holds a block, within `reach` of (x, y): sets _ntx/_nty (world), returns its index or -1. */
+  nearTile(o, x, y, reach) {
+    const dx = x - o.x, dy = y - o.y;
+    const gx = dx * o.c + dy * o.s + o.w / 2, gy = -dx * o.s + dy * o.c + o.h / 2;
+    const tx0 = Math.max(0, Math.floor((gx - reach) / TILE)), tx1 = Math.min(o.tw - 1, Math.floor((gx + reach) / TILE));
+    const ty0 = Math.max(0, Math.floor((gy - reach) / TILE)), ty1 = Math.min(o.th - 1, Math.floor((gy + reach) / TILE));
+    let best = -1, bd = reach * reach;
+    for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
+      const i = ty * o.tw + tx;
+      if (!o.tiles[i]) continue;
+      const cx = tx * TILE + TILE / 2, cy = ty * TILE + TILE / 2, d2 = (cx - gx) ** 2 + (cy - gy) ** 2;
+      if (d2 < bd) { bd = d2; best = i; }
+    }
+    if (best >= 0) {
+      const lx = (best % o.tw) * TILE + TILE / 2 - o.w / 2, ly = ((best / o.tw) | 0) * TILE + TILE / 2 - o.h / 2;
+      this._ntx = o.x + lx * o.c - ly * o.s; this._nty = o.y + lx * o.s + ly * o.c;
+    }
+    return best;
+  }
+
+  /**
+   * Overlap of e's box with o's box where one (or both) is a big hull with a tile map: each
+   * TILE × TILE square of the big one that holds a block is a small box, separated from the other
+   * one's box by the same 4-axis test as collide(). Returns the deepest overlap (0 = none) and puts
+   * the direction pushing e away from o in _tbx/_tby (the sum of every overlapping square's push).
+   */
+  tileOverlap(e, o, ex, ey) {
+    // B owns the tiles (the bigger one if both have them); S is the other, seen as its box.
+    const eBig = e.tiles && (!o.tiles || e.w * e.h >= o.w * o.h);
+    const B = eBig ? e : o, S = eBig ? o : e;
+    const scx = S === e ? ex : o.x + o.bcx * o.c - o.bcy * o.s, scy = S === e ? ey : o.y + o.bcx * o.s + o.bcy * o.c;
+    const shw = S.bhw, shh = S.bhh, sc = S.c, ss = S.s, bc = B.c, bs = B.s;
+    // S's box corners in B's grid (cell) coordinates -> range of tiles to look at.
+    let gx0 = Infinity, gx1 = -Infinity, gy0 = Infinity, gy1 = -Infinity;
+    for (let k = 0; k < 4; k++) {
+      const hx = k & 1 ? shw : -shw, hy = k & 2 ? shh : -shh;
+      const wx = scx + hx * sc - hy * ss - B.x, wy = scy + hx * ss + hy * sc - B.y;
+      const gx = wx * bc + wy * bs + B.w / 2, gy = -wx * bs + wy * bc + B.h / 2;
+      if (gx < gx0) gx0 = gx; if (gx > gx1) gx1 = gx; if (gy < gy0) gy0 = gy; if (gy > gy1) gy1 = gy;
+    }
+    const tx0 = Math.max(0, Math.floor(gx0 / TILE)), tx1 = Math.min(B.tw - 1, Math.floor(gx1 / TILE));
+    const ty0 = Math.max(0, Math.floor(gy0 / TILE)), ty1 = Math.min(B.th - 1, Math.floor(gy1 / TILE));
+    let deepest = 0, sx = 0, sy = 0;
+    const hT = TILE / 2;
+    for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
+      if (!B.tiles[ty * B.tw + tx]) continue;
+      const lx = tx * TILE + hT - B.w / 2, ly = ty * TILE + hT - B.h / 2;
+      const tcx = B.x + lx * bc - ly * bs, tcy = B.y + lx * bs + ly * bc;
+      const dx = tcx - scx, dy = tcy - scy; // from S to the tile
+      let best = Infinity, ux0 = 0, uy0 = 0;
+      for (let k = 0; k < 4; k++) {
+        const ux = k === 0 ? sc : k === 1 ? -ss : k === 2 ? bc : -bs;
+        const uy = k === 0 ? ss : k === 1 ? sc : k === 2 ? bs : bc;
+        const rs = shw * Math.abs(sc * ux + ss * uy) + shh * Math.abs(-ss * ux + sc * uy);
+        const rt = hT * Math.abs(bc * ux + bs * uy) + hT * Math.abs(-bs * ux + bc * uy);
+        const dist = dx * ux + dy * uy, pen = rs + rt - Math.abs(dist);
+        if (pen <= 0) { best = 0; break; }
+        if (pen < best) { best = pen; ux0 = dist > 0 ? -ux : ux; uy0 = dist > 0 ? -uy : uy; } // pushes S away from the tile
+      }
+      if (best <= 0) continue;
+      sx += ux0 * best; sy += uy0 * best;
+      if (best > deepest) deepest = best;
+    }
+    const l = Math.hypot(sx, sy);
+    if (!deepest || l < 1e-9) { this._tbx = 0; this._tby = 0; return 0; }
+    // Directions above push S; e is pushed the same way if it is S, the other way if it is B.
+    const sign = S === e ? 1 : -1;
+    this._tbx = (sx / l) * sign; this._tby = (sy / l) * sign;
+    return deepest;
+  }
+
+  /**
+   * Big hulls only (BIG_HULL_CELLS): would a shot from the weapon at (x0, y0) heading `ang` cross
+   * one of its own ship's live blocks within `len`? The weapon's own cells (a plasma unit's 10 × 10)
+   * don't count. Small ships return false at once (their 64-slice arcs are exact enough).
+   */
+  ownHullInWay(e, w, x0, y0, ang, len) {
+    if (e.w * e.h < BIG_HULL_CELLS) return false;
+    const W_ = e.w, H_ = e.h, c = e.c, s = e.s, types = e.types, hp = e.hp;
+    let sx0 = w.cell % W_, sx1 = sx0, sy0 = (w.cell / W_) | 0, sy1 = sy0; // skip box: the weapon itself
+    if (w.cells) for (const k of w.cells) { const x = k % W_, y = (k / W_) | 0; if (x < sx0) sx0 = x; if (x > sx1) sx1 = x; if (y < sy0) sy0 = y; if (y > sy1) sy1 = y; }
+    let dx = x0 - e.x, dy = y0 - e.y;
+    const gx0 = dx * c + dy * s + W_ * 0.5, gy0 = -dx * s + dy * c + H_ * 0.5;
+    const ca = Math.cos(ang), sa = Math.sin(ang);
+    const ddx = (ca * c + sa * s) * len, ddy = (-ca * s + sa * c) * len;
+    let ix = Math.floor(gx0), iy = Math.floor(gy0);
+    if (ix < 0 || iy < 0 || ix >= W_ || iy >= H_) return false;
+    const stx = ddx > 0 ? 1 : -1, sty = ddy > 0 ? 1 : -1;
+    const tdx = ddx !== 0 ? Math.abs(1 / ddx) : Infinity, tdy = ddy !== 0 ? Math.abs(1 / ddy) : Infinity;
+    let tmx = ddx > 0 ? (ix + 1 - gx0) / ddx : ddx < 0 ? (ix - gx0) / ddx : Infinity;
+    let tmy = ddy > 0 ? (iy + 1 - gy0) / ddy : ddy < 0 ? (iy - gy0) / ddy : Infinity;
+    for (let guard = W_ + H_ + 2; guard > 0; guard--) {
+      const i = iy * W_ + ix;
+      if (types[i] && hp[i] > 0 && (ix < sx0 || ix > sx1 || iy < sy0 || iy > sy1)) return true;
+      if (tmx < tmy) { if (tmx > 1) return false; ix += stx; tmx += tdx; if (ix < 0 || ix >= W_) return false; }
+      else { if (tmy > 1) return false; iy += sty; tmy += tdy; if (iy < 0 || iy >= H_) return false; }
+    }
+    return false;
   }
 
   /**
@@ -858,9 +1041,11 @@ export class Battle {
       if (!tg) { if (!this.fireAtFighter(e, w, wx, wy, W)) w.cd = 0.2 + this.rng() * 0.2; continue; }
       if (W.kind === 'lance') {
         if (this.lanceAim(e, w, wx, wy, W, ax, ay)) { ax = this._ax; ay = this._ay; }
-        w.cd = this.firePlasma(e, wx, wy, ax, ay, tg, W) ? W.cooldown : 0.5;
+        w.cd = this.firePlasma(e, w, wx, wy, ax, ay, tg, W) ? W.cooldown : 0.5;
         continue;
       }
+      // A big hull doesn't shoot through itself (see ownHullInWay). Missiles fly over ships.
+      if (W.kind === 'laser' && this.ownHullInWay(e, w, wx, wy, Math.atan2(ay - wy, ax - wx), W.range)) { w.cd = 0.3; continue; }
       // Launchers keep in step (no jitter) so a ship's missiles always leave as one volley.
       w.cd = W.kind === 'missile' ? W.cooldown : W.cooldown * (0.85 + 0.3 * this.rng());
       if (W.kind === 'laser') { if (!this.fireLaser(e, wx, wy, ax, ay, W)) w.cd = 0.3; continue; }
@@ -870,6 +1055,7 @@ export class Battle {
       const t = Math.min(Math.hypot(ax - wx, ay - wy) / W.speed, W.maxLead ?? Infinity);
       const ang = Math.atan2(ay + tg.vy * t - wy, ax + tg.vx * t - wx) + (this.rng() - 0.5) * 2 * W.spread;
       const kind = W.kind === 'shell' ? K_SHELL : K_MISSILE;
+      if (kind === K_SHELL && this.ownHullInWay(e, w, wx, wy, ang, W.range)) { w.cd = 0.3; continue; }
       const rec = this.shotStart(kind, e.team, wx, wy, ang, !!W.guided);
       this.addProjectile(kind, w.type, wx, wy, Math.cos(ang) * W.speed, Math.sin(ang) * W.speed,
         Math.round(W.life / DT), e.id, e.team, tg.id, W.damage, W.hp || 0, rec);
@@ -878,6 +1064,29 @@ export class Battle {
 
   /** Try a few random live blocks of a big target for one within range (sets _ax, _ay). */
   aimInRange(tg, wx, wy, r2) {
+    // A big hull: random picks anywhere on it are nearly always out of a short-range gun's reach
+    // (and ships now fly inside hollow fortresses, so hundreds of guns try every tick). Pick
+    // squares near the gun instead, using the tile map, then a live block in that square.
+    if (tg.tiles) {
+      const r = Math.sqrt(r2), dx = wx - tg.x, dy = wy - tg.y;
+      const gx = dx * tg.c + dy * tg.s + tg.w / 2, gy = -dx * tg.s + dy * tg.c + tg.h / 2;
+      for (let tries = 0; tries < 8; tries++) {
+        const px = Math.floor(gx + (this.rng() * 2 - 1) * r), py = Math.floor(gy + (this.rng() * 2 - 1) * r);
+        if (px < 0 || py < 0 || px >= tg.w || py >= tg.h || !tg.tiles[((py / TILE) | 0) * tg.tw + ((px / TILE) | 0)]) continue;
+        const x0 = px - (px % TILE), y0 = py - (py % TILE);
+        for (let k = 0; k < TILE * TILE; k++) {
+          const cx = x0 + (k % TILE), cy = y0 + ((k / TILE) | 0);
+          if (cx >= tg.w || cy >= tg.h) continue;
+          const ci = cy * tg.w + cx;
+          if (!tg.types[ci] || tg.hp[ci] <= 0) continue;
+          const lx = cx + 0.5 - tg.w / 2, ly = cy + 0.5 - tg.h / 2;
+          const x = tg.x + lx * tg.c - ly * tg.s, y = tg.y + lx * tg.s + ly * tg.c;
+          if ((x - wx) ** 2 + (y - wy) ** 2 <= r2) { this._ax = x; this._ay = y; return true; }
+          break;
+        }
+      }
+      return false;
+    }
     for (let tries = 0; tries < 8; tries++) {
       const ci = (this.rng() * tg.types.length) | 0;
       if (!tg.types[ci] || tg.hp[ci] <= 0) continue;
@@ -929,8 +1138,9 @@ export class Battle {
     }
     if (best >= 0) {
       const tx = P.x[best], ty = P.y[best];
-      // A ship in the way (friend or foe) soaks the burst instead.
-      if (this.sweep(wx, wy, tx, ty, e.id) && this.hitT < 0.97) {
+      // An enemy ship in the way soaks the burst instead. Allied ships don't (owner, 13 Nov 2026:
+      // point defence shoots through its own and allied ships at missiles, as it does at fighters).
+      if (this.sweep(wx, wy, tx, ty, e.id) && this.hitT < 0.97 && !this.fr[(e.team << 4) | this.hitE.team]) {
         if (this.canDamage(this.hitE, e.team)) this.damageCell(this.hitE, this.hitCell, W.damage);
         this.recBeam(wx, wy, wx + (tx - wx) * this.hitT, wy + (ty - wy) * this.hitT, e.team, 1, 1, e, this.hitE);
       } else {
@@ -941,6 +1151,8 @@ export class Battle {
     }
     // No missile: enemy fighters come before ships (owner, Nov 2026), within the same 80.
     const j = this.nearestFighter(wx, wy, r, e.team, e, w);
+    // Point defence shoots through its own hull at missiles and fighters (owner, 13 Nov 2026: "that's
+    // needed"), so no own-hull check here or for missiles above; only bursts at ships are checked.
     if (j >= 0) {
       const Fi = this.Fi;
       Fi.hp[j] -= W.fighterDamage ?? W.damage; // point defence is the fighter counter (rework, Nov 2026)
@@ -952,6 +1164,7 @@ export class Battle {
       if (Math.hypot(tg.x - wx, tg.y - wy) - tg.radius > rs) continue;
       // Aim at a block of the target that is actually in reach.
       if (!this.aimInRange(tg, wx, wy, rs * rs) || !this.bears(e, w, wx, wy, this._ax, this._ay)) continue;
+      if (this.ownHullInWay(e, w, wx, wy, Math.atan2(this._ay - wy, this._ax - wx), rs)) continue;
       this.fireBeam(e, wx, wy, this._ax, this._ay, rs, W.damage, 1);
       return true;
     }
@@ -1310,7 +1523,13 @@ export class Battle {
     this.grid.queryBox(x - 1, y - 1, x + 1, y + 1, (o) => {
       if (hit || o.dead) return;
       const dx = x - o.x, dy = y - o.y, lx = dx * o.c + dy * o.s - o.bcx, ly = -dx * o.s + dy * o.c - o.bcy;
-      if (Math.abs(lx) < o.bhw + pad && Math.abs(ly) < o.bhh + pad) hit = o;
+      if (!(Math.abs(lx) < o.bhw + pad && Math.abs(ly) < o.bhh + pad)) return;
+      if (!o.tiles) { hit = o; return; }
+      // A big hollow hull: only the squares that hold blocks are solid (fighters fly into courtyards).
+      const gx = lx + o.bcx + o.w / 2, gy = ly + o.bcy + o.h / 2;
+      const tx0 = Math.max(0, Math.floor((gx - pad) / TILE)), tx1 = Math.min(o.tw - 1, Math.floor((gx + pad) / TILE));
+      const ty0 = Math.max(0, Math.floor((gy - pad) / TILE)), ty1 = Math.min(o.th - 1, Math.floor((gy + pad) / TILE));
+      for (let ty = ty0; ty <= ty1 && !hit; ty++) for (let tx = tx0; tx <= tx1; tx++) if (o.tiles[ty * o.tw + tx]) { hit = o; break; }
     });
     return hit;
   }
@@ -1370,10 +1589,11 @@ export class Battle {
         const d = Math.hypot(fx - wx, fy - wy) || 1, side = this.rng() < 0.5 ? -1 : 1, off = FIGHTER_R + 2;
         tx += (-(fy - wy) / d) * off * side; ty += ((fx - wx) / d) * off * side;
       }
-      if (!this.fireLaser(e, wx, wy, tx, ty, W)) return false;
+      if (this.ownHullInWay(e, w, wx, wy, Math.atan2(ty - wy, tx - wx), W.range) || !this.fireLaser(e, wx, wy, tx, ty, W)) return false;
     } else {
       const t = Math.hypot(fx - wx, fy - wy) / W.speed;
       const ang = Math.atan2(fy + Fi.vy[j] * t - wy, fx + Fi.vx[j] * t - wx) + (this.rng() - 0.5) * 2 * W.spread;
+      if (this.ownHullInWay(e, w, wx, wy, ang, W.range)) return false;
       const rec = this.shotStart(K_SHELL, e.team, wx, wy, ang);
       this.addProjectile(K_SHELL, w.type, wx, wy, Math.cos(ang) * W.speed, Math.sin(ang) * W.speed,
         Math.round(W.life / DT), e.id, e.team, -1, W.damage, 0, rec);
@@ -1677,12 +1897,13 @@ export class Battle {
    * Plasma cannon: launch a bolt (see plasmaStep). Holds fire (returns false) if a friendly ship
    * is the first thing in line, since the bolt would carve straight through it.
    */
-  firePlasma(e, x0, y0, ax, ay, tg, W) {
+  firePlasma(e, w, x0, y0, ax, ay, tg, W) {
     const d = Math.hypot(ax - x0, ay - y0) || 1;
     const t = Math.min(d / W.speed, W.maxLead);
     const ang = Math.atan2(ay + tg.vy * t - y0, ax + tg.vx * t - x0), ux = Math.cos(ang), uy = Math.sin(ang);
     // Checked along the real (led) direction: hold if a friend is first in line, or the line has
     // more allies than it's worth (lanceCount), so it rarely opens up on its own side.
+    if (this.ownHullInWay(e, w, x0, y0, ang, W.range)) return false; // a giant doesn't shoot through itself
     if (this.sweep(x0, y0, x0 + ux * W.range, y0 + uy * W.range, e.id) && this.hitE.kind === SHIP && this.fr[(e.team << 4) | this.hitE.team]) return false;
     if (!this.lanceCount(e, x0, y0, x0 + ux, y0 + uy, W.range)) return false;
     const rec = this.shotStart(K_PLASMA, e.team, x0, y0, ang);
@@ -1843,6 +2064,7 @@ export class Battle {
       this.recBlockDeath(p.id, idx, 1);
     }
     e.mass = Math.max(1, mass);
+    this.buildTiles(e);
     e.x = p.x + lcx * p.c - lcy * p.s;
     e.y = p.y + lcx * p.s + lcy * p.c;
     e.a = p.a; e.c = p.c; e.s = p.s;

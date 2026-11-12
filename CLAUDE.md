@@ -70,6 +70,10 @@ Weapons (numbers in `blocks.js`):
   `fighterDamage` 15: 40 against fighters was tried in the fighter rework and the owner found it
   too good); missiles first, then fighters, then ships.
   Before: range 30, a burst every 0.2 s, "super close range, high dps" against ships.
+- **Point defence fires through its own and allied ships at missiles and fighters** (owner, 13 Nov
+  2026: "that's needed"). Fighters always worked this way; at missiles an allied ship in the way
+  used to soak the burst (`firePD`), now only an enemy ship does. Bench 1,000 vs 1,000: missiles shot
+  down 33% → 40%, missile hits 64% → 57%. Bursts at ships still stop on what's in the way.
 - AI (Nov 2026): missile launchers aim at the biggest ship in range (all launchers on a ship
   agree, so volleys still land together), and a ship whose only guns are missiles sets its
   stance distance from missile range (it used to fall back to 60 and dive in).
@@ -389,6 +393,14 @@ Battle end:
 - Line of fire is incremental: each weapon stores the cell blocking each of its 64 rays
   (`blk`), and `refit()` only re-casts rays whose blocker died (`updateLineOfFire`). A full
   re-cast per hit was fine for 50 guns but not for a giant with 1,000.
+- **Arcs are 64 slices (5.6°), too coarse for giants**: across a 1,000-block hull a slice edge is
+  50+ blocks wide, so shots left through a gap and flew through the hull's own far arms (shots never
+  hurt their own ship, so they passed through; owner saw it with Aegis plasma, 13 Nov 2026). Hulls of
+  `BIG_HULL_CELLS` or more now check the real shot line through their own grid before firing
+  (`ownHullInWay()`: cannons, lasers, plasma, guns shooting fighters, and point defence bursts at
+  ships; missiles fly over ships so are exempt, and **point defence still shoots through its own hull
+  at missiles and fighters**, owner: "that's needed"); a blocked shot waits 0.3 s and tries again. Aegis II at 400,000 cr: shots
+  through its own hull 243 → 16; IV at 750,000: 114 → 4. Small ships skip it (bench identical).
 - Replay block indexes (`bdCell`, `chCells`) are 32-bit, because giant ships have more than
   65,535 cells.
 - **Never spread a big list into a call** (`a.push(...b)`, `Math.max(...b)`) in the viewer or sim:
@@ -667,6 +679,29 @@ wrecks when they lose blocks), so nothing bumps into the empty space where half 
 through each other. Cost: about +7% at 1,000 vs 1,000 (+26% measured at 3,000 vs 3,000 in the
 prototype); pairs overlapping by more than 3 blocks went from ~300 to ~6. Rectangles, not exact
 blocks, on purpose: block-exact would cost far more.
+
+**Big hollow hulls collide by their blocks, not their box** (owner, 13 Nov 2026: ships couldn't get
+inside an Aegis fortress's outline though it's open space there): hulls of at least
+`BIG_HULL_CELLS` (6,400 = 80 × 80) cells keep a tile map (`e.tiles`, one bit per `TILE` 4 × 4
+cells holding a live block; `buildTiles()` from `refit`, `fitChunkBox` and chunk creation).
+`collide()` keeps the box test as the broad check, then `tileOverlap()` runs the same 4-axis test
+against each solid tile of the big one (pushes summed, deepest overlap used), and `solidAt()`
+(fighters' hull avoidance) checks the tiles too, so fighters fly into courtyards. Smaller hulls
+are untouched: `npm run bench -- 1000` is identical shot for shot. Measured on Aegis IV at
+750,000 cr: enemy ships inside its outline at once 7 → 27.
+With every attacker on Charge (500,000 cr): up to 95 inside Aegis II at once (was 6), and II is
+then destroyed from the inside (IV still routs them). `aimInRange()` on a big target now picks
+squares near the gun from the tile map: random picks over the whole 1,000-block hull were nearly
+always out of a short-range gun's reach, and with ships inside, that was 64% of the compute (the
+charge battle took 88 s, now 32 s; the old code 30 s).
+**Distance to a big hollow target is to its real blocks** (owner, 13 Nov 2026: charging ships
+crept in and none reached the middle): stance distances used centre distance − 0.8 × radius, which
+for a fortress is its outline, so ships stopped there. Now `gapTo(e, tg)` walks tg's tile map from
+e toward tg's centre and returns the distance to the first square holding a block (cached 5 ticks,
+`e.gapTo/gapT/gap`); used by `move()` and flankers' `steerGoal()`. `spacing()` keeps ships clear of
+a big hull's real blocks (`nearTile()`), not a circle round it. All-charge, 500,000 cr: closest
+attacker to the hub, Aegis II 160 → 8 blocks, IV 694 → 383; most inside at once 112 / 108.
+The tile map is filled in `refit()`'s own pass over the hull (`prepTiles`), not a second one.
 
 **Debris collides with ships too** (owner, Nov 2026: "debris should be part of the battle"): a
 ship and a wreck push each other apart by the same rule, so ships plough through light debris

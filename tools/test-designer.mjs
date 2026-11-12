@@ -240,5 +240,45 @@ for (let k = 0; k < FORTRESSES.length; k++) {
   assert.deepEqual([...back.cells], [...d.cells], `${d.name} round-trips`);
 }
 
+// Big hollow hulls (owner, 13 Nov 2026): ships can fly into a fortress's open courtyards and lanes
+// (collisions use the squares that hold blocks, not the outline box), and a fortress's guns don't
+// fire through its own arms (exact own-hull check on big hulls).
+{
+  const d = await loadFortress(1); // Aegis II: keep, courtyard, six open lanes
+  const scen = makeTestScenario(d, 1, null, 1, true);
+  const bt = new Battle({ designs: scen.designs, ships: scen.ships, seed: 1, maxTime: 60 });
+  const f = bt.byId[0], e = bt.ents.find((o) => o.team === 1 && o.kind === f.kind && o.w * o.h < 2000);
+  assert.ok(f.tiles && e, 'the fortress has a tile map');
+  // Find open space well inside the fortress's outline (no block within 3 tiles) and a solid spot.
+  let open = null, solid = null;
+  for (let ty = 3; ty < f.th - 3 && !open; ty++) for (let tx = 3; tx < f.tw - 3; tx++) {
+    let empty = true;
+    for (let y = -3; y <= 3 && empty; y++) for (let x = -3; x <= 3; x++) if (f.tiles[(ty + y) * f.tw + tx + x]) { empty = false; break; }
+    const cx = Math.abs(tx - f.tw / 2) < f.tw / 4 && Math.abs(ty - f.th / 2) < f.th / 4;
+    if (empty && cx) { open = [tx, ty]; break; }
+  }
+  for (let i = 0; i < f.tiles.length && !solid; i++) if (f.tiles[i] && i % f.tw > 2 && i % f.tw < f.tw - 3) solid = [i % f.tw, (i / f.tw) | 0];
+  assert.ok(open && solid, 'found open space inside the outline');
+  const put = ([tx, ty]) => { const lx = tx * 4 + 2 - f.w / 2, ly = ty * 4 + 2 - f.h / 2; e.x = f.x + lx * f.c - ly * f.s; e.y = f.y + lx * f.s + ly * f.c; e.vx = e.vy = 0; };
+  put(open); let x0 = e.x, y0 = e.y; bt.collide(e);
+  assert.ok(e.x === x0 && e.y === y0, 'a ship inside the courtyard is not pushed out of the fortress');
+  assert.ok(!bt.solidAt(e.x, e.y, 3), 'fighters see the courtyard as open space');
+  put(solid); x0 = e.x; y0 = e.y; bt.collide(e);
+  assert.ok(e.x !== x0 || e.y !== y0, 'a ship on top of a wall is pushed off it');
+  // Every gun's arc is 64 slices; across a hull this size a slice edge runs into its own arms.
+  // The exact check stops a shot that would cross its own blocks, and lets clear ones go.
+  let blocked = 0, clear = 0;
+  for (const w of f.weapons) {
+    const wx = f.x + w.lx * f.c - w.ly * f.s, wy = f.y + w.lx * f.s + w.ly * f.c;
+    for (let k = 0; k < 64; k++) {
+      if (!bt.bears(f, w, wx, wy, wx + Math.cos(k / 64 * 2 * Math.PI + f.a), wy + Math.sin(k / 64 * 2 * Math.PI + f.a))) continue;
+      if (bt.ownHullInWay(f, w, wx, wy, k / 64 * 2 * Math.PI + f.a, 600)) blocked++; else clear++;
+    }
+  }
+  assert.ok(clear > blocked * 4 && blocked > 0, `own-hull check: ${blocked} blocked, ${clear} clear`);
+  // Small ships skip it entirely.
+  assert.equal(bt.ownHullInWay(e, e.weapons[0] || { cell: 0, cells: null }, e.x, e.y, 0, 300), false);
+}
+
 console.log(`designer stats match the sim for ${checked} generated designs; validation ok`);
 console.log(`${FORTRESSES.length} Aegis fortresses are valid 150,000 cr defences`);

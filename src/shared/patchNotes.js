@@ -8,6 +8,15 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-13a', date: '13 Nov 2026', title: 'Giant fortresses fixed; point defence fires through allies',
+    items: [
+      'Ships and fighters can now fly into the open spaces inside giant hollow defences and ships (like the Aegis fortresses\' courtyards and lanes). Before, the whole outline counted as solid, so attackers piled up at its edge.',
+      'Giant hulls no longer fire through their own walls: before, plasma bolts and shells could leave through a gap and fly harmlessly through the hull\'s own arms. Guns on giants now only fire along lines that really are clear of their own blocks.',
+      'Ships now judge their distance to a giant hollow defence or ship by its real walls, not its outline, so attackers fly right into its lanes and courtyards to fight (charging ships go all the way in to the core).',
+      'Point defence now also fires through your own and allied ships at missiles, as it already did at fighters. Before, an allied ship in the way blocked it. Expect more missiles to be shot down.',
+    ],
+  },
+  {
     id: '2026-11-12d', date: '12 Nov 2026', title: 'Stronger point defence, cannons and plasma',
     items: [
       'Anti-missile point defence now does 25 damage a burst (was 15), to missiles, fighters and ships alike. It shoots down more missiles and kills fighters faster.',
