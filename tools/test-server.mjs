@@ -257,6 +257,9 @@ try {
   r = await ann.act({ type: 'stop', fleet: 'x' });
   ok(!r.body.ok, 'stop needs a fleet id');
   ok(!(await ben.act({ type: 'rally', planet: annHome, to: null })).body.ok, 'Ben can\'t change Ann\'s rally points');
+  ok(!(await ben.act({ type: 'renamePlanet', planet: annHome, name: 'Bens Now' })).body.ok, 'Ben can\'t rename Ann\'s world');
+  ok((await ann.act({ type: 'renamePlanet', planet: annHome, name: 'Annhold' })).body.ok, 'Ann renames her world');
+  ok(!(await ann.act({ type: 'renamePlanet', planet: 'x', name: 'Q' })).body.ok, 'world rename needs a real world');
   ok(!(await ann.act({ type: 'rally', planet: annHome, to: benHome })).body.ok, 'no rally point at an enemy world');
   ok(!(await ann.act({ type: 'rally', planet: 'x', to: 1 })).body.ok && !(await ann.act({ type: 'rallyAll', to: -1 })).body.ok, 'rally orders need real worlds');
   let battle = null;

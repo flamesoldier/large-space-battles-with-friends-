@@ -645,6 +645,11 @@ designer's numbers against the sim.
   a ship does once the battle starts. One measured battle (182 attackers vs 115 ships + 32
   defences, seed 7): on Auto the attackers lost (33 vs 109 left); with flank wings, a front line
   and artillery at the back they won (26 vs 12).
+- **Renaming worlds** (owner, 14 Nov 2026: only a world you hold): Rename button by the world's name
+  in its panel (same dialog as designs, `openRename(null, planetId)`); `renamePlanet()` in `world.js`
+  (1–24 chars, control characters stripped, spaces collapsed, no clash with another world's name
+  ignoring case; logged), server action `{ type: 'renamePlanet', planet, name }`. Old log text keeps
+  the old name; nothing looks worlds up by name.
 - **Renaming designs** (owner, Nov 2026): a Rename button on your own shipyards in the world
   panel opens a small dialog; `renameDesign()` in `world.js` (owner only, 1–40 chars, control
   characters stripped) renames the design everywhere and logs it; server action

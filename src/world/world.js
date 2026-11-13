@@ -292,6 +292,25 @@ export function buildDefense(world, pid, planetId, design, count = 1) {
 }
 
 /**
+ * Rename a world you hold (owner, 14 Nov 2026). 1–24 characters, no control characters, and not
+ * the same as another world's name (ignoring case), so the map and the log stay readable.
+ * Log entries written before keep the old name.
+ */
+export function renamePlanet(world, pid, planetId, name) {
+  const P = world.planets[planetId];
+  if (!P) return { ok: false, error: 'No such world.' };
+  if (P.owner !== pid) return { ok: false, error: 'You can only rename worlds you hold.' };
+  const clean = String(name ?? '').replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim().slice(0, 24);
+  if (!clean) return { ok: false, error: 'Give it a name.' };
+  if (clean === P.name) return { ok: true, name: clean };
+  if (world.planets.some((Q) => Q !== P && Q.name.toLowerCase() === clean.toLowerCase())) return { ok: false, error: `There's already a world called ${clean}.` };
+  const old = P.name;
+  P.name = clean;
+  log(world, 'yard', `${world.players[pid].name} renamed the world ${old} to ${clean}.`, { planet: P.id, players: [pid] });
+  return { ok: true, name: clean };
+}
+
+/**
  * Rename one of your ship designs (owner, Nov 2026: a friend left a shipyard as "My frigate").
  * The new name shows everywhere the design does: its shipyards, garrisons, fleets and battles.
  */

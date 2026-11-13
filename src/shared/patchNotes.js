@@ -8,8 +8,9 @@
 
 export const PATCH_NOTES = [
   {
-    id: '2026-11-14b', date: '14 Nov 2026', title: 'Download battle replays',
+    id: '2026-11-14b', date: '14 Nov 2026', title: 'Rename your worlds; download battle replays',
     items: [
+      'You can now rename any world you hold: select it and click Rename next to its name. Everyone sees the new name on the map. Names are up to 24 characters and can\'t match another world\'s name. If the world is taken, the new owner can rename it again.',
       'Every battle in the Combat log now has a Download button next to Watch. It saves the replay as a file, handy for sending a battle to someone when reporting a bug.',
     ],
   },

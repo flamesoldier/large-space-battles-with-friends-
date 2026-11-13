@@ -7,7 +7,7 @@ import { planRoute, fleetPosition, laneMap } from '../src/world/routes.js';
 import {
   createWorld, advanceTo, runWorld, buildShipyard, sellShipyard, quoteShipyard, sendFleet, previewFleet,
   shipsAt, incomeOf, allied, YARD_MS, HOLD_MS, designOf, upgradeWorld,
-  proposeAlliance, acceptAlliance, breakAlliance, proposalsFor, dueEvent, siegeAt, renameDesign,
+  proposeAlliance, acceptAlliance, breakAlliance, proposalsFor, dueEvent, siegeAt, renameDesign, renamePlanet,
   buildDefense, planEvent, applyEvent, registerDesign, cancelSale, jobsAt, payBounties, giveCredits, worthOf, fleetValue, stopFleet, setRally, rallyAll,
 } from '../src/world/world.js';
 import { writeFileSync } from 'node:fs';
@@ -167,6 +167,14 @@ const resolve = (scen) => {
   ok(!renameDesign(w, 0, did, '   ').ok, 'empty names are refused');
   const rn = renameDesign(w, 0, did, '  Ironclad\u0007 ');
   ok(rn.ok && w.designs[did].name === 'Ironclad' && designOf(w, did).name === 'Ironclad', `rename works and is tidied (${rn.name})`);
+
+  // Renaming a world: only the holder, tidied, no clashing names.
+  const otherP = w.planets.find((Q) => Q.id !== home && Q.owner !== 0);
+  ok(!renamePlanet(w, 1, home, 'Stolen').ok && !renamePlanet(w, 0, otherP.id, 'Mine Now').ok, 'can\'t rename a world you don\'t hold');
+  ok(!renamePlanet(w, 0, home, ' \u0007 ').ok, 'empty world names are refused');
+  ok(!renamePlanet(w, 0, home, otherP.name.toUpperCase()).ok, 'a world can\'t take another world\'s name');
+  const rp = renamePlanet(w, 0, home, '  New   Haven\u0007 and a very long tail ');
+  ok(rp.ok && P.name === 'New Haven and a very lon' && w.log.at(-1).text.includes('renamed the world'), `world rename works and is tidied (${rp.name})`);
 
   // Fleets: send destroyers to an ally's world (they join it), then attack a militia world.
   const ally = w.players[1].home;

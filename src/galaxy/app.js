@@ -22,7 +22,7 @@ import {
   sendFleet, stopFleet, setRally, rallyAll, previewFleet, shipsAt, incomeOf, allied, playerName, designOf, fleetValue, worthOf, countShips, fmtHours,
   sellValue, yardListValue, YARD_MS, HOLD_MS, upgradeWorld,
   proposeAlliance, acceptAlliance, declineAlliance, breakAlliance, proposalsFor, hasProposed, giveCredits,
-  isOpenSeat, freeColors, renameDesign, buildDefense, defenseProblem, cancelSale, jobsAt,
+  isOpenSeat, freeColors, renameDesign, renamePlanet, buildDefense, defenseProblem, cancelSale, jobsAt,
 } from '../world/world.js';
 import { readBattle, shipColors, battleOptions } from '../world/battleSetup.js';
 import { fleetPosition } from '../world/routes.js';
@@ -576,7 +576,7 @@ function planetPanel(P) {
   const mine = P.owner === ui.me, friendly = allied(world, P.owner, ui.me);
   const myShips = shipsAt(P, ui.me), haveShips = Object.keys(myShips).some((d) => !world.designs[d].fixed); // defences can't move
   const lanes = world.lanes.filter(([a, b]) => a === P.id || b === P.id).length;
-  let html = `<h1><span class="swatch" style="background:${colorOf(P.owner)}"></span>${esc(P.name)}</h1>
+  let html = `<h1><span class="swatch" style="background:${colorOf(P.owner)}"></span>${esc(P.name)}${mine ? ` <button class="small" data-act="rename-planet" title="Rename this world (only worlds you hold)" style="vertical-align:middle">Rename</button>` : ''}</h1>
     <div class="sub">${who(P.owner)}${P.home >= 0 ? ` <span class="tag" title="Spawn point">${esc(playerName(world, P.home))}'s home</span>` : ''}${friendly && !mine ? ' <span class="tag">ally</span>' : ''}</div>
     <dl class="kv">
       <dt>Income</dt><dd>${fmt(P.income)} cr/h</dd>
@@ -773,6 +773,7 @@ $('panel').addEventListener('click', (e) => {
   else if (act === 'rally-all') rallyHere(sel.id, true);
   else if (act === 'rally-none') rallyHere(sel.id, false);
   else if (act === 'rename') openRename(b.dataset.design);
+  else if (act === 'rename-planet') openRename(null, sel.id);
   else if (act === 'move') startMove(sel.id);
   else if (act === 'all' || act === 'none') {
     const have = shipsAt(world.planets[move.from], ui.me);
@@ -912,10 +913,11 @@ async function keepYard(planetId, yardId) {
   save(); renderPanel(true); renderEvents(); updateTop();
 }
 
-// Rename a design: a small dialog (no prompt(): some hosts block it).
+// Rename a design, or a world you hold (planetId): a small dialog (no prompt(): some hosts block it).
 let renameDlg = null;
-function openRename(designId) {
-  const d = world.designs[designId];
+function openRename(designId, planetId = null) {
+  const P = planetId === null ? null : world.planets[planetId];
+  const d = P ? { name: P.name } : world.designs[designId];
   if (!d) return;
   if (!renameDlg) {
     renameDlg = document.createElement('dialog');
@@ -926,12 +928,16 @@ function openRename(designId) {
     document.body.appendChild(renameDlg);
   }
   const input = renameDlg.querySelector('#rename-input');
+  renameDlg.querySelector('h3').textContent = P ? 'Rename world' : 'Rename ship design';
+  renameDlg.querySelector('.hint').textContent = P ? 'Everyone sees the new name on the map. Up to 24 characters; it can\'t match another world\'s name.' : 'The new name shows on every shipyard, garrison and fleet with this design.';
+  input.maxLength = P ? 24 : 40;
   input.value = d.name;
   renameDlg.onclose = async () => {
     if (renameDlg.returnValue !== 'ok') return;
     const name = input.value.trim();
     if (!name || name === d.name) return;
-    const r = await perform({ type: 'rename', design: designId, name }, () => renameDesign(world, ui.me, designId, name));
+    const r = P ? await perform({ type: 'renamePlanet', planet: P.id, name }, () => renamePlanet(world, ui.me, P.id, name))
+      : await perform({ type: 'rename', design: designId, name }, () => renameDesign(world, ui.me, designId, name));
     if (!r.ok) return toast(r.error, true);
     toast(`Renamed to “${r.name}”.`);
     save(); renderPanel(true); renderEvents();
