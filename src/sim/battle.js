@@ -1013,6 +1013,8 @@ export class Battle {
       n: 0, cap,
       x: new Float64Array(cap), y: new Float64Array(cap), vx: new Float64Array(cap), vy: new Float64Array(cap),
       life: new Int32Array(cap), kind: new Uint8Array(cap), owner: new Int32Array(cap), team: new Uint8Array(cap),
+      // Guided missiles: the point they steer for, in the target's own frame (ax, ay; see steerMissile).
+      ax: new Float32Array(cap), ay: new Float32Array(cap),
       target: new Int32Array(cap), dmg: new Float32Array(cap), rec: new Int32Array(cap), t0: new Int32Array(cap),
       wtype: new Uint8Array(cap), hp: new Float32Array(cap),
     };
@@ -1119,6 +1121,7 @@ export class Battle {
       const rec = this.shotStart(kind, e.team, wx, wy, ang, !!W.guided);
       this.addProjectile(kind, w.type, wx, wy, Math.cos(ang) * W.speed, Math.sin(ang) * W.speed,
         Math.round(W.life / DT), e.id, e.team, tg.id, W.damage, W.hp || 0, rec);
+      if (W.guided) this.setMissileAim(this.P.n - 1, tg, ax, ay);
     }
   }
 
@@ -1362,6 +1365,30 @@ export class Battle {
    * Guided missile: turn toward the target (led, like at launch) at up to W.turn rad/s. If the
    * target is gone, pick the nearest enemy ship within W.seek; with none, fly straight on.
    */
+  /** A guided missile steers for this world point on tg, kept in tg's frame so it moves with it. */
+  setMissileAim(i, tg, x, y) {
+    const dx = x - tg.x, dy = y - tg.y;
+    this.P.ax[i] = dx * tg.c + dy * tg.s; this.P.ay[i] = -dx * tg.s + dy * tg.c;
+  }
+
+  /**
+   * Big hollow target: is the missile's aim point still on a square holding a block? If not (shot
+   * away), try a few squares near it for one that is. Returns false if none was found.
+   */
+  missileAimLive(i, tg) {
+    const P = this.P;
+    const on = (lx, ly) => {
+      const gx = Math.floor((lx + tg.w / 2) / TILE), gy = Math.floor((ly + tg.h / 2) / TILE);
+      return gx >= 0 && gy >= 0 && gx < tg.tw && gy < tg.th && tg.tiles[gy * tg.tw + gx] === 1;
+    };
+    if (on(P.ax[i], P.ay[i])) return true;
+    for (let tries = 0; tries < 10; tries++) {
+      const r = 8 + tries * 6, lx = P.ax[i] + (this.rng() * 2 - 1) * r, ly = P.ay[i] + (this.rng() * 2 - 1) * r;
+      if (on(lx, ly)) { P.ax[i] = lx; P.ay[i] = ly; return true; }
+    }
+    return false;
+  }
+
   steerMissile(i) {
     const P = this.P, W = WEAPON[P.wtype[i]], team = P.team[i];
     if (P.target[i] === -2) return; // gave up (see below): flies straight on
@@ -1377,19 +1404,26 @@ export class Battle {
           if (d2 < best) { best = d2; tg = o; }
         });
         P.target[i] = tg ? tg.id : -1;
+        // New target: its centre, or for a big hull the nearest square of it that holds a block.
+        if (tg) { if (tg.tiles && this.nearTile(tg, P.x[i], P.y[i], W.seek) >= 0) this.setMissileAim(i, tg, this._ntx, this._nty); else this.setMissileAim(i, tg, tg.x, tg.y); }
       }
       if (!tg) return;
     }
+    // Steer for the block it was launched at (owner, 14 Nov 2026), not the target's centre: a hollow
+    // fortress's centre is open courtyard, and missiles circled it until they ran out. If that part of
+    // a big hull is shot away, it picks a square still standing nearby (checked every 5 ticks).
+    if (tg.tiles && (this.now - P.t0[i]) % 5 === 0) this.missileAimLive(i, tg);
+    const gx = tg.x + P.ax[i] * tg.c - P.ay[i] * tg.s, gy = tg.y + P.ax[i] * tg.s + P.ay[i] * tg.c;
     const x = P.x[i], y = P.y[i], vx = P.vx[i], vy = P.vy[i];
-    const t = Math.min(Math.hypot(tg.x - x, tg.y - y) / W.speed, W.maxLead);
-    const want = Math.atan2(tg.y + tg.vy * t - y, tg.x + tg.vx * t - x), cur = Math.atan2(vy, vx);
+    const t = Math.min(Math.hypot(gx - x, gy - y) / W.speed, W.maxLead);
+    const want = Math.atan2(gy + tg.vy * t - y, gx + tg.vx * t - x), cur = Math.atan2(vy, vx);
     let d = want - cur;
     d -= Math.round(d / (2 * Math.PI)) * 2 * Math.PI;
     // Inside the circle it can't turn tighter than (radius speed / turn, ~38 blocks): it would chase
     // the target round and round (owner, 14 Nov 2026: missiles "dancing in a circle" in front of an
     // Aegis fortress). A point at distance D and bearing d is out of reach when D < 2r·sin|d|. It has
     // missed: give up and fly straight on, like any other miss (it can still hit what's ahead).
-    const D = Math.hypot(tg.x + tg.vx * t - x, tg.y + tg.vy * t - y);
+    const D = Math.hypot(gx + tg.vx * t - x, gy + tg.vy * t - y);
     if (D < 2 * (W.speed / W.turn) * Math.abs(Math.sin(d)) && Math.abs(d) > 0.3) { P.target[i] = -2; return; }
     const step = W.turn * DT, a = cur + Math.max(-step, Math.min(step, d));
     P.vx[i] = Math.cos(a) * W.speed; P.vy[i] = Math.sin(a) * W.speed;
