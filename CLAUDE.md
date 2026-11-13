@@ -741,6 +741,19 @@ Front line ships turning >2π in 30 s while staying within 120 blocks 30/6/7/1 �
 missiles turning >2π 17/3/11/1 → 2/0/0/0. Outcomes (4 fortresses × 3 seeds, 8-min limit): 9 of 12
 the same; fortress battles last longer and lean slightly to the fortress (A3: 516/634/510k attacker
 value lost → 424/559/613k). Bench 1,000 vs 1,000: 197 → 182 s, ~6.4 ms a tick.
+**Guided missiles steer for the block they were launched at** (owner's replay, 14 Nov 2026: a 3,758-ship
+3-way battle at Elenris Minor against "SpaceFortress_A", an Aegis II-like hollow fortress). They steered
+for the target's centre, which in a hollow fortress is open courtyard (its hub sits 188 blocks off
+centre), so they flew in and orbited it at their turning radius (38) until their 90 s ran out: 1,551 of
+Nate's 14,961 missiles looped 3+ times. Now the aimed point is kept in the target's frame (`P.ax/P.ay`,
+`setMissileAim()` at launch); on a big hull `missileAimLive()` (every 5 ticks) moves it to a nearby
+square still holding a block if that one was shot away; a missile that re-seeks a big hull aims at its
+nearest block (`nearTile`). The D < 2r·sin|θ| give-up stays as the backstop. Rebuilt from the replay
+(designs, teams, start positions; `/tmp`-style script, seed 1): missiles looping 3+ times 881 → 0, 1+
+times 2,054 → 710 (mostly one turn to a new target); ships spinning in place 366 → 195 (Front line
+103 → 19, Artillery 128 → 43). Skirmishers unchanged (108 → 114): in a crowded fight their target
+flips between the fortress (~400 away, "angle in") and nearby enemies (~150, "turn away"), so they
+keep turning; that's the Skirmisher rule itself and was raised with the owner, not changed.
 
 **Debris collides with ships too** (owner, Nov 2026: "debris should be part of the battle"): a
 ship and a wreck push each other apart by the same rule, so ships plough through light debris
