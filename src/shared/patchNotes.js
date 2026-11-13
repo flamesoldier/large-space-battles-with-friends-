@@ -8,6 +8,12 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-14b', date: '14 Nov 2026', title: 'Download battle replays',
+    items: [
+      'Every battle in the Combat log now has a Download button next to Watch. It saves the replay as a file, handy for sending a battle to someone when reporting a bug.',
+    ],
+  },
+  {
     id: '2026-11-13c', date: '13 Nov 2026', title: 'Fighters toned down; stronger point defence and plasma',
     items: [
       'Fighter bays still open every battle with 3 fighters, but then launch 1 every minute (was 1 every 30 seconds). Fighters are as tough and hit as hard as before; there are just fewer of them in long battles.',

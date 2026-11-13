@@ -1145,6 +1145,27 @@ async function watch(id) {
   frame.srcdoc = pageDoc(VIEWER_PAGE);
 }
 let backToCombat = false;
+
+/**
+ * Save a battle's replay as a file (owner, 14 Nov 2026: so a player can send a replay for a bug
+ * report). The file is the packed replay, gzipped, with the viewer's extra info (sides, title) in
+ * a small JSON header line: `LSBREPLAY1\n<json>\n` then the gzip bytes.
+ */
+async function downloadReplay(id) {
+  if (ONLINE) toast('Preparing the replay file…');
+  const rep = ONLINE ? await net.replay(id) : await replays.get(id);
+  if (!rep) return toast('Couldn\'t load that replay.', true);
+  const entry = world.log.find((x) => x.battle?.id === id);
+  const P = entry ? world.planets[entry.planet] : null;
+  const head = new TextEncoder().encode(`LSBREPLAY1\n${JSON.stringify({ id, title: rep.title, sides: rep.sides, teams: rep.teams, planet: P?.name, t: entry?.t, text: entry?.text })}\n`);
+  const gz = await new Response(new Blob([rep.bytes]).stream().pipeThrough(new CompressionStream('gzip'))).blob();
+  const url = URL.createObjectURL(new Blob([head, gz], { type: 'application/octet-stream' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = `battle-${(P?.name || 'replay').replace(/[^A-Za-z0-9]+/g, '-')}-${id}.lsbreplay`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  toast('Replay saved to your downloads.');
+}
 $('replay-close').addEventListener('click', () => {
   $('replay-overlay').hidden = true; $('replay-frame').srcdoc = '';
   if (backToCombat) { backToCombat = false; renderCombat(); $('combat').showModal(); }
@@ -1335,7 +1356,7 @@ function renderCombat() {
     return `<div class="fight ${tone}${e.id > seen && involves(e, ui.me) ? ' new' : ''}">
       <div class="fhead"><span class="res">${label}</span><span class="where">${esc(P?.name ?? '')}</span><time>${clockText(e.t)}</time></div>
       <p>${esc(e.text)}</p>${nums ? `<div class="nums">${nums}</div>` : ''}
-      <div class="acts">${e.battle ? `<button class="small ${can ? 'go' : ''}" data-watch="${e.battle.id}" ${can ? '' : `disabled title="${ONLINE ? 'No replay for this battle' : 'This replay is no longer saved in this browser'}"`}>Watch</button>` : ''}<button class="small" data-planet="${e.planet}">Map</button></div>
+      <div class="acts">${e.battle ? `<button class="small ${can ? 'go' : ''}" data-watch="${e.battle.id}" ${can ? '' : `disabled title="${ONLINE ? 'No replay for this battle' : 'This replay is no longer saved in this browser'}"`}>Watch</button>` : ''}${can ? `<button class="small" data-dl="${e.battle.id}" title="Save this replay as a file, e.g. to send it to someone for a bug report">Download</button>` : ''}<button class="small" data-planet="${e.planet}">Map</button></div>
     </div>`;
   }).join('') || `<p class="empty">${combatFilter === 'mine' ? 'No battles involving you yet. Battles, and worlds you take or lose, show up here.' : 'No battles yet.'}</p>`;
 }
@@ -1352,6 +1373,8 @@ document.querySelectorAll('[data-cfilter]').forEach((b) => b.addEventListener('c
 $('combat-list').addEventListener('click', (e) => {
   const w = e.target.closest('[data-watch]');
   if (w && !w.disabled) return watch(w.dataset.watch);
+  const dl = e.target.closest('[data-dl]');
+  if (dl) return downloadReplay(dl.dataset.dl);
   const m = e.target.closest('[data-planet]');
   if (m) { $('combat').close(); const P = world.planets[Number(m.dataset.planet)]; cam.x = P.x; cam.y = P.y; cam.zoom = Math.max(cam.zoom, 1.6); select({ kind: 'planet', id: P.id }); }
 });

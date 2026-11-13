@@ -775,6 +775,10 @@ economy, fleets, captures, with real battles).
   panel is all for the selected world or fleet. In the world panel the ships and move controls
   come first and the **Shipyards** section sits below them, collapsible (owner's request: yards
   were pushing the move controls down; `ui.yardsOpen` is remembered, Build stays in the header).
+- **Replay download** (owner, 14 Nov 2026, for bug reports): a Download button next to Watch in the
+  combat log (`downloadReplay()` in `galaxy/app.js`) saves `battle-<world>-<id>.lsbreplay`:
+  `LSBREPLAY1\n<json: id, title, sides, teams, planet, t, log text>\n` then the packed replay gzipped.
+  To read one: split off the two header lines, gunzip the rest, `unpackReplay()`.
 - **Combat log** (top-bar button, with a badge for new ones): every battle and every world that
   changed hands, and every siege (Under attack / Attack begins / Joined attack), from the current
   player's side (World taken / World lost / Defended / Repelled / Ambushed / Blocked a fleet),
