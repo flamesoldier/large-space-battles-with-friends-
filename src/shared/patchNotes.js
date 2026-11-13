@@ -8,6 +8,12 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-13b', date: '13 Nov 2026', title: 'Battles can last up to 15 minutes',
+    items: [
+      'The battle time limit is now 15 minutes (was 8), for world battles, the designer\'s test battle and the Battle simulator. Big sieges get time to play out instead of stopping at the limit (a battle that hits the limit still leaves the world with whoever holds it).',
+    ],
+  },
+  {
     id: '2026-11-13a', date: '13 Nov 2026', title: 'Giant fortresses fixed; point defence fires through allies',
     items: [
       'Ships and fighters can now fly into the open spaces inside giant hollow defences and ships (like the Aegis fortresses\' courtyards and lanes). Before, the whole outline counted as solid, so attackers piled up at its edge.',

@@ -374,7 +374,7 @@ Battle end:
   defender win, so 300 attackers that cut 100 defenders down to 13 were "beaten off" in ~60 s.
   Stalemate and time limit still leave the world with its holder.
 - Disengagement: 20 s with no damage dealt anywhere, after the first 30 s.
-- Time limit: **8 minutes** (owner, Nov 2026; was 4) for world battles, the designer's test battle and
+- Time limit: **15 minutes** (owner, 13 Nov 2026; was 8, before that 4) for world battles, the designer's test battle and
   the Battle simulator (`BATTLE_MAX_TIME` in `rules.js`; the sim's own default is still 240 for bench and tools).
 - The owner explicitly does not want a "mutual exhaustion" rule.
 
@@ -1000,6 +1000,7 @@ Known issues and loose ends (not yet fixed):
   (localStorage); designs in play are on the server.
 - `npm run admin -- new-game` checks `data/server.pid` to refuse while the server runs; after an
   unclean restart a stale pid file could block it (not used on Railway, where `/admin` is used).
-- Battle time limit is 8 minutes (`BATTLE_MAX_TIME` in `rules.js`, owner, Nov 2026). Battles that
-  reach the limit now take up to twice the compute and replay size; watch Railway memory on huge ones.
+- Battle time limit is 15 minutes (`BATTLE_MAX_TIME` in `rules.js`, owner, 13 Nov 2026; was 8). Battles
+  that reach the limit take up to ~2× the compute and replay size of the 8-minute limit; watch Railway
+  memory on huge ones.
 
