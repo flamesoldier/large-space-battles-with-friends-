@@ -55,7 +55,7 @@ export const WEAPON = {
   // Instant beam, never misses what it's aimed at, slow to recharge. Like a small heavy laser,
   // the beam carries a damage budget and burns through block after block until it's spent
   // (about three armour blocks, or a heavy armour block and the one behind it).
-  [BT.LASER]: { kind: 'laser', range: 340, damage: 400, cooldown: 15, fighterHit: 0.3 }, // fighterHit: chance a laser aimed at a fighter hits it (fighter rework)
+  [BT.LASER]: { kind: 'laser', range: 340, damage: 400, cooldown: 15, fighterHit: 0.65 }, // owner, 13 Nov 2026: 0.3 -> 0.65 (fighters too strong). fighterHit: chance a laser aimed at a fighter hits it (fighter rework)
   // Slow shell that flies dead straight (aimed with lead at firing), small blast on impact.
   // life: owner (Nov 2026) doesn't want misses to vanish mid-battle, so a shell flies on for 30 s
   // (1,350 blocks, well past the fight) and can still hit something far behind its target.
@@ -72,17 +72,17 @@ export const WEAPON = {
   // Point defence: shoots the nearest enemy missile in range, otherwise any enemy ship that close.
   // Owner, Nov 2026: range 80 against everything (was 30: it must outrange fighters), 15 damage a
   // burst every 0.2 s, to ships, fighters and missiles alike (was 32 / 25 to missiles).
-  [BT.PD]: { kind: 'pd', range: 80, damage: 25, missileDamage: 25, fighterDamage: 25, cooldown: 0.2 }, // owner, 12 Nov 2026: 15 -> 25 to everything (weapon buff). fighterDamage: owner, Nov 2026: 15 like everything else (40 was tried: too good); 40 bursts, 8 s, a fighter // damage was 6, then 24, then 32; missileDamage was 10, then 25
+  [BT.PD]: { kind: 'pd', range: 80, damage: 30, missileDamage: 30, fighterDamage: 30, cooldown: 0.2 }, // owner, 13 Nov 2026: 25 -> 30 to everything (fighters too strong); owner, 12 Nov 2026: 15 -> 25 to everything (weapon buff). fighterDamage: owner, Nov 2026: 15 like everything else (40 was tried: too good); 40 bursts, 8 s, a fighter // damage was 6, then 24, then 32; missileDamage was 10, then 25
   // Heavy laser: a 10x10 gun that fires wherever its unit can see past the rest of the ship. The beam carries a damage budget and
   // burns through block after block (and ship after ship) until the budget is spent.
   // It holds fire if a friendly ship is the first thing in the line of fire.
   // width: the beam burns a channel this many blocks wide (odd). The owner wants 1: a thin cut
   // slices off bigger pieces of ship than a wide one that vaporises them.
   // Plasma cannon (owner, Nov 2026: was the heavy laser, an instant beam): same range, rate and
-  // damage budget (5,000; was 25,000 until 11 Nov 2026, owner: a colossus defence fell in ~20 s; reload 20 → 17 s the same day, owner: a bit weak; 17 → 15 s on 12 Nov 2026),  but a big glowing bolt that flies at `speed` and carves through every
+  // damage budget (5,000; was 25,000 until 11 Nov 2026, owner: a colossus defence fell in ~20 s; reload 20 → 17 s the same day, owner: a bit weak; 17 → 15 s on 12 Nov 2026, 15 → 10 s on 13 Nov 2026),  but a big glowing bolt that flies at `speed` and carves through every
   // block in its path, ship after ship, friend or foe, until the budget is spent. Aimed with lead
   // (capped at maxLead s) along the line through the most enemy ships. Kind stays 'lance' inside.
-  [BT.LANCE]: { kind: 'lance', range: 650, damage: 5000, cooldown: 15, width: 1, speed: 60, life: 30, maxLead: 6 },
+  [BT.LANCE]: { kind: 'lance', range: 650, damage: 5000, cooldown: 10, width: 1, speed: 60, life: 30, maxLead: 6 },
   // Fighter bay (owner, Nov 2026): every `cooldown` s, for as long as the battle goes on (any
   // range), it launches one fighter along an open line out of the ship (the same line-of-fire
   // rule as guns: a bay on the hull edge launches straight out, one deep inside needs a straight
@@ -102,8 +102,9 @@ export const WEAPON = {
   // through the whole enemy fleet). They are fast (40) and lasers mostly miss them (`fighterHit`
   // on the laser); point defence still prefers them to ships. Owner: they shine in long fights.
   // Launches in waves (owner, 13 Nov 2026: fighter-heavy fleets too strong): 3 as the battle opens,
-  // 2 a minute later, then 1 every minute (`cooldown`) after that. Was 3, then 1 every 30 s.
-  [BT.BAY]: { kind: 'bay', range: 600, damage: 0, cooldown: 60, waves: [3, 2], squadronGap: 0.4,
+  // then 1 every minute (`cooldown`). Was 3, then 1 every 30 s. Later entries in `waves` set the
+  // size of the next waves (after them every wave is 1).
+  [BT.BAY]: { kind: 'bay', range: 600, damage: 0, cooldown: 60, waves: [3], squadronGap: 0.4,
     fighter: { hp: 600, speed: 40, turn: 3, range: 60, damage: 45, cooldown: 1, orbit: 14 } }, // owner, Nov 2026 (rework): hp 600, damage 45, speed 40 (was 30)
 };
 

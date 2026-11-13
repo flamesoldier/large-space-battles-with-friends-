@@ -89,7 +89,7 @@ Weapons (numbers in `blocks.js`):
   min). Replays sent of "Bastion", a frame-cored 51k-block fortress with plasma at its nose: it
   still falls in under a minute at 5,000 (frame 45 hp is cut ~100 deep, its own nose plasma cooks
   off, hub reachable): design decides. NB `battle.now` counts ticks (0.1 s), not seconds),
-  1 block wide. Now a **big glowing blue bolt with a long trail** (`K_PLASMA`, replay shot kind 2,
+  1 block wide (**reload 10 s since 13 Nov 2026**, see "Fighter nerf, plasma buff"). Now a **big glowing blue bolt with a long trail** (`K_PLASMA`, replay shot kind 2,
   `drawPlasma` in `renderer.js`; blue for every side) flying at **60 blocks/s** (cannon shells:
   45), aimed with lead (cap 6 s), life 30 s. Each tick `plasmaStep()` burns every live block on
   the segment it crosses, in order, ship after ship, until the budget is spent, then a big blue
@@ -226,16 +226,24 @@ Weapons (numbers in `blocks.js`):
     instead of ~12 and do ~2.7× the damage. Carriers win hard there, as role 4 intends.
   - Cost: bench 1,000 vs 1,000 (no bays) unchanged (187.5 s, ~5.5 ms a tick). 1,122 ships incl. 120
     four-bay carriers: 1,440 fighters at once at the opening, 3.6 ms a tick, 5.2 MB gzip replay.
-- **Fighter launch waves** (owner, 13 Nov 2026: "fighters are op… they bog down the enemy who
-  eventually die"): each bay launches **3 at the start (unchanged), 2 a minute later, then 1 every
-  minute** (`waves: [3, 2]`, `cooldown` 60 on `WEAPON[BT.BAY]`; was squadron 3 then 1 every 30 s).
-  Sim: `w.sq` = fighters left in the current wave, `w.wv` = wave index (declared in `arcFields()`);
-  after `waves` run out every wave is 1. The old schedule is `waves: [3, 1]`, `cooldown: 30`.
-  Fighter stats unchanged. Test in `tools/test-designer.mjs` checks the launch times. Measured
-  (owner's-style mirror test, 100 32×16 cannon/laser/PD cruisers with one bay vs 108 with frame
-  there, 6 seeds, 15-min limit, battles 12–15 min): old 0.00 (≈2,000 fighters a battle) → new
-  −0.08 (≈1,200; bays lose 5 of 6). Short battles (~3–4 min, 44×22 carriers vs the mixed fleet)
-  barely change: 2-bay −0.45 both, 4-bay −0.41 → −0.45. Bench 1,000 vs 1,000 identical.
+- **Fighter nerf, plasma buff, 13 Nov 2026** (owner: "fighters are op… they bog down the enemy who
+  eventually die"; he first chose 3 / 2 at 1 min / then 1 a minute, then before it went live
+  changed to this). Where the numbers above disagree, these win:
+  - Bays launch **3 at the start, then 1 every minute** (`waves: [3]`, `cooldown` 60 on
+    `WEAPON[BT.BAY]`; was squadron 3 then 1 every 30 s). Sim: `w.sq` = fighters left in the current
+    wave, `w.wv` = wave index (declared in `arcFields()`); entries after the first in `waves` size
+    the next waves, then every wave is 1. The old schedule is `waves: [3, 1]`, `cooldown: 30`. Test in
+    `tools/test-designer.mjs` checks the launch times.
+  - **Lasers hit fighters 65%** of the time (`fighterHit` 0.3 → 0.65).
+  - **Point defence 30 a burst** to everything (`damage`, `missileDamage`, `fighterDamage`; was 25).
+  - **Plasma reload 10 s** (was 15).
+  Measured against the live version (`/tmp/live` worktree of d454161): owner's-style mirror test (100
+  32×16 cannon/laser/PD cruisers with one bay vs 108 with frame there, 6 seeds, 15-min limit, battles
+  12–15 min): 0.00 (≈2,000 fighters a battle) → −0.14 (≈1,050; bays lose all 6). The 3 / 2 / 1-a-minute
+  version alone gave −0.08. 4-bay 44×22 carriers vs the mixed fleet (120k cr, 6 seeds, ~4-min
+  battles): −0.43 → −0.47 (heavy armour instead −0.51 → −0.54). Generated plasma battleships vs the
+  same ship with heavy armour, vs the mixed fleet (60k, 4 seeds): −0.12 vs −0.37 → −0.06 vs −0.51.
+  Bench 1,000 vs 1,000: 207 → 197 s, 5.3 → 5.0 ms a tick, missiles shot down 40% both.
 - **Fighter bay tunnels with corners** (owner, Nov 2026, live since 10 Nov: "it just needs a path out of the ship"):
   a bay with no straight open line to space can still launch if a path of empty cells (4-connected,
   corners allowed, 1 cell wide is enough) leads to the edge of the ship's grid. `src/shared/bayRoute.js`

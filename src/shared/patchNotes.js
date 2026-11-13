@@ -8,9 +8,13 @@
 
 export const PATCH_NOTES = [
   {
-    id: '2026-11-13c', date: '13 Nov 2026', title: 'Fighter bays launch fewer fighters later on',
+    id: '2026-11-13c', date: '13 Nov 2026', title: 'Fighters toned down; stronger point defence and plasma',
     items: [
-      'Fighter bays still open every battle with 3 fighters, but then launch 2 more after a minute and 1 every minute after that (was 1 every 30 seconds). Fighters are as tough and hit as hard as before; there are just fewer of them in long battles, so fighter-heavy fleets no longer grind every long fight down.',
+      'Fighter bays still open every battle with 3 fighters, but then launch 1 every minute (was 1 every 30 seconds). Fighters are as tough and hit as hard as before; there are just fewer of them in long battles.',
+      'Lasers now hit fighters 65% of the time (was 30%).',
+      'Anti-missile point defence now does 30 damage a burst (was 25), to missiles, fighters and ships alike.',
+      'Plasma cannons now fire every 10 seconds (was 15).',
+      'This applies to every ship and defence already in play, from the next battle on.',
     ],
   },
   {
