@@ -230,6 +230,7 @@ export class Battle {
       bcx: 0, bcy: 0, bhw: w / 2, bhh: h / 2,
       tiles: null, tw: 0, th: 0, // big hulls: which TILE × TILE squares hold a live block (see buildTiles)
       gapTo: -1, gapT: -1000, gap: 0, // cached distance to the first real block of a big target (see gapTo)
+      tdist: null, tdistT: -1000, tdirty: false, // big hulls: distance from each tile to the nearest live one (see nearGap)
       mass: 1, maxSpeed: 0, turn: 0, agility: 0, prefRange: 60, ward: null,
       face: null, faceMax: 0, // firepower that bears on a target at each of the 64 directions round the ship (see refit / holdFacing)
       worth: 0, // credit value of the ship's design (rout check)
@@ -273,6 +274,7 @@ export class Battle {
       const row = y * w, trow = ((y / TILE) | 0) * tw;
       for (let x = 0; x < w; x++) if (types[row + x] && hp[row + x] > 0) T[trow + ((x / TILE) | 0)] = 1;
     }
+    e.tdirty = true;
   }
 
   /** Recompute mobility and weapon list after blocks are lost. */
@@ -280,6 +282,7 @@ export class Battle {
     let mass = 0, thrust = 0, range = 0;
     let x0 = e.w, x1 = -1, y0 = e.h, y1 = -1;
     const T = this.prepTiles(e), tw = e.tw; // big hulls: the tile map is filled in the same pass
+    if (T) e.tdirty = true;
     for (let i = 0, x = 0, y = 0; i < e.types.length; i++, x === e.w - 1 ? (x = 0, y++) : x++) {
       const t = e.types[i];
       if (!t || e.hp[i] <= 0) continue;
@@ -563,7 +566,12 @@ export class Battle {
     // way from their centres. (No effect on small ships.)
     // A big hollow target (a fortress): the distance to its first real block along the way in,
     // so ships fly into its open lanes and courtyards instead of stopping at its outline.
-    const d = tg && tg.tiles ? Math.max(1, this.gapTo(e, tg) - Math.max(0, e.radius - 12) * 0.8)
+    // Charging ships measure along the way in to its centre (so they fly down lanes into courtyards);
+    // ships holding a distance measure to its nearest real block (owner, 14 Nov 2026: ships "danced in
+    // a circle" in front of an Aegis fortress: a few blocks sideways, the line to the centre swapped
+    // between a wall ~85 away and an open lane ~165 away, so they kept flipping between flying in and
+    // holding, spinning on the spot).
+    const d = tg && tg.tiles ? Math.max(1, (e.stance === 'charge' ? this.gapTo(e, tg) : this.nearGap(e, tg)) - Math.max(0, e.radius - 12) * 0.8)
       : Math.max(1, Math.hypot(dx, dy) - (tg ? Math.max(0, tg.radius - 12) * 0.8 : 0) - Math.max(0, e.radius - 12) * 0.8);
     let desired = Math.atan2(dy, dx);
     if (disarmed) desired += Math.PI; // crippled: run away from the enemy fleet
@@ -610,7 +618,10 @@ export class Battle {
     // it still goes where its stance wants and the lines spread out instead of piling up.
     if ((e.id + this.now) % SPACING_EVERY === 0) this.spacing(e);
     let sx = e.sepX, sy = e.sepY;
-    if (sx || sy) {
+    // A ship holding its distance only slides out of the crowd (below), it doesn't turn: holdFacing
+    // picks the gun-bearing heading needing the least turn, so each bend from the crowd became its
+    // next heading and it spun on the spot (owner, 14 Nov 2026, in front of an Aegis fortress).
+    if ((sx || sy) && !hold) {
       const fx = Math.cos(desired), fy = Math.sin(desired), dot = sx * fx + sy * fy;
       if (dot < 0) { sx -= dot * fx; sy -= dot * fy; }
       desired = Math.atan2(fy + sy * SPACING_TURN, fx + sx * SPACING_TURN);
@@ -826,6 +837,52 @@ export class Battle {
     }
     e.gapTo = tg.id; e.gapT = this.now; e.gap = gap;
     return gap;
+  }
+
+  /**
+   * Distance from e's centre to the nearest square of big hull tg that holds a block. Uses a
+   * distance map over tg's tiles (two-pass chamfer, rebuilt at most once a second after it loses
+   * blocks); outside tg's grid, the distance to the grid edge is added. Smooth as e moves, unlike
+   * gapTo, so it's what ships holding a distance use.
+   */
+  nearGap(e, tg) {
+    if (tg.tdirty && this.now - tg.tdistT >= 10) this.buildTileDist(tg);
+    const dx = e.x - tg.x, dy = e.y - tg.y;
+    const gx = dx * tg.c + dy * tg.s + tg.w / 2, gy = -dx * tg.s + dy * tg.c + tg.h / 2;
+    const ox = gx < 0 ? -gx : gx > tg.w ? gx - tg.w : 0, oy = gy < 0 ? -gy : gy > tg.h ? gy - tg.h : 0;
+    const ix = Math.min(tg.tw - 1, Math.max(0, (gx / TILE) | 0)), iy = Math.min(tg.th - 1, Math.max(0, (gy / TILE) | 0));
+    return Math.hypot(ox, oy) + tg.tdist[iy * tg.tw + ix] * TILE;
+  }
+
+  /** Distance (in tiles) from every tile of big hull e to the nearest one holding a block. */
+  buildTileDist(e) {
+    const tw = e.tw, th = e.th, T = e.tiles, n = tw * th, R2 = Math.SQRT2;
+    if (!e.tdist || e.tdist.length !== n) e.tdist = new Float32Array(n);
+    const D = e.tdist;
+    for (let i = 0; i < n; i++) D[i] = T[i] ? 0 : 1e9;
+    for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) {
+      const i = y * tw + x; let v = D[i];
+      if (x > 0 && D[i - 1] + 1 < v) v = D[i - 1] + 1;
+      if (y > 0) {
+        const u = i - tw;
+        if (D[u] + 1 < v) v = D[u] + 1;
+        if (x > 0 && D[u - 1] + R2 < v) v = D[u - 1] + R2;
+        if (x < tw - 1 && D[u + 1] + R2 < v) v = D[u + 1] + R2;
+      }
+      D[i] = v;
+    }
+    for (let y = th - 1; y >= 0; y--) for (let x = tw - 1; x >= 0; x--) {
+      const i = y * tw + x; let v = D[i];
+      if (x < tw - 1 && D[i + 1] + 1 < v) v = D[i + 1] + 1;
+      if (y < th - 1) {
+        const u = i + tw;
+        if (D[u] + 1 < v) v = D[u] + 1;
+        if (x < tw - 1 && D[u + 1] + R2 < v) v = D[u + 1] + R2;
+        if (x > 0 && D[u - 1] + R2 < v) v = D[u - 1] + R2;
+      }
+      D[i] = v;
+    }
+    e.tdirty = false; e.tdistT = this.now;
   }
 
   /** Nearest square of big hull o that holds a block, within `reach` of (x, y): sets _ntx/_nty (world), returns its index or -1. */
@@ -1307,6 +1364,7 @@ export class Battle {
    */
   steerMissile(i) {
     const P = this.P, W = WEAPON[P.wtype[i]], team = P.team[i];
+    if (P.target[i] === -2) return; // gave up (see below): flies straight on
     let tg = this.byId[P.target[i]];
     if (!tg || tg.dead || tg.retired || tg.kind !== SHIP || this.fr[(team << 4) | tg.team]) {
       tg = null;
@@ -1327,6 +1385,12 @@ export class Battle {
     const want = Math.atan2(tg.y + tg.vy * t - y, tg.x + tg.vx * t - x), cur = Math.atan2(vy, vx);
     let d = want - cur;
     d -= Math.round(d / (2 * Math.PI)) * 2 * Math.PI;
+    // Inside the circle it can't turn tighter than (radius speed / turn, ~38 blocks): it would chase
+    // the target round and round (owner, 14 Nov 2026: missiles "dancing in a circle" in front of an
+    // Aegis fortress). A point at distance D and bearing d is out of reach when D < 2r·sin|d|. It has
+    // missed: give up and fly straight on, like any other miss (it can still hit what's ahead).
+    const D = Math.hypot(tg.x + tg.vx * t - x, tg.y + tg.vy * t - y);
+    if (D < 2 * (W.speed / W.turn) * Math.abs(Math.sin(d)) && Math.abs(d) > 0.3) { P.target[i] = -2; return; }
     const step = W.turn * DT, a = cur + Math.max(-step, Math.min(step, d));
     P.vx[i] = Math.cos(a) * W.speed; P.vy[i] = Math.sin(a) * W.speed;
   }

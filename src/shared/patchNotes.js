@@ -8,6 +8,15 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-14c', date: '14 Nov 2026', title: 'No more circling in front of fortresses',
+    items: [
+      'Guided missiles now steer for the part of the ship they were fired at, instead of its centre. Against hollow fortresses (like the Aegis ones) the centre is an open courtyard, so missiles flew in and circled it until they ran out. If that part gets shot away, they head for the nearest part still standing.',
+      'Guided missiles that end up too close to their target to turn onto it now fly straight on (and can still hit whatever is ahead) instead of looping round it.',
+      'Ships no longer spin on the spot in front of giant fortresses. They now judge their distance from the fortress\'s nearest wall, so they settle at their range and keep their guns on it instead of flip-flopping between flying in and holding back. Ships set to Charge still fly into the courtyards.',
+      'Ships holding their distance in a crowd now slide aside to make room instead of turning, so they stay facing the enemy.',
+    ],
+  },
+  {
     id: '2026-11-14b', date: '14 Nov 2026', title: 'Rename your worlds; download battle replays',
     items: [
       'You can now rename any world you hold: select it and click Rename next to its name. Everyone sees the new name on the map. Names are up to 24 characters and can\'t match another world\'s name. If the world is taken, the new owner can rename it again.',

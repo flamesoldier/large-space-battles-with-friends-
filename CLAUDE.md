@@ -725,6 +725,22 @@ e toward tg's centre and returns the distance to the first square holding a bloc
 a big hull's real blocks (`nearTile()`), not a circle round it. All-charge, 500,000 cr: closest
 attacker to the hub, Aegis II 160 → 8 blocks, IV 694 → 383; most inside at once 112 / 108.
 The tile map is filled in `refit()`'s own pass over the hull (`prepTiles`), not a second one.
+**Holding ships use the nearest real block, not the way in** (owner, 14 Nov 2026: ships and rockets
+"dance in a circle right in front of" an Aegis fortress). Three causes, all fixed: (1) `gapTo` along
+the line to the centre jumped between a wall (~85) and an open lane (~165) as a ship moved a few
+blocks, so Front line / Artillery / Skirmisher ships flipped between closing in and holding. Every
+stance except Charge now uses `nearGap()`: a chamfer distance map over the tile map (`e.tdist`,
+rebuilt at most once a second after `tdirty`), smooth as the ship moves. Charge keeps `gapTo` so it
+still flies down lanes. (2) A holding ship took the crowd-spacing bend as a turn, and `holdFacing`
+(least turn among good headings) then kept it, so it rotated on the spot: holding ships now only
+slide away from a crowd, never turn for it (this applies to every battle). (3) Guided missiles
+can't turn tighter than speed/turn (~38 blocks) and orbited targets that ended up beside them: a
+target at distance D and bearing θ with D < 2r·sin|θ| is unreachable, so the missile gives up
+(`P.target` = −2) and flies straight. Measured (Aegis II/IV vs the mixed fleet, 2 seeds each):
+Front line ships turning >2π in 30 s while staying within 120 blocks 30/6/7/1 → 0/1/0/0; guided
+missiles turning >2π 17/3/11/1 → 2/0/0/0. Outcomes (4 fortresses × 3 seeds, 8-min limit): 9 of 12
+the same; fortress battles last longer and lean slightly to the fortress (A3: 516/634/510k attacker
+value lost → 424/559/613k). Bench 1,000 vs 1,000: 197 → 182 s, ~6.4 ms a tick.
 
 **Debris collides with ships too** (owner, Nov 2026: "debris should be part of the battle"): a
 ship and a wreck push each other apart by the same rule, so ships plough through light debris
