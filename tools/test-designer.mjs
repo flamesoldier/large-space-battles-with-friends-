@@ -224,6 +224,24 @@ assert.ok(Math.abs(sc.enemyCost - sc.budget) / sc.budget < 0.1, `budgets ${sc.en
   assert.ok(down > 0, 'fighters get shot down');
   const rep = bt.toReplay();
   for (let k = 0; k < rep.cols.shotKind.length; k++) if (rep.cols.shotKind[k] === 4) assert.ok(rep.cols.shotFlight[k] > 0, 'every fighter has a flight time in the replay');
+  // Launch waves (owner, 13 Nov 2026): 3 at the start, 2 a minute later, then 1 every minute.
+  {
+    const bw = new Battle({ designs: [d], ships: [{ design: 0, team: 0, x: 0, y: 0, a: 0 }] });
+    const e = bw.ents[0], perBay = new Map();
+    bw.launchFighter = (_e, w) => { if (!perBay.has(w)) perBay.set(w, []); perBay.get(w).push(bw.tick / 10); return true; };
+    for (bw.tick = 0; bw.tick < 2000; bw.tick++) bw.fire(e); // the bays' launch clock alone, every launch succeeds
+    assert.ok(perBay.size >= 1, 'bays launch');
+    for (const ts of perBay.values()) {
+      const by = (t) => ts.filter((x) => x <= t).length, at = ts.slice(0, 8).map((x) => x.toFixed(1)).join(', ');
+      assert.equal(by(10), 3, `3 fighters in the opening wave (${at})`);
+      assert.equal(by(59), 3, `nothing more before a minute (${at})`);
+      assert.equal(by(70), 5, `2 more a minute later (${at})`);
+      assert.equal(by(119), 5, `then a minute's gap (${at})`);
+      assert.equal(by(130), 6, `then 1 a minute (${at})`);
+      assert.equal(by(190), 7, `and 1 more a minute after that (${at})`);
+    }
+    console.log(`fighter bay waves: ${[...perBay.values()][0].slice(0, 7).map((x) => x.toFixed(1)).join(', ')} s`);
+  }
 }
 
 // The ready-made Aegis fortresses in the defence designer's Start from menu: valid 150,000 cr

@@ -95,13 +95,15 @@ export const WEAPON = {
   // damage 0: the bay itself does no damage (the fighters do).
   // Fighter rework (Nov 2026, owner's four roles: look cool; soak a little fire and do small,
   // reliable damage at the start; hunt down long-range ships late in the battle; be countered by
-  // point defence): each bay opens with a `squadron` of fighters, `squadronGap` s apart, that fly
+  // point defence): each bay launches in `waves` of fighters, `squadronGap` s apart, that fly
   // ahead of the fleet; after that one fighter every `cooldown` s. They go for the nearest enemy
   // ship at any range, so late in a battle, with the front line gone, they find the artillery
   // left behind (a "go for the ship furthest back" rule was tried and did worse: it sent fighters
   // through the whole enemy fleet). They are fast (40) and lasers mostly miss them (`fighterHit`
   // on the laser); point defence still prefers them to ships. Owner: they shine in long fights.
-  [BT.BAY]: { kind: 'bay', range: 600, damage: 0, cooldown: 30, squadron: 3, squadronGap: 0.4,
+  // Launches in waves (owner, 13 Nov 2026: fighter-heavy fleets too strong): 3 as the battle opens,
+  // 2 a minute later, then 1 every minute (`cooldown`) after that. Was 3, then 1 every 30 s.
+  [BT.BAY]: { kind: 'bay', range: 600, damage: 0, cooldown: 60, waves: [3, 2], squadronGap: 0.4,
     fighter: { hp: 600, speed: 40, turn: 3, range: 60, damage: 45, cooldown: 1, orbit: 14 } }, // owner, Nov 2026 (rework): hp 600, damage 45, speed 40 (was 30)
 };
 

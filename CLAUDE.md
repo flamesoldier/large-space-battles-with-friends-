@@ -226,6 +226,16 @@ Weapons (numbers in `blocks.js`):
     instead of ~12 and do ~2.7× the damage. Carriers win hard there, as role 4 intends.
   - Cost: bench 1,000 vs 1,000 (no bays) unchanged (187.5 s, ~5.5 ms a tick). 1,122 ships incl. 120
     four-bay carriers: 1,440 fighters at once at the opening, 3.6 ms a tick, 5.2 MB gzip replay.
+- **Fighter launch waves** (owner, 13 Nov 2026: "fighters are op… they bog down the enemy who
+  eventually die"): each bay launches **3 at the start (unchanged), 2 a minute later, then 1 every
+  minute** (`waves: [3, 2]`, `cooldown` 60 on `WEAPON[BT.BAY]`; was squadron 3 then 1 every 30 s).
+  Sim: `w.sq` = fighters left in the current wave, `w.wv` = wave index (declared in `arcFields()`);
+  after `waves` run out every wave is 1. The old schedule is `waves: [3, 1]`, `cooldown: 30`.
+  Fighter stats unchanged. Test in `tools/test-designer.mjs` checks the launch times. Measured
+  (owner's-style mirror test, 100 32×16 cannon/laser/PD cruisers with one bay vs 108 with frame
+  there, 6 seeds, 15-min limit, battles 12–15 min): old 0.00 (≈2,000 fighters a battle) → new
+  −0.08 (≈1,200; bays lose 5 of 6). Short battles (~3–4 min, 44×22 carriers vs the mixed fleet)
+  barely change: 2-bay −0.45 both, 4-bay −0.41 → −0.45. Bench 1,000 vs 1,000 identical.
 - **Fighter bay tunnels with corners** (owner, Nov 2026, live since 10 Nov: "it just needs a path out of the ship"):
   a bay with no straight open line to space can still launch if a path of empty cells (4-connected,
   corners allowed, 1 cell wide is enough) leads to the edge of the ship's grid. `src/shared/bayRoute.js`

@@ -81,7 +81,7 @@ export const STANCES = {
 };
 
 // Every weapon object gets its line-of-fire fields up front (one object shape, see makeEntity).
-const arcFields = () => ({ sq: 0, route: -1, rtT: 0, omni: false, buried: false, m0: 0, m1: 0, ox: 0, oy: 0, bx0: 1, by0: 1, bx1: 0, by1: 0, blk: null });
+const arcFields = () => ({ sq: 0, wv: 0, route: -1, rtT: 0, omni: false, buried: false, m0: 0, m1: 0, ox: 0, oy: 0, bx0: 1, by0: 1, bx1: 0, by1: 0, blk: null });
 
 export class Battle {
   // maxTime: 4 minutes while testing; the plan for launch is 30 minutes so every battle resolves.
@@ -194,10 +194,10 @@ export class Battle {
       }
       let sx = 0, sy = 0;
       for (const c of group) { sx += (c % d.w) + 0.5 - d.w / 2; sy += ((c / d.w) | 0) + 0.5 - d.h / 2; }
-      // Fighter bays launch their opening squadron early; plasma cannons charge for 4-10 s.
+      // Fighter bays launch their opening wave early; plasma cannons charge for 4-10 s.
       const cd0 = this.rng();
       const wpn = { cell: group[0], cells: group, type: t, lx: sx / group.length, ly: sy / group.length, cd: t === BT.BAY ? 1 + cd0 * 2 : 4 + cd0 * 6, ...arcFields() };
-      if (t === BT.BAY) wpn.sq = WEAPON[BT.BAY].squadron; // opening squadron still to launch
+      if (t === BT.BAY) wpn.sq = WEAPON[BT.BAY].waves[0]; // fighters still to launch in this wave (wave index w.wv)
       e.weapons.push(wpn);
     }
     for (const w of e.weapons) this.facing(e, w);
@@ -1002,8 +1002,11 @@ export class Battle {
         continue;
       }
       if (W.kind === 'bay') {
-        // The opening squadron leaves a few tenths of a second apart, then one fighter every cooldown.
-        if (this.launchFighter(e, w, wx, wy)) w.cd = w.sq > 0 && --w.sq > 0 ? W.squadronGap : W.cooldown;
+        // A wave leaves a few tenths of a second apart; the next wave (W.waves, then 1 each) one cooldown later.
+        if (this.launchFighter(e, w, wx, wy)) {
+          if (--w.sq > 0) w.cd = W.squadronGap;
+          else { w.wv++; w.sq = W.waves[w.wv] ?? 1; w.cd = W.cooldown; }
+        }
         else w.cd = 0.5;
         continue;
       }

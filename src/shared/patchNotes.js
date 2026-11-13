@@ -8,6 +8,12 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-13c', date: '13 Nov 2026', title: 'Fighter bays launch fewer fighters later on',
+    items: [
+      'Fighter bays still open every battle with 3 fighters, but then launch 2 more after a minute and 1 every minute after that (was 1 every 30 seconds). Fighters are as tough and hit as hard as before; there are just fewer of them in long battles, so fighter-heavy fleets no longer grind every long fight down.',
+    ],
+  },
+  {
     id: '2026-11-13b', date: '13 Nov 2026', title: 'Battles can last up to 15 minutes',
     items: [
       'The battle time limit is now 15 minutes (was 8), for world battles, the designer\'s test battle and the Battle simulator. Big sieges get time to play out instead of stopping at the limit (a battle that hits the limit still leaves the world with whoever holds it).',
