@@ -114,17 +114,18 @@ export const WEAPON = {
   // at one target and landing within `scatter` blocks of one spot (owner: one shell was underwhelming
   // for the equal most powerful weapon). Each shell flies straight (aimed with lead, up to maxLead s) and bursts
   // when it comes within `fuse` blocks of its target's hull (or hits anything, or reaches where it
-  // was aimed), spraying `fragments` pieces of shrapnel in every direction. Each piece flies up to
-  // `reach` blocks and does `damage` to the first enemy block (or fighter) it meets, so it shreds
+  // was aimed), spraying `fragments` pieces of shrapnel. Since 14 Nov 2026 (owner) each piece is a
+  // projectile of its own at `fragSpeed`, flying for up to `fragLife` s until it meets something: it
+  // does `damage` to the first enemy block (or fighter) it meets, so it shreds
   // small, lightly armoured ships and only scratches a big armoured hull. It picks the most lightly
   // armoured ship in range (weapons for their armour and frame, `e.light`) and spreads its fire:
   // ships with flak shells already on the way count for less, so hundreds of flak cannons don't all
-  // aim at one ship. Friendly fire off: shrapnel passes allies. `cone` of the pieces carry on
-  // forward toward the target (within ±coneW rad), the rest spray all round; shrapnel passes
-  // wrecks (`wrecks: false`): measured, half of it was lost in debris otherwise. Tuned on the
+  // aim at one ship. The shell flies over allied ships and through wrecks (owner); its shrapnel is
+  // stopped by wrecks and allied ships, but allies take no damage. `cone` of the pieces carry on
+  // forward toward the target (within ±coneW rad), the rest spray all round. Tuned on the
   // owner's Draisgon Major replay (Nate's 16 dreadnoughts with flak in place of their plasma vs
   // Cupcake's plasma-destroyer swarm): 1-7 dreadnoughts left -> 11-13 (see CLAUDE.md).
-  [BT.FLAK]: { kind: 'flak', range: 700, damage: 60, fragments: 40, reach: 30, cone: 0.6, coneW: 0.7, wrecks: false, salvo: 5, salvoGap: 0.3, scatter: 6, cooldown: 5, speed: 75, life: 14, fuse: 6, maxLead: 4, spread: 0.01 },
+  [BT.FLAK]: { kind: 'flak', range: 700, damage: 60, fragments: 30, fragSpeed: 90, fragLife: 4, cone: 0.6, coneW: 0.7, salvo: 5, salvoGap: 0.3, scatter: 6, cooldown: 5, speed: 75, life: 14, fuse: 6, maxLead: 4, spread: 0.01 },
 };
 
 // Firing arcs: every weapon can fire in any direction where its shot wouldn't pass through its

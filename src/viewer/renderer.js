@@ -493,13 +493,14 @@ export class Renderer {
     this.drawStraight(m.missile, t, vis, minW, true);
     if (m.plasma) this.drawPlasma(m.plasma, t, vis, minW);
     if (m.flak) this.drawFlak(m.flak, t, vis, minW);
+    if (m.frag) this.drawShrapnel(m.frag, t, vis, minW);
     if (m.fighter) this.drawFighters(m.fighter, t, vis, minW);
     // Detonations: 0 = missile shot down, 1 = cannon shell, 2 = heavy missile, 3 = heavy-laser block cooking off,
     // 4 = plasma bolt bursting into a hull, 5 = plasma bolt's final blast (both blue)
     const E = m.expl;
     const LIFE = [6, 8, 24, 22, 12, 24], BASE = [1, 1.5, 5, 3, 3, 6], GROW = [2.5, 5, 15, 16, 9, 20];
     for (let i = lowerBound(E.t, t - 24); i < E.n && E.t[i] <= t; i++) {
-      if (E.s[i] === 6) { this.drawFlakBurst(E, i, t, vis, minW); continue; }
+      if (E.s[i] === 6) { this._hasFrag = !!m.frag; this.drawFlakBurst(E, i, t, vis, minW); continue; }
       const sz = E.s[i], life = LIFE[sz] ?? 8, age = t - E.t[i];
       if (age > life || !vis(E.x[i], E.y[i], 20)) continue;
       const u = age / life, base = BASE[sz] ?? 1.5, grow = GROW[sz] ?? 5;
@@ -689,6 +690,30 @@ export class Renderer {
   }
 
   /**
+   * Flak shrapnel: each piece a small hot streak flying straight from the burst until it hits
+   * something (a tiny flash there) or burns out (fades over its last second).
+   */
+  drawShrapnel(S, t, vis, minW) {
+    const g = this.glow;
+    for (let i = lowerBound(S.t0, t - S.maxFlight - 3); i < S.n && S.t0[i] <= t; i++) {
+      const age = t - S.t0[i];
+      if (t > S.t1[i]) {
+        if (S.hit[i] && t - S.t1[i] < 3) { // impact spark
+          const f = S.t1[i] - S.t0[i], x = S.x[i] + S.vx[i] * f, y = S.y[i] + S.vy[i] * f, k = 1 - (t - S.t1[i]) / 3;
+          if (vis(x, y, 4)) g.push(x, y, 0, Math.max(1.4, minW * 2), Math.max(1.4, minW * 2), 1, alpha2(C.flShrap, k));
+        }
+        continue;
+      }
+      const vx = S.vx[i], vy = S.vy[i], x = S.x[i] + vx * age, y = S.y[i] + vy * age;
+      if (!vis(x, y, 6)) continue;
+      const fade = S.hit[i] ? 1 : Math.min(1, (S.t1[i] - t) / 10);
+      const a = Math.atan2(vy, vx), c = Math.cos(a), s = Math.sin(a), len = Math.min(2.2, age * Math.hypot(vx, vy) * 0.5 + 0.4);
+      g.push(x - c * len, y - s * len, a, len, Math.max(0.28, minW * 0.8), 4, alpha2(C.flShrap, 0.95 * fade));
+      g.push(x, y, 0, Math.max(0.45, minW), Math.max(0.45, minW), 1, alpha2(C.flShell, fade));
+    }
+  }
+
+  /**
    * Flak burst (explosion size 6): a white flash, an amber fireball, a puff of smoke, and a spray of
    * orange shrapnel streaks flying out to about 30 blocks. Directions come from a hash of the
    * explosion's index, so it's a pure function of time like everything else.
@@ -700,7 +725,8 @@ export class Renderer {
     if (age < 2) g.push(x, y, 0, 5 + age * 3, 5 + age * 3, 1, alpha2(C.flFlash, 1 - age / 2));
     if (age < 7) g.push(x, y, 0, 2.5 + age * 1.2, 2.5 + age * 1.2, 1, alpha2(C.flGlow, 0.85 * (1 - age / 7)));
     g.push(x, y, 0, 3 + u * 9, 3 + u * 9, 1, alpha2(C.flSmoke, 0.35 * (1 - u)));
-    if (age < 7) {
+    // Old replays (before shrapnel became real projectiles) drew streaks here instead.
+    if (age < 7 && !this._hasFrag) {
       const k = 1 - age / 7, reach = 30 * Math.min(1, age / 4);
       for (let j = 0; j < 16; j++) {
         const ang = hash01(i, j) * 6.283, r = reach * (0.55 + 0.45 * hash01(i, j + 31)), len = 2.2;

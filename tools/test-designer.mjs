@@ -281,6 +281,22 @@ assert.ok(Math.abs(sc.enemyCost - sc.budget) / sc.budget < 0.1, `budgets ${sc.en
   assert.equal(first, boatE.id, 'flak goes for the lightly armoured ship first');
   assert.ok(bursts >= 3, `flak shells burst (${bursts})`);
   assert.ok(boatE.dead || boatE.hubDead || boatE.alive < hp0, 'its shrapnel damages the gunboat');
+  // Shrapnel is real projectiles (shot kind 6), many per burst.
+  let frags = 0; for (let k = 0; k < fb.R.shotKind.n; k++) if (fb.R.shotKind.a[k] === 6) frags++;
+  assert.ok(frags >= bursts * 20, `each burst throws shrapnel projectiles (${frags} for ${bursts} bursts)`);
+  // An allied brick right in front of the platform: shells fly over it, shrapnel never hurts it.
+  {
+    const ab = new Battle({ designs: [plat, boat, brick], ships: [
+      { design: 0, team: 0, x: 0, y: 0, a: 0, fixed: true },
+      { design: 2, team: 0, x: 40, y: 0, a: 0, fixed: true },
+      { design: 1, team: 1, x: 420, y: 0, a: Math.PI, fixed: true },
+    ], seed: 6, maxTime: 60 });
+    const ally = ab.ents[1], foe = ab.ents[2], a0 = ally.alive, f0 = foe.alive;
+    while (!ab.done && ab.tick < 300) ab.step();
+    let b2 = 0; for (let k = 0; k < ab.R.expS.n; k++) if (ab.R.expS.a[k] === 6) b2++;
+    assert.ok(b2 >= 5 && (foe.dead || foe.hubDead || foe.alive < f0), `flak shells fly over an allied ship to the enemy (${b2} bursts)`);
+    assert.equal(ally.alive, a0, 'flak shrapnel never damages an allied ship');
+  }
   // Spread: four platforms, four identical gunboats: the first salvos go to different ships.
   const ships = [];
   for (let k = 0; k < 4; k++) ships.push({ design: 0, team: 0, x: 0, y: -90 + k * 60, a: 0, fixed: true });

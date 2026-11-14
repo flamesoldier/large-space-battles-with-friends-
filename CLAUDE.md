@@ -291,13 +291,20 @@ Weapons (numbers in `blocks.js`):
   of `salvo` 5 shells, `salvoGap` 0.3 s apart, all at one ship** (owner, 14 Nov 2026: one shell was
   "underwhelming for the equal most powerful weapon"; `w.sq` = shells left in the salvo, `w.ft` = its
   target, declared in `arcFields()`), each landing within `scatter` 6 blocks of the aim point. Shells fly
-  at 75 blocks/s (lead capped 4 s) with a **proximity fuse** (`K_FLAK` = 5): a shell bursts on meeting
-  anything except allied ships (**it flies over its own side's ships like a missile**, owner: "otherwise
-  it would never be able to hit the enemy"), within `fuse` 6 of its target's box, or where it was aimed. The burst
-  (`flakBurst()`) throws `fragments` 40 pieces of shrapnel, `reach` 30, `damage` 60 each to the first
-  enemy block met (`sweep` with `shipsOnly`: **shrapnel passes wrecks**, measured: half of it was lost in
-  debris otherwise; and allies, friendly fire off); `cone` 0.6 of the pieces carry on forward (±`coneW`
-  0.7 rad, the shell's heading), the rest spray all round. Enemy fighters within `reach` take 3 × damage.
+  at 75 blocks/s (lead capped 4 s) with a **proximity fuse** (`K_FLAK` = 5): a shell bursts on meeting an
+  **enemy ship** (`sweep(..., team, shipsOnly)`: **it flies over its own side's ships like a missile and
+  through wrecks**, owner: "otherwise it would never be able to hit the enemy"; "the primary shells were
+  hitting debris as well which we don't want"), within `fuse` 6 of its target's box, or where it was
+  aimed. **The shrapnel is real projectiles** (owner, 14 Nov 2026, third round: "still underwhelming";
+  `K_FRAG` = 6, replay shot kind 6, `meta.shotSpeed[6]`): `flakBurst()` throws `fragments` 30 pieces at
+  `fragSpeed` 90 (±15%), each flying up to `fragLife` 4 s until it meets something: **any** ship or wreck
+  stops it (`sweep(..., -1)`), but only enemies take its `damage` 60 (allied hulls shield, owner's
+  rule); enemy fighters on its path take it too. `cone` 0.6 of the pieces carry on forward (±`coneW` 0.7
+  rad, the shell's heading), the rest spray all round. **Shrapnel is queued in `this.fragQ` and added
+  after the projectile loop** (`updateProjectiles()` → `moveProjectiles()`, then the queue): adding
+  inside the loop could grow `this.P` while the loop held the old arrays, which ran away and used 6+ GB in
+  the 3,758-ship Elenris battle. Viewer: `drawShrapnel()` (hot streaks, impact sparks, fade at the end of
+  their life); `drawFlakBurst()` only draws its own streaks for older replays without shot kind 6.
   **Targeting** (`fireFlak()`, owner: "prioritising lightly armoured ships, a high weapon to armour and
   frame ratio"; "battles could have hundreds of these so you would want them not to target the same
   place"): every armed enemy ship in range, score = `e.light` (credits of guns per armour/heavy/frame
@@ -317,6 +324,10 @@ Weapons (numbers in `blocks.js`):
   (8 dreadnoughts) Nate wins 3 of 4 (5–6 of 8 left) and the 4th is mutual destruction (Cupcake 91% lost);
   both sides flak 15–16. Elenris with every plasma → flak 129 s compute (plasma 148 s). The owner was told
   even-money flak dreadnoughts now beat the plasma swarm; levers: `salvo`, `damage`, `cooldown`.
+  **With real shrapnel** (current, 3 seeds each): Nate-only flak 15–16 of 16 left (0–6% lost), the swarm
+  breaks in ~50 s; even money (8 dreadnoughts) Nate wins all 3 (5, 7, 8 of 8 left; Cupcake 82–84% lost);
+  both sides flak 16/16. Elenris with every plasma (472 units) → flak: 95 s compute, ~650 MB like the
+  plasma version (143 s), 20.5 MB replay (plasma 25.5 MB). Bench 1,000 vs 1,000 identical.
 - Future weapons the owner wants: bigger cannons, a medium laser.
 
 Combat rules:

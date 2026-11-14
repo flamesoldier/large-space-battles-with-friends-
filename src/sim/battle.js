@@ -38,7 +38,7 @@ export const MAX_TEAMS = 16; // sides in one battle (players plus militia); fr[]
 // Debris stays hittable and solid for the whole battle (owner: debris is part of the fight).
 // The retire mechanism is kept as a cap that can be set if very long battles ever get slow.
 const CHUNK_RETIRE_TICKS = Infinity;
-const K_KINETIC = 0, K_SHELL = 1, K_MISSILE = 2, K_PLASMA = 3, K_FIGHTER = 4, K_FLAK = 5;
+const K_KINETIC = 0, K_SHELL = 1, K_MISSILE = 2, K_PLASMA = 3, K_FIGHTER = 4, K_FLAK = 5, K_FRAG = 6;
 // Fighters (owner, Nov 2026): launched by fighter bays, kept in their own list (this.Fi), not P.
 const FIGHTER = WEAPON[BT.BAY].fighter;
 const FIGHTER_R = 2; // how close a shot must pass to hit one (blocks)
@@ -135,6 +135,7 @@ export class Battle {
     this.mgrid = new SpatialGrid(64, 6144);
     this.fgrid = new SpatialGrid(64, 6144); // live fighters, rebuilt each tick (updateFighters)
     this.fobjs = []; this._fpool = [];
+    this.fragQ = []; // flak shrapnel made during updateProjectiles, added once the loop is done (see flakBurst)
     this.fFoe = new Int32Array(nT); // enemy fighters alive, per side: 0 means nobody needs to look for any
     this._fCount = new Int32Array(nT);
     this._ft = 0;
@@ -1200,21 +1201,20 @@ export class Battle {
   flakBurst(i, x, y) {
     const P = this.P, W = WEAPON[P.wtype[i]], team = P.team[i], owner = P.owner[i], dmg = P.dmg[i];
     // `cone` of the pieces carry on forward (the shell's way, toward its target, within ±coneW
-    // rad); the rest spray all round. Shrapnel passes allied ships (friendly fire off), and wrecks
-    // too unless `wrecks` is set.
-    const n = W.fragments, R = W.reach, nf = Math.round(n * (W.cone || 0)), fwd = Math.atan2(P.vy[i], P.vx[i]), cw = W.coneW || 0.7;
-    const step = (2 * Math.PI) / (n - nf || 1), a0 = this.rng() * 2 * Math.PI;
+    // rad); the rest spray all round.
+    // Each piece of shrapnel is a projectile of its own (owner, 14 Nov 2026): it flies on until it
+    // meets something (an enemy ship, a wreck, an allied ship, which it doesn't hurt, or an enemy
+    // fighter), for up to `fragLife` s.
+    const n = W.fragments, nf = Math.round(n * (W.cone || 0)), fwd = Math.atan2(P.vy[i], P.vx[i]), cw = W.coneW || 0.7;
+    const step = (2 * Math.PI) / (n - nf || 1), a0 = this.rng() * 2 * Math.PI, life = Math.round(W.fragLife / DT);
     for (let f = 0; f < n; f++) {
       const a = f < nf ? fwd + (this.rng() * 2 - 1) * cw : a0 + (f - nf) * step + (this.rng() - 0.5) * step;
-      if (this.sweep(x, y, x + Math.cos(a) * R, y + Math.sin(a) * R, owner, team, !W.wrecks) && this.canDamage(this.hitE, team))
-        this.damageCell(this.hitE, this.hitCell, dmg);
+      const sp = W.fragSpeed * (0.85 + 0.3 * this.rng());
+      const rec = this.shotStart(K_FRAG, team, x, y, a);
+      // Not added straight away: this runs inside updateProjectiles, whose loop holds the projectile
+      // arrays, and adding could grow them (replace this.P) under it.
+      this.fragQ.push(P.wtype[i], x, y, Math.cos(a) * sp, Math.sin(a) * sp, life, owner, team, dmg, rec);
     }
-    // Enemy fighters in the burst take a few pieces each.
-    if (this.fFoe[team]) this.fgrid.queryBox(x - R, y - R, x + R, y + R, (o) => {
-      const j = o.i, Fi = this.Fi;
-      if (Fi.hp[j] > 0 && this.fighterFoe(j, team) && (Fi.x[j] - x) ** 2 + (Fi.y[j] - y) ** 2 <= R * R) Fi.hp[j] -= dmg * 3;
-    });
-    this.lastDamage = this.now;
   }
 
   /** Try a few random live blocks of a big target for one within range (sets _ax, _ay). */
@@ -1393,6 +1393,14 @@ export class Battle {
   }
 
   updateProjectiles() {
+    this.moveProjectiles();
+    // Shrapnel from this tick's flak bursts joins now (it starts moving next tick).
+    const q = this.fragQ;
+    for (let k = 0; k < q.length; k += 10) this.addProjectile(K_FRAG, q[k], q[k + 1], q[k + 2], q[k + 3], q[k + 4], q[k + 5], q[k + 6], q[k + 7], -1, q[k + 8], 0, q[k + 9]);
+    q.length = 0;
+  }
+
+  moveProjectiles() {
     const P = this.P, R = this.R;
     for (let i = 0; i < P.n; i++) {
       const kind = P.kind[i], rec = P.rec[i];
@@ -1407,11 +1415,11 @@ export class Battle {
       if (kind === K_MISSILE && WEAPON[P.wtype[i]].guided) this.steerMissile(i);
       const x0 = P.x[i], y0 = P.y[i], x1 = x0 + P.vx[i] * DT, y1 = y0 + P.vy[i] * DT;
       if (kind === K_FLAK) {
-        // Proximity fuse: bursts on meeting anything (allies excepted), on coming within `fuse` of
-        // its target's hull, or where it was aimed (end of its life).
+        // Proximity fuse: bursts on meeting an enemy ship (it flies over allies and through wrecks,
+        // owner, 14 Nov 2026), on coming within `fuse` of its target's hull, or where it was aimed.
         const W = WEAPON[P.wtype[i]], tg = P.target[i] >= 0 ? this.byId[P.target[i]] : null;
         let t = -1;
-        if (this.sweep(x0, y0, x1, y1, P.owner[i], P.team[i])) t = Math.max(0, this.hitT - 0.5 / (W.speed * DT));
+        if (this.sweep(x0, y0, x1, y1, P.owner[i], P.team[i], true)) t = Math.max(0, this.hitT - 0.5 / (W.speed * DT));
         else if (tg && !tg.dead && Math.hypot(tg.x - x1, tg.y - y1) - Math.min(tg.bhw, tg.bhh) <= W.fuse) t = 1;
         else if (P.life[i] <= 1) t = 1;
         if (t >= 0) {
@@ -1420,6 +1428,24 @@ export class Battle {
           this.flakBurst(i, bx, by);
           this.shotEnd(rec, this.now - 1 + t, 1);
           this.recExplosion(bx, by, 6); // 6: flak burst
+          this.removeProjectile(i--);
+          continue;
+        }
+      } else if (kind === K_FRAG) {
+        // Shrapnel: stops on the first thing it meets; only enemies take damage.
+        const hit = this.sweep(x0, y0, x1, y1, P.owner[i], -1);
+        if (this.fFoe[P.team[i]]) {
+          const j = this.fighterOnSegment(x0, y0, x1, y1, P.team[i], hit ? this.hitT : 1);
+          if (j >= 0) {
+            this.Fi.hp[j] -= P.dmg[i];
+            this.shotEnd(rec, this.now - 1 + this._ft, 1);
+            this.removeProjectile(i--);
+            continue;
+          }
+        }
+        if (hit) {
+          if (this.canDamage(this.hitE, P.team[i])) this.damageCell(this.hitE, this.hitCell, P.dmg[i]);
+          this.shotEnd(rec, this.now - 1 + this.hitT, 1);
           this.removeProjectile(i--);
           continue;
         }
@@ -1861,7 +1887,7 @@ export class Battle {
     const R = this.R;
     const rec = R.shotT0.push(this.now);
     R.shotFlight.push(0); R.shotX.push(q16(x)); R.shotY.push(q16(y)); R.shotAng.push(qAng(ang));
-    R.shotHit.push(0); R.shotTeam.push(team); R.shotKind.push(kind === K_FLAK ? 5 : kind === K_FIGHTER ? 4 : guided ? 3 : kind === K_MISSILE ? 1 : kind === K_PLASMA ? 2 : 0);
+    R.shotHit.push(0); R.shotTeam.push(team); R.shotKind.push(kind === K_FRAG ? 6 : kind === K_FLAK ? 5 : kind === K_FIGHTER ? 4 : guided ? 3 : kind === K_MISSILE ? 1 : kind === K_PLASMA ? 2 : 0);
     return rec;
   }
   /** hit: 0 expired, 1 hit something, 2 shot down by point defence. */
@@ -2377,7 +2403,7 @@ export class Battle {
     const meta = {
       version: 1, friendlyFire: this.friendlyFire, trackTotal: total, evQ: EV_Q, dt: DT, trackEvery: TRACK_EVERY, shoveEvery: SHOVE_EVERY, velQ: VEL_Q, missileEvery: MISSILE_EVERY, posQ: POS_Q, angQ: ANG_Q,
       ticks: this.tick, shipCount: S, chunkCount: this.byId.length - S,
-      shotSpeed: [WEAPON[BT.CANNON].speed, WEAPON[BT.MISSILE].speed, WEAPON[BT.LANCE].speed, WEAPON[BT.GUIDED].speed, FIGHTER.speed, WEAPON[BT.FLAK].speed], fighterSpeed: FIGHTER.speed,
+      shotSpeed: [WEAPON[BT.CANNON].speed, WEAPON[BT.MISSILE].speed, WEAPON[BT.LANCE].speed, WEAPON[BT.GUIDED].speed, FIGHTER.speed, WEAPON[BT.FLAK].speed, WEAPON[BT.FLAK].fragSpeed], fighterSpeed: FIGHTER.speed,
       designs: this.designs.map((d) => ({ name: d.name, cls: d.cls, stance: d.stance, w: d.w, h: d.h, hub: d.hub, cells: Array.from(d.cells) })),
       survivors: [...this.teamAlive], teams: this.nT,
     };
