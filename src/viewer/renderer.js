@@ -139,6 +139,37 @@ vec3 hullBlock(int code, vec2 p) {
       glow = vec3(1.0, 0.7, 0.3) * lights * (0.6 + 0.4 * sin(uTime * 0.5 + q.x * 9.0)) * d;
     }
   }
+  else if (type == 13) { // flak cannon: the 10x10 unit is one gun battery, four big barrels in an armoured ring
+    vec2 q = (vec2(float(var / 10), float(var - (var / 10) * 10)) + p * 0.5 + 0.5) / 10.0 - 0.5; // -0.5..0.5 across the unit
+    vec2 aq = abs(q);
+    float R = length(q), m = max(aq.x, aq.y);
+    // gunmetal deck with diagonal tread plate, a raised armoured rim round the unit
+    float tread = 0.5 + 0.5 * step(0.5, fract((q.x - q.y) * 14.0));
+    float base = 0.55 + tread * 0.06;
+    float rim = smoothstep(0.43, 0.45, m);
+    base = mix(base, 0.8 - dot(q, L) * 0.5, rim);
+    // the turret ring and its collar
+    float ring = 1.0 - smoothstep(0.31, 0.33, R);
+    float collar = 1.0 - smoothstep(0.012, 0.024, abs(R - 0.32));
+    base = mix(base, 0.78 - dot(q, L) * 0.7, ring);
+    base = mix(base, 1.15, collar);
+    // four barrels: dark bores with bright rims, in a square, pointing out of the screen
+    vec2 bq = aq - vec2(0.12);
+    float br = length(bq);
+    float bore = 1.0 - smoothstep(0.055, 0.065, br);
+    float bRim = (1.0 - smoothstep(0.075, 0.09, br)) * (1.0 - bore);
+    base = mix(base, 1.05 - dot(q, L) * 0.6, bRim);
+    base = mix(base, 0.12, bore);
+    // ammunition feeds from the corners to the ring
+    float feed = (1.0 - smoothstep(0.02, 0.03, abs(aq.x - aq.y) * 0.7071)) * step(0.33, R) * step(m, 0.43);
+    base = mix(base, 0.4, feed * (1.0 - rim));
+    lit *= mix(1.0, base, d);
+    if (!dead) {
+      float lights = 1.0 - smoothstep(0.01, 0.022, length(aq - vec2(0.39)));
+      float hot = (1.0 - smoothstep(0.0, 0.05, br)) * 0.35;
+      glow = (vec3(1.0, 0.62, 0.2) * lights * (0.65 + 0.35 * sin(uTime * 0.7 + q.x * 7.0)) + vec3(1.0, 0.45, 0.15) * hot) * d;
+    }
+  }
   col = col * max(lit, 0.0) + glow;
   return mix(col, col * 0.3, ol * (0.4 + 0.6 * d));
 }
@@ -205,7 +236,7 @@ function blockPalette(team, dead) {
   const T = TEAM[team], k = dead ? 0.7 : 1; // wrecks stay readable, just burnt
   const p = [];
   p[BT.HUB] = T.hub; p[BT.ARMOR] = T.armor; p[BT.HEAVY] = T.heavy; p[BT.FRAME] = T.frame;
-  p[BT.THRUSTER] = '#3d434f'; p[BT.LASER] = team ? '#ffd9c9' : '#d8f4ff'; p[BT.CANNON] = '#9aa1ab'; p[BT.MISSILE] = '#b9b16c'; p[BT.PD] = PD_COLOR; p[BT.LANCE] = team ? '#8a4f63' : '#5b5f9c'; p[BT.GUIDED] = '#8fb79e'; p[BT.BAY] = '#c9a23c';
+  p[BT.THRUSTER] = '#3d434f'; p[BT.LASER] = team ? '#ffd9c9' : '#d8f4ff'; p[BT.CANNON] = '#9aa1ab'; p[BT.MISSILE] = '#b9b16c'; p[BT.PD] = PD_COLOR; p[BT.LANCE] = team ? '#8a4f63' : '#5b5f9c'; p[BT.GUIDED] = '#8fb79e'; p[BT.BAY] = '#c9a23c'; p[BT.FLAK] = '#6e6656';
   return p.map((c) => (c ? rgba(dead ? shade(c, k) : c) : 0));
 }
 const PAL = [[blockPalette(0, false), blockPalette(1, false)], [blockPalette(0, true), blockPalette(1, true)]];
@@ -229,7 +260,7 @@ function lookFor(hex) {
     const p = [];
     p[BT.HUB] = T.hub; p[BT.ARMOR] = T.armor; p[BT.HEAVY] = T.heavy; p[BT.FRAME] = T.frame;
     p[BT.THRUSTER] = '#3d434f'; p[BT.LASER] = mixHex(hex, '#ffffff', 0.75); p[BT.CANNON] = '#9aa1ab'; p[BT.MISSILE] = '#b9b16c';
-    p[BT.PD] = PD_COLOR; p[BT.LANCE] = shade(mixHex(hex, '#40404a', 0.5), 0.9); p[BT.GUIDED] = '#8fb79e'; p[BT.BAY] = '#c9a23c';
+    p[BT.PD] = PD_COLOR; p[BT.LANCE] = shade(mixHex(hex, '#40404a', 0.5), 0.9); p[BT.GUIDED] = '#8fb79e'; p[BT.BAY] = '#c9a23c'; p[BT.FLAK] = shade(mixHex(hex, '#6e6656', 0.7), 0.95);
     return p.map((c) => (c ? rgba(dead ? shade(c, 0.7) : c) : 0));
   };
   L = { pal: [make(false), make(true)], lod: rgba(hex), engine: rgba(hex, 150), accent: hex };
@@ -285,6 +316,9 @@ const C = {
   // Plasma cannon: blue whatever the side (owner: "blue with a trail, that would look like plasma").
   plGlow: rgba('#2f7dff', 255), plBody: rgba('#6fd2ff', 255), plCore: rgba('#f4fcff', 255), plTrail: rgba('#3fa0ff', 220),
   fBody: rgba('#d3d9e3'), fCanopy: rgba('#7fd8ff'), // fighters
+  // Flak (14 Nov 2026): hot amber shells, a white flash and a spray of orange shrapnel streaks.
+  flShell: rgba('#fff0c2', 255), flTrail: rgba('#ffb347', 210), flFlash: rgba('#fff8e8', 255), flGlow: rgba('#ff9a3c', 255),
+  flShrap: rgba('#ffc070', 255), flSmoke: rgba('#8c8278', 255),
 };
 
 export class Renderer {
@@ -372,7 +406,7 @@ export class Renderer {
           const o = i * 4, a0 = nb[o], a1 = nb[o + 1], a2 = nb[o + 2], a3 = nb[o + 3];
           const mask = (a0 >= 0 && de[a0] > t ? 1 : 0) | (a1 >= 0 && de[a1] > t ? 2 : 0) | (a2 >= 0 && de[a2] > t ? 4 : 0) | (a3 >= 0 && de[a3] > t ? 8 : 0);
           const type = ty[i], x = tr.x + lx[i] * c - ly[i] * s, y = tr.y + lx[i] * s + ly[i] * c;
-          const v = (type === BT.LANCE || type === BT.BAY) && un[i] ? un[i] - 1 : (i * 2654435761) >>> 29;
+          const v = (type === BT.LANCE || type === BT.BAY || type === BT.FLAK) && un[i] ? un[i] - 1 : (i * 2654435761) >>> 29;
           solid.push(x, y, tr.a, 0.5, 0.5, 10 + type + 16 * mask + 256 * v + deadBit, pal[type]);
           blocks++;
         }
@@ -458,12 +492,14 @@ export class Renderer {
     this.drawStraight(m.shell, t, vis, minW, false);
     this.drawStraight(m.missile, t, vis, minW, true);
     if (m.plasma) this.drawPlasma(m.plasma, t, vis, minW);
+    if (m.flak) this.drawFlak(m.flak, t, vis, minW);
     if (m.fighter) this.drawFighters(m.fighter, t, vis, minW);
     // Detonations: 0 = missile shot down, 1 = cannon shell, 2 = heavy missile, 3 = heavy-laser block cooking off,
     // 4 = plasma bolt bursting into a hull, 5 = plasma bolt's final blast (both blue)
     const E = m.expl;
     const LIFE = [6, 8, 24, 22, 12, 24], BASE = [1, 1.5, 5, 3, 3, 6], GROW = [2.5, 5, 15, 16, 9, 20];
     for (let i = lowerBound(E.t, t - 24); i < E.n && E.t[i] <= t; i++) {
+      if (E.s[i] === 6) { this.drawFlakBurst(E, i, t, vis, minW); continue; }
       const sz = E.s[i], life = LIFE[sz] ?? 8, age = t - E.t[i];
       if (age > life || !vis(E.x[i], E.y[i], 20)) continue;
       const u = age / life, base = BASE[sz] ?? 1.5, grow = GROW[sz] ?? 5;
@@ -633,6 +669,46 @@ export class Renderer {
   }
 
   /** Shells and heavy missiles: straight-line flight, so position is launch + velocity * age. */
+  /** Flak shells: a small hot amber shell with a short bright trail, and a muzzle flash at the battery. */
+  drawFlak(S, t, vis, minW) {
+    const g = this.glow;
+    for (let i = lowerBound(S.t0, t - S.maxFlight - 1); i < S.n && S.t0[i] <= t; i++) {
+      if (t > S.t1[i]) continue;
+      const age = t - S.t0[i], vx = S.vx[i], vy = S.vy[i];
+      if (age < 3 && vis(S.x[i], S.y[i], 12)) {
+        const f = 1 - age / 3;
+        g.push(S.x[i], S.y[i], 0, 4 + 4 * f, 4 + 4 * f, 1, alpha2(C.flGlow, 0.8 * f));
+        g.push(S.x[i], S.y[i], 0, 1.5 + 1.5 * f, 1.5 + 1.5 * f, 1, alpha2(C.flFlash, f));
+      }
+      const x = S.x[i] + vx * age, y = S.y[i] + vy * age;
+      if (!vis(x, y, 10)) continue;
+      const a = Math.atan2(vy, vx), c = Math.cos(a), s = Math.sin(a);
+      g.push(x - c * 4, y - s * 4, a, 4, Math.max(0.6, minW), 2, C.flTrail);
+      g.push(x, y, 0, Math.max(1.1, minW * 1.8), Math.max(1.1, minW * 1.8), 1, C.flShell);
+    }
+  }
+
+  /**
+   * Flak burst (explosion size 6): a white flash, an amber fireball, a puff of smoke, and a spray of
+   * orange shrapnel streaks flying out to about 30 blocks. Directions come from a hash of the
+   * explosion's index, so it's a pure function of time like everything else.
+   */
+  drawFlakBurst(E, i, t, vis, minW) {
+    const g = this.glow, age = t - E.t[i], x = E.x[i], y = E.y[i], LIFE = 16;
+    if (age > LIFE || !vis(x, y, 34)) return;
+    const u = age / LIFE;
+    if (age < 2) g.push(x, y, 0, 5 + age * 3, 5 + age * 3, 1, alpha2(C.flFlash, 1 - age / 2));
+    if (age < 7) g.push(x, y, 0, 2.5 + age * 1.2, 2.5 + age * 1.2, 1, alpha2(C.flGlow, 0.85 * (1 - age / 7)));
+    g.push(x, y, 0, 3 + u * 9, 3 + u * 9, 1, alpha2(C.flSmoke, 0.35 * (1 - u)));
+    if (age < 7) {
+      const k = 1 - age / 7, reach = 30 * Math.min(1, age / 4);
+      for (let j = 0; j < 16; j++) {
+        const ang = hash01(i, j) * 6.283, r = reach * (0.55 + 0.45 * hash01(i, j + 31)), len = 2.2;
+        g.push(x + Math.cos(ang) * (r - len), y + Math.sin(ang) * (r - len), ang, len, Math.max(0.3, minW * 0.8), 4, alpha2(C.flShrap, k));
+      }
+    }
+  }
+
   drawStraight(S, t, vis, minW, heavy) {
     const g = this.glow, sol = this.solid;
     for (let i = lowerBound(S.t0, t - S.maxFlight - 1); i < S.n && S.t0[i] <= t; i++) {

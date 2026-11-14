@@ -184,6 +184,7 @@ export class ReplayModel {
     this.shell = straight(0);
     this.missile = withGuided(straight(1), c, q);
     this.plasma = straight(2); // plasma cannon bolts (none in replays before Nov 2026)
+    this.flak = meta.shotSpeed[5] ? straight(5) : null; // flak shells (14 Nov 2026); older replays have none
     this.fighter = fighters(c, q); // fighters from fighter bays (shot kind 4, Nov 2026), or null
     const nl = c.lasT.length;
     this.laser = { n: nl, t: c.lasT, x0: new Float32Array(nl), y0: new Float32Array(nl), x1: new Float32Array(nl), y1: new Float32Array(nl), team: c.lasTeam, hit: c.lasHit, kind: c.lasKind,

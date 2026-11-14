@@ -21,14 +21,14 @@ const fmt = (n) => Math.round(n).toLocaleString();
 // Same colours as the replay viewer's Azure side, so a design looks like it will in battle.
 const COLOR = {
   [BT.HUB]: '#86e8ff', [BT.ARMOR]: '#5c7ea3', [BT.HEAVY]: '#41597a', [BT.FRAME]: '#90a6c0', [BT.THRUSTER]: '#3d434f',
-  [BT.LASER]: '#d8f4ff', [BT.CANNON]: '#9aa1ab', [BT.MISSILE]: '#b9b16c', [BT.PD]: '#c2413f', [BT.LANCE]: '#2c3150', [BT.GUIDED]: '#8fb79e', [BT.BAY]: '#c9a23c',
+  [BT.LASER]: '#d8f4ff', [BT.CANNON]: '#9aa1ab', [BT.MISSILE]: '#b9b16c', [BT.PD]: '#c2413f', [BT.LANCE]: '#2c3150', [BT.GUIDED]: '#8fb79e', [BT.BAY]: '#c9a23c', [BT.FLAK]: '#5d574b',
 };
 // Palette order and number keys.
 const PALETTE = [
   [BT.FRAME, '1'], [BT.ARMOR, '2'], [BT.HEAVY, '3'], [BT.THRUSTER, '4'], [BT.LASER, '5'],
-  [BT.CANNON, '6'], [BT.PD, '7'], [BT.MISSILE, '8'], [BT.GUIDED, 'g'], [BT.BAY, 'c'], [BT.LANCE, '9'], [BT.HUB, '0'], [0, 'x'],
+  [BT.CANNON, '6'], [BT.PD, '7'], [BT.MISSILE, '8'], [BT.GUIDED, 'g'], [BT.BAY, 'c'], [BT.LANCE, '9'], [BT.FLAK, 'k'], [BT.HUB, '0'], [0, 'x'],
 ];
-const WEAPON_ORDER = [BT.LASER, BT.CANNON, BT.PD, BT.MISSILE, BT.GUIDED, BT.BAY, BT.LANCE];
+const WEAPON_ORDER = [BT.LASER, BT.CANNON, BT.PD, BT.MISSILE, BT.GUIDED, BT.BAY, BT.LANCE, BT.FLAK];
 
 const ed = new ShipEditor();
 // block: the selected palette block (0 = eraser), or null when nothing is selected (Esc).
@@ -59,6 +59,7 @@ const BLOCK_HINT = {
   [BT.GUIDED]: 'The same huge missile, but it steers after its target in flight (and finds a new one nearby if its target dies), so it hits ships that dodge. Point defence can still shoot it down.',
   [BT.BAY]: `LAUNCHES FIGHTERS: ${WEAPON[BT.BAY].waves[0]} as the battle opens, then one every minute for as long as it lasts, at any range. Fighters need a way out: put the bay on the hull edge, or leave a tunnel of empty cells from it to space; the tunnel can turn corners (hover the bay to see its way out). A fighter circles the nearest enemy ship shooting it (${WEAPON[BT.BAY].fighter.damage} damage every ${WEAPON[BT.BAY].fighter.cooldown} s, range ${WEAPON[BT.BAY].fighter.range}), dogfights enemy fighters, and flies until it's shot down (${WEAPON[BT.BAY].fighter.hp} hp). Early on they soak up enemy fire; late in a battle they hunt down the long-range ships left at the back. Lasers hit them ${Math.round(WEAPON[BT.LASER].fighterHit * 100)}% of the time; point defence goes for them first. They shine in long, drawn-out fights.`,
 };
+BLOCK_HINT[BT.FLAK] = `ANTI-SWARM GUN FOR BIG SHIPS: fires a shell up to ${WEAPON[BT.FLAK].range} blocks that bursts right beside an enemy ship and sprays ${WEAPON[BT.FLAK].fragments} pieces of shrapnel (${WEAPON[BT.FLAK].damage} damage each, up to ${WEAPON[BT.FLAK].reach} blocks out, most of them onward into the target). Shreds small, lightly armoured ships and fighters; barely scratches thick armour. It picks the most lightly armoured ship in range (lots of guns, little armour or frame) and spreads its fire, so many flak cannons don't all shoot the same ship. Its blocks don't explode.`;
 const PLASMA_WARNING = "WARNING: HUGE FRIENDLY FIRE. ITS BOLT CARVES THROUGH YOUR OWN SHIPS AS WELL AS THE ENEMY'S, AND ITS BLOCKS EXPLODE WHEN DESTROYED, WRECKING YOUR SHIP AND ANY ALLY NEARBY.";
 
 // ------------------------------------------------------------ UI setup
@@ -68,8 +69,10 @@ function blockTitle(t) {
   let s = `${B.name}: ${B.cost} cr, ${B.hp} hp, mass ${B.mass}`;
   if (t === BT.LANCE) s = `${B.name}: one 10×10 unit, ${B.cost * 100} cr, ${B.hp} hp per block, keeps firing while half survives. Destroyed blocks explode (${COOKOFF.damage} damage, radius ${COOKOFF.radius}), hurting your own ship and allies`;
   if (t === BT.BAY) { const n = MULTIBLOCK[t].size; s = `${B.name}: one ${n}×${n} unit, ${B.cost * n * n} cr, ${B.hp} hp per block, keeps launching while half its blocks survive`; }
+  if (t === BT.FLAK) s = `${B.name}: one 10×10 unit, ${B.cost * 100} cr, ${B.hp} hp per block, keeps firing while half survives`;
   if (t === BT.THRUSTER) s += `, thrust ${B.thrust}`;
-  if (W && t !== BT.BAY) s += `. Range ${W.range}, ${W.damage} damage every ${W.cooldown} s`;
+  if (W && t === BT.FLAK) s += `. Range ${W.range}, a burst of ${W.fragments} × ${W.damage} shrapnel every ${W.cooldown} s`;
+  else if (W && t !== BT.BAY) s += `. Range ${W.range}, ${W.damage} damage every ${W.cooldown} s`;
   if (t === BT.HUB) s += '. One per ship; placing it moves it. Lose it and the ship breaks apart.';
   if (BLOCK_HINT[t]) s += `.\n\n${BLOCK_HINT[t]}`;
   if (t === BT.LANCE) s += `.\n\n${PLASMA_WARNING}`;
@@ -216,7 +219,7 @@ function refresh(force = false) {
   $('weapons').innerHTML = WEAPON_ORDER.filter((t) => a.fire[t]).map((t) => {
     const f = a.fire[t];
     const W = WEAPON[t];
-    const shot = t === BT.BAY ? `${W.waves[0]} fighters, then 1 / ${W.cooldown} s` : `${fmt(W.damage)} / ${W.cooldown} s`;
+    const shot = t === BT.BAY ? `${W.waves[0]} fighters, then 1 / ${W.cooldown} s` : t === BT.FLAK ? `${W.fragments} × ${W.damage} / ${W.cooldown} s` : `${fmt(W.damage)} / ${W.cooldown} s`;
     return `<tr title="${SHOT_HINT[t] || ''}"><td>${BLOCKS[t].name}</td><td>${f.count}${f.buried ? ` <small title="${t === BT.BAY ? 'no way out' : 'buried'}">(${f.buried} ${t === BT.BAY ? 'sealed' : 'buried'})</small>` : ''}</td><td>${shot}</td><td>${t === BT.BAY ? 'any' : f.range}</td></tr>`;
   }).join('') || '<tr><td colspan="4" style="color:var(--dim)">No weapons yet</td></tr>';
   $('stance-hint').textContent = STANCE_INFO[ed.stance].hint;
@@ -250,6 +253,7 @@ const SHOT_HINT = {
   [BT.GUIDED]: 'Like the missile launcher, but the missile steers after its target in flight. Point defence can shoot it down.',
   [BT.PD]: `Anti-missile: shoots down enemy missiles within ${WEAPON[BT.PD].range} blocks first (${WEAPON[BT.PD].missileDamage} a burst, a missile has ${WEAPON[BT.MISSILE].hp} hp), then enemy fighters (the best answer to carriers), then enemy hulls, ${WEAPON[BT.PD].damage} a burst, all within ${WEAPON[BT.PD].range}.`,
   [BT.LANCE]: `A blue plasma bolt that carves through ship after ship until its damage is spent.\n\n${PLASMA_WARNING}`,
+  [BT.FLAK]: `A shell that bursts beside the most lightly armoured enemy ship in range, spraying ${WEAPON[BT.FLAK].fragments} pieces of shrapnel (${WEAPON[BT.FLAK].damage} each). Deadly to small ships and fighters, weak against heavy armour. Flak cannons spread their fire over many targets.`,
   [BT.BAY]: `${WEAPON[BT.BAY].waves[0]} fighters as the battle opens, then one every minute. Fighters circle enemy ships shooting them (${WEAPON[BT.BAY].fighter.damage} damage every ${WEAPON[BT.BAY].fighter.cooldown} s, range ${WEAPON[BT.BAY].fighter.range}), dogfight enemy fighters, and fly until shot down (${WEAPON[BT.BAY].fighter.hp} hp). Point defence shoots them first.`,
 };
 
@@ -349,7 +353,7 @@ function draw() {
       const gr = w.group;
       if (!visible(gr.x0, gr.y0, gr.x1, gr.y1)) continue;
       const x = sx(gr.x0 + ox), y = sy(gr.y0 + oy), ww = (gr.x1 - gr.x0 + 1) * z, hh = (gr.y1 - gr.y0 + 1) * z;
-      if (gr.ok && ww > 12) (gr.type === BT.BAY ? bayUnit : plasmaUnit)(x, y, ww, hh, z);
+      if (gr.ok && ww > 12) (gr.type === BT.BAY ? bayUnit : gr.type === BT.FLAK ? flakUnit : plasmaUnit)(x, y, ww, hh, z);
       g.strokeStyle = gr.ok ? 'rgba(200,205,255,0.4)' : '#ff6b6b'; g.lineWidth = Math.max(1, dpr());
       g.strokeRect(x + 0.5, y + 0.5, ww - 1, hh - 1);
     }
@@ -485,6 +489,25 @@ function bayUnit(x, y, ww, hh, z) {
   g.beginPath(); g.moveTo(cx + R * 0.2, cy); g.lineTo(cx - R * 0.14, cy - R * 0.15); g.lineTo(cx - R * 0.07, cy); g.lineTo(cx - R * 0.14, cy + R * 0.15); g.closePath(); g.fill();
   g.fillStyle = '#ffb347';
   for (const [dx, dy] of [[0.25, 0.25], [0.75, 0.25], [0.25, 0.75], [0.75, 0.75]]) { g.beginPath(); g.arc(x + ww * dx, y + hh * dy, R * 0.035, 0, Math.PI * 2); g.fill(); }
+}
+
+/** A flak cannon unit: gunmetal deck in an armoured rim, a turret ring with four big barrels, ammunition feeds, amber lights. */
+function flakUnit(x, y, ww, hh, z) {
+  const cx = x + ww / 2, cy = y + hh / 2, R = Math.min(ww, hh);
+  g.fillStyle = '#4a463d'; g.fillRect(x, y, ww, hh);
+  g.fillStyle = '#5d584c'; g.fillRect(x + R * 0.06, y + R * 0.06, ww - R * 0.12, hh - R * 0.12);
+  g.strokeStyle = '#3a372f'; g.lineWidth = R * 0.05; g.lineCap = 'round';
+  for (const [ex, ey] of [[0.1, 0.1], [0.9, 0.1], [0.1, 0.9], [0.9, 0.9]]) { g.beginPath(); g.moveTo(x + ww * ex, y + hh * ey); g.lineTo(cx, cy); g.stroke(); }
+  g.lineCap = 'butt';
+  g.fillStyle = '#7a7466'; g.beginPath(); g.arc(cx, cy, R * 0.32, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = '#b8b09c'; g.lineWidth = R * 0.025; g.beginPath(); g.arc(cx, cy, R * 0.32, 0, Math.PI * 2); g.stroke();
+  for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    const bx = cx + dx * R * 0.12, by = cy + dy * R * 0.12;
+    g.fillStyle = '#c9c1ab'; g.beginPath(); g.arc(bx, by, R * 0.085, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#17181b'; g.beginPath(); g.arc(bx, by, R * 0.06, 0, Math.PI * 2); g.fill();
+  }
+  g.fillStyle = '#ffa646';
+  for (const [dx, dy] of [[0.11, 0.11], [0.89, 0.11], [0.11, 0.89], [0.89, 0.89]]) { g.beginPath(); g.arc(x + ww * dx, y + hh * dy, R * 0.025, 0, Math.PI * 2); g.fill(); }
 }
 
 /** A plasma cannon unit, drawn as one machine: housing, corner machinery, pipes into a blue orb. */
@@ -670,7 +693,7 @@ canvas.addEventListener('pointerdown', (e) => {
   last = null;
   if (tool === 'pencil' || MULTIBLOCK[type] || type === BT.HUB) {
     ed.checkpoint(); drag.started = true;
-    if (MULTIBLOCK[type]) { if (!ed.stamp(x, y, type)) toast(type === BT.BAY ? `A fighter bay needs a clear ${MULTIBLOCK[type].size}×${MULTIBLOCK[type].size} space inside the grid, away from the hub.` : 'A plasma cannon needs a clear 10×10 space inside the grid, away from the hub.'); drag.once = true; }
+    if (MULTIBLOCK[type]) { if (!ed.stamp(x, y, type)) toast(type === BT.BAY ? `A fighter bay needs a clear ${MULTIBLOCK[type].size}×${MULTIBLOCK[type].size} space inside the grid, away from the hub.` : `A ${type === BT.FLAK ? 'flak' : 'plasma'} cannon needs a clear 10×10 space inside the grid, away from the hub.`); drag.once = true; }
     else if (type === BT.HUB) { ed.setCell(x, y, BT.HUB); drag.once = true; }
     else strokeTo(x, y, type);
   } else if (tool === 'fill') {

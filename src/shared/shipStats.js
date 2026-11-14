@@ -144,8 +144,9 @@ export function analyzeDesign(d) {
     const W = WEAPON[wp.type], f = (fire[wp.type] ||= { count: 0, buried: 0, dps: 0, alpha: 0, range: W.range });
     f.count++;
     if (wp.buried) { f.buried++; continue; }
-    f.dps += W.damage / W.cooldown; f.alpha += W.damage;
-    dps += W.damage / W.cooldown; alpha += W.damage; // point defence counts too: it's a real anti-ship gun now (32 every 0.2 s)
+    const shot = W.damage * (W.fragments || 1); // flak: the whole burst of shrapnel
+    f.dps += shot / W.cooldown; f.alpha += shot;
+    dps += shot / W.cooldown; alpha += shot; // point defence counts too: it's a real anti-ship gun now (32 every 0.2 s)
   }
   const ranges = weapons.filter((x) => x.type !== BT.PD && !x.buried).map((x) => WEAPON[x.type].range);
 
@@ -162,6 +163,7 @@ export function analyzeDesign(d) {
   if (loose.length) errors.push(`${loose.length} block${loose.length > 1 ? 's are' : ' is'} not connected to the hub.`);
   const badGroups = groups.filter((g) => !g.ok);
   if (badGroups.some((g) => g.type === BT.LANCE)) errors.push('Plasma cannons must be whole 10×10 units, not touching each other.');
+  if (badGroups.some((g) => g.type === BT.FLAK)) errors.push('Flak cannons must be whole 10×10 units, not touching each other.');
   if (badGroups.some((g) => g.type === BT.BAY)) errors.push(`Fighter bays must be whole ${MULTIBLOCK[BT.BAY].size}×${MULTIBLOCK[BT.BAY].size} units, not touching each other.`);
 
   if (!weapons.length) warnings.push('No weapons: the ship counts as a disarmed hulk in battle.');

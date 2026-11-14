@@ -38,7 +38,7 @@ export const MAX_TEAMS = 16; // sides in one battle (players plus militia); fr[]
 // Debris stays hittable and solid for the whole battle (owner: debris is part of the fight).
 // The retire mechanism is kept as a cap that can be set if very long battles ever get slow.
 const CHUNK_RETIRE_TICKS = Infinity;
-const K_KINETIC = 0, K_SHELL = 1, K_MISSILE = 2, K_PLASMA = 3, K_FIGHTER = 4;
+const K_KINETIC = 0, K_SHELL = 1, K_MISSILE = 2, K_PLASMA = 3, K_FIGHTER = 4, K_FLAK = 5;
 // Fighters (owner, Nov 2026): launched by fighter bays, kept in their own list (this.Fi), not P.
 const FIGHTER = WEAPON[BT.BAY].fighter;
 const FIGHTER_R = 2; // how close a shot must pass to hit one (blocks)
@@ -234,6 +234,7 @@ export class Battle {
       mass: 1, maxSpeed: 0, turn: 0, agility: 0, prefRange: 60, ward: null,
       face: null, faceMax: 0, // firepower that bears on a target at each of the 64 directions round the ship (see refit / holdFacing)
       worth: 0, // credit value of the ship's design (rout check)
+      light: 0, flakIn: 0, // flak: how lightly armoured it is for its guns (see refit), flak shells on their way to it
     };
     this.byId.push(e);
     this.ents.push(e);
@@ -279,7 +280,7 @@ export class Battle {
 
   /** Recompute mobility and weapon list after blocks are lost. */
   refit(e) {
-    let mass = 0, thrust = 0, range = 0;
+    let mass = 0, thrust = 0, range = 0, gunCost = 0, plating = 0;
     let x0 = e.w, x1 = -1, y0 = e.h, y1 = -1;
     const T = this.prepTiles(e), tw = e.tw; // big hulls: the tile map is filled in the same pass
     if (T) e.tdirty = true;
@@ -289,9 +290,14 @@ export class Battle {
       if (T) T[((y / TILE) | 0) * tw + ((x / TILE) | 0)] = 1;
       mass += BLOCKS[t].mass;
       if (t === BT.THRUSTER) thrust += BLOCKS[t].thrust;
+      else if (t >= BT.LASER) gunCost += BLOCKS[t].cost;
+      else if (t === BT.ARMOR || t === BT.HEAVY || t === BT.FRAME) plating++;
       if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
     }
     this.setBox(e, x0, x1, y0, y1);
+    // Flak goes for lightly armoured ships first (owner, 14 Nov 2026: "a high weapon to armour and
+    // frame ratio"): credits of guns per block of armour and frame.
+    e.light = gunCost / (plating + 10);
     e.weapons = e.weapons.filter((w) => {
       if (!w.cells) return e.hp[w.cell] > 0;
       let alive = 0;
@@ -309,7 +315,7 @@ export class Battle {
     for (const w of e.weapons) {
       const W = WEAPON[w.type];
       if (w.type === BT.PD || w.type === BT.BAY || w.buried) continue;
-      const v = (W.damage || 1) / W.cooldown;
+      const v = ((W.damage || 1) * (W.fragments || 1)) / W.cooldown;
       for (let k = 0; k < ARC_BINS; k++) if (w.omni || binOpen(w.m0, w.m1, k)) e.face[k] += v;
     }
     e.faceMax = 0;
@@ -319,7 +325,7 @@ export class Battle {
     for (const w of e.weapons) {
       const W = WEAPON[w.type], wr = W.range;
       far = Math.max(far, wr); near = Math.min(near, wr);
-      if (w.type === BT.PD || w.type === BT.LANCE) continue;
+      if (w.type === BT.PD || w.type === BT.LANCE || w.type === BT.FLAK) continue;
       const r = WEAPON[w.type].range;
       if (w.type === BT.CANNON) cannon = r;
       if (w.type === BT.LASER) laser = r;
@@ -1069,6 +1075,7 @@ export class Battle {
         else w.cd = 0.5;
         continue;
       }
+      if (W.kind === 'flak') { w.cd = this.fireFlak(e, w, wx, wy, W) ? W.cooldown * (0.9 + 0.2 * this.rng()) : 0.4; continue; }
       if (!tl) { if (!this.fireAtFighter(e, w, wx, wy, W)) w.cd = 0.3; continue; }
       // Preferred target first, then any other target that is in range and inside this weapon's arc.
       // Missiles and heavy lasers all go for the primary target so volleys land together.
@@ -1123,6 +1130,71 @@ export class Battle {
         Math.round(W.life / DT), e.id, e.team, tg.id, W.damage, W.hp || 0, rec);
       if (W.guided) this.setMissileAim(this.P.n - 1, tg, ax, ay);
     }
+  }
+
+  /**
+   * Flak cannon (owner, 14 Nov 2026): fire at the most lightly armoured enemy ship in range
+   * (`light`, with a little randomness), counting each flak shell already on its way to a ship
+   * against it, so a fleet's flak spreads over many targets instead of piling onto one. With no
+   * ship to shoot, it bursts among enemy fighters. Returns false if it had nothing to fire at.
+   */
+  fireFlak(e, w, wx, wy, W) {
+    const pool = this.foeArmed[e.team], r2 = W.range * W.range;
+    let tg = null, bs = 0, ax = 0, ay = 0;
+    for (let k = 0; k < pool.length; k++) {
+      const o = pool[k];
+      if (o.dead) continue;
+      const s = (o.light + 0.05) / (1 + o.flakIn * 1.5) * (0.75 + 0.5 * this.rng());
+      if (s <= bs) continue;
+      const d2 = (o.x - wx) ** 2 + (o.y - wy) ** 2;
+      let px, py;
+      if (d2 <= r2) [px, py] = this.aimPoint(o);
+      else {
+        if (o.radius < 12 || Math.sqrt(d2) - o.radius > W.range || !this.aimInRange(o, wx, wy, r2)) continue;
+        px = this._ax; py = this._ay;
+      }
+      if (!this.bears(e, w, wx, wy, px, py)) continue;
+      tg = o; bs = s; ax = px; ay = py;
+    }
+    let vx = 0, vy = 0;
+    if (tg) { vx = tg.vx; vy = tg.vy; }
+    else {
+      if (!this.fFoe[e.team]) return false;
+      const j = this.nearestFighter(wx, wy, W.range, e.team, e, w);
+      if (j < 0) return false;
+      ax = this.Fi.x[j]; ay = this.Fi.y[j]; vx = this.Fi.vx[j]; vy = this.Fi.vy[j];
+    }
+    const t = Math.min(Math.hypot(ax - wx, ay - wy) / W.speed, W.maxLead);
+    const tx = ax + vx * t, ty = ay + vy * t;
+    const ang = Math.atan2(ty - wy, tx - wx) + (this.rng() - 0.5) * 2 * W.spread;
+    if (this.ownHullInWay(e, w, wx, wy, ang, W.range)) return false;
+    // It bursts where it was aimed if nothing sets it off sooner.
+    const life = Math.max(2, Math.min(Math.round(W.life / DT), Math.ceil(Math.hypot(tx - wx, ty - wy) / W.speed / DT)));
+    const rec = this.shotStart(K_FLAK, e.team, wx, wy, ang);
+    this.addProjectile(K_FLAK, w.type, wx, wy, Math.cos(ang) * W.speed, Math.sin(ang) * W.speed, life, e.id, e.team, tg ? tg.id : -1, W.damage, 0, rec);
+    if (tg) tg.flakIn++;
+    return true;
+  }
+
+  /** A flak shell bursts at (x, y): shrapnel in every direction, each piece hits the first enemy block or fighter it meets. */
+  flakBurst(i, x, y) {
+    const P = this.P, W = WEAPON[P.wtype[i]], team = P.team[i], owner = P.owner[i], dmg = P.dmg[i];
+    // `cone` of the pieces carry on forward (the shell's way, toward its target, within ±coneW
+    // rad); the rest spray all round. Shrapnel passes allied ships (friendly fire off), and wrecks
+    // too unless `wrecks` is set.
+    const n = W.fragments, R = W.reach, nf = Math.round(n * (W.cone || 0)), fwd = Math.atan2(P.vy[i], P.vx[i]), cw = W.coneW || 0.7;
+    const step = (2 * Math.PI) / (n - nf || 1), a0 = this.rng() * 2 * Math.PI;
+    for (let f = 0; f < n; f++) {
+      const a = f < nf ? fwd + (this.rng() * 2 - 1) * cw : a0 + (f - nf) * step + (this.rng() - 0.5) * step;
+      if (this.sweep(x, y, x + Math.cos(a) * R, y + Math.sin(a) * R, owner, team, !W.wrecks) && this.canDamage(this.hitE, team))
+        this.damageCell(this.hitE, this.hitCell, dmg);
+    }
+    // Enemy fighters in the burst take a few pieces each.
+    if (this.fFoe[team]) this.fgrid.queryBox(x - R, y - R, x + R, y + R, (o) => {
+      const j = o.i, Fi = this.Fi;
+      if (Fi.hp[j] > 0 && this.fighterFoe(j, team) && (Fi.x[j] - x) ** 2 + (Fi.y[j] - y) ** 2 <= R * R) Fi.hp[j] -= dmg * 3;
+    });
+    this.lastDamage = this.now;
   }
 
   /** Try a few random live blocks of a big target for one within range (sets _ax, _ay). */
@@ -1314,7 +1386,24 @@ export class Battle {
       }
       if (kind === K_MISSILE && WEAPON[P.wtype[i]].guided) this.steerMissile(i);
       const x0 = P.x[i], y0 = P.y[i], x1 = x0 + P.vx[i] * DT, y1 = y0 + P.vy[i] * DT;
-      if (kind === K_PLASMA) {
+      if (kind === K_FLAK) {
+        // Proximity fuse: bursts on meeting anything (allies excepted), on coming within `fuse` of
+        // its target's hull, or where it was aimed (end of its life).
+        const W = WEAPON[P.wtype[i]], tg = P.target[i] >= 0 ? this.byId[P.target[i]] : null;
+        let t = -1;
+        if (this.sweep(x0, y0, x1, y1, P.owner[i], P.team[i])) t = Math.max(0, this.hitT - 0.5 / (W.speed * DT));
+        else if (tg && !tg.dead && Math.hypot(tg.x - x1, tg.y - y1) - Math.min(tg.bhw, tg.bhh) <= W.fuse) t = 1;
+        else if (P.life[i] <= 1) t = 1;
+        if (t >= 0) {
+          const bx = x0 + (x1 - x0) * t, by = y0 + (y1 - y0) * t;
+          if (tg && tg.flakIn > 0) tg.flakIn--;
+          this.flakBurst(i, bx, by);
+          this.shotEnd(rec, this.now - 1 + t, 1);
+          this.recExplosion(bx, by, 6); // 6: flak burst
+          this.removeProjectile(i--);
+          continue;
+        }
+      } else if (kind === K_PLASMA) {
         // A plasma bolt burns every fighter it passes, friend or foe, like everything else.
         if (this.fobjs.length) this.fightersOnSegment(x0, y0, x1, y1, (j) => { this.Fi.hp[j] = 0; });
         if (this.plasmaStep(i, x0, y0, x1, y1)) {
@@ -1752,7 +1841,7 @@ export class Battle {
     const R = this.R;
     const rec = R.shotT0.push(this.now);
     R.shotFlight.push(0); R.shotX.push(q16(x)); R.shotY.push(q16(y)); R.shotAng.push(qAng(ang));
-    R.shotHit.push(0); R.shotTeam.push(team); R.shotKind.push(kind === K_FIGHTER ? 4 : guided ? 3 : kind === K_MISSILE ? 1 : kind === K_PLASMA ? 2 : 0);
+    R.shotHit.push(0); R.shotTeam.push(team); R.shotKind.push(kind === K_FLAK ? 5 : kind === K_FIGHTER ? 4 : guided ? 3 : kind === K_MISSILE ? 1 : kind === K_PLASMA ? 2 : 0);
     return rec;
   }
   /** hit: 0 expired, 1 hit something, 2 shot down by point defence. */
@@ -1768,7 +1857,7 @@ export class Battle {
 
   // ---------------------------------------------------------------- hit detection
   /** Find the first live block hit by segment (x0,y0)->(x1,y1). Sets hitE/hitCell/hitT. */
-  sweep(x0, y0, x1, y1, ownerId, skipTeam = -1) {
+  sweep(x0, y0, x1, y1, ownerId, skipTeam = -1, shipsOnly = false) {
     const g = this.grid, q = ++g.qid, ents = g.ents, n = g.n;
     const gx0 = g.cx(Math.min(x0, x1)), gx1 = g.cx(Math.max(x0, x1));
     const gy0 = g.cx(Math.min(y0, y1)), gy1 = g.cx(Math.max(y0, y1));
@@ -1781,7 +1870,7 @@ export class Battle {
           const e = ents[g.items[s + k]];
           if (e._q === q) continue;
           e._q = q;
-          if (e.dead || e.retired || e.id === ownerId || (skipTeam >= 0 && e.kind === SHIP && this.fr[(skipTeam << 4) | e.team])) continue;
+          if (e.dead || e.retired || e.id === ownerId || (skipTeam >= 0 && e.kind === SHIP && this.fr[(skipTeam << 4) | e.team]) || (shipsOnly && e.kind !== SHIP)) continue;
           // Bounding circle vs segment.
           let t = ((e.x - x0) * sdx + (e.y - y0) * sdy) / len2;
           t = t < 0 ? 0 : t > 1 ? 1 : t;
@@ -2268,7 +2357,7 @@ export class Battle {
     const meta = {
       version: 1, friendlyFire: this.friendlyFire, trackTotal: total, evQ: EV_Q, dt: DT, trackEvery: TRACK_EVERY, shoveEvery: SHOVE_EVERY, velQ: VEL_Q, missileEvery: MISSILE_EVERY, posQ: POS_Q, angQ: ANG_Q,
       ticks: this.tick, shipCount: S, chunkCount: this.byId.length - S,
-      shotSpeed: [WEAPON[BT.CANNON].speed, WEAPON[BT.MISSILE].speed, WEAPON[BT.LANCE].speed], fighterSpeed: FIGHTER.speed,
+      shotSpeed: [WEAPON[BT.CANNON].speed, WEAPON[BT.MISSILE].speed, WEAPON[BT.LANCE].speed, WEAPON[BT.GUIDED].speed, FIGHTER.speed, WEAPON[BT.FLAK].speed], fighterSpeed: FIGHTER.speed,
       designs: this.designs.map((d) => ({ name: d.name, cls: d.cls, stance: d.stance, w: d.w, h: d.h, hub: d.hub, cells: Array.from(d.cells) })),
       survivors: [...this.teamAlive], teams: this.nT,
     };

@@ -8,6 +8,13 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-14d', date: '14 Nov 2026', title: 'New weapon: the flak cannon',
+    items: [
+      'New 10×10 weapon in the designer: the Flak cannon (key K, 1,500 cr a unit, the same size and price as the plasma cannon). It fires a shell up to 700 blocks that bursts right beside an enemy ship in a spray of shrapnel: deadly to small, lightly armoured ships and fighters, but it barely scratches thick armour.',
+      'Flak goes for the most lightly armoured ship in range first (lots of guns, little armour or frame) and spreads its fire, so a fleet full of flak cannons doesn\'t all shoot the same ship. It\'s the answer big ships have been missing against swarms of small ships. Unlike plasma, its blocks don\'t explode when destroyed.',
+    ],
+  },
+  {
     id: '2026-11-14c', date: '14 Nov 2026', title: 'No more circling in front of fortresses',
     items: [
       'Guided missiles now steer for the part of the ship they were fired at, instead of its centre. Against hollow fortresses (like the Aegis ones) the centre is an open courtyard, so missiles flew in and circled it until they ran out. If that part gets shot away, they head for the nearest part still standing.',

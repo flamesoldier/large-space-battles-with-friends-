@@ -284,6 +284,31 @@ Weapons (numbers in `blocks.js`):
   cannon, PD, missile and guided launcher blocks** (were 130 / 150 / 80 / 200 / 200; plasma and
   bays unchanged). Where the numbers above disagree, these win. Bench 1,000 vs 1,000: 244 s → 182 s,
   missiles shot down 27% → 33%, 4.7 → 6.4 ms a tick (same total work, shorter battles).
+- **Flak cannon** (`BT.FLAK` = 13, weapon kind `'flak'`; owner, 14 Nov 2026: big ships had no answer to
+  swarms of small ships; he turned down rule changes (plasma-first targeting, longer gun ranges, tougher
+  armour) and asked for a new weapon): a **10×10 unit, 1,500 cr** (15 a block, the plasma cannon's size and
+  price), 750 hp a block, keeps firing while half survives, **no cook-off**. Range 700, a shell every 5 s at
+  75 blocks/s (lead capped 4 s) with a **proximity fuse** (`K_FLAK` = 5): it bursts on meeting anything
+  (it flies over allies), within `fuse` 6 of its target's box, or where it was aimed. The burst
+  (`flakBurst()`) throws `fragments` 40 pieces of shrapnel, `reach` 30, `damage` 60 each to the first
+  enemy block met (`sweep` with `shipsOnly`: **shrapnel passes wrecks**, measured: half of it was lost in
+  debris otherwise; and allies, friendly fire off); `cone` 0.6 of the pieces carry on forward (±`coneW`
+  0.7 rad, the shell's heading), the rest spray all round. Enemy fighters within `reach` take 3 × damage.
+  **Targeting** (`fireFlak()`, owner: "prioritising lightly armoured ships, a high weapon to armour and
+  frame ratio"; "battles could have hundreds of these so you would want them not to target the same
+  place"): every armed enemy ship in range, score = `e.light` (credits of guns per armour/heavy/frame
+  block + 10, set in `refit()`) ÷ (1 + 1.5 × `e.flakIn`, flak shells already on their way to it) × random
+  0.75–1.25; with no ship, the nearest enemy fighter. Replays: shot kind 5 (`meta.shotSpeed[5]`), explosion
+  size 6; viewer `drawFlak()` (amber shell, muzzle flash) and `drawFlakBurst()` (flash, fireball, smoke, 16
+  shrapnel streaks from a hash of the explosion index), shader type 13 (gunmetal battery, four barrels in
+  an armoured ring, ammunition feeds, amber lights). Designer: key **K**, whole-unit stamp, `flakUnit()`,
+  weapon table "40 × 60 / 5 s"; designer firepower counts the whole burst. Tests in `tools/test-designer.mjs`.
+  Tuned on the owner's Draisgon Major replay (Nate's 16 "Dreadnought Mk.2", 438k, vs Cupcake's 226k swarm
+  with 23 plasma destroyers), rebuilt from the replay, 3–4 seeds: today 1–7 dreadnoughts survive (56–94%
+  of Nate lost). Nate's plasma → flak, Cupcake keeps plasma: first version (40 dmg, all-round, stopped by
+  wrecks) 2–5; through wrecks + cone 0.6 + 60 dmg **11–13** (19–31% lost). Even money (8 dreadnoughts) Cupcake
+  still wins (0–1 left, 16–25% of his lost). Both sides' plasma → flak (the owner's test) 15/16. Elenris
+  Minor (3,758 ships) with every plasma → flak: 147 s compute vs 148 s. Bench 1,000 vs 1,000 identical.
 - Future weapons the owner wants: bigger cannons, a medium laser.
 
 Combat rules:

@@ -244,6 +244,56 @@ assert.ok(Math.abs(sc.enemyCost - sc.budget) / sc.budget < 0.1, `budgets ${sc.en
   }
 }
 
+// Flak cannon (owner, 14 Nov 2026): a whole 10x10 unit; picks the most lightly armoured ship in
+// range; spreads its fire; its shrapnel damages what it bursts beside.
+{
+  // A gun platform: frame and hub behind a flak unit at the nose (a defence: no thrusters).
+  const w = 14, h = 10, cells = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) cells[y * w + x] = x >= 4 ? BT.FLAK : BT.FRAME;
+  const plat = { name: 'Flak platform', cls: 'cruiser', w, h, cells, hub: 5 * w + 1, stance: 'line' };
+  cells[plat.hub] = BT.HUB;
+  const a = analyzeDesign(plat);
+  assert.ok(a.ok, `flak platform is valid: ${a.errors.join('; ')}`);
+  assert.equal(a.weapons.filter((x) => x.type === BT.FLAK && !x.buried).length, 1, 'one flak cannon, not buried');
+  const c2 = cells.slice(); c2[0] = BT.FLAK;
+  assert.ok(analyzeDesign({ ...plat, cells: c2 }).errors.some((t) => t.includes('Flak cannons must be whole 10×10')), 'bad flak units are refused');
+  const ed = new ShipEditor(30, 30); ed.mirror = false; ed.paint(25, 25, BT.HUB); ed.stamp(10, 10, BT.FLAK);
+  assert.equal(ed.cells.filter((t) => t === BT.FLAK).length, 100, 'a flak cannon is stamped as one whole unit');
+  // Targets: a lightly armoured gunboat (lots of guns, little plating) and an armoured brick.
+  const boat = { name: 'Gunboat', cls: 'corvette', w: 6, h: 5, cells: new Uint8Array(30), hub: 2 * 6 + 1, stance: 'line' };
+  boat.cells.fill(BT.CANNON); for (let y = 0; y < 5; y++) boat.cells[y * 6] = BT.FRAME; boat.cells[boat.hub] = BT.HUB;
+  const brick = { name: 'Brick', cls: 'cruiser', w: 12, h: 10, cells: new Uint8Array(120).fill(BT.HEAVY), hub: 5 * 12 + 2, stance: 'line' };
+  brick.cells[brick.hub] = BT.HUB; brick.cells[5 * 12 + 11] = BT.CANNON;
+  const fb = new Battle({ designs: [plat, boat, brick], ships: [
+    { design: 0, team: 0, x: 0, y: 0, a: 0, fixed: true },
+    { design: 1, team: 1, x: 400, y: -60, a: Math.PI, fixed: true },
+    { design: 2, team: 1, x: 400, y: 60, a: Math.PI, fixed: true },
+  ], seed: 2, maxTime: 60 });
+  const boatE = fb.ents[1], brickE = fb.ents[2];
+  assert.ok(boatE.light > brickE.light * 10, `the gunboat counts as lightly armoured (${boatE.light.toFixed(1)} vs ${brickE.light.toFixed(2)})`);
+  let first = -1, bursts = 0;
+  const hp0 = boatE.alive;
+  while (!fb.done && fb.tick < 400) {
+    fb.step();
+    for (let i = 0; i < fb.P.n; i++) if (fb.P.kind[i] === 5 && first < 0) first = fb.P.target[i];
+  }
+  for (let k = 0; k < fb.R.expS.n; k++) if (fb.R.expS.a[k] === 6) bursts++;
+  assert.equal(first, boatE.id, 'flak goes for the lightly armoured ship first');
+  assert.ok(bursts >= 3, `flak shells burst (${bursts})`);
+  assert.ok(boatE.dead || boatE.hubDead || boatE.alive < hp0, 'its shrapnel damages the gunboat');
+  // Spread: four platforms, four identical gunboats: the first shells go to different ships.
+  const ships = [];
+  for (let k = 0; k < 4; k++) ships.push({ design: 0, team: 0, x: 0, y: -90 + k * 60, a: 0, fixed: true });
+  for (let k = 0; k < 4; k++) ships.push({ design: 1, team: 1, x: 450, y: -90 + k * 60, a: Math.PI, fixed: true });
+  const sb = new Battle({ designs: [plat, boat], ships, seed: 4, maxTime: 60 });
+  const tg = new Set();
+  let n = 0;
+  sb.addProjectile = ((f) => (kind, ...r) => { if (kind === 5 && n < 4) { n++; tg.add(r[8]); } return f(kind, ...r); })(sb.addProjectile.bind(sb));
+  while (sb.tick < 200 && n < 4) sb.step();
+  assert.ok(tg.size >= 3, `flak spreads its fire: the first 4 shells went to ${tg.size} different ships`);
+  console.log(`flak: picks the gunboat (light ${boatE.light.toFixed(1)}) over the brick (${brickE.light.toFixed(2)}), ${bursts} bursts, first 4 shells of 4 platforms at ${tg.size} different ships`);
+}
+
 // The ready-made Aegis fortresses in the defence designer's Start from menu: valid 150,000 cr
 // defences (750,000 cr of blocks, no thrusters, nothing buried or sealed in), and they survive a
 // save/load round trip like any design.
