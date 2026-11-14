@@ -58,6 +58,8 @@ const BIG_HULL_CELLS = 6400, TILE = 4;
 const HOLD_DRIFT = 1;
 // Plasma cannon aiming: an ally within this many blocks of the line counts as in the way.
 const LANCE_SPEED = WEAPON[BT.LANCE].speed;
+// Shrapnel against plating (owner, 15 Nov 2026): frame, armour and heavy armour take only this share of its damage.
+const FRAG_VS = WEAPON[BT.FLAK].vs;
 const LANCE_COOK_SCALE = BLOCKS[BT.LANCE].hp / COOKOFF.refHp;
 const LANCE_ALLY_MARGIN = 0; // 0: ~1 in 3 shots hits an ally first, 4 enemies killed per ally (owner wants friendly fire); 5: almost never, but it holds fire far more
 const NONE = 0xffffffff; // 'no entity' in replay id columns
@@ -1454,7 +1456,7 @@ export class Battle {
           }
         }
         if (hit) {
-          if (this.canDamage(this.hitE, P.team[i])) this.damageCell(this.hitE, this.hitCell, P.dmg[i]);
+          if (this.canDamage(this.hitE, P.team[i])) { const he = this.hitE, hc = this.hitCell; this.damageCell(he, hc, P.dmg[i] * (FRAG_VS[he.types[hc]] ?? 1)); }
           this.shotEnd(rec, this.now - 1 + this.hitT, 1);
           this.removeProjectile(i--);
           continue;

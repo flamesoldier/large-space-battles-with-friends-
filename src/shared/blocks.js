@@ -43,7 +43,7 @@ export const BLOCKS = {
   [BT.GUIDED]: { name: 'Guided missile launcher', hp: 300, mass: 5, cost: 135 }, // owner, Nov 2026: the missile launcher's stats, steering missiles, dearer
   [BT.BAY]: { name: 'Fighter bay', hp: 150, mass: 3, cost: 6.25 }, // owner, Nov 2026: 225 cr a 6x6 unit (asked for 200-250)
   [BT.LANCE]: { name: 'Plasma cannon', hp: 750, mass: 4, cost: 15 },
-  [BT.FLAK]: { name: 'Flak cannon', hp: 750, mass: 4, cost: 15 }, // owner, 14 Nov 2026: plasma's size and price, 1,500 a 10x10 unit; it doesn't explode when destroyed, so 200 hp (owner, 15 Nov: plasma's 750 makes up for its chain explosion) // hp was 120 (owner, Nov 2026: plasma ships lost their guns at once); 1,500 a 10x10 unit (was 3,500): an anti-capital weapon, see CLAUDE.md
+  [BT.FLAK]: { name: 'Flak cannon', hp: 200, mass: 4, cost: 15 }, // owner, 14 Nov 2026: plasma's size and price, 1,500 a 10x10 unit; it doesn't explode when destroyed, so 200 hp (owner, 15 Nov: plasma's 750 makes up for its chain explosion) // hp was 120 (owner, Nov 2026: plasma ships lost their guns at once); 1,500 a 10x10 unit (was 3,500): an anti-capital weapon, see CLAUDE.md
 };
 
 // A destroyed heavy-laser block explodes: blast damage peak * (1 - d / radius)^2 to every block
@@ -129,7 +129,8 @@ export const WEAPON = {
   // forward toward the target (within ±coneW rad), the rest spray all round. Tuned on the
   // owner's Draisgon Major replay (Nate's 16 dreadnoughts with flak in place of their plasma vs
   // Cupcake's plasma-destroyer swarm): 1-7 dreadnoughts left -> 11-13 (see CLAUDE.md).
-  [BT.FLAK]: { kind: 'flak', range: 700, damage: 60, fragments: 20, fragSpeed: 90, fragLife: 4, cone: 0, coneW: 0.7, salvo: 5, salvoGap: 0.3, scatter: 6, cooldown: 10, speed: 75, life: 14, fuse: 6, maxLead: 4, spread: 0.01 },
+  [BT.FLAK]: { kind: 'flak', range: 700, damage: 60, fragments: 20, fragSpeed: 90, fragLife: 4, cone: 0, coneW: 0.7, salvo: 5, salvoGap: 0.3, scatter: 6, cooldown: 10, speed: 75, life: 14, fuse: 6, maxLead: 4, spread: 0.01,
+    vs: { [4]: 0.75, [2]: 0.5, [3]: 0.3 } }, // shrapnel damage share against frame (4), armour (2), heavy armour (3); owner, 15 Nov 2026
 };
 
 // Firing arcs: every weapon can fire in any direction where its shot wouldn't pass through its

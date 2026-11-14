@@ -287,8 +287,7 @@ Weapons (numbers in `blocks.js`):
 - **Flak cannon** (`BT.FLAK` = 13, weapon kind `'flak'`; owner, 14 Nov 2026: big ships had no answer to
   swarms of small ships; he turned down rule changes (plasma-first targeting, longer gun ranges, tougher
   armour) and asked for a new weapon): a **10×10 unit, 1,500 cr** (15 a block, the plasma cannon's size and
-  price), **750 hp a block** (owner, 15 Nov 2026: tried 200, then back to 750 with a drawback like plasma's
-  cook-off): **once `FLAK_POP.after` (25) of its 100 blocks are destroyed the whole unit blows up**
+  price), **200 hp a block** (owner, 15 Nov 2026: 750 → 200 → 750 with the blow-up → "way too tanky", 200 again), **once `FLAK_POP.after` (25) of its 100 blocks are destroyed the whole unit blows up**
   (`flakPops` queue → `resolveCookoffs()`, `w.popped`; recExplosion size 3 plus a blast of radius 8, peak
   30, barely hurting the ship). The owner suggested 1 block: measured below, that lost big ships the fight. Range 700. **Every 10 s a salvo** (owner, 15 Nov 2026: "in line with plasma"; was 5 s)
   of `salvo` 5 shells, `salvoGap` 0.3 s apart, all at one ship** (owner, 14 Nov 2026: one shell was
@@ -347,7 +346,14 @@ Weapons (numbers in `blocks.js`):
   Nate wins): N = 1 (owner's idea): line 1/6, artillery 0/6, charge 1/6, Zephorka 1/3 (titans lose all 30
   flak units within 60 s, then their other guns); N = 10: line 5/6, artillery 0/6; **N = 25 (chosen
   pending the owner): line 6/6, artillery 6/6, charge 6/6, Zephorka 3/3** (Nate 10–24 of 158 left);
-  never (old half-intact rule only, 750 hp): 18/18 and Zephorka 3/3.
+  never (old half-intact rule only, 750 hp): 18/18 and Zephorka 3/3. Owner: "way too tanky".
+  **200 hp, blow-up at 25, shrapnel weaker against plating** (`WEAPON[BT.FLAK].vs`, `FRAG_VS` in battle.js:
+  share of damage to frame / armour / heavy; current 0.75 / 0.5 / 0.3). Same tests (spam line / artillery /
+  charge wins of 6; Zephorka Nate wins of 3): full damage 5 / 0 / 5, Zephorka 3/3 (7–15 of 158 left);
+  0.75/0.5/0.3: 6 / 0 / 5, Zephorka 1 win, 1 loss, 1 both wiped out (7–15 min battles); 0.5/0.35/0.2: 6 / 0 /
+  6, Zephorka 0/3 (Cupcake keeps 141–209 of 824; with plasma 439–499). Artillery flak boats always win at
+  200 hp: from 420 out only flak and missiles reach, and their 76 flak strip the titans' 70 surface guns
+  each (679 → 372 in 15 s) while the titans' frame survives.
 - Future weapons the owner wants: bigger cannons, a medium laser.
 
 Combat rules:
