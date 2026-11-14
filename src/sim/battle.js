@@ -11,7 +11,7 @@
 //    their position at any time with a formula and nothing has to be recorded.
 //  * Everything is recorded as events + low-rate transform samples (see toReplay()).
 
-import { BT, BLOCKS, WEAPON, MULTIBLOCK, COOKOFF, isWeapon } from '../shared/blocks.js';
+import { BT, BLOCKS, WEAPON, MULTIBLOCK, COOKOFF, FLAK_POP, isWeapon } from '../shared/blocks.js';
 import { lineOfFire, updateLineOfFire, binOf, binOpen, binAngle, ARC_BINS } from '../shared/arcs.js';
 import { bayRoute } from '../shared/bayRoute.js';
 import { mulberry32 } from '../shared/rng.js';
@@ -81,7 +81,7 @@ export const STANCES = {
 };
 
 // Every weapon object gets its line-of-fire fields up front (one object shape, see makeEntity).
-const arcFields = () => ({ sq: 0, wv: 0, ft: -1, route: -1, rtT: 0, omni: false, buried: false, m0: 0, m1: 0, ox: 0, oy: 0, bx0: 1, by0: 1, bx1: 0, by1: 0, blk: null });
+const arcFields = () => ({ popped: false, sq: 0, wv: 0, ft: -1, route: -1, rtT: 0, omni: false, buried: false, m0: 0, m1: 0, ox: 0, oy: 0, bx0: 1, by0: 1, bx1: 0, by1: 0, blk: null });
 
 export class Battle {
   // maxTime: 4 minutes while testing; the plan for launch is 30 minutes so every battle resolves.
@@ -146,6 +146,7 @@ export class Battle {
     this._collect = (o) => { this._near.push(o); };
     this.shoved = []; // debris pushed by ships since its last shove record
     this.cookoffs = []; // world x, y pairs of heavy-laser blocks destroyed this tick
+    this.flakPops = []; // ship, cell pairs of flak cannon blocks destroyed this tick
     this.stamp = new Int32Array(8192);
     this.stampGen = 1;
     this.queue = new Int32Array(8192);
@@ -2001,7 +2002,7 @@ export class Battle {
       // chain reaction through the rest of the gun doesn't recurse.
       const lx = (i % e.w) + 0.5 - e.w / 2, ly = ((i / e.w) | 0) + 0.5 - e.h / 2;
       this.cookoffs.push(e.x + lx * e.c - ly * e.s, e.y + lx * e.s + ly * e.c);
-    }
+    } else if (e.types[i] === BT.FLAK && e.kind === SHIP) this.flakPops.push(e, i);
   }
 
   /**
@@ -2010,6 +2011,24 @@ export class Battle {
    * go off in turn, so a hit gun often takes the whole unit (and the middle of the ship) with it.
    */
   resolveCookoffs() {
+    // A flak cannon that has lost FLAK_POP.after blocks blows up whole, with a small blast (owner, 15 Nov 2026).
+    const F = this.flakPops;
+    for (let k = 0; k < F.length; k += 2) {
+      const e = F[k], i = F[k + 1];
+      if (e.dead) continue;
+      let w = null;
+      for (const o of e.weapons) if (o.type === BT.FLAK && !o.popped && o.cells.includes(i)) { w = o; break; }
+      if (!w) continue;
+      let lost = 0;
+      for (const c of w.cells) if (e.hp[c] <= 0) lost++;
+      if (lost < FLAK_POP.after) continue;
+      w.popped = true;
+      for (const c of w.cells) if (e.hp[c] > 0) this.damageCell(e, c, 1e9);
+      const x = e.x + w.lx * e.c - w.ly * e.s, y = e.y + w.lx * e.s + w.ly * e.c;
+      this.recExplosion(x, y, 3);
+      this.blast(x, y, FLAK_POP.radius, FLAK_POP.damage, -1, true);
+    }
+    F.length = 0;
     const C = COOKOFF;
     for (let k = 0; k < this.cookoffs.length && k < 4000; k += 2) {
       const x = this.cookoffs[k], y = this.cookoffs[k + 1];

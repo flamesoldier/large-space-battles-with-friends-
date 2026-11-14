@@ -43,7 +43,7 @@ export const BLOCKS = {
   [BT.GUIDED]: { name: 'Guided missile launcher', hp: 300, mass: 5, cost: 135 }, // owner, Nov 2026: the missile launcher's stats, steering missiles, dearer
   [BT.BAY]: { name: 'Fighter bay', hp: 150, mass: 3, cost: 6.25 }, // owner, Nov 2026: 225 cr a 6x6 unit (asked for 200-250)
   [BT.LANCE]: { name: 'Plasma cannon', hp: 750, mass: 4, cost: 15 },
-  [BT.FLAK]: { name: 'Flak cannon', hp: 200, mass: 4, cost: 15 }, // owner, 14 Nov 2026: plasma's size and price, 1,500 a 10x10 unit; it doesn't explode when destroyed, so 200 hp (owner, 15 Nov: plasma's 750 makes up for its chain explosion) // hp was 120 (owner, Nov 2026: plasma ships lost their guns at once); 1,500 a 10x10 unit (was 3,500): an anti-capital weapon, see CLAUDE.md
+  [BT.FLAK]: { name: 'Flak cannon', hp: 750, mass: 4, cost: 15 }, // owner, 14 Nov 2026: plasma's size and price, 1,500 a 10x10 unit; it doesn't explode when destroyed, so 200 hp (owner, 15 Nov: plasma's 750 makes up for its chain explosion) // hp was 120 (owner, Nov 2026: plasma ships lost their guns at once); 1,500 a 10x10 unit (was 3,500): an anti-capital weapon, see CLAUDE.md
 };
 
 // A destroyed heavy-laser block explodes: blast damage peak * (1 - d / radius)^2 to every block
@@ -52,6 +52,10 @@ export const BLOCKS = {
 // Against other plasma blocks the blast scales with their hit points (as if they had `refHp`), so
 // tougher plasma blocks (owner, Nov 2026) still chain-react through the whole unit once one goes.
 export const COOKOFF = { radius: 16, damage: 300, refHp: 120 };
+// Flak cannon (owner, 15 Nov 2026): once `after` of its 100 blocks are destroyed the whole 10x10 unit
+// goes up at once, but the blast barely touches the rest of the ship (radius and peak damage below).
+// The owner suggested 1 block; measured, that stripped big ships of their flak within a minute, see CLAUDE.md.
+export const FLAK_POP = { after: 25, radius: 8, damage: 30 };
 
 // Weapon behaviour. Ranges/speeds in world units (blocks) and seconds.
 export const WEAPON = {

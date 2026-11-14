@@ -287,7 +287,10 @@ Weapons (numbers in `blocks.js`):
 - **Flak cannon** (`BT.FLAK` = 13, weapon kind `'flak'`; owner, 14 Nov 2026: big ships had no answer to
   swarms of small ships; he turned down rule changes (plasma-first targeting, longer gun ranges, tougher
   armour) and asked for a new weapon): a **10×10 unit, 1,500 cr** (15 a block, the plasma cannon's size and
-  price), **200 hp a block** (owner, 15 Nov 2026: was 750 like plasma, whose hp makes up for its cook-off), keeps firing while half survives, **no cook-off**. Range 700. **Every 10 s a salvo** (owner, 15 Nov 2026: "in line with plasma"; was 5 s)
+  price), **750 hp a block** (owner, 15 Nov 2026: tried 200, then back to 750 with a drawback like plasma's
+  cook-off): **once `FLAK_POP.after` (25) of its 100 blocks are destroyed the whole unit blows up**
+  (`flakPops` queue → `resolveCookoffs()`, `w.popped`; recExplosion size 3 plus a blast of radius 8, peak
+  30, barely hurting the ship). The owner suggested 1 block: measured below, that lost big ships the fight. Range 700. **Every 10 s a salvo** (owner, 15 Nov 2026: "in line with plasma"; was 5 s)
   of `salvo` 5 shells, `salvoGap` 0.3 s apart, all at one ship** (owner, 14 Nov 2026: one shell was
   "underwhelming for the equal most powerful weapon"; `w.sq` = shells left in the salvo, `w.ft` = its
   target, declared in `arcFields()`), each landing within `scatter` 6 blocks of the aim point. Shells fly
@@ -340,6 +343,11 @@ Weapons (numbers in `blocks.js`):
   Front line or Charge lose every time (titans keep 7–10); boats on Artillery win 2 of 4 (titans keep
   2, 8, 6, 1): at 420 out they're beyond the titans' cannons and lasers, so it's flak against 2.5× the
   flak.
+  **Unit blows up after N lost blocks, 750 hp** (spam test, 6 seeds per stance, titan wins; Zephorka 3 seeds,
+  Nate wins): N = 1 (owner's idea): line 1/6, artillery 0/6, charge 1/6, Zephorka 1/3 (titans lose all 30
+  flak units within 60 s, then their other guns); N = 10: line 5/6, artillery 0/6; **N = 25 (chosen
+  pending the owner): line 6/6, artillery 6/6, charge 6/6, Zephorka 3/3** (Nate 10–24 of 158 left);
+  never (old half-intact rule only, 750 hp): 18/18 and Zephorka 3/3.
 - Future weapons the owner wants: bigger cannons, a medium laser.
 
 Combat rules:

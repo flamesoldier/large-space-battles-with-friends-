@@ -11,7 +11,7 @@ export const PATCH_NOTES = [
     id: '2026-11-14d', date: '14 Nov 2026', title: 'New weapon: the flak cannon',
     items: [
       'New 10×10 weapon in the designer: the Flak cannon (key K, 1,500 cr a unit, the same size and price as the plasma cannon). Every 10 seconds it fires a salvo of 5 shells up to 700 blocks at one enemy ship; each bursts right beside it in a spray of 20 pieces of shrapnel flying every way, and every piece flies on until it hits something: deadly to small, lightly armoured ships and fighters, but it barely scratches thick armour.',
-      'Flak goes for the most lightly armoured ship in range first (lots of guns, little armour or frame) and spreads its fire, so a fleet full of flak cannons doesn\'t all shoot the same ship. Its shells fly straight through ships and wrecks to burst in the open beside their target, so they reach the back lines. Its blocks have 200 hp each. Shrapnel is stopped by wrecks and allied ships, but never hurts your side. It\'s the answer big ships have been missing against swarms of small ships. Unlike plasma, its blocks don\'t explode when destroyed.',
+      'Flak goes for the most lightly armoured ship in range first (lots of guns, little armour or frame) and spreads its fire, so a fleet full of flak cannons doesn\'t all shoot the same ship. Its shells fly straight through ships and wrecks to burst in the open beside their target, so they reach the back lines. Its blocks have 750 hp, but once a quarter of them are destroyed the whole cannon blows up (the blast barely hurts the rest of the ship). Shrapnel is stopped by wrecks and allied ships, but never hurts your side. It\'s the answer big ships have been missing against swarms of small ships.',
     ],
   },
   {
