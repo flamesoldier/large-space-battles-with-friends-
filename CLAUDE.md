@@ -296,11 +296,11 @@ Weapons (numbers in `blocks.js`):
   through wrecks**, owner: "otherwise it would never be able to hit the enemy"; "the primary shells were
   hitting debris as well which we don't want"), within `fuse` 6 of its target's box, or where it was
   aimed. **The shrapnel is real projectiles** (owner, 14 Nov 2026, third round: "still underwhelming";
-  `K_FRAG` = 6, replay shot kind 6, `meta.shotSpeed[6]`): `flakBurst()` throws `fragments` 30 pieces at
+  `K_FRAG` = 6, replay shot kind 6, `meta.shotSpeed[6]`): `flakBurst()` throws `fragments` 20 pieces (owner, 14 Nov 2026: was 30, "visually overpowering") at
   `fragSpeed` 90 (±15%), each flying up to `fragLife` 4 s until it meets something: **any** ship or wreck
   stops it (`sweep(..., -1)`), but only enemies take its `damage` 60 (allied hulls shield, owner's
-  rule); enemy fighters on its path take it too. `cone` 0.6 of the pieces carry on forward (±`coneW` 0.7
-  rad, the shell's heading), the rest spray all round. **Shrapnel is queued in `this.fragQ` and added
+  rule); enemy fighters on its path take it too. Directions are **uniformly random all round** (`cone` 0; owner: "more random", the
+  earlier 0.6 of pieces in a forward cone ±`coneW` 0.7 rad looked lopsided). Drawn slimmer since then. **Shrapnel is queued in `this.fragQ` and added
   after the projectile loop** (`updateProjectiles()` → `moveProjectiles()`, then the queue): adding
   inside the loop could grow `this.P` while the loop held the old arrays, which ran away and used 6+ GB in
   the 3,758-ship Elenris battle. Viewer: `drawShrapnel()` (hot streaks, impact sparks, fade at the end of
@@ -328,6 +328,9 @@ Weapons (numbers in `blocks.js`):
   breaks in ~50 s; even money (8 dreadnoughts) Nate wins all 3 (5, 7, 8 of 8 left; Cupcake 82–84% lost);
   both sides flak 16/16. Elenris with every plasma (472 units) → flak: 95 s compute, ~650 MB like the
   plasma version (143 s), 20.5 MB replay (plasma 25.5 MB). Bench 1,000 vs 1,000 identical.
+  **20 random pieces** (current), on the real Draisgon replay b29415 (388 Cupcake ships vs 16
+  dreadnoughts), 3 seeds: as fought with plasma Nate keeps 2–7 (battles ~4 min); Nate's plasma → flak:
+  14–15 of 16 left, Cupcake routs in 65–72 s with 95–106 ships left.
 - Future weapons the owner wants: bigger cannons, a medium laser.
 
 Combat rules:

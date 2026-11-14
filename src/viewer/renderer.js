@@ -700,16 +700,16 @@ export class Renderer {
       if (t > S.t1[i]) {
         if (S.hit[i] && t - S.t1[i] < 3) { // impact spark
           const f = S.t1[i] - S.t0[i], x = S.x[i] + S.vx[i] * f, y = S.y[i] + S.vy[i] * f, k = 1 - (t - S.t1[i]) / 3;
-          if (vis(x, y, 4)) g.push(x, y, 0, Math.max(1.4, minW * 2), Math.max(1.4, minW * 2), 1, alpha2(C.flShrap, k));
+          if (vis(x, y, 4)) g.push(x, y, 0, Math.max(0.7, minW * 1.5), Math.max(0.7, minW * 1.5), 1, alpha2(C.flShrap, k));
         }
         continue;
       }
       const vx = S.vx[i], vy = S.vy[i], x = S.x[i] + vx * age, y = S.y[i] + vy * age;
       if (!vis(x, y, 6)) continue;
       const fade = S.hit[i] ? 1 : Math.min(1, (S.t1[i] - t) / 10);
-      const a = Math.atan2(vy, vx), c = Math.cos(a), s = Math.sin(a), len = Math.min(2.2, age * Math.hypot(vx, vy) * 0.5 + 0.4);
-      g.push(x - c * len, y - s * len, a, len, Math.max(0.28, minW * 0.8), 4, alpha2(C.flShrap, 0.95 * fade));
-      g.push(x, y, 0, Math.max(0.45, minW), Math.max(0.45, minW), 1, alpha2(C.flShell, fade));
+      const a = Math.atan2(vy, vx), c = Math.cos(a), s = Math.sin(a), len = Math.min(1.1, age * Math.hypot(vx, vy) * 0.3 + 0.3);
+      g.push(x - c * len, y - s * len, a, len, Math.max(0.16, minW * 0.6), 4, alpha2(C.flShrap, 0.85 * fade));
+      g.push(x, y, 0, Math.max(0.25, minW * 0.8), Math.max(0.25, minW * 0.8), 1, alpha2(C.flShell, 0.9 * fade));
     }
   }
 

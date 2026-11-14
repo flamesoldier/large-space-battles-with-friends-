@@ -1206,9 +1206,9 @@ export class Battle {
     // meets something (an enemy ship, a wreck, an allied ship, which it doesn't hurt, or an enemy
     // fighter), for up to `fragLife` s.
     const n = W.fragments, nf = Math.round(n * (W.cone || 0)), fwd = Math.atan2(P.vy[i], P.vx[i]), cw = W.coneW || 0.7;
-    const step = (2 * Math.PI) / (n - nf || 1), a0 = this.rng() * 2 * Math.PI, life = Math.round(W.fragLife / DT);
+    const life = Math.round(W.fragLife / DT);
     for (let f = 0; f < n; f++) {
-      const a = f < nf ? fwd + (this.rng() * 2 - 1) * cw : a0 + (f - nf) * step + (this.rng() - 0.5) * step;
+      const a = f < nf ? fwd + (this.rng() * 2 - 1) * cw : this.rng() * 2 * Math.PI;
       const sp = W.fragSpeed * (0.85 + 0.3 * this.rng());
       const rec = this.shotStart(K_FRAG, team, x, y, a);
       // Not added straight away: this runs inside updateProjectiles, whose loop holds the projectile
