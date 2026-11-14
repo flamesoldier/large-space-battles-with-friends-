@@ -287,7 +287,7 @@ Weapons (numbers in `blocks.js`):
 - **Flak cannon** (`BT.FLAK` = 13, weapon kind `'flak'`; owner, 14 Nov 2026: big ships had no answer to
   swarms of small ships; he turned down rule changes (plasma-first targeting, longer gun ranges, tougher
   armour) and asked for a new weapon): a **10×10 unit, 1,500 cr** (15 a block, the plasma cannon's size and
-  price), **200 hp a block** (owner, 15 Nov 2026: was 750 like plasma, whose hp makes up for its cook-off), keeps firing while half survives, **no cook-off**. Range 700. **Every 5 s a salvo
+  price), **200 hp a block** (owner, 15 Nov 2026: was 750 like plasma, whose hp makes up for its cook-off), keeps firing while half survives, **no cook-off**. Range 700. **Every 10 s a salvo** (owner, 15 Nov 2026: "in line with plasma"; was 5 s)
   of `salvo` 5 shells, `salvoGap` 0.3 s apart, all at one ship** (owner, 14 Nov 2026: one shell was
   "underwhelming for the equal most powerful weapon"; `w.sq` = shells left in the salvo, `w.ft` = its
   target, declared in `arcFields()`), each landing within `scatter` 6 blocks of the aim point. Shells fly
@@ -334,6 +334,12 @@ Weapons (numbers in `blocks.js`):
   ally flamesoldier 130 vs Nate 158 incl. 18 "My titan" with 3 plasma each), 3 seeds: as fought Nate keeps
   8–10 and loses; Nate's plasma → flak (54 units): Nate wins all 3 (39–53 of 158 left; Cupcake 39–50 of
   824, flamesoldier 4–6 of 130), 140–153 s. Bench 1,000 vs 1,000 identical.
+  **Reload 10 s** (current): Zephorka, Nate flak, 3 seeds: Cupcake still routs, but narrowly (Nate 11–18
+  of 158 left, Cupcake 27–53, flamesoldier 4–6; 284–322 s). Owner's spam test: 10 flak "My titan"
+  (14,527 cr, standoff) vs 76 "flak boats" (hub + flak unit + 19 thrusters, 1,920 cr), 4 seeds: boats on
+  Front line or Charge lose every time (titans keep 7–10); boats on Artillery win 2 of 4 (titans keep
+  2, 8, 6, 1): at 420 out they're beyond the titans' cannons and lasers, so it's flak against 2.5× the
+  flak.
 - Future weapons the owner wants: bigger cannons, a medium laser.
 
 Combat rules:
