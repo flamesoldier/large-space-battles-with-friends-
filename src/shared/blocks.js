@@ -16,6 +16,7 @@ export const BT = {
   GUIDED: 11, // guided missile launcher (owner, Nov 2026): the heavy missile, but it steers after its target
   BAY: 12, // fighter bay (owner, Nov 2026): a 6x6 unit that launches a fighter every 30 s
   FLAK: 13, // flak cannon (owner, 14 Nov 2026): a 10x10 unit, long range, shells burst beside lightly armoured ships in a spray of shrapnel
+  SHIELD: 14, // shield generator (owner, 15 Nov 2026): a 10x10 unit that gives its ship a regenerating shield pool
 };
 
 // Multi-block weapons: footprint in blocks, and the fraction of those blocks that must
@@ -23,6 +24,7 @@ export const BT = {
 export const MULTIBLOCK = {
   [BT.LANCE]: { size: 10, minIntact: 0.5 },
   [BT.BAY]: { size: 6, minIntact: 0.5 },
+  [BT.SHIELD]: { size: 10, minIntact: 1 }, // shield generator: the whole unit goes up when any block dies
   [BT.FLAK]: { size: 10, minIntact: 0.5 }, // flak cannon: same footprint as the plasma cannon // fighter bay (owner: big, it takes up space inside ships): keeps launching while 18 of its 36 blocks survive
 };
 
@@ -43,6 +45,7 @@ export const BLOCKS = {
   [BT.GUIDED]: { name: 'Guided missile launcher', hp: 300, mass: 5, cost: 135 }, // owner, Nov 2026: the missile launcher's stats, steering missiles, dearer
   [BT.BAY]: { name: 'Fighter bay', hp: 150, mass: 3, cost: 6.25 }, // owner, Nov 2026: 225 cr a 6x6 unit (asked for 200-250)
   [BT.LANCE]: { name: 'Plasma cannon', hp: 750, mass: 4, cost: 15 },
+  [BT.SHIELD]: { name: 'Shield generator', hp: 45, mass: 4, cost: 15 }, // owner, 15 Nov 2026: plasma's price, extremely weak blocks
   [BT.FLAK]: { name: 'Flak cannon', hp: 200, mass: 4, cost: 15 }, // owner, 14 Nov 2026: plasma's size and price, 1,500 a 10x10 unit; it doesn't explode when destroyed, so 200 hp (owner, 15 Nov: plasma's 750 makes up for its chain explosion) // hp was 120 (owner, Nov 2026: plasma ships lost their guns at once); 1,500 a 10x10 unit (was 3,500): an anti-capital weapon, see CLAUDE.md
 };
 
@@ -56,6 +59,13 @@ export const COOKOFF = { radius: 16, damage: 300, refHp: 120 };
 // goes up at once, but the blast barely touches the rest of the ship (radius and peak damage below).
 // The owner suggested 1 block; measured, that stripped big ships of their flak within a minute, see CLAUDE.md.
 export const FLAK_POP = { after: 25, radius: 8, damage: 30 };
+// Shield generator (owner, 15 Nov 2026). Each working 10x10 generator adds `capacity` to its ship's shield
+// pool and refills it at `regen` per second, all the time. While the pool holds, every hit on the ship
+// (any weapon, its own cook-offs included) drains the pool instead of the blocks; what a hit can't be
+// absorbed goes through. Flak shrapnel drains it at WEAPON[BT.FLAK].shieldMult. If any block of a
+// generator dies the whole unit explodes (a blast of `radius` / peak `damage` from its centre, hurting
+// anyone, own ship included: less than a plasma cook-off, but enough to set off a generator close by).
+export const SHIELD = { capacity: 5000, regen: 100, radius: 20, damage: 200 };
 
 // Weapon behaviour. Ranges/speeds in world units (blocks) and seconds.
 export const WEAPON = {
@@ -130,7 +140,7 @@ export const WEAPON = {
   // owner's Draisgon Major replay (Nate's 16 dreadnoughts with flak in place of their plasma vs
   // Cupcake's plasma-destroyer swarm): 1-7 dreadnoughts left -> 11-13 (see CLAUDE.md).
   [BT.FLAK]: { kind: 'flak', range: 700, damage: 60, fragments: 20, fragSpeed: 90, fragLife: 4, cone: 0, coneW: 0.7, salvo: 5, salvoGap: 0.3, scatter: 6, cooldown: 10, speed: 75, life: 14, fuse: 6, maxLead: 4, spread: 0.01,
-    vs: { [4]: 0.75, [2]: 0.5, [3]: 0.3 } }, // shrapnel damage share against frame (4), armour (2), heavy armour (3); owner, 15 Nov 2026
+    vs: { [4]: 1, [2]: 1, [3]: 1 }, shieldMult: 0.3 }, // shrapnel damage share against frame (4), armour (2), heavy armour (3); owner, 15 Nov 2026
 };
 
 // Firing arcs: every weapon can fire in any direction where its shot wouldn't pass through its

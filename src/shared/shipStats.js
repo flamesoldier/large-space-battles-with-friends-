@@ -7,7 +7,7 @@
 // the two agree; if you change the formulas in battle.js, change them here too.
 
 import { bayRoute } from './bayRoute.js';
-import { BT, BLOCKS, WEAPON, MULTIBLOCK, HULL_CLASSES, MAX_BLOCKS, MAX_W, MAX_H, COOKOFF, isWeapon } from './blocks.js';
+import { BT, BLOCKS, WEAPON, MULTIBLOCK, HULL_CLASSES, MAX_BLOCKS, MAX_W, MAX_H, COOKOFF, SHIELD, isWeapon } from './blocks.js';
 import { lineOfFire, openDegrees } from './arcs.js';
 
 // Escort and Brawler were taken out (owner, Nov 2026). A design saved with either loads as Front
@@ -129,7 +129,9 @@ export function analyzeDesign(d) {
     weapons.push({ type: t, cell: i, x: (i % w) + 0.5, y: ((i / w) | 0) + 0.5, ...weaponFacing(cells, w, h, i) });
   }
   const groups = multiblockGroups(cells, w, h);
+  const gens = groups.filter((g) => g.type === BT.SHIELD); // shield generators aren't guns
   for (const g of groups) {
+    if (g.type === BT.SHIELD) continue;
     let sx = 0, sy = 0;
     for (const c of g.cells) { sx += (c % w) + 0.5; sy += ((c / w) | 0) + 0.5; }
     const wf = weaponFacing(cells, w, h, g.cells[0], g.cells);
@@ -164,6 +166,7 @@ export function analyzeDesign(d) {
   const badGroups = groups.filter((g) => !g.ok);
   if (badGroups.some((g) => g.type === BT.LANCE)) errors.push('Plasma cannons must be whole 10×10 units, not touching each other.');
   if (badGroups.some((g) => g.type === BT.FLAK)) errors.push('Flak cannons must be whole 10×10 units, not touching each other.');
+  if (badGroups.some((g) => g.type === BT.SHIELD)) errors.push('Shield generators must be whole 10×10 units, not touching each other.');
   if (badGroups.some((g) => g.type === BT.BAY)) errors.push(`Fighter bays must be whole ${MULTIBLOCK[BT.BAY].size}×${MULTIBLOCK[BT.BAY].size} units, not touching each other.`);
 
   if (!weapons.length) warnings.push('No weapons: the ship counts as a disarmed hulk in battle.');
@@ -178,7 +181,23 @@ export function analyzeDesign(d) {
   if (!thrust && blocks > 1) warnings.push('No thrusters: the ship crawls on hub jets (2.5 speed).');
   if (groups.some((g) => g.type === BT.LANCE)) warnings.push(`FRIENDLY FIRE: plasma bolts carve through your own ships too. Plasma cannon blocks also explode when destroyed and chain-react, wrecking everything within about ${COOKOFF.radius} blocks of the gun, your own ship included. Armour it well.`);
 
+  // Shield generators: each whole one adds to the shield pool. One that dies explodes, and that sets
+  // off any other generator within reach of the blast (where it would kill a 45 hp block).
+  const okGens = gens.filter((g) => g.ok);
+  const shield = okGens.length * SHIELD.capacity, shieldRegen = okGens.length * SHIELD.regen;
+  const kill = SHIELD.radius * (1 - Math.sqrt(BLOCKS[BT.SHIELD].hp / SHIELD.damage)); // ~10.5 blocks from the centre
+  let close = 0;
+  for (let a = 0; a < okGens.length; a++)
+    for (let b = a + 1; b < okGens.length; b++) {
+      const A = okGens[a], B = okGens[b];
+      const dx = Math.max(0, Math.abs((A.x0 + A.x1) / 2 - (B.x0 + B.x1) / 2) - 4.5), dy = Math.max(0, Math.abs((A.y0 + A.y1) / 2 - (B.y0 + B.y1) / 2) - 4.5);
+      if (Math.hypot(dx, dy) < kill) close++;
+    }
+  if (close) warnings.push(`Shield generators too close together: if one explodes it sets off the other${close > 1 ? 's' : ''} next to it. Keep them at least ${Math.ceil(kill - 4)} blocks apart.`);
+  if (okGens.length && !warnings.some((x) => x.startsWith('Shield'))) warnings.push(`Shield generator blocks have only ${BLOCKS[BT.SHIELD].hp} hp, and if one dies the whole generator explodes (${SHIELD.damage} damage within ${SHIELD.radius} blocks, your own ship included). Bury them deep inside armour.`);
+
   return {
+    shield, shieldRegen, gens,
     blocks, cost, mass, hp, thrust, maxSpeed, turn, turnDeg: (turn * 180) / Math.PI,
     hullClass: cls, byType, weapons, fire, dps, alpha,
     minRange: ranges.length ? Math.min(...ranges) : 0, maxRange: ranges.length ? Math.max(...ranges) : 0,

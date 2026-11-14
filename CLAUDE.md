@@ -348,12 +348,40 @@ Weapons (numbers in `blocks.js`):
   pending the owner): line 6/6, artillery 6/6, charge 6/6, Zephorka 3/3** (Nate 10–24 of 158 left);
   never (old half-intact rule only, 750 hp): 18/18 and Zephorka 3/3. Owner: "way too tanky".
   **200 hp, blow-up at 25, shrapnel weaker against plating** (`WEAPON[BT.FLAK].vs`, `FRAG_VS` in battle.js:
-  share of damage to frame / armour / heavy; current 0.75 / 0.5 / 0.3). Same tests (spam line / artillery /
+  share of damage to frame / armour / heavy; tried 0.75 / 0.5 / 0.3, **now back to 1 / 1 / 1**). Same tests (spam line / artillery /
   charge wins of 6; Zephorka Nate wins of 3): full damage 5 / 0 / 5, Zephorka 3/3 (7–15 of 158 left);
   0.75/0.5/0.3: 6 / 0 / 5, Zephorka 1 win, 1 loss, 1 both wiped out (7–15 min battles); 0.5/0.35/0.2: 6 / 0 /
   6, Zephorka 0/3 (Cupcake keeps 141–209 of 824; with plasma 439–499). Artillery flak boats always win at
   200 hp: from 420 out only flak and missiles reach, and their 76 flak strip the titans' 70 surface guns
   each (679 → 372 in 15 s) while the titans' frame survives.
+- **Shield generator** (`BT.SHIELD` = 14; owner, 15 Nov 2026: "shields keep ships alive, ships then get to
+  fire for longer, making big ships good again"; to go with flak, which still lost to pure flak boats on
+  Artillery): a **10×10 unit, 1,500 cr** (plasma's price), **45 hp a block**, not a weapon (`e.gens`, not in
+  `e.weapons`; `analyzeDesign` returns `shield`, `shieldRegen`, `gens`). Each working generator adds
+  `SHIELD.capacity` **5,000** (owner: "enough to block a single plasma hit") to the ship's pool
+  (`e.shield`/`e.shieldMax`), refilled at `SHIELD.regen` **100/s** each, all the time (owner wanted it
+  to regenerate so players defend generators; 100 is my pick, see below). **Every hit on the ship drains
+  the pool first** (`shieldAbsorb()` in `damageCell()`, and in the laser and plasma budget loops so a
+  shield soaks the beam or bolt); damage it can't take goes through. Own cook-offs and blasts too.
+  **Flak shrapnel drains shields at `WEAPON[BT.FLAK].shieldMult` 0.3.** **If any generator block dies the
+  whole unit explodes** (`flakPops` queue → `resolvePops()` → `popShield()`; `killCells()` so the ship's
+  own remaining shield doesn't stop it; explosion size 7; blast `SHIELD.radius` 20 / peak `damage` 200
+  from its centre, anyone; less than plasma's per-block cook-off) and its share of pool and regen is
+  gone. A blast kills 45 hp blocks out to ~10.5 from the centre, so generators within ~6 blocks of each
+  other chain (designer warns), and one near the hub can break the ship (the 3-generator titan test
+  below put one by the hub and did worse than 2). A generator cut off from the ship is lost quietly
+  (`refit`). `resolveCookoffs()` now runs pops, then plasma cook-offs, then pops again. Replays: `shT/shEnt/shV`
+  (shield fraction ×255 when it moves ≥ 4 steps, ≥ 0.3 s apart, or hits 0/full); viewer `shieldAt()` in
+  `model.js`, `drawShield()` (glow shape 5: bubble with bright rim, brighter when struck, a popping ring when
+  it collapses; drawn at every zoom), shader type 14 (teal emitter dish in a ring of 8 coils). Designer:
+  key **E**, `shieldUnit()`, Shield stat row. Tests in `tools/test-designer.mjs`.
+  Measured (spam test as for flak: 10 "My titan" with flak vs equal-cost flak boats, 6 seeds, titan wins;
+  2 generators at columns 8 and 54, rows 10–19, replacing frame, so titans cost 17,527 and face 90 boats):
+  no shields line 5 / artillery 0 / charge 5; **2 gens, regen 50: 6 / 3 / 6; regen 100: 6 / 5 / 6**; regen
+  200: 6 / 6 / 6; 3 gens (one by the hub, 98 boats), regen 50: 6 / 1 / 6. Zephorka (Nate flak + 2 gens on
+  each titan, regen 100, 3 seeds): Nate wins 3/3 (11–17 of 158 left; without shields also 3/3). Flak
+  shrapnel back to full damage against plating (`vs` all 1, owner: "he wins at Zephorka with the full
+  damage"). Bench 1,000 vs 1,000 identical.
 - Future weapons the owner wants: bigger cannons, a medium laser.
 
 Combat rules:

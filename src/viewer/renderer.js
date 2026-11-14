@@ -170,6 +170,24 @@ vec3 hullBlock(int code, vec2 p) {
       glow = (vec3(1.0, 0.62, 0.2) * lights * (0.65 + 0.35 * sin(uTime * 0.7 + q.x * 7.0)) + vec3(1.0, 0.45, 0.15) * hot) * d;
     }
   }
+  else if (type == 14) { // shield generator: the 10x10 unit is one emitter, a glowing dish inside a ring of coils
+    vec2 q = (vec2(float(var / 10), float(var - (var / 10) * 10)) + p * 0.5 + 0.5) / 10.0 - 0.5;
+    vec2 aq = abs(q);
+    float R = length(q), m = max(aq.x, aq.y), ang = atan(q.y, q.x);
+    float base = 0.5 + 0.06 * step(0.5, fract(R * 12.0));
+    float rim = smoothstep(0.44, 0.46, m);
+    base = mix(base, 0.8 - dot(q, L) * 0.5, rim);
+    // eight coils round the dish
+    float coil = 1.0 - smoothstep(0.06, 0.075, length(vec2(R - 0.34, (fract(ang / 0.7854 + 0.5) - 0.5) * 0.27)));
+    base = mix(base, 1.0 - dot(q, L) * 0.8, coil);
+    float dish = 1.0 - smoothstep(0.24, 0.26, R);
+    base = mix(base, 0.7 - dot(q, L) * 0.9, dish);
+    lit *= mix(1.0, base, d);
+    if (!dead) {
+      float pulse = 0.75 + 0.25 * sin(uTime * 0.5 + R * 20.0);
+      glow = (vec3(0.35, 0.9, 1.0) * (1.0 - smoothstep(0.0, 0.22, R)) * pulse + vec3(0.3, 0.85, 1.0) * coil * 0.35 * (0.6 + 0.4 * sin(uTime * 0.9 + ang * 4.0))) * d;
+    }
+  }
   col = col * max(lit, 0.0) + glow;
   return mix(col, col * 0.3, ol * (0.4 + 0.6 * d));
 }
@@ -189,6 +207,12 @@ void main(){
     o = vec4(vCol.rgb * a * vCol.a, 0.0);
   } else if (vShape < 3.5) {     // flat (far-zoom ship silhouette)
     o = vec4(vCol.rgb, 1.0);
+  } else if (vShape > 4.5) {     // shield bubble: bright rim, faint shimmering fill
+    float r = length(vUV);
+    float rim = smoothstep(0.72, 0.96, r) * (1.0 - smoothstep(0.96, 1.0, r));
+    float shim = 0.5 + 0.5 * sin(vUV.x * 14.0 + uTime * 0.35) * sin(vUV.y * 14.0 - uTime * 0.25);
+    float a = (rim + (0.1 + 0.08 * shim) * r * r) * step(r, 1.0);
+    o = vec4(vCol.rgb * a * vCol.a, 0.0);
   } else {                       // beam: even along its length
     float ay = 1.0 - abs(vUV.y);
     float a = ay * ay * (1.0 - smoothstep(0.85, 1.0, abs(vUV.x)));
@@ -236,7 +260,7 @@ function blockPalette(team, dead) {
   const T = TEAM[team], k = dead ? 0.7 : 1; // wrecks stay readable, just burnt
   const p = [];
   p[BT.HUB] = T.hub; p[BT.ARMOR] = T.armor; p[BT.HEAVY] = T.heavy; p[BT.FRAME] = T.frame;
-  p[BT.THRUSTER] = '#3d434f'; p[BT.LASER] = team ? '#ffd9c9' : '#d8f4ff'; p[BT.CANNON] = '#9aa1ab'; p[BT.MISSILE] = '#b9b16c'; p[BT.PD] = PD_COLOR; p[BT.LANCE] = team ? '#8a4f63' : '#5b5f9c'; p[BT.GUIDED] = '#8fb79e'; p[BT.BAY] = '#c9a23c'; p[BT.FLAK] = '#6e6656';
+  p[BT.THRUSTER] = '#3d434f'; p[BT.LASER] = team ? '#ffd9c9' : '#d8f4ff'; p[BT.CANNON] = '#9aa1ab'; p[BT.MISSILE] = '#b9b16c'; p[BT.PD] = PD_COLOR; p[BT.LANCE] = team ? '#8a4f63' : '#5b5f9c'; p[BT.GUIDED] = '#8fb79e'; p[BT.BAY] = '#c9a23c'; p[BT.FLAK] = '#6e6656'; p[BT.SHIELD] = '#2b6f7a';
   return p.map((c) => (c ? rgba(dead ? shade(c, k) : c) : 0));
 }
 const PAL = [[blockPalette(0, false), blockPalette(1, false)], [blockPalette(0, true), blockPalette(1, true)]];
@@ -260,7 +284,7 @@ function lookFor(hex) {
     const p = [];
     p[BT.HUB] = T.hub; p[BT.ARMOR] = T.armor; p[BT.HEAVY] = T.heavy; p[BT.FRAME] = T.frame;
     p[BT.THRUSTER] = '#3d434f'; p[BT.LASER] = mixHex(hex, '#ffffff', 0.75); p[BT.CANNON] = '#9aa1ab'; p[BT.MISSILE] = '#b9b16c';
-    p[BT.PD] = PD_COLOR; p[BT.LANCE] = shade(mixHex(hex, '#40404a', 0.5), 0.9); p[BT.GUIDED] = '#8fb79e'; p[BT.BAY] = '#c9a23c'; p[BT.FLAK] = shade(mixHex(hex, '#6e6656', 0.7), 0.95);
+    p[BT.PD] = PD_COLOR; p[BT.LANCE] = shade(mixHex(hex, '#40404a', 0.5), 0.9); p[BT.GUIDED] = '#8fb79e'; p[BT.BAY] = '#c9a23c'; p[BT.FLAK] = shade(mixHex(hex, '#6e6656', 0.7), 0.95); p[BT.SHIELD] = shade(mixHex(hex, '#2b6f7a', 0.75), 0.95);
     return p.map((c) => (c ? rgba(dead ? shade(c, 0.7) : c) : 0));
   };
   L = { pal: [make(false), make(true)], lod: rgba(hex), engine: rgba(hex, 150), accent: hex };
@@ -318,6 +342,7 @@ const C = {
   fBody: rgba('#d3d9e3'), fCanopy: rgba('#7fd8ff'), // fighters
   // Flak (14 Nov 2026): hot amber shells, a white flash and a spray of orange shrapnel streaks.
   flShell: rgba('#fff0c2', 255), flTrail: rgba('#ffb347', 210), flFlash: rgba('#fff8e8', 255), flGlow: rgba('#ff9a3c', 255),
+  shield: rgba('#6fe8ff', 255),
   flShrap: rgba('#ffc070', 255), flSmoke: rgba('#8c8278', 255),
 };
 
@@ -386,7 +411,10 @@ export class Renderer {
       if (lod) {
         // Far zoom: one quad per ship, debris as faint specks.
         if (dead) { if (e.size > 2) solid.push(tr.x, tr.y, tr.a, Math.max(e.w * 0.35, px), Math.max(e.h * 0.35, px), 3, C.lodDead); }
-        else solid.push(tr.x, tr.y, tr.a, Math.max(e.w * 0.45, px * 1.2), Math.max(e.h * 0.32, px * 1.2), 3, e.look ? e.look.lod : C.lod[e.team]);
+        else {
+          solid.push(tr.x, tr.y, tr.a, Math.max(e.w * 0.45, px * 1.2), Math.max(e.h * 0.32, px * 1.2), 3, e.look ? e.look.lod : C.lod[e.team]);
+          if (e.shN) this.drawShield(model, e, t, tr, px);
+        }
         continue;
       }
       const c = Math.cos(tr.a), s = Math.sin(tr.a), pal = e.look ? e.look.pal[dead ? 1 : 0] : PAL[dead ? 1 : 0][e.team];
@@ -406,7 +434,7 @@ export class Renderer {
           const o = i * 4, a0 = nb[o], a1 = nb[o + 1], a2 = nb[o + 2], a3 = nb[o + 3];
           const mask = (a0 >= 0 && de[a0] > t ? 1 : 0) | (a1 >= 0 && de[a1] > t ? 2 : 0) | (a2 >= 0 && de[a2] > t ? 4 : 0) | (a3 >= 0 && de[a3] > t ? 8 : 0);
           const type = ty[i], x = tr.x + lx[i] * c - ly[i] * s, y = tr.y + lx[i] * s + ly[i] * c;
-          const v = (type === BT.LANCE || type === BT.BAY || type === BT.FLAK) && un[i] ? un[i] - 1 : (i * 2654435761) >>> 29;
+          const v = (type === BT.LANCE || type === BT.BAY || type === BT.FLAK || type === BT.SHIELD) && un[i] ? un[i] - 1 : (i * 2654435761) >>> 29;
           solid.push(x, y, tr.a, 0.5, 0.5, 10 + type + 16 * mask + 256 * v + deadBit, pal[type]);
           blocks++;
         }
@@ -422,6 +450,7 @@ export class Renderer {
           const fx = lx[i] - 0.5 - len, fy = ly[i];
           glow.push(tr.x + fx * c - fy * s, tr.y + fx * s + fy * c, tr.a, len + 0.2, 0.55, 1, eng);
         }
+        if (e.shN) this.drawShield(model, e, t, tr, px);
       } else if (t - e.t0 < 14) {
         const k = 1 - (t - e.t0) / 14;
         glow.push(tr.x, tr.y, 0, e.radius * 1.3, e.radius * 1.3, 1, (C.hotChunk & 0xffffff) | ((k * 170) << 24));
@@ -448,6 +477,14 @@ export class Renderer {
     gl.blendFunc(gl.ONE, gl.ONE);
     gl.bufferData(gl.ARRAY_BUFFER, glow.f.subarray(0, glow.n * STRIDE), gl.STREAM_DRAW);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, glow.n);
+  }
+
+  /** Shield generators: a bubble round the ship, brighter when struck, popping when the shield goes down. */
+  drawShield(model, e, t, tr, px) {
+    const S = model.shieldAt(e, t, this._sh || (this._sh = { v: 0, hit: 0, down: -1 }));
+    const rx = Math.max(e.w * 0.62 + 3, px * 3), ry = Math.max(e.h * 0.62 + 3, px * 3);
+    if (S.v > 0.004) this.glow.push(tr.x, tr.y, tr.a, rx, ry, 5, alpha2(C.shield, 0.2 + 0.4 * S.v + Math.min(0.9, S.hit * 6)));
+    else if (S.down >= 0 && S.down < 10) { const k = S.down / 10; this.glow.push(tr.x, tr.y, tr.a, rx * (1 + k * 0.4), ry * (1 + k * 0.4), 5, alpha2(C.shield, 1 - k)); }
   }
 
   drawEffects(m, t, vis, px) {
@@ -498,7 +535,7 @@ export class Renderer {
     // Detonations: 0 = missile shot down, 1 = cannon shell, 2 = heavy missile, 3 = heavy-laser block cooking off,
     // 4 = plasma bolt bursting into a hull, 5 = plasma bolt's final blast (both blue)
     const E = m.expl;
-    const LIFE = [6, 8, 24, 22, 12, 24], BASE = [1, 1.5, 5, 3, 3, 6], GROW = [2.5, 5, 15, 16, 9, 20];
+    const LIFE = [6, 8, 24, 22, 12, 24, 0, 22], BASE = [1, 1.5, 5, 3, 3, 6, 0, 6], GROW = [2.5, 5, 15, 16, 9, 20, 0, 24]; // 7: shield generator exploding
     for (let i = lowerBound(E.t, t - 24); i < E.n && E.t[i] <= t; i++) {
       if (E.s[i] === 6) { this._hasFrag = !!m.frag; this.drawFlakBurst(E, i, t, vis, minW); continue; }
       const sz = E.s[i], life = LIFE[sz] ?? 8, age = t - E.t[i];

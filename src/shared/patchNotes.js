@@ -8,10 +8,12 @@
 
 export const PATCH_NOTES = [
   {
-    id: '2026-11-14d', date: '14 Nov 2026', title: 'New weapon: the flak cannon',
+    id: '2026-11-15a', date: '15 Nov 2026', title: 'New: flak cannons and shield generators',
     items: [
-      'New 10×10 weapon in the designer: the Flak cannon (key K, 1,500 cr a unit, the same size and price as the plasma cannon). Every 10 seconds it fires a salvo of 5 shells up to 700 blocks at one enemy ship; each bursts right beside it in a spray of 20 pieces of shrapnel flying every way, and every piece flies on until it hits something: deadly to small, lightly armoured ships and fighters, but it barely scratches thick armour.',
-      'Flak goes for the most lightly armoured ship in range first (lots of guns, little armour or frame) and spreads its fire, so a fleet full of flak cannons doesn\'t all shoot the same ship. Its shells fly straight through ships and wrecks to burst in the open beside their target, so they reach the back lines. Its blocks have 200 hp, and once a quarter of them are destroyed the whole cannon blows up (the blast barely hurts the rest of the ship). Shrapnel does less to plating: 75% to frame, 50% to armour, 30% to heavy armour. Shrapnel is stopped by wrecks and allied ships, but never hurts your side. It\'s the answer big ships have been missing against swarms of small ships.',
+      'New 10×10 weapon in the designer: the Flak cannon (key K, 1,500 cr a unit, the same size and price as the plasma cannon). Every 10 seconds it fires a salvo of 5 shells up to 700 blocks at one enemy ship; each bursts right beside it in a spray of 20 pieces of shrapnel flying every way, and every piece flies on until it hits something: deadly to small, lightly armoured ships and fighters.',
+      'Flak goes for the most lightly armoured ship in range first (lots of guns, little armour or frame) and spreads its fire, so a fleet full of flak cannons doesn\'t all shoot the same ship. Its shells fly straight through ships and wrecks to burst in the open beside their target, so they reach the back lines. Its blocks have 200 hp, and once a quarter of them are destroyed the whole cannon blows up (the blast barely hurts the rest of the ship). Shrapnel is stopped by wrecks and allied ships, but never hurts your side. It\'s the answer big ships have been missing against swarms of small ships.',
+      'New 10×10 block in the designer: the Shield generator (key E, 1,500 cr a unit). Each one gives its ship a 5,000 shield that soaks up every hit before a single block is damaged, and refills by 100 a second all the time. Generators stack. Flak shrapnel only does 30% damage to shields.',
+      'Its blocks are very weak (45 hp): once the shield is down, losing any one of them makes the whole generator explode, hurting your own ship, and its shield is gone. Bury generators deep in armour and keep them well apart (and away from your hub), so big armoured ships get the most out of them.',
     ],
   },
   {

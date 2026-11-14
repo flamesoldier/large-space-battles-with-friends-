@@ -11,7 +11,7 @@
 //    their position at any time with a formula and nothing has to be recorded.
 //  * Everything is recorded as events + low-rate transform samples (see toReplay()).
 
-import { BT, BLOCKS, WEAPON, MULTIBLOCK, COOKOFF, FLAK_POP, isWeapon } from '../shared/blocks.js';
+import { BT, BLOCKS, WEAPON, MULTIBLOCK, COOKOFF, FLAK_POP, SHIELD, isWeapon } from '../shared/blocks.js';
 import { lineOfFire, updateLineOfFire, binOf, binOpen, binAngle, ARC_BINS } from '../shared/arcs.js';
 import { bayRoute } from '../shared/bayRoute.js';
 import { mulberry32 } from '../shared/rng.js';
@@ -198,6 +198,10 @@ export class Battle {
       }
       let sx = 0, sy = 0;
       for (const c of group) { sx += (c % d.w) + 0.5 - d.w / 2; sy += ((c / d.w) | 0) + 0.5 - d.h / 2; }
+      if (t === BT.SHIELD) { // not a gun: it feeds the ship's shield pool
+        (e.gens ||= []).push({ cells: group, lx: sx / group.length, ly: sy / group.length, popped: false });
+        continue;
+      }
       // Fighter bays launch their opening wave early; plasma cannons charge for 4-10 s.
       const cd0 = this.rng();
       const wpn = { cell: group[0], cells: group, type: t, lx: sx / group.length, ly: sy / group.length, cd: t === BT.BAY ? 1 + cd0 * 2 : 4 + cd0 * 6, ...arcFields() };
@@ -205,6 +209,10 @@ export class Battle {
       e.weapons.push(wpn);
     }
     for (const w of e.weapons) this.facing(e, w);
+    if (e.gens) {
+      e.shieldMax = e.gens.length * SHIELD.capacity; e.shield = e.shieldMax; e.shieldRegen = e.gens.length * SHIELD.regen;
+      this.recShield(e);
+    }
     e.track = [];
     e.t1 = 65535;
     this.refit(e);
@@ -239,6 +247,7 @@ export class Battle {
       face: null, faceMax: 0, // firepower that bears on a target at each of the 64 directions round the ship (see refit / holdFacing)
       worth: 0, // credit value of the ship's design (rout check)
       light: 0, flakIn: 0, // flak: how lightly armoured it is for its guns (see refit), flak shells on their way to it
+      gens: null, shield: 0, shieldMax: 0, shieldRegen: 0, shQ: -1, shT: -1000, // shield generators and the ship's shield pool (see SHIELD)
     };
     this.byId.push(e);
     this.ents.push(e);
@@ -301,7 +310,7 @@ export class Battle {
       if (T) T[((y / TILE) | 0) * tw + ((x / TILE) | 0)] = 1;
       mass += BLOCKS[t].mass;
       if (t === BT.THRUSTER) thrust += BLOCKS[t].thrust;
-      else if (t >= BT.LASER) gunCost += BLOCKS[t].cost;
+      else if (t >= BT.LASER && t !== BT.SHIELD) gunCost += BLOCKS[t].cost;
       else if (t === BT.ARMOR || t === BT.HEAVY || t === BT.FRAME) plating++;
       if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
     }
@@ -315,6 +324,16 @@ export class Battle {
       for (const c of w.cells) if (e.hp[c] > 0) alive++;
       return alive >= w.cells.length * MULTIBLOCK[w.type].minIntact;
     });
+    // A shield generator that has lost blocks without exploding (cut off from the ship) is gone too.
+    if (e.gens) for (const g of e.gens) {
+      if (g.popped) continue;
+      for (const c of g.cells) if (e.hp[c] <= 0) {
+        g.popped = true;
+        e.shieldMax = Math.max(0, e.shieldMax - SHIELD.capacity); e.shieldRegen = Math.max(0, e.shieldRegen - SHIELD.regen);
+        if (e.shield > e.shieldMax) e.shield = e.shieldMax;
+        break;
+      }
+    }
     for (const w of e.weapons) { // armour shot away can open new arcs (and new ways out for fighter bays)
       updateLineOfFire(e.types, e.hp, e.w, e.h, w);
       if (w.type === BT.BAY) this.bayExit(e, w, false);
@@ -403,7 +422,10 @@ export class Battle {
     for (let k = 0; k < this.ents.length; k++) {
       const e = this.ents[k];
       if (e.dead) continue;
-      if (e.kind === SHIP) { this.think(e); this.move(e); }
+      if (e.kind === SHIP) {
+        this.think(e); this.move(e);
+        if (e.shieldMax > 0) { if (e.shield < e.shieldMax) e.shield = Math.min(e.shieldMax, e.shield + e.shieldRegen * DT); this.recShield(e); }
+      }
       else {
         e.x += e.vx * DT; e.y += e.vy * DT; e.a += e.va * DT;
         e.c = Math.cos(e.a); e.s = Math.sin(e.a);
@@ -1367,6 +1389,7 @@ export class Battle {
         if (!last) return false; // a friend is first in line: wait
         ex = hx; ey = hy; last = o; budget = 0; break; // a friendly hull stops the beam
       }
+      if (o.shield > 0) { const left = this.shieldAbsorb(o, budget); last = o; if (left <= 0) { budget = 0; ex = hx; ey = hy; break; } budget = left; }
       const hp = o.hp[cell], dmg = Math.min(hp, budget);
       this.damageCell(o, cell, dmg);
       budget -= dmg; last = o;
@@ -1456,7 +1479,7 @@ export class Battle {
           }
         }
         if (hit) {
-          if (this.canDamage(this.hitE, P.team[i])) { const he = this.hitE, hc = this.hitCell; this.damageCell(he, hc, P.dmg[i] * (FRAG_VS[he.types[hc]] ?? 1)); }
+          if (this.canDamage(this.hitE, P.team[i])) { const he = this.hitE, hc = this.hitCell; this.damageCell(he, hc, P.dmg[i] * (FRAG_VS[he.types[hc]] ?? 1), WEAPON[BT.FLAK].shieldMult); }
           this.shotEnd(rec, this.now - 1 + this.hitT, 1);
           this.removeProjectile(i--);
           continue;
@@ -1988,9 +2011,23 @@ export class Battle {
     return this.friendlyFire || target.kind !== SHIP || !this.fr[(team << 4) | target.team];
   }
 
-  damageCell(e, i, dmg) {
+  /**
+   * A hit on ship e: its shield pool takes it first (at `m` per point: flak shrapnel drains shields
+   * more slowly). Returns the damage that gets through to the blocks.
+   */
+  shieldAbsorb(e, dmg, m = 1) {
+    const s = dmg * m;
+    this.lastDamage = this.now;
+    if (s < e.shield) { e.shield -= s; return 0; }
+    const left = dmg - e.shield / m;
+    e.shield = 0;
+    return left;
+  }
+
+  damageCell(e, i, dmg, m = 1) {
     const before = e.hp[i];
     if (before <= 0) return;
+    if (e.shield > 0) { dmg = this.shieldAbsorb(e, dmg, m); if (dmg <= 0) return; }
     e.hp[i] = before - dmg;
     this.lastDamage = this.now;
     if (e.hp[i] > 0) return;
@@ -2004,7 +2041,31 @@ export class Battle {
       // chain reaction through the rest of the gun doesn't recurse.
       const lx = (i % e.w) + 0.5 - e.w / 2, ly = ((i / e.w) | 0) + 0.5 - e.h / 2;
       this.cookoffs.push(e.x + lx * e.c - ly * e.s, e.y + lx * e.s + ly * e.c);
-    } else if (e.types[i] === BT.FLAK && e.kind === SHIP) this.flakPops.push(e, i);
+    } else if ((e.types[i] === BT.FLAK || e.types[i] === BT.SHIELD) && e.kind === SHIP) this.flakPops.push(e, i);
+  }
+
+  /** Destroy the rest of a unit outright (it blew up): its own ship's shield doesn't stop that. */
+  killCells(e, cells) {
+    const s = e.shield;
+    e.shield = 0;
+    for (const c of cells) if (e.hp[c] > 0) this.damageCell(e, c, 1e9);
+    e.shield = Math.min(s, e.shieldMax);
+  }
+
+  /** A shield generator lost a block: the whole unit explodes and its share of the shield is gone. */
+  popShield(e, i) {
+    if (!e.gens) return;
+    let g = null;
+    for (const o of e.gens) if (!o.popped && o.cells.includes(i)) { g = o; break; }
+    if (!g) return;
+    g.popped = true;
+    e.shieldMax = Math.max(0, e.shieldMax - SHIELD.capacity); e.shieldRegen = Math.max(0, e.shieldRegen - SHIELD.regen);
+    if (e.shield > e.shieldMax) e.shield = e.shieldMax;
+    this.recShield(e, true);
+    this.killCells(e, g.cells);
+    const x = e.x + g.lx * e.c - g.ly * e.s, y = e.y + g.lx * e.s + g.ly * e.c;
+    this.recExplosion(x, y, 7); // 7: shield generator exploding
+    this.blast(x, y, SHIELD.radius, SHIELD.damage, -1, true);
   }
 
   /**
@@ -2013,24 +2074,7 @@ export class Battle {
    * go off in turn, so a hit gun often takes the whole unit (and the middle of the ship) with it.
    */
   resolveCookoffs() {
-    // A flak cannon that has lost FLAK_POP.after blocks blows up whole, with a small blast (owner, 15 Nov 2026).
-    const F = this.flakPops;
-    for (let k = 0; k < F.length; k += 2) {
-      const e = F[k], i = F[k + 1];
-      if (e.dead) continue;
-      let w = null;
-      for (const o of e.weapons) if (o.type === BT.FLAK && !o.popped && o.cells.includes(i)) { w = o; break; }
-      if (!w) continue;
-      let lost = 0;
-      for (const c of w.cells) if (e.hp[c] <= 0) lost++;
-      if (lost < FLAK_POP.after) continue;
-      w.popped = true;
-      for (const c of w.cells) if (e.hp[c] > 0) this.damageCell(e, c, 1e9);
-      const x = e.x + w.lx * e.c - w.ly * e.s, y = e.y + w.lx * e.s + w.ly * e.c;
-      this.recExplosion(x, y, 3);
-      this.blast(x, y, FLAK_POP.radius, FLAK_POP.damage, -1, true);
-    }
-    F.length = 0;
+    this.resolvePops();
     const C = COOKOFF;
     for (let k = 0; k < this.cookoffs.length && k < 4000; k += 2) {
       const x = this.cookoffs[k], y = this.cookoffs[k + 1];
@@ -2038,6 +2082,33 @@ export class Battle {
       this.blast(x, y, C.radius, C.damage, -1, true);
     }
     this.cookoffs.length = 0;
+    this.resolvePops(); // generators and flak cannons the cook-offs just set off
+  }
+
+  /**
+   * Flak cannons that have lost FLAK_POP.after blocks blow up whole, with a small blast (owner, 15 Nov
+   * 2026); shield generators that lost any block explode (popShield). A blast can set off the next one,
+   * which joins the queue and goes off in the same pass.
+   */
+  resolvePops() {
+    const F = this.flakPops;
+    for (let k = 0; k < F.length; k += 2) {
+      const e = F[k], i = F[k + 1];
+      if (e.dead) continue;
+      if (e.types[i] === BT.SHIELD) { this.popShield(e, i); continue; }
+      let w = null;
+      for (const o of e.weapons) if (o.type === BT.FLAK && !o.popped && o.cells.includes(i)) { w = o; break; }
+      if (!w) continue;
+      let lost = 0;
+      for (const c of w.cells) if (e.hp[c] <= 0) lost++;
+      if (lost < FLAK_POP.after) continue;
+      w.popped = true;
+      this.killCells(e, w.cells);
+      const x = e.x + w.lx * e.c - w.ly * e.s, y = e.y + w.lx * e.s + w.ly * e.c;
+      this.recExplosion(x, y, 3);
+      this.blast(x, y, FLAK_POP.radius, FLAK_POP.damage, -1, true);
+    }
+    F.length = 0;
   }
 
   /**
@@ -2215,8 +2286,9 @@ export class Battle {
         this.recExplosion(x0 + sdx * h.t, y0 + sdy * h.t, 4); // 4: plasma bursting into a hull
         P.target[i] = o.id; last = o;
       }
+      if (o.shield > 0) budget = this.shieldAbsorb(o, budget); // a shield soaks the bolt before it reaches the hull
       const dmg = Math.min(hp, budget);
-      this.damageCell(o, h.cell, dmg);
+      if (dmg > 0) this.damageCell(o, h.cell, dmg);
       budget -= dmg;
       if (budget <= 0) {
         P.dmg[i] = 0;
@@ -2368,7 +2440,20 @@ export class Battle {
       svT: C(Uint16Array), svEnt: C(Uint32Array), svX: C(Int16Array), svY: C(Int16Array), svVx: C(Int16Array), svVy: C(Int16Array),
       // Guided missiles (shot kind 3) and fighters (shot kind 4): points on their path, gmT in 0.01 s (ticks × 10), for shot gmRec.
       gmRec: C(Uint32Array), gmT: C(Uint32Array), gmX: C(Int16Array), gmY: C(Int16Array),
+      // Shields: from tick shT ship shEnt's shield pool is shV / 255 of its size then (shield generators).
+      shT: C(Uint16Array), shEnt: C(Uint32Array), shV: C(Uint8Array),
     };
+  }
+
+  /** Record a ship's shield level when it has moved enough since the last record (or `force`). */
+  recShield(e, force = false) {
+    const q = e.shieldMax > 0 ? Math.round((255 * e.shield) / e.shieldMax) : 0;
+    if (q === e.shQ) return;
+    const edge = q === 0 || q === 255 || e.shQ <= 0;
+    if (!force && !edge && (Math.abs(q - e.shQ) < 4 || this.now - e.shT < 3)) return;
+    const R = this.R;
+    R.shT.push(this.now); R.shEnt.push(e.id); R.shV.push(q);
+    e.shQ = q; e.shT = this.now;
   }
 
   recBlockDeath(ent, cell, cause) {

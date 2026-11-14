@@ -57,7 +57,7 @@ export class ReplayModel {
   }
 
   makeEnt(kind, team, w, h) {
-    const e = { kind, team, w, h, parent: null, look: null, radius: Math.hypot(w, h) / 2, map: new Int32Array(w * h).fill(-1), tmp: [], sv0: 0, svN: 0, thr: null, thrBehind: null, nb: null, unit: null };
+    const e = { kind, team, w, h, parent: null, look: null, radius: Math.hypot(w, h) / 2, map: new Int32Array(w * h).fill(-1), tmp: [], sv0: 0, svN: 0, sh0: 0, shN: 0, thr: null, thrBehind: null, nb: null, unit: null };
     this.ents.push(e);
     return e;
   }
@@ -96,12 +96,48 @@ export class ReplayModel {
       this.finishEnt(e);
     }
     this.decodeShoves(meta, c);
+    this.decodeShields(c);
   }
 
   /**
    * Debris pushed by ships (replays from before debris collided have none). Each piece's records
    * are gathered in time order: from record k it drifts from svX/svY at svVx/svVy.
    */
+  decodeShields(c) {
+    const n = c.shT ? c.shT.length : 0;
+    const order = new Uint32Array(n);
+    for (let i = 0; i < n; i++) order[i] = i;
+    order.sort((a, b) => c.shEnt[a] - c.shEnt[b] || c.shT[a] - c.shT[b] || a - b);
+    this.sh = { t: new Float32Array(n), v: new Float32Array(n) };
+    for (let k = 0; k < n; k++) {
+      const i = order[k], e = this.ents[c.shEnt[i]];
+      this.sh.t[k] = c.shT[i]; this.sh.v[k] = c.shV[i] / 255;
+      if (!e.shN) e.sh0 = k;
+      e.shN++;
+    }
+  }
+
+  /**
+   * A ship's shield at time t (shield generators): out.v = how full (0..1), out.hit = how much it
+   * dropped over the last half second (for the flash when it's struck), out.down = ticks since it
+   * collapsed to nothing (or -1).
+   */
+  shieldAt(e, t, out) {
+    out.v = 0; out.hit = 0; out.down = -1;
+    if (!e.shN) return out;
+    const T = this.sh.t, V = this.sh.v, a = e.sh0, b = a + e.shN;
+    let lo = a, hi = b; // first record after t
+    while (lo < hi) { const m = (lo + hi) >> 1; if (T[m] <= t) lo = m + 1; else hi = m; }
+    const k = lo - 1;
+    if (k < a) return out;
+    let v = V[k];
+    if (lo < b && V[lo] > v && T[lo] > T[k]) v += ((V[lo] - v) * (t - T[k])) / (T[lo] - T[k]); // refilling: smooth
+    out.v = v;
+    for (let j = k; j > a && T[j] >= t - 5; j--) if (V[j - 1] > V[j]) out.hit += V[j - 1] - V[j];
+    if (V[k] === 0 && k > a && V[k - 1] > 0) out.down = t - T[k];
+    return out;
+  }
+
   decodeShoves(meta, c) {
     const n = c.svT ? c.svT.length : 0;
     this.shoveEvery = meta.shoveEvery || 3;

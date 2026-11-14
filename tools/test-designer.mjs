@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { makeDesign, CLASSES } from '../src/shared/designs.js';
 import { Battle } from '../src/sim/battle.js';
-import { BT, MULTIBLOCK } from '../src/shared/blocks.js';
+import { BT, MULTIBLOCK, SHIELD, WEAPON } from '../src/shared/blocks.js';
 import { analyzeDesign, cropDesign, encodeDesign, decodeDesign, weaponFacing } from '../src/shared/shipStats.js';
 import { binOf, binOpen, lineOfFire } from '../src/shared/arcs.js';
 import { shipyardPrice } from '../src/shared/economy.js';
@@ -320,6 +320,51 @@ assert.ok(Math.abs(sc.enemyCost - sc.budget) / sc.budget < 0.1, `budgets ${sc.en
     assert.ok(shots.length < 6 || shots[5][0] - first5[4][0] >= 30, 'then the cannon reloads');
   }
   console.log(`flak: picks the gunboat (light ${light0[0].toFixed(1)}) over the brick (${light0[1].toFixed(2)}), ${bursts} bursts, first salvos of 4 platforms at ${tg.size} different ships`);
+}
+
+// Shield generator (owner, 15 Nov 2026): a 10x10 unit, not a gun; its ship's shield pool takes every
+// hit first and refills all the time; if any of its blocks dies the whole unit explodes.
+{
+  const w = 30, h = 14, cells = new Uint8Array(w * h).fill(BT.ARMOR);
+  for (let y = 2; y < 12; y++) for (let x = 10; x < 20; x++) cells[y * w + x] = BT.SHIELD;
+  for (let y = 0; y < h; y++) cells[y * w + w - 1] = BT.CANNON;
+  const sd = { name: 'Shielded', cls: 'cruiser', w, h, cells, hub: 7 * w + 2, stance: 'line' };
+  cells[sd.hub] = BT.HUB;
+  const a = analyzeDesign(sd);
+  assert.ok(a.ok, `shielded ship is valid: ${a.errors.join('; ')}`);
+  assert.equal(a.shield, SHIELD.capacity, 'one generator gives one generator\'s shield');
+  assert.ok(!a.weapons.some((x) => x.type === BT.SHIELD), 'a shield generator is not a weapon');
+  const c2 = cells.slice(); c2[2 * w + 9] = BT.SHIELD;
+  assert.ok(analyzeDesign({ ...sd, cells: c2 }).errors.some((t) => t.includes('Shield generators must be whole')), 'bad generators are refused');
+  const two = cells.slice(); // a second generator right next to the first: warned
+  const wide = { ...sd, w: 44, cells: new Uint8Array(44 * h).fill(BT.ARMOR) };
+  for (let y = 0; y < h; y++) for (let x = 0; x < 30; x++) wide.cells[y * 44 + x] = two[y * w + x];
+  for (let y = 2; y < 12; y++) for (let x = 22; x < 32; x++) wide.cells[y * 44 + x] = BT.SHIELD;
+  wide.hub = 7 * 44 + 2;
+  assert.ok(analyzeDesign(wide).warnings.some((t) => t.startsWith('Shield generators too close')), 'generators close together are warned about');
+  // In battle: blocks take no damage while the shield holds; it refills; a generator that loses a block explodes.
+  const b = new Battle({ designs: [sd], ships: [{ design: 0, team: 0, x: 0, y: 0, a: 0, fixed: true }], seed: 1, maxTime: 60 });
+  const e = b.ents[0], alive0 = e.alive;
+  assert.equal(e.shield, SHIELD.capacity, 'starts with a full shield');
+  b.damageCell(e, 0, 3000);
+  assert.equal(e.alive, alive0, 'a hit the shield can take does no damage to blocks');
+  assert.equal(e.shield, SHIELD.capacity - 3000, 'it drains the shield instead');
+  for (let k = 0; k < 10; k++) b.step();
+  assert.ok(e.shield > SHIELD.capacity - 3000, 'the shield refills');
+  b.damageCell(e, 0, 1e6);
+  assert.equal(e.shield, 0, 'a huge hit takes the shield down');
+  assert.ok(e.alive < alive0, 'and what is left goes through to the blocks');
+  b.damageCell(e, 2 * w + 10, 100);
+  b.step(); b.step();
+  assert.equal(cells.reduce((n, t, i) => n + (t === BT.SHIELD && e.hp[i] > 0 ? 1 : 0), 0), 0, 'one generator block lost: the whole unit is gone');
+  assert.equal(e.shieldMax, 0, 'and so is its shield');
+  let pops = 0; for (let k = 0; k < b.R.expS.n; k++) if (b.R.expS.a[k] === 7) pops++;
+  assert.equal(pops, 1, 'with one explosion');
+  // Flak shrapnel drains shields at a reduced rate.
+  const b2 = new Battle({ designs: [sd], ships: [{ design: 0, team: 0, x: 0, y: 0, a: 0, fixed: true }], seed: 1, maxTime: 60 });
+  b2.damageCell(b2.ents[0], 0, 100, WEAPON[BT.FLAK].shieldMult);
+  assert.equal(b2.ents[0].shield, SHIELD.capacity - 100 * WEAPON[BT.FLAK].shieldMult, 'flak shrapnel does less to shields');
+  console.log(`shields: ${SHIELD.capacity} a generator, refills ${SHIELD.regen}/s, blocks protected, generator explodes whole`);
 }
 
 // The ready-made Aegis fortresses in the defence designer's Start from menu: valid 150,000 cr
