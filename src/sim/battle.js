@@ -81,7 +81,7 @@ export const STANCES = {
 };
 
 // Every weapon object gets its line-of-fire fields up front (one object shape, see makeEntity).
-const arcFields = () => ({ sq: 0, wv: 0, route: -1, rtT: 0, omni: false, buried: false, m0: 0, m1: 0, ox: 0, oy: 0, bx0: 1, by0: 1, bx1: 0, by1: 0, blk: null });
+const arcFields = () => ({ sq: 0, wv: 0, ft: -1, route: -1, rtT: 0, omni: false, buried: false, m0: 0, m1: 0, ox: 0, oy: 0, bx0: 1, by0: 1, bx1: 0, by1: 0, blk: null });
 
 export class Battle {
   // maxTime: 4 minutes while testing; the plan for launch is 30 minutes so every battle resolves.
@@ -1075,7 +1075,14 @@ export class Battle {
         else w.cd = 0.5;
         continue;
       }
-      if (W.kind === 'flak') { w.cd = this.fireFlak(e, w, wx, wy, W) ? W.cooldown * (0.9 + 0.2 * this.rng()) : 0.4; continue; }
+      if (W.kind === 'flak') {
+        // A salvo of W.salvo shells, W.salvoGap s apart, all at one target (w.sq = shells left in it).
+        if (w.sq <= 0) w.sq = W.salvo || 1;
+        if (!this.fireFlak(e, w, wx, wy, W)) { w.sq = 0; w.cd = 0.4; continue; }
+        if (--w.sq > 0) w.cd = W.salvoGap;
+        else w.cd = W.cooldown * (0.9 + 0.2 * this.rng());
+        continue;
+      }
       if (!tl) { if (!this.fireAtFighter(e, w, wx, wy, W)) w.cd = 0.3; continue; }
       // Preferred target first, then any other target that is in range and inside this weapon's arc.
       // Missiles and heavy lasers all go for the primary target so volleys land together.
@@ -1141,7 +1148,17 @@ export class Battle {
   fireFlak(e, w, wx, wy, W) {
     const pool = this.foeArmed[e.team], r2 = W.range * W.range;
     let tg = null, bs = 0, ax = 0, ay = 0;
-    for (let k = 0; k < pool.length; k++) {
+    // The rest of a salvo goes at the same ship as its first shell while it can.
+    const keep = w.sq < (W.salvo || 1) && w.ft >= 0 ? this.byId[w.ft] : null;
+    if (keep && !keep.dead && !keep.hubDead && keep.weapons.length) {
+      const d2 = (keep.x - wx) ** 2 + (keep.y - wy) ** 2;
+      let px = 0, py = 0, ok = true;
+      if (d2 <= r2) [px, py] = this.aimPoint(keep);
+      else if (keep.radius >= 12 && Math.sqrt(d2) - keep.radius <= W.range && this.aimInRange(keep, wx, wy, r2)) { px = this._ax; py = this._ay; }
+      else ok = false;
+      if (ok && this.bears(e, w, wx, wy, px, py)) { tg = keep; ax = px; ay = py; bs = Infinity; }
+    }
+    for (let k = 0; k < pool.length && bs !== Infinity; k++) {
       const o = pool[k];
       if (o.dead) continue;
       const s = (o.light + 0.05) / (1 + o.flakIn * 1.5) * (0.75 + 0.5 * this.rng());
@@ -1157,6 +1174,7 @@ export class Battle {
       tg = o; bs = s; ax = px; ay = py;
     }
     let vx = 0, vy = 0;
+    w.ft = tg ? tg.id : -1;
     if (tg) { vx = tg.vx; vy = tg.vy; }
     else {
       if (!this.fFoe[e.team]) return false;
@@ -1165,7 +1183,9 @@ export class Battle {
       ax = this.Fi.x[j]; ay = this.Fi.y[j]; vx = this.Fi.vx[j]; vy = this.Fi.vy[j];
     }
     const t = Math.min(Math.hypot(ax - wx, ay - wy) / W.speed, W.maxLead);
-    const tx = ax + vx * t, ty = ay + vy * t;
+    // Each shell of a salvo lands somewhere within `scatter` blocks of the aim point, so a salvo
+    // blankets one patch round its target.
+    const sc = W.scatter || 0, tx = ax + vx * t + (this.rng() * 2 - 1) * sc, ty = ay + vy * t + (this.rng() * 2 - 1) * sc;
     const ang = Math.atan2(ty - wy, tx - wx) + (this.rng() - 0.5) * 2 * W.spread;
     if (this.ownHullInWay(e, w, wx, wy, ang, W.range)) return false;
     // It bursts where it was aimed if nothing sets it off sooner.

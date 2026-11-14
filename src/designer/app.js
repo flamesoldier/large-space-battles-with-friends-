@@ -59,7 +59,7 @@ const BLOCK_HINT = {
   [BT.GUIDED]: 'The same huge missile, but it steers after its target in flight (and finds a new one nearby if its target dies), so it hits ships that dodge. Point defence can still shoot it down.',
   [BT.BAY]: `LAUNCHES FIGHTERS: ${WEAPON[BT.BAY].waves[0]} as the battle opens, then one every minute for as long as it lasts, at any range. Fighters need a way out: put the bay on the hull edge, or leave a tunnel of empty cells from it to space; the tunnel can turn corners (hover the bay to see its way out). A fighter circles the nearest enemy ship shooting it (${WEAPON[BT.BAY].fighter.damage} damage every ${WEAPON[BT.BAY].fighter.cooldown} s, range ${WEAPON[BT.BAY].fighter.range}), dogfights enemy fighters, and flies until it's shot down (${WEAPON[BT.BAY].fighter.hp} hp). Early on they soak up enemy fire; late in a battle they hunt down the long-range ships left at the back. Lasers hit them ${Math.round(WEAPON[BT.LASER].fighterHit * 100)}% of the time; point defence goes for them first. They shine in long, drawn-out fights.`,
 };
-BLOCK_HINT[BT.FLAK] = `ANTI-SWARM GUN FOR BIG SHIPS: fires a shell up to ${WEAPON[BT.FLAK].range} blocks that bursts right beside an enemy ship and sprays ${WEAPON[BT.FLAK].fragments} pieces of shrapnel (${WEAPON[BT.FLAK].damage} damage each, up to ${WEAPON[BT.FLAK].reach} blocks out, most of them onward into the target). Shreds small, lightly armoured ships and fighters; barely scratches thick armour. It picks the most lightly armoured ship in range (lots of guns, little armour or frame) and spreads its fire, so many flak cannons don't all shoot the same ship. Its blocks don't explode.`;
+BLOCK_HINT[BT.FLAK] = `ANTI-SWARM GUN FOR BIG SHIPS: every ${WEAPON[BT.FLAK].cooldown} s it fires a salvo of ${WEAPON[BT.FLAK].salvo} shells up to ${WEAPON[BT.FLAK].range} blocks at one enemy ship. Each shell bursts right beside it and sprays ${WEAPON[BT.FLAK].fragments} pieces of shrapnel (${WEAPON[BT.FLAK].damage} damage each, up to ${WEAPON[BT.FLAK].reach} blocks out, most of them onward into the target). Shreds small, lightly armoured ships and fighters; barely scratches thick armour. It picks the most lightly armoured ship in range (lots of guns, little armour or frame) and spreads its fire, so many flak cannons don't all shoot the same ship. Shells fly over your own and allied ships, and shrapnel never hurts them. Its blocks don't explode.`;
 const PLASMA_WARNING = "WARNING: HUGE FRIENDLY FIRE. ITS BOLT CARVES THROUGH YOUR OWN SHIPS AS WELL AS THE ENEMY'S, AND ITS BLOCKS EXPLODE WHEN DESTROYED, WRECKING YOUR SHIP AND ANY ALLY NEARBY.";
 
 // ------------------------------------------------------------ UI setup
@@ -71,7 +71,7 @@ function blockTitle(t) {
   if (t === BT.BAY) { const n = MULTIBLOCK[t].size; s = `${B.name}: one ${n}×${n} unit, ${B.cost * n * n} cr, ${B.hp} hp per block, keeps launching while half its blocks survive`; }
   if (t === BT.FLAK) s = `${B.name}: one 10×10 unit, ${B.cost * 100} cr, ${B.hp} hp per block, keeps firing while half survives`;
   if (t === BT.THRUSTER) s += `, thrust ${B.thrust}`;
-  if (W && t === BT.FLAK) s += `. Range ${W.range}, a burst of ${W.fragments} × ${W.damage} shrapnel every ${W.cooldown} s`;
+  if (W && t === BT.FLAK) s += `. Range ${W.range}, a salvo of ${W.salvo} shells every ${W.cooldown} s, each bursting into ${W.fragments} × ${W.damage} shrapnel`;
   else if (W && t !== BT.BAY) s += `. Range ${W.range}, ${W.damage} damage every ${W.cooldown} s`;
   if (t === BT.HUB) s += '. One per ship; placing it moves it. Lose it and the ship breaks apart.';
   if (BLOCK_HINT[t]) s += `.\n\n${BLOCK_HINT[t]}`;
@@ -219,7 +219,7 @@ function refresh(force = false) {
   $('weapons').innerHTML = WEAPON_ORDER.filter((t) => a.fire[t]).map((t) => {
     const f = a.fire[t];
     const W = WEAPON[t];
-    const shot = t === BT.BAY ? `${W.waves[0]} fighters, then 1 / ${W.cooldown} s` : t === BT.FLAK ? `${W.fragments} × ${W.damage} / ${W.cooldown} s` : `${fmt(W.damage)} / ${W.cooldown} s`;
+    const shot = t === BT.BAY ? `${W.waves[0]} fighters, then 1 / ${W.cooldown} s` : t === BT.FLAK ? `${W.salvo} × (${W.fragments} × ${W.damage}) / ${W.cooldown} s` : `${fmt(W.damage)} / ${W.cooldown} s`;
     return `<tr title="${SHOT_HINT[t] || ''}"><td>${BLOCKS[t].name}</td><td>${f.count}${f.buried ? ` <small title="${t === BT.BAY ? 'no way out' : 'buried'}">(${f.buried} ${t === BT.BAY ? 'sealed' : 'buried'})</small>` : ''}</td><td>${shot}</td><td>${t === BT.BAY ? 'any' : f.range}</td></tr>`;
   }).join('') || '<tr><td colspan="4" style="color:var(--dim)">No weapons yet</td></tr>';
   $('stance-hint').textContent = STANCE_INFO[ed.stance].hint;
@@ -253,7 +253,7 @@ const SHOT_HINT = {
   [BT.GUIDED]: 'Like the missile launcher, but the missile steers after its target in flight. Point defence can shoot it down.',
   [BT.PD]: `Anti-missile: shoots down enemy missiles within ${WEAPON[BT.PD].range} blocks first (${WEAPON[BT.PD].missileDamage} a burst, a missile has ${WEAPON[BT.MISSILE].hp} hp), then enemy fighters (the best answer to carriers), then enemy hulls, ${WEAPON[BT.PD].damage} a burst, all within ${WEAPON[BT.PD].range}.`,
   [BT.LANCE]: `A blue plasma bolt that carves through ship after ship until its damage is spent.\n\n${PLASMA_WARNING}`,
-  [BT.FLAK]: `A shell that bursts beside the most lightly armoured enemy ship in range, spraying ${WEAPON[BT.FLAK].fragments} pieces of shrapnel (${WEAPON[BT.FLAK].damage} each). Deadly to small ships and fighters, weak against heavy armour. Flak cannons spread their fire over many targets.`,
+  [BT.FLAK]: `A salvo of ${WEAPON[BT.FLAK].salvo} shells that burst beside the most lightly armoured enemy ship in range, each spraying ${WEAPON[BT.FLAK].fragments} pieces of shrapnel (${WEAPON[BT.FLAK].damage} each). Deadly to small ships and fighters, weak against heavy armour. Flak cannons spread their fire over many targets.`,
   [BT.BAY]: `${WEAPON[BT.BAY].waves[0]} fighters as the battle opens, then one every minute. Fighters circle enemy ships shooting them (${WEAPON[BT.BAY].fighter.damage} damage every ${WEAPON[BT.BAY].fighter.cooldown} s, range ${WEAPON[BT.BAY].fighter.range}), dogfight enemy fighters, and fly until shot down (${WEAPON[BT.BAY].fighter.hp} hp). Point defence shoots them first.`,
 };
 

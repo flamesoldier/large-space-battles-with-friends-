@@ -269,7 +269,7 @@ assert.ok(Math.abs(sc.enemyCost - sc.budget) / sc.budget < 0.1, `budgets ${sc.en
     { design: 1, team: 1, x: 400, y: -60, a: Math.PI, fixed: true },
     { design: 2, team: 1, x: 400, y: 60, a: Math.PI, fixed: true },
   ], seed: 2, maxTime: 60 });
-  const boatE = fb.ents[1], brickE = fb.ents[2];
+  const boatE = fb.ents[1], brickE = fb.ents[2], light0 = [boatE.light, brickE.light];
   assert.ok(boatE.light > brickE.light * 10, `the gunboat counts as lightly armoured (${boatE.light.toFixed(1)} vs ${brickE.light.toFixed(2)})`);
   let first = -1, bursts = 0;
   const hp0 = boatE.alive;
@@ -281,17 +281,29 @@ assert.ok(Math.abs(sc.enemyCost - sc.budget) / sc.budget < 0.1, `budgets ${sc.en
   assert.equal(first, boatE.id, 'flak goes for the lightly armoured ship first');
   assert.ok(bursts >= 3, `flak shells burst (${bursts})`);
   assert.ok(boatE.dead || boatE.hubDead || boatE.alive < hp0, 'its shrapnel damages the gunboat');
-  // Spread: four platforms, four identical gunboats: the first shells go to different ships.
+  // Spread: four platforms, four identical gunboats: the first salvos go to different ships.
   const ships = [];
   for (let k = 0; k < 4; k++) ships.push({ design: 0, team: 0, x: 0, y: -90 + k * 60, a: 0, fixed: true });
   for (let k = 0; k < 4; k++) ships.push({ design: 1, team: 1, x: 450, y: -90 + k * 60, a: Math.PI, fixed: true });
   const sb = new Battle({ designs: [plat, boat], ships, seed: 4, maxTime: 60 });
   const tg = new Set();
   let n = 0;
-  sb.addProjectile = ((f) => (kind, ...r) => { if (kind === 5 && n < 4) { n++; tg.add(r[8]); } return f(kind, ...r); })(sb.addProjectile.bind(sb));
+  const seenGun = new Set();
+  sb.addProjectile = ((f) => (kind, ...r) => { if (kind === 5 && n < 4 && !seenGun.has(r[6])) { seenGun.add(r[6]); n++; tg.add(r[8]); } return f(kind, ...r); })(sb.addProjectile.bind(sb));
   while (sb.tick < 200 && n < 4) sb.step();
-  assert.ok(tg.size >= 3, `flak spreads its fire: the first 4 shells went to ${tg.size} different ships`);
-  console.log(`flak: picks the gunboat (light ${boatE.light.toFixed(1)}) over the brick (${brickE.light.toFixed(2)}), ${bursts} bursts, first 4 shells of 4 platforms at ${tg.size} different ships`);
+  assert.ok(tg.size >= 3, `flak spreads its fire: the first 4 salvos went to ${tg.size} different ships`);
+  // A salvo: 5 shells from one cannon, a few tenths of a second apart, all at the same ship.
+  {
+    const sv = new Battle({ designs: [plat, boat], ships: [{ design: 0, team: 0, x: 0, y: 0, a: 0, fixed: true }, { design: 1, team: 1, x: 400, y: 0, a: Math.PI, fixed: true }, { design: 1, team: 1, x: 400, y: 70, a: Math.PI, fixed: true }], seed: 5, maxTime: 60 });
+    const shots = [];
+    sv.addProjectile = ((f) => (kind, ...r) => { if (kind === 5) shots.push([sv.tick, r[8]]); return f(kind, ...r); })(sv.addProjectile.bind(sv));
+    while (sv.tick < 150 && shots.length < 6) sv.step();
+    const first5 = shots.slice(0, 5);
+    assert.ok(first5.length === 5 && first5.every((x) => x[1] === first5[0][1]), `a salvo is 5 shells at one ship (${JSON.stringify(first5)})`);
+    assert.ok(first5[4][0] - first5[0][0] <= 15, 'the salvo leaves within 1.5 s');
+    assert.ok(shots.length < 6 || shots[5][0] - first5[4][0] >= 30, 'then the cannon reloads');
+  }
+  console.log(`flak: picks the gunboat (light ${light0[0].toFixed(1)}) over the brick (${light0[1].toFixed(2)}), ${bursts} bursts, first salvos of 4 platforms at ${tg.size} different ships`);
 }
 
 // The ready-made Aegis fortresses in the defence designer's Start from menu: valid 150,000 cr

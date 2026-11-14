@@ -144,7 +144,7 @@ export function analyzeDesign(d) {
     const W = WEAPON[wp.type], f = (fire[wp.type] ||= { count: 0, buried: 0, dps: 0, alpha: 0, range: W.range });
     f.count++;
     if (wp.buried) { f.buried++; continue; }
-    const shot = W.damage * (W.fragments || 1); // flak: the whole burst of shrapnel
+    const shot = W.damage * (W.fragments || 1) * (W.salvo || 1); // flak: a whole salvo of shrapnel bursts
     f.dps += shot / W.cooldown; f.alpha += shot;
     dps += shot / W.cooldown; alpha += shot; // point defence counts too: it's a real anti-ship gun now (32 every 0.2 s)
   }

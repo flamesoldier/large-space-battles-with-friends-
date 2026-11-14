@@ -287,9 +287,13 @@ Weapons (numbers in `blocks.js`):
 - **Flak cannon** (`BT.FLAK` = 13, weapon kind `'flak'`; owner, 14 Nov 2026: big ships had no answer to
   swarms of small ships; he turned down rule changes (plasma-first targeting, longer gun ranges, tougher
   armour) and asked for a new weapon): a **10×10 unit, 1,500 cr** (15 a block, the plasma cannon's size and
-  price), 750 hp a block, keeps firing while half survives, **no cook-off**. Range 700, a shell every 5 s at
-  75 blocks/s (lead capped 4 s) with a **proximity fuse** (`K_FLAK` = 5): it bursts on meeting anything
-  (it flies over allies), within `fuse` 6 of its target's box, or where it was aimed. The burst
+  price), 750 hp a block, keeps firing while half survives, **no cook-off**. Range 700. **Every 5 s a salvo
+  of `salvo` 5 shells, `salvoGap` 0.3 s apart, all at one ship** (owner, 14 Nov 2026: one shell was
+  "underwhelming for the equal most powerful weapon"; `w.sq` = shells left in the salvo, `w.ft` = its
+  target, declared in `arcFields()`), each landing within `scatter` 6 blocks of the aim point. Shells fly
+  at 75 blocks/s (lead capped 4 s) with a **proximity fuse** (`K_FLAK` = 5): a shell bursts on meeting
+  anything except allied ships (**it flies over its own side's ships like a missile**, owner: "otherwise
+  it would never be able to hit the enemy"), within `fuse` 6 of its target's box, or where it was aimed. The burst
   (`flakBurst()`) throws `fragments` 40 pieces of shrapnel, `reach` 30, `damage` 60 each to the first
   enemy block met (`sweep` with `shipsOnly`: **shrapnel passes wrecks**, measured: half of it was lost in
   debris otherwise; and allies, friendly fire off); `cone` 0.6 of the pieces carry on forward (±`coneW`
@@ -309,6 +313,10 @@ Weapons (numbers in `blocks.js`):
   wrecks) 2–5; through wrecks + cone 0.6 + 60 dmg **11–13** (19–31% lost). Even money (8 dreadnoughts) Cupcake
   still wins (0–1 left, 16–25% of his lost). Both sides' plasma → flak (the owner's test) 15/16. Elenris
   Minor (3,758 ships) with every plasma → flak: 147 s compute vs 148 s. Bench 1,000 vs 1,000 identical.
+  **With 5-shell salvos** (current): Nate-only flak 14–15 of 16 left (6–13% lost, battles ~85 s); even money
+  (8 dreadnoughts) Nate wins 3 of 4 (5–6 of 8 left) and the 4th is mutual destruction (Cupcake 91% lost);
+  both sides flak 15–16. Elenris with every plasma → flak 129 s compute (plasma 148 s). The owner was told
+  even-money flak dreadnoughts now beat the plasma swarm; levers: `salvo`, `damage`, `cooldown`.
 - Future weapons the owner wants: bigger cannons, a medium laser.
 
 Combat rules:
