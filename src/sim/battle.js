@@ -250,6 +250,13 @@ export class Battle {
     e.bcx = (x0 + x1 + 1) / 2 - e.w / 2; e.bcy = (y0 + y1 + 1) / 2 - e.h / 2;
   }
 
+  /** Distance from (x, y) to e's box round its live blocks (0 inside it). */
+  boxGap(e, x, y) {
+    const dx = x - e.x, dy = y - e.y, lx = dx * e.c + dy * e.s - e.bcx, ly = -dx * e.s + dy * e.c - e.bcy;
+    const ox = Math.abs(lx) - e.bhw, oy = Math.abs(ly) - e.bhh;
+    return ox > 0 ? (oy > 0 ? Math.hypot(ox, oy) : ox) : oy > 0 ? oy : 0;
+  }
+
   /** Shrink a wreck's collision box after it loses blocks. */
   fitChunkBox(e) {
     let x0 = e.w, x1 = -1, y0 = e.h, y1 = -1;
@@ -1415,13 +1422,15 @@ export class Battle {
       if (kind === K_MISSILE && WEAPON[P.wtype[i]].guided) this.steerMissile(i);
       const x0 = P.x[i], y0 = P.y[i], x1 = x0 + P.vx[i] * DT, y1 = y0 + P.vy[i] * DT;
       if (kind === K_FLAK) {
-        // Proximity fuse: bursts on meeting an enemy ship (it flies over allies and through wrecks,
-        // owner, 14 Nov 2026), on coming within `fuse` of its target's hull, or where it was aimed.
+        // Proximity fuse: the shell flies through every ship and wreck, friend or foe (owner, 15 Nov
+        // 2026: so it reaches the back lines), and bursts in the open within `fuse` of its target's
+        // hull box, or where it was aimed. Checked at 4 points along the step (a step is ~7.5 blocks).
         const W = WEAPON[P.wtype[i]], tg = P.target[i] >= 0 ? this.byId[P.target[i]] : null;
         let t = -1;
-        if (this.sweep(x0, y0, x1, y1, P.owner[i], P.team[i], true)) t = Math.max(0, this.hitT - 0.5 / (W.speed * DT));
-        else if (tg && !tg.dead && Math.hypot(tg.x - x1, tg.y - y1) - Math.min(tg.bhw, tg.bhh) <= W.fuse) t = 1;
-        else if (P.life[i] <= 1) t = 1;
+        if (tg && !tg.dead) {
+          for (let k = 1; k <= 4; k++) if (this.boxGap(tg, x0 + (x1 - x0) * k / 4, y0 + (y1 - y0) * k / 4) <= W.fuse) { t = k / 4; break; }
+        }
+        if (t < 0 && P.life[i] <= 1) t = 1;
         if (t >= 0) {
           const bx = x0 + (x1 - x0) * t, by = y0 + (y1 - y0) * t;
           if (tg && tg.flakIn > 0) tg.flakIn--;

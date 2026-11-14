@@ -287,15 +287,14 @@ Weapons (numbers in `blocks.js`):
 - **Flak cannon** (`BT.FLAK` = 13, weapon kind `'flak'`; owner, 14 Nov 2026: big ships had no answer to
   swarms of small ships; he turned down rule changes (plasma-first targeting, longer gun ranges, tougher
   armour) and asked for a new weapon): a **10×10 unit, 1,500 cr** (15 a block, the plasma cannon's size and
-  price), 750 hp a block, keeps firing while half survives, **no cook-off**. Range 700. **Every 5 s a salvo
+  price), **200 hp a block** (owner, 15 Nov 2026: was 750 like plasma, whose hp makes up for its cook-off), keeps firing while half survives, **no cook-off**. Range 700. **Every 5 s a salvo
   of `salvo` 5 shells, `salvoGap` 0.3 s apart, all at one ship** (owner, 14 Nov 2026: one shell was
   "underwhelming for the equal most powerful weapon"; `w.sq` = shells left in the salvo, `w.ft` = its
   target, declared in `arcFields()`), each landing within `scatter` 6 blocks of the aim point. Shells fly
-  at 75 blocks/s (lead capped 4 s) with a **proximity fuse** (`K_FLAK` = 5): a shell bursts on meeting an
-  **enemy ship** (`sweep(..., team, shipsOnly)`: **it flies over its own side's ships like a missile and
-  through wrecks**, owner: "otherwise it would never be able to hit the enemy"; "the primary shells were
-  hitting debris as well which we don't want"), within `fuse` 6 of its target's box, or where it was
-  aimed. **The shrapnel is real projectiles** (owner, 14 Nov 2026, third round: "still underwhelming";
+  at 75 blocks/s (lead capped 4 s) with a **proximity fuse** (`K_FLAK` = 5): **a shell flies through every ship and wreck, friend or
+  foe** (owner, 15 Nov 2026: "so it can get to the backlines and explode in empty space next to a ship";
+  before that it burst on the first enemy hull) and bursts within `fuse` 6 of its target's live-block box
+  (`boxGap()`, checked at 4 points per tick), or where it was aimed. **The shrapnel is real projectiles** (owner, 14 Nov 2026, third round: "still underwhelming";
   `K_FRAG` = 6, replay shot kind 6, `meta.shotSpeed[6]`): `flakBurst()` throws `fragments` 20 pieces (owner, 14 Nov 2026: was 30, "visually overpowering") at
   `fragSpeed` 90 (±15%), each flying up to `fragLife` 4 s until it meets something: **any** ship or wreck
   stops it (`sweep(..., -1)`), but only enemies take its `damage` 60 (allied hulls shield, owner's
@@ -331,6 +330,10 @@ Weapons (numbers in `blocks.js`):
   **20 random pieces** (current), on the real Draisgon replay b29415 (388 Cupcake ships vs 16
   dreadnoughts), 3 seeds: as fought with plasma Nate keeps 2–7 (battles ~4 min); Nate's plasma → flak:
   14–15 of 16 left, Cupcake routs in 65–72 s with 95–106 ships left.
+  **Pass-through shells + 200 hp** (current), owner's Zephorka replay b3751 (3 sides: Cupcake 824 +
+  ally flamesoldier 130 vs Nate 158 incl. 18 "My titan" with 3 plasma each), 3 seeds: as fought Nate keeps
+  8–10 and loses; Nate's plasma → flak (54 units): Nate wins all 3 (39–53 of 158 left; Cupcake 39–50 of
+  824, flamesoldier 4–6 of 130), 140–153 s. Bench 1,000 vs 1,000 identical.
 - Future weapons the owner wants: bigger cannons, a medium laser.
 
 Combat rules:
