@@ -13,18 +13,18 @@ layout(location=1) in vec3 posA;
 layout(location=2) in vec3 sizeShape;
 layout(location=3) in vec4 color;
 uniform vec2 uCam; uniform vec2 uScale;
-out vec2 vUV; out vec4 vCol; flat out highp float vShape; flat out float vAng;
+out vec2 vUV; out vec4 vCol; flat out highp float vShape; flat out float vAng; flat out vec2 vSize;
 void main(){
   float c = cos(posA.z), s = sin(posA.z);
   vec2 l = corner * sizeShape.xy;
   vec2 w = posA.xy + vec2(l.x*c - l.y*s, l.x*s + l.y*c);
   gl_Position = vec4((w - uCam) * uScale, 0.0, 1.0);
-  vUV = corner; vCol = color; vShape = sizeShape.z; vAng = posA.z;
+  vUV = corner; vCol = color; vShape = sizeShape.z; vAng = posA.z; vSize = sizeShape.xy;
 }`;
 
 const FS = `#version 300 es
 precision mediump float;
-in vec2 vUV; in vec4 vCol; flat in highp float vShape; flat in float vAng; out vec4 o;
+in vec2 vUV; in vec4 vCol; flat in highp float vShape; flat in float vAng; flat in vec2 vSize; out vec4 o;
 uniform float uDet;   // 0..1: how much fine detail to draw (by on-screen block size)
 uniform float uTime;  // replay time in ticks, for glows that pulse
 // Detailed hull block. Shape code = 10 + type + 16 * open-sides mask + 256 * var + 32768 if
@@ -207,11 +207,20 @@ void main(){
     o = vec4(vCol.rgb * a * vCol.a, 0.0);
   } else if (vShape < 3.5) {     // flat (far-zoom ship silhouette)
     o = vec4(vCol.rgb, 1.0);
-  } else if (vShape > 4.5) {     // shield bubble: bright rim, faint shimmering fill
-    float r = length(vUV);
-    float rim = smoothstep(0.72, 0.96, r) * (1.0 - smoothstep(0.96, 1.0, r));
-    float shim = 0.5 + 0.5 * sin(vUV.x * 14.0 + uTime * 0.35) * sin(vUV.y * 14.0 - uTime * 0.25);
-    float a = (rim + (0.1 + 0.08 * shim) * r * r) * step(r, 1.0);
+  } else if (vShape > 4.5) {     // shield bubble: a rounded box hugging the hull, bright rim, faint shimmering fill
+    // Shape 5 + corner radius / 1000. Measured in world units (vSize = half size), so the rim is
+    // the same width all round however long, thin or square the ship is (15 Nov 2026: an ellipse
+    // let the corners of big ships poke out and gave long thin ships huge glowing ends).
+    vec2 p = vUV * vSize;
+    float rr = min((vShape - 5.0) * 1000.0, min(vSize.x, vSize.y));
+    vec2 q = abs(p) - (vSize - rr);
+    float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - rr; // < 0 inside, 0 on the edge
+    float fw = max(fwidth(d), 1e-3), rw = max(1.2 + 0.2 * min(vSize.x, vSize.y), 2.0 * fw);
+    float in1 = 1.0 - smoothstep(-fw, fw, d), g = 1.0 - clamp(-d / rw, 0.0, 1.0);
+    float rim = (g * g * 0.8 + smoothstep(1.0 - 1.5 * fw / rw, 1.0, g) * 0.6) * in1; // soft inner glow plus a crisp edge
+    float k = clamp(1.0 + d / min(vSize.x, vSize.y), 0.0, 1.0);
+    float shim = 0.5 + 0.5 * sin(p.x * 0.9 + uTime * 0.35) * sin(p.y * 0.9 - uTime * 0.25);
+    float a = rim + (0.1 + 0.08 * shim) * k * k * in1;
     o = vec4(vCol.rgb * a * vCol.a, 0.0);
   } else {                       // beam: even along its length
     float ay = 1.0 - abs(vUV.y);
@@ -482,9 +491,21 @@ export class Renderer {
   /** Shield generators: a bubble round the ship, brighter when struck, popping when the shield goes down. */
   drawShield(model, e, t, tr, px) {
     const S = model.shieldAt(e, t, this._sh || (this._sh = { v: 0, hit: 0, down: -1 }));
-    const rx = Math.max(e.w * 0.62 + 3, px * 3), ry = Math.max(e.h * 0.62 + 3, px * 3);
-    if (S.v > 0.004) this.glow.push(tr.x, tr.y, tr.a, rx, ry, 5, alpha2(C.shield, 0.2 + 0.4 * S.v + Math.min(0.9, S.hit * 6)));
-    else if (S.down >= 0 && S.down < 10) { const k = S.down / 10; this.glow.push(tr.x, tr.y, tr.a, rx * (1 + k * 0.4), ry * (1 + k * 0.4), 5, alpha2(C.shield, 1 - k)); }
+    if (!(S.v > 0.004) && !(S.down >= 0 && S.down < 10)) return;
+    // A rounded box round the blocks still there (15 Nov 2026: it was an ellipse round the whole
+    // design grid, so it stayed full size round empty space when half a ship was gone, cut through the
+    // corners of big square ships and bulged off the ends of long thin ones).
+    const B = model.liveBox(e, t, this._shb || (this._shb = { cx: 0, cy: 0, hw: 0, hh: 0, n: 0 }));
+    if (!B.n) return;
+    const m = Math.max(3 + 0.1 * Math.min(B.hw, B.hh), px * 2); // clearance between hull and bubble
+    let hw = B.hw + m, hh = B.hh + m;
+    const mn = Math.min(hw, hh), rr = Math.min(mn, 0.6 * mn + m, 3.2 * m); // round, but never cutting a corner of the hull
+    const c = Math.cos(tr.a), s = Math.sin(tr.a), x = tr.x + B.cx * c - B.cy * s, y = tr.y + B.cx * s + B.cy * c;
+    if (hw < px * 3) hw = px * 3;
+    if (hh < px * 3) hh = px * 3;
+    const shape = 5 + Math.min(rr, 4000) / 1000;
+    if (S.v > 0.004) this.glow.push(x, y, tr.a, hw, hh, shape, alpha2(C.shield, 0.2 + 0.4 * S.v + Math.min(0.9, S.hit * 6)));
+    else { const k = S.down / 10, g = 1 + k * 0.4; this.glow.push(x, y, tr.a, hw + (g - 1) * mn, hh + (g - 1) * mn, shape, alpha2(C.shield, 1 - k)); }
   }
 
   drawEffects(m, t, vis, px) {

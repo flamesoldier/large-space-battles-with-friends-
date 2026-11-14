@@ -299,7 +299,7 @@ Weapons (numbers in `blocks.js`):
   (`boxGap()`, checked at 4 points per tick), or where it was aimed. **The shrapnel is real projectiles** (owner, 14 Nov 2026, third round: "still underwhelming";
   `K_FRAG` = 6, replay shot kind 6, `meta.shotSpeed[6]`): `flakBurst()` throws `fragments` 20 pieces (owner, 14 Nov 2026: was 30, "visually overpowering") at
   `fragSpeed` 90 (±15%), each flying up to `fragLife` 4 s until it meets something: **any** ship or wreck
-  stops it (`sweep(..., -1)`), but only enemies take its `damage` 60 (allied hulls shield, owner's
+  stops it (`sweep(..., -1)`), but only enemies take its `damage` 30 (60 until 15 Nov 2026) (allied hulls shield, owner's
   rule); enemy fighters on its path take it too. Directions are **uniformly random all round** (`cone` 0; owner: "more random", the
   earlier 0.6 of pieces in a forward cone ±`coneW` 0.7 rad looked lopsided). Drawn slimmer since then. **Shrapnel is queued in `this.fragQ` and added
   after the projectile loop** (`updateProjectiles()` → `moveProjectiles()`, then the queue): adding
@@ -382,6 +382,29 @@ Weapons (numbers in `blocks.js`):
   each titan, regen 100, 3 seeds): Nate wins 3/3 (11–17 of 158 left; without shields also 3/3). Flak
   shrapnel back to full damage against plating (`vs` all 1, owner: "he wins at Zephorka with the full
   damage"). Bench 1,000 vs 1,000 identical.
+- **Flak and shield fixes, 15 Nov 2026 (owner)**. Where the numbers above disagree, these win:
+  - **Shrapnel 30 a piece** (`WEAPON[BT.FLAK].damage`, was 60).
+  - **Flak never bursts inside a hull**: shells fly through ships and wrecks, so ~3% of bursts went off
+    inside a wreck, an ally or another enemy (never the target: the fuse stops that) and all 20 pieces
+    hit one spot. At burst, if the point is on a live block (`blockAt()`), `flakOpen()` moves it along
+    the shell's path to the nearest open space (back first, never behind the gun; ahead never inside the
+    target's box), and the shot's flight time follows. Harness (300 v 300 generated, team 0 plasma →
+    flak, team 1 plasma → shields, 4× the big ships, 2 seeds): 74/2,050 and 55/2,319 inside → 0. Test in
+    `tools/test-designer.mjs` (3 of 15 inside without the fix).
+  - **Blasts drain shields by what they'd really do**: `blast()` and `splash()` pass
+    `min(damage, block hp)` to `damageCell` (identical for unshielded hulls). Before, overkill on weak
+    blocks counted in full (and plasma cook-offs' `LANCE_COOK_SCALE` 6.25× on plasma blocks): a missile on
+    a frame-cored test ship drained 6,349, now 4,797, exactly what it destroys unshielded. A generator
+    going off still empties the pool, but a generator only dies once the pool is already ~0.
+  - **Cut-off generators are recorded** (`recShield(e, true)` in `refit`): with no generator left nothing
+    recorded the shield, so the replay bubble stayed up.
+  - **Viewer: the bubble is a rounded box round the live blocks** (`liveBox()` in `model.js`, cached 0.3 s;
+    `drawShield()`; glow shape `5 + corner radius / 1000`, fragment shader gets `vSize` and draws a
+    rounded-rect distance field with a rim of even width, `fwidth` for anti-aliasing). The old ellipse
+    round the design grid cut through the corners of big square ships (corner at 1.14× its radius),
+    gave long thin ships huge glowing ends, and stayed full size round lost hull.
+  - Designer flak tooltip rewritten from the live numbers (pieces per block kind, shield share, never
+    bursts inside a hull, `FLAK_POP` numbers).
 - Future weapons the owner wants: bigger cannons, a medium laser.
 
 Combat rules:

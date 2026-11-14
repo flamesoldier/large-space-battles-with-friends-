@@ -8,6 +8,17 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-15b', date: '15 Nov 2026', title: 'Flak and shield fixes',
+    items: [
+      'Flak shrapnel now does 30 damage a piece (was 60). A whole salvo is still 100 pieces, so it still shreds small, lightly armoured ships and fighters, but big armoured hulls shrug it off far better.',
+      'Fixed: flak shells sometimes burst inside a ship or wreck they were flying through, so all their shrapnel hit one spot at once. They now always burst in open space beside their target.',
+      'The flak cannon\'s tooltip in the designer now matches how it really works (30 damage a piece, the same to every kind of block, 30% against shields, never bursts inside a hull).',
+      'Fixed: explosions (missiles, plasma cook-offs, generators and flak cannons going off) drained a shield by far more than they could actually destroy, because every weak block in the blast counted the blast\'s full damage. A shield now soaks exactly what the explosion would have done to the hull.',
+      'Fixed: a ship whose shield generator was cut off from the hub kept showing its shield bubble in replays after the shield was gone.',
+      'Shield bubbles now hug the ship\'s real shape: a rounded box round the blocks still there, instead of an oval round the whole design. Long thin ships no longer get huge glowing ends, the corners of big square ships no longer poke out of their shield, and a ship that has lost half its hull no longer has a bubble round the empty space.',
+    ],
+  },
+  {
     id: '2026-11-15a', date: '15 Nov 2026', title: 'New: flak cannons and shield generators',
     items: [
       'New 10×10 weapon in the designer: the Flak cannon (key K, 1,500 cr a unit, the same size and price as the plasma cannon). Every 10 seconds it fires a salvo of 5 shells up to 700 blocks at one enemy ship; each bursts right beside it in a spray of 20 pieces of shrapnel flying every way, and every piece flies on until it hits something: deadly to small, lightly armoured ships and fighters.',

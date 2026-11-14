@@ -138,6 +138,29 @@ export class ReplayModel {
     return out;
   }
 
+  /**
+   * Box round a ship's blocks still there at time t, in its local frame: out = { cx, cy, hw, hh, n }
+   * (n = live blocks). For the shield bubble, so it hugs what's left of the hull, whatever its
+   * shape, instead of the whole design grid. Cached per ship for a third of a second of replay time.
+   */
+  liveBox(e, t, out) {
+    const c = e.shBox || (e.shBox = { t: -1e9, cx: 0, cy: 0, hw: 0, hh: 0, n: 0 });
+    if (Math.abs(t - c.t) > 3) {
+      const lx = e.lx, ly = e.ly, de = e.death;
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, n = 0;
+      for (let i = 0; i < lx.length; i++) {
+        if (de[i] <= t) continue;
+        n++;
+        const x = lx[i], y = ly[i];
+        if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+      }
+      c.t = t; c.n = n;
+      if (n) { c.cx = (x0 + x1) / 2; c.cy = (y0 + y1) / 2; c.hw = (x1 - x0) / 2 + 0.5; c.hh = (y1 - y0) / 2 + 0.5; }
+    }
+    out.cx = c.cx; out.cy = c.cy; out.hw = c.hw; out.hh = c.hh; out.n = c.n;
+    return out;
+  }
+
   decodeShoves(meta, c) {
     const n = c.svT ? c.svT.length : 0;
     this.shoveEvery = meta.shoveEvery || 3;

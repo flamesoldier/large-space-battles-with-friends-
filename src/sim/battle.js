@@ -331,6 +331,7 @@ export class Battle {
         g.popped = true;
         e.shieldMax = Math.max(0, e.shieldMax - SHIELD.capacity); e.shieldRegen = Math.max(0, e.shieldRegen - SHIELD.regen);
         if (e.shield > e.shieldMax) e.shield = e.shieldMax;
+        this.recShield(e, true); // the replay must hear of it (with no generators left nothing else records the shield, so its bubble stayed up)
         break;
       }
     }
@@ -1458,8 +1459,16 @@ export class Battle {
         }
         if (t < 0 && P.life[i] <= 1) t = 1;
         if (t >= 0) {
-          const bx = x0 + (x1 - x0) * t, by = y0 + (y1 - y0) * t;
+          let bx = x0 + (x1 - x0) * t, by = y0 + (y1 - y0) * t;
           if (tg && tg.flakIn > 0) tg.flakIn--;
+          // Never burst inside a hull (owner, 15 Nov 2026: shells flew through a wreck or another ship
+          // and went off inside it, so all the shrapnel hit one spot): move the burst along the shell's
+          // path to the nearest open space (see flakOpen), and end the shell there.
+          if (this.blockAt(bx, by)) {
+            const back = (this.now - 1 + t - this.R.shotT0.a[rec]) * W.speed * DT; // never back past the gun
+            const d = this.flakOpen(bx, by, P.vx[i], P.vy[i], W.speed, tg, back);
+            bx = this._ax; by = this._ay; t += d / (W.speed * DT);
+          }
           this.flakBurst(i, bx, by);
           this.shotEnd(rec, this.now - 1 + t, 1);
           this.recExplosion(bx, by, 6); // 6: flak burst
@@ -1786,6 +1795,42 @@ export class Battle {
     da -= Math.round(da / (2 * Math.PI)) * 2 * Math.PI;
     const step = (o ? F.turn * boost : F.turn) * DT, a = cur + Math.max(-step, Math.min(step, da));
     Fi.vx[i] = Math.cos(a) * F.speed; Fi.vy[i] = Math.sin(a) * F.speed;
+  }
+
+  /** True if (x, y) lies on a live block of any ship or wreck. */
+  blockAt(x, y) {
+    let hit = false;
+    this.grid.queryBox(x, y, x, y, (o) => {
+      if (o.dead || o.retired) return false;
+      const dx = x - o.x, dy = y - o.y;
+      if (dx * dx + dy * dy > (o.radius + 1) ** 2) return false;
+      const gx = Math.floor(dx * o.c + dy * o.s + o.w / 2), gy = Math.floor(-dx * o.s + dy * o.c + o.h / 2);
+      if (gx < 0 || gy < 0 || gx >= o.w || gy >= o.h) return false;
+      const i = gy * o.w + gx;
+      if (o.types[i] && o.hp[i] > 0) { hit = true; return true; }
+      return false;
+    });
+    return hit;
+  }
+
+  /**
+   * A flak shell about to burst inside a hull at (x, y): the nearest point along its path that is in
+   * open space (never inside its target's box), trying back along the path first, then ahead, a block
+   * at a time, up to 120 blocks. Sets _ax/_ay; returns how far it moved (negative = back).
+   */
+  flakOpen(x, y, vx, vy, speed, tg, back) {
+    const ux = vx / speed, uy = vy / speed;
+    for (let d = 1; d <= 120; d++) {
+      for (const s of [-d, d]) {
+        if (-s > back) continue;
+        const px = x + ux * s, py = y + uy * s;
+        if (this.blockAt(px, py) || (s > 0 && tg && !tg.dead && this.boxGap(tg, px, py) <= 0)) continue;
+        this._ax = px; this._ay = py;
+        return s;
+      }
+    }
+    this._ax = x; this._ay = y;
+    return 0;
   }
 
   /** A ship or wreck whose box (grown by `pad`) holds the point (x, y), or null. */
@@ -2134,7 +2179,10 @@ export class Battle {
           const f = 1 - d / R;
           let dmg = peak * f * f;
           if (anyone && e.types[c] === BT.LANCE) dmg *= LANCE_COOK_SCALE; // cook-offs chain through plasma blocks however tough
-          if (dmg > 1) this.damageCell(e, c, dmg);
+          // At most the block's hit points: the same for the block, but a shield only soaks what the
+          // blast would really have done (15 Nov 2026: a missile drained ~6,000, more than a generator
+          // holds, and a generator going off emptied every other generator on its ship).
+          if (dmg > 1) this.damageCell(e, c, Math.min(dmg, e.hp[c]));
         }
     }
     // Fighters caught in the blast.
@@ -2335,7 +2383,7 @@ export class Battle {
     for (let j = Math.max(0, Math.floor(gy) - r); j <= Math.min(e.h - 1, Math.floor(gy) + r); j++)
       for (let i = Math.max(0, Math.floor(gx) - r); i <= Math.min(e.w - 1, Math.floor(gx) + r); i++) {
         const d = Math.hypot(i + 0.5 - gx, j + 0.5 - gy);
-        if (d <= radius && e.types[j * e.w + i]) this.damageCell(e, j * e.w + i, dmg * (1 - (0.6 * d) / radius));
+        if (d <= radius && e.types[j * e.w + i]) this.damageCell(e, j * e.w + i, Math.min(dmg * (1 - (0.6 * d) / radius), e.hp[j * e.w + i])); // capped as in blast()
       }
   }
 

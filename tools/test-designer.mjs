@@ -291,10 +291,11 @@ assert.ok(Math.abs(sc.enemyCost - sc.budget) / sc.budget < 0.1, `budgets ${sc.en
       { design: 2, team: 0, x: 40, y: 0, a: 0, fixed: true },
       { design: 1, team: 1, x: 420, y: 0, a: Math.PI, fixed: true },
     ], seed: 6, maxTime: 60 });
-    const ally = ab.ents[1], foe = ab.ents[2], a0 = ally.alive, f0 = foe.alive;
+    const hpSum = (e) => e.hp.reduce((s, v) => s + Math.max(0, v), 0);
+    const ally = ab.ents[1], foe = ab.ents[2], a0 = ally.alive, f0 = hpSum(foe);
     while (!ab.done && ab.tick < 300) ab.step();
     let b2 = 0; for (let k = 0; k < ab.R.expS.n; k++) if (ab.R.expS.a[k] === 6) b2++;
-    assert.ok(b2 >= 5 && (foe.dead || foe.hubDead || foe.alive < f0), `flak shells fly over an allied ship to the enemy (${b2} bursts)`);
+    assert.ok(b2 >= 5 && (foe.dead || foe.hubDead || hpSum(foe) < f0), `flak shells fly over an allied ship to the enemy and damage it (${b2} bursts)`);
     assert.equal(ally.alive, a0, 'flak shrapnel never damages an allied ship');
   }
   // Spread: four platforms, four identical gunboats: the first salvos go to different ships.
@@ -318,6 +319,21 @@ assert.ok(Math.abs(sc.enemyCost - sc.budget) / sc.budget < 0.1, `budgets ${sc.en
     assert.ok(first5.length === 5 && first5.every((x) => x[1] === first5[0][1]), `a salvo is 5 shells at one ship (${JSON.stringify(first5)})`);
     assert.ok(first5[4][0] - first5[0][0] <= 15, 'the salvo leaves within 1.5 s');
     assert.ok(shots.length < 6 || shots[5][0] - first5[4][0] >= 30, 'then the cannon reloads');
+  }
+  // Never bursts inside a hull (15 Nov 2026): a wreck-like brick parked right beside the target, on
+  // the shells' path, used to catch bursts inside it.
+  {
+    const ib = new Battle({ designs: [plat, boat, brick], ships: [
+      { design: 0, team: 0, x: 0, y: 0, a: 0, fixed: true },
+      { design: 2, team: 1, x: 392, y: 0, a: Math.PI, fixed: true },
+      { design: 1, team: 1, x: 404, y: 0, a: Math.PI, fixed: true },
+    ], seed: 3, maxTime: 60 });
+    ib.ents[1].light = 0; // only the gunboat is a target
+    let n = 0, inside = 0;
+    ib.flakBurst = ((f) => (i, x, y) => { n++; if (ib.blockAt(x, y)) inside++; return f(i, x, y); })(ib.flakBurst.bind(ib));
+    while (!ib.done && ib.tick < 400) ib.step();
+    assert.ok(n >= 5, `flak bursts beside a target with a ship next to it (${n})`);
+    assert.equal(inside, 0, `no flak shell bursts inside a hull (${inside} of ${n})`);
   }
   console.log(`flak: picks the gunboat (light ${light0[0].toFixed(1)}) over the brick (${light0[1].toFixed(2)}), ${bursts} bursts, first salvos of 4 platforms at ${tg.size} different ships`);
 }
@@ -364,6 +380,29 @@ assert.ok(Math.abs(sc.enemyCost - sc.budget) / sc.budget < 0.1, `budgets ${sc.en
   const b2 = new Battle({ designs: [sd], ships: [{ design: 0, team: 0, x: 0, y: 0, a: 0, fixed: true }], seed: 1, maxTime: 60 });
   b2.damageCell(b2.ents[0], 0, 100, WEAPON[BT.FLAK].shieldMult);
   assert.equal(b2.ents[0].shield, SHIELD.capacity - 100 * WEAPON[BT.FLAK].shieldMult, 'flak shrapnel does less to shields');
+  // A blast drains the shield by what it would really do to the blocks, not by its full damage on
+  // every block (15 Nov 2026: overkill on weak blocks drained more than the blast could destroy).
+  {
+    const b3 = new Battle({ designs: [sd], ships: [{ design: 0, team: 0, x: 0, y: 0, a: 0, fixed: true }], seed: 1, maxTime: 60 });
+    const e3 = b3.ents[0];
+    let real = 0; // what the same blast does to the blocks of an unshielded copy
+    const b4 = new Battle({ designs: [sd], ships: [{ design: 0, team: 0, x: 0, y: 0, a: 0, fixed: true }], seed: 1, maxTime: 60 });
+    const e4 = b4.ents[0]; e4.shield = 0; e4.shieldMax = 0;
+    const hp0 = e4.hp.reduce((s, v) => s + v, 0);
+    b4.blast(-14, 0, 9, 150, 1); real = hp0 - e4.hp.reduce((s, v) => s + Math.max(0, v), 0);
+    b3.blast(-14, 0, 9, 150, 1);
+    assert.ok(Math.abs((SHIELD.capacity - e3.shield) - real) < 1, `a blast drains the shield by the damage it would do (${Math.round(SHIELD.capacity - e3.shield)} vs ${Math.round(real)})`);
+  }
+  // A generator lost without exploding (cut off) is recorded, so the replay's bubble goes away.
+  {
+    const b5 = new Battle({ designs: [sd], ships: [{ design: 0, team: 0, x: 0, y: 0, a: 0, fixed: true }], seed: 1, maxTime: 60 });
+    const e5 = b5.ents[0];
+    for (let y = 2; y < 12; y++) for (let x = 10; x < 20; x++) e5.hp[y * w + x] = 0;
+    b5.refit(e5);
+    const n = b5.R.shV.n;
+    assert.equal(e5.shieldMax, 0, 'a cut-off generator takes its shield with it');
+    assert.equal(b5.R.shV.a[n - 1], 0, 'and the replay records the shield gone');
+  }
   console.log(`shields: ${SHIELD.capacity} a generator, refills ${SHIELD.regen}/s, blocks protected, generator explodes whole`);
 }
 
