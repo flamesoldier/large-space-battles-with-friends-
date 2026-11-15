@@ -101,6 +101,13 @@ a { color: var(--azure); }
     <p style="margin-top:14px">"New password" logs that player out everywhere and shows their new password above.</p>
   </section>
 
+  <section id="storage" hidden>
+    <h2>Storage</h2>
+    <p>The game and its battle replays are saved on Railway's disk (volume). When it gets nearly full, the oldest replays are deleted automatically so the game can always save.</p>
+    <div class="kv" id="storage-kv"></div>
+    <p id="save-error" class="err" hidden></p>
+  </section>
+
   <section id="traffic" hidden>
     <h2>Data sent to players</h2>
     <p>Railway charges for data the server sends out (egress), 5 cents a GB. This counts it since the server last started (every update restarts it).</p>
@@ -185,7 +192,7 @@ let armed = null;
 function render(st) {
   $('login').hidden = true; $('logout').hidden = false; $('create').hidden = false;
   const G = st.game;
-  $('game').hidden = !G; $('time').hidden = !G; if (!G) $('traffic').hidden = true;
+  $('game').hidden = !G; $('time').hidden = !G; if (!G) { $('traffic').hidden = true; $('storage').hidden = true; }
   $('replace-row').hidden = !G;
   $('create-title').textContent = G ? 'Start a new game instead' : 'Create the game';
   $('create-go').textContent = G ? 'Replace with a new game' : 'Create the game';
@@ -193,6 +200,14 @@ function render(st) {
   if (!G) return;
   const h = G.clock / 3600e3, clock = `Day ${Math.floor(h / 24) + 1} · ${String(Math.floor(h % 24)).padStart(2, '0')}:${String(Math.floor((h * 60) % 60)).padStart(2, '0')}`;
   $('game-kv').innerHTML = `<span><b>${clock}</b></span><span><b>${G.worlds}</b> worlds</span><span>seed <b>${G.seed}</b></span><span>speed <b>${G.speed === 0 ? 'paused' : `${G.speed}×`}</b></span><span><b>${G.replays}</b> replays</span>`;
+  const D = G.disk;
+  $('storage').hidden = !D;
+  if (D) {
+    const gb = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(2)} GB` : `${Math.round(b / 1e6)} MB`);
+    $('storage-kv').innerHTML = (D.total ? `<span>Disk <b>${gb(D.total)}</b></span><span><b>${gb(D.free)}</b> free</span>` : '') + `<span>Replays <b>${gb(D.replayBytes)}</b> (${G.replays.toLocaleString('en')})</span>`;
+    $('save-error').hidden = !D.saveError;
+    if (D.saveError) $('save-error').textContent = `Saving the game is failing: ${D.saveError.message}. Nothing since then is saved yet.`;
+  }
   const T = G.traffic;
   $('traffic').hidden = !T;
   if (T) {

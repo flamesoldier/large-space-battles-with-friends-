@@ -13,7 +13,7 @@
 // the battle started (as the page did), and actions sent meanwhile simply wait their turn.
 
 import { Worker } from 'node:worker_threads';
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync, statfsSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import {
@@ -25,6 +25,12 @@ import { writeJsonAtomic } from './accounts.mjs';
 import { WorldSync } from './worldSync.mjs';
 
 const WORKER = new URL('./battleWorker.mjs', import.meta.url);
+
+// Disk (owner, 15 Nov 2026: the Railway volume filled up with replays, every save failed with ENOSPC
+// and players saw "Server error." on every order). The oldest replays are deleted whenever free space
+// drops under KEEP_FREE (or a fifth of a small disk), always keeping the newest MIN_REPLAYS.
+const KEEP_FREE = 300e6, MIN_REPLAYS = 10;
+const battleNo = (id) => Number(id.slice(1));
 
 /** Whole number in [0, n), or null. Request bodies are untrusted, so everything is checked. */
 const index = (v, n) => (Number.isInteger(v) && v >= 0 && v < n ? v : null);
@@ -42,6 +48,12 @@ export class Game {
     // Older saves stored only the wall time matching world.clock.
     this.anchor = saved.anchor ?? { wall: saved.wall ?? Date.now(), clock: this.world.clock };
     this.replays = new Set(readdirSync(this.replayDir).filter((f) => f.endsWith('.bin.gz')).map((f) => f.slice(0, -7)));
+    this.replayBytes = new Map(); // id -> bytes on disk
+    for (const id of this.replays) this.replayBytes.set(id, this.fileSize(`${id}.bin.gz`) + this.fileSize(`${id}.json`));
+    this.replayVer = 1; // bumped when a replay is added or deleted, so clients know to fetch the list
+    this.saveError = null; // { at, message } while saving fails
+    this.lastSaveLog = 0;
+    try { unlinkSync(`${this.file}.tmp`); } catch {} // a half-written save from a full disk
     this.version = 1; // any change worth telling clients about (world or status)
     this.worldVersion = 1; // the world itself changed
     this.status = null; // { battle: { planet, title, ... progress } } while one resolves
@@ -88,8 +100,53 @@ export class Game {
   save() {
     if (this.retired) return;
     // The anchor is what the clock is measured from; saving it with the world keeps time running across restarts.
-    writeJsonAtomic(this.file, { world: this.world, anchor: this.anchor, speed: this.speed });
+    const value = { world: this.world, anchor: this.anchor, speed: this.speed };
+    try {
+      this.pruneReplays();
+      writeJsonAtomic(this.file, value);
+      if (this.saveError) { this.log(`[${new Date().toISOString()}] Saving works again.`); this.saveError = null; }
+    } catch (e) {
+      try { unlinkSync(`${this.file}.tmp`); } catch {}
+      // Disk full: make room by deleting old replays and try once more.
+      if (e?.code === 'ENOSPC' && this.pruneReplays(50e6, true)) {
+        try { writeJsonAtomic(this.file, value); this.saveError = null; return; } catch (e2) { e = e2; try { unlinkSync(`${this.file}.tmp`); } catch {} }
+      }
+      // Never fail the player's order over it (it has happened, in memory); tell the admin page and the log.
+      this.saveError = { at: Date.now(), message: String(e?.message || e) };
+      if (Date.now() - this.lastSaveLog > 60e3) { this.lastSaveLog = Date.now(); this.log(`[${new Date().toISOString()}] SAVE FAILED: ${this.saveError.message}`); }
+    }
   }
+
+  fileSize(name) { try { return statSync(join(this.replayDir, name)).size; } catch { return 0; } }
+
+  /** { total, free } bytes of the disk the game is saved on, or null if unknown. */
+  disk() {
+    try { const s = statfsSync(this.dir); return { total: s.blocks * s.bsize, free: s.bavail * s.bsize }; } catch { return null; }
+  }
+
+  /**
+   * Delete the oldest replays until the disk has KEEP_FREE (a fifth of a small disk) plus `need` bytes
+   * free, keeping the newest MIN_REPLAYS. force: try even if the disk reports enough. Returns how many went.
+   */
+  pruneReplays(need = 0, force = false) {
+    const d = this.disk();
+    if (!d && !force) return 0;
+    const want = Math.min(KEEP_FREE, (d?.total ?? 0) / 5) + need;
+    let free = d ? d.free : 0, n = 0;
+    if (free >= want && !force) return 0;
+    const ids = [...this.replays].sort((a, b) => battleNo(a) - battleNo(b));
+    for (const id of ids) {
+      if (free >= want && !(force && n === 0)) break;
+      if (this.replays.size <= MIN_REPLAYS) break;
+      for (const f of [`${id}.bin.gz`, `${id}.json`]) { try { unlinkSync(join(this.replayDir, f)); } catch {} }
+      free += this.replayBytes.get(id) || 0;
+      this.replays.delete(id); this.replayBytes.delete(id);
+      n++;
+    }
+    if (n) { this.replayVer++; this.log(`[${new Date().toISOString()}] Disk nearly full: deleted the ${n} oldest replay${n > 1 ? 's' : ''} (${this.replays.size} kept).`); }
+    return n;
+  }
+
 
   changed(world = true) {
     this.version++;
@@ -165,9 +222,20 @@ export class Game {
       computeMs: rep.computeMs,
     };
     const id = entry.battle.id;
-    writeFileSync(join(this.replayDir, `${id}.bin.gz`), gzipSync(Buffer.from(rep.bytes.buffer, rep.bytes.byteOffset, rep.bytes.byteLength), { level: 6 }));
-    writeFileSync(join(this.replayDir, `${id}.json`), JSON.stringify(meta));
+    const gz = gzipSync(Buffer.from(rep.bytes.buffer, rep.bytes.byteOffset, rep.bytes.byteLength), { level: 6 });
+    this.pruneReplays(gz.length);
+    try {
+      writeFileSync(join(this.replayDir, `${id}.bin.gz`), gz);
+      writeFileSync(join(this.replayDir, `${id}.json`), JSON.stringify(meta));
+    } catch (e) {
+      // No room even after deleting old replays: lose this replay, not the battle's result.
+      for (const f of [`${id}.bin.gz`, `${id}.json`]) { try { unlinkSync(join(this.replayDir, f)); } catch {} }
+      this.log(`[${new Date().toISOString()}] Couldn't save the replay of ${id}: ${e?.message || e}`);
+      return;
+    }
     this.replays.add(id);
+    this.replayBytes.set(id, gz.length + 300);
+    this.replayVer++;
   }
 
   /** Replay file and its meta, or null. id comes from a URL, so it must look like a battle id. */
@@ -278,7 +346,7 @@ export class Game {
   /** What a client needs. The world is only included when it changed since the client's copy. */
   /**
    * What a client needs. haveWorld: the world layout id it holds (worldSync.mjs; -1 none); haveReplays: how many replay
-   * ids it has. The world goes as a delta (`wdelta`, see worldSync.mjs) and the replay list only when it
+   * list version it has (rc). The world goes as a delta (`wdelta`, see worldSync.mjs) and the replay list only when it
    * grew (owner, 15 Nov 2026: both were sent whole, the list on every 25 s poll, and egress is billed).
    */
   snapshot(pid, haveWorld, haveReplays = -1) {
@@ -286,9 +354,9 @@ export class Game {
     const s = {
       v: this.version, me: pid,
       gameNow: this.gameNow(now), speed: this.speed,
-      status: this.status, rc: this.replays.size,
+      status: this.status, rc: this.replayVer,
     };
-    if (haveReplays !== this.replays.size) s.replays = [...this.replays];
+    if (haveReplays !== this.replayVer) s.replays = [...this.replays];
     // As before, the world goes only when its version moved on since the client's copy (the page runs
     // the clock forward itself in between); `wv` is then the id of the layout sent.
     if (this.sync.versionOf(haveWorld) !== this.worldVersion) { s.wdelta = this.sync.delta(this.world, this.worldVersion, haveWorld); s.wv = s.wdelta.sid; }

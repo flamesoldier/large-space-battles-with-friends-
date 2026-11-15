@@ -11,6 +11,7 @@ export const PATCH_NOTES = [
     id: '2026-11-15d', date: '15 Nov 2026', title: 'Faster updates, less data',
     items: [
       'Behind the scenes: the game now downloads only what changed in the galaxy instead of the whole galaxy every time anything happens, and doesn\'t download the game page again when it hasn\'t changed. Nothing changes in how it plays; it just uses far less data (handy on phones).',
+      'Fixed: "Server error." on every order. The server\'s disk had filled up with battle replays, so the game couldn\'t save. The oldest replays are now cleared automatically when the disk gets nearly full (the newest are always kept), so the game can always save.',
     ],
   },
   {

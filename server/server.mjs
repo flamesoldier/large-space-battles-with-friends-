@@ -219,6 +219,7 @@ function adminState() {
     game: {
       seed: W.seed, worlds: W.planets.length, day: Math.floor(game.gameNow() / 864e5) + 1, speed: game.speed, clock: game.gameNow(),
       winner: W.winner, replays: game.replays.size, traffic: TRAFFIC,
+      disk: { ...game.disk(), replayBytes: [...game.replayBytes.values()].reduce((a, b) => a + b, 0), saveError: game.saveError },
       players: W.players.map((p) => ({ id: p.id, name: p.name, color: p.color, team: p.team, eliminated: p.eliminated, joined: p.claimed !== false, password: !!accounts.get(p.id), worlds: W.planets.filter((x) => x.owner === p.id).length })),
     },
   };

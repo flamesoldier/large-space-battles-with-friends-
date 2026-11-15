@@ -1194,6 +1194,16 @@ game in progress carries on because it lives on the volume (`/data`: `game.json`
   (`TRAFFIC` in `server.mjs`, +400 bytes a response for headers). Tests: `tools/test-sync.mjs` (300 random
   world changes, a page 7 versions behind, a late answer; 3% of the bytes) and `tools/test-server.mjs`
   (deltas in act answers, replay list, 304); the test client rebuilds worlds with `WorldCopy`.
+- **Disk full (owner, 15 Nov 2026)**: the Railway volume (500 MB, made on the trial; Hobby allows 5 GB, grown
+  live in the volume's Settings) filled with replays after a massive battle; every `save()` threw ENOSPC, so
+  every order answered "Server error." though it had happened in memory. Now `save()` never throws: on
+  failure it deletes the half-written `game.json.tmp`, on ENOSPC prunes replays and retries, else records
+  `saveError` (shown on `/admin`, logged "SAVE FAILED" at most once a minute). `pruneReplays(need)` deletes
+  the oldest replays (by battle number) whenever free space (`statfsSync`) drops under min(300 MB, a fifth of
+  the disk) + need, keeping the newest 10; run before every save and every replay write (`storeReplay`
+  never throws: a replay that can't be written is dropped, not the battle). The replay list's version is
+  `replayVer` (the page's `rc`), bumped on add and delete. `/admin` has a **Storage** section (disk size,
+  free, replays). Test: `tools/test-storage.mjs`.
 - **Never break the live save.** `game.json` is `{ world, anchor, speed }` (older: `{ world, wall }`).
   Any change to the world format must load an existing world: add defaults in `upgradeWorld()`
   (`src/world/world.js`) the way `sieges`, `proposals`, `relations` and `fleet.leg` were added.
