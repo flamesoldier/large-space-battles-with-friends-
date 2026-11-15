@@ -7,11 +7,15 @@
 export const BUILD = (typeof document !== 'undefined' && document.querySelector('meta[name="lsb-build"]')?.content) || '';
 const H = BUILD ? { 'X-LSB-Build': BUILD } : {};
 
+import { WorldCopy } from './worldDelta.js';
+
 const json = async (res) => { try { return await res.json(); } catch { return { ok: false, error: `Server error (${res.status}).` }; } };
 
 export class Net {
   constructor() {
     this.v = -1; this.wv = -1; // versions of what we have
+    this.copy = new WorldCopy(); // the pieces of the world the server sent (it sends only what changed)
+    this.replays = []; // replay ids (the server sends the list only when it grows)
     this.state = null; // last snapshot (without the world once we have it)
     this.received = 0; // performance.now() when gameNow was measured
     this.online = true;
@@ -40,8 +44,13 @@ export class Net {
   take(s) {
     this.received = performance.now();
     this.v = s.v;
-    if (s.world) this.wv = s.wv;
-    this.state = { ...s, world: undefined };
+    if (s.wdelta) {
+      try { s.world = this.copy.apply(s.wdelta, s.wv) ?? undefined; this.wv = this.copy.wv; } // undefined: an older answer that arrived late
+      catch (e) { console.warn(e); this.v = -1; this.wv = -1; this.copy = new WorldCopy(); s.world = undefined; } // the next poll answers at once, with everything
+    }
+    if (s.replays) this.replays = s.replays;
+    s.replays = this.replays;
+    this.state = { ...s, world: undefined, wdelta: undefined };
     this.online = true;
     if (s.build && BUILD && s.build !== BUILD) this.onOutdated?.();
     this.onState?.(s);
@@ -49,7 +58,7 @@ export class Net {
 
   /** First load: resolves true with the state applied, or false when not logged in. */
   async fetchState() {
-    const res = await fetch(`/api/state?wv=${this.wv}`, { headers: H, credentials: 'same-origin' });
+    const res = await fetch(`/api/state?wv=${this.wv}&rc=${this.replays.length}`, { headers: H, credentials: 'same-origin' });
     if (res.status === 401) return false;
     if (res.status === 503) { this.noGame = true; return false; } // nothing set up on the server yet
     if (!res.ok) throw new Error(`Server error (${res.status})`);
@@ -64,7 +73,7 @@ export class Net {
     let backoff = 1000;
     while (this.polling) {
       try {
-        const res = await fetch(`/api/state?v=${this.v}&wv=${this.wv}`, { headers: H, credentials: 'same-origin' });
+        const res = await fetch(`/api/state?v=${this.v}&wv=${this.wv}&rc=${this.replays.length}`, { headers: H, credentials: 'same-origin' });
         if (res.status === 401) { this.polling = false; this.onLoggedOut?.(); return; }
         if (!res.ok) throw new Error(String(res.status));
         this.take(await res.json());
@@ -82,7 +91,7 @@ export class Net {
   async act(action) {
     let res;
     try {
-      res = await fetch('/api/act', { method: 'POST', headers: { 'Content-Type': 'application/json', ...H }, body: JSON.stringify(action), credentials: 'same-origin' });
+      res = await fetch('/api/act', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-LSB-WV': String(this.wv), 'X-LSB-RC': String(this.replays.length), ...H }, body: JSON.stringify(action), credentials: 'same-origin' });
     } catch { return { ok: false, error: 'Can\'t reach the server. Check your connection and try again.' }; }
     if (res.status === 401) { this.polling = false; this.onLoggedOut?.(); return { ok: false, error: 'Please log in again.' }; }
     const r = await json(res);

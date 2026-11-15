@@ -21,7 +21,7 @@
 import { createServer } from 'node:http';
 import { readFileSync, existsSync, writeFileSync, unlinkSync, statSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { randomBytes, timingSafeEqual, createHash } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import { Accounts, sha256, writeJsonAtomic } from './accounts.mjs';
 import { Game, gameExists } from './game.mjs';
@@ -138,12 +138,24 @@ const SECURITY_HEADERS = {
   'Referrer-Policy': 'same-origin',
   'Content-Security-Policy': "frame-ancestors 'self'",
 };
+// Bytes sent since the server started, by kind (owner, 15 Nov 2026: Railway bills egress; shown on /admin).
+const TRAFFIC = { since: Date.now(), bytes: { pages: 0, updates: 0, actions: 0, replays: 0, other: 0 }, count: { pages: 0, updates: 0, actions: 0, replays: 0, other: 0 } };
+function trafficKind(url) {
+  if (url.startsWith('/api/state')) return 'updates';
+  if (url.startsWith('/api/act')) return 'actions';
+  if (url.startsWith('/api/replay/')) return 'replays';
+  if (url.startsWith('/api/')) return 'other';
+  return 'pages';
+}
 function send(req, res, status, body, headers = {}) {
   let buf = Buffer.isBuffer(body) ? body : Buffer.from(typeof body === 'string' ? body : JSON.stringify(body));
   const h = { ...SECURITY_HEADERS, 'Cache-Control': 'no-store', ...headers };
   h['Content-Type'] ??= 'application/json; charset=utf-8';
   if (buf.length > 1024 && !h['Content-Encoding'] && /\bgzip\b/.test(req.headers['accept-encoding'] || '')) { buf = gzipSync(buf, { level: 5 }); h['Content-Encoding'] = 'gzip'; h.Vary = 'Accept-Encoding'; }
   h['Content-Length'] = buf.length;
+  const kind = trafficKind(req.url || '');
+  TRAFFIC.bytes[kind] += buf.length + 400; // + roughly the headers
+  TRAFFIC.count[kind]++;
   res.writeHead(status, h);
   res.end(buf);
 }
@@ -181,7 +193,7 @@ function pageFile(file) {
   const raw = readFileSync(file);
   const gz = gzipSync(raw, { level: 9 });
   const b = /<meta name="lsb-build" content="([0-9a-f]+)">/.exec(raw.subarray(0, 2000).toString('utf8'));
-  pages.set(file, { m, gz, build: b ? b[1] : null });
+  pages.set(file, { m, gz, build: b ? b[1] : null, etag: `"${createHash('sha1').update(gz).digest('base64url').slice(0, 16)}"` });
   return gz;
 }
 /** Build id of the game page being served now (null for a page built before build ids). */
@@ -190,7 +202,13 @@ function currentBuild() {
   return pages.get(PAGE_FILE)?.build ?? null;
 }
 const OUTDATED = 'The game has been updated while you were playing. Refresh the page to keep playing (that order wasn\'t sent).';
-const html = (req, res, file) => send(req, res, 200, pageFile(file), { 'Content-Type': 'text/html; charset=utf-8', 'Content-Encoding': 'gzip', 'Cache-Control': 'no-cache' });
+// Browsers keep the page and ask each time whether it changed (no-cache + ETag): an unchanged page
+// costs a few hundred bytes instead of ~330 KB (owner, 15 Nov 2026, egress is billed).
+const html = (req, res, file) => {
+  const gz = pageFile(file), etag = pages.get(file).etag;
+  if (req.headers['if-none-match'] === etag) return send(req, res, 304, Buffer.alloc(0), { 'Content-Type': 'text/html; charset=utf-8', ETag: etag, 'Cache-Control': 'no-cache' });
+  return send(req, res, 200, gz, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Encoding': 'gzip', 'Cache-Control': 'no-cache', ETag: etag });
+};
 
 // ------------------------------------------------------------------ admin
 function adminState() {
@@ -200,7 +218,7 @@ function adminState() {
     ok: true,
     game: {
       seed: W.seed, worlds: W.planets.length, day: Math.floor(game.gameNow() / 864e5) + 1, speed: game.speed, clock: game.gameNow(),
-      winner: W.winner, replays: game.replays.size,
+      winner: W.winner, replays: game.replays.size, traffic: TRAFFIC,
       players: W.players.map((p) => ({ id: p.id, name: p.name, color: p.color, team: p.team, eliminated: p.eliminated, joined: p.claimed !== false, password: !!accounts.get(p.id), worlds: W.planets.filter((x) => x.owner === p.id).length })),
     },
   };
@@ -320,7 +338,9 @@ async function handle(req, res) {
       if (build && req.headers['x-lsb-build'] !== build) return send(req, res, 409, { ok: false, outdated: true, build, error: OUTDATED });
       const g = game, r = await g.act(pid, body);
       if (g !== game) return fail(req, res, 401, 'A new game has started. Please log in again.');
-      return send(req, res, r.ok ? 200 : 400, { ...r, state: { ...g.snapshot(pid, -1), build } });
+      // The page says which world version and how many replay ids it has, so the answer only carries what changed.
+      const hw = Number(req.headers['x-lsb-wv']), hr = Number(req.headers['x-lsb-rc']);
+      return send(req, res, r.ok ? 200 : 400, { ...r, state: { ...g.snapshot(pid, Number.isFinite(hw) ? hw : -1, Number.isFinite(hr) ? hr : -1), build } });
     }
     return fail(req, res, 404, 'Not found.');
   }
@@ -334,14 +354,15 @@ async function handle(req, res) {
   if (path === '/api/state') {
     // Long poll: answer as soon as something changed since the client's version `v`, or after POLL_MS.
     const v = Number(url.searchParams.get('v')), wv = Number(url.searchParams.get('wv'));
-    if (!Number.isFinite(v) || v !== g.version) return send(req, res, 200, { ...g.snapshot(pid, wv), build: currentBuild() });
+    const rc = url.searchParams.has('rc') ? Number(url.searchParams.get('rc')) : -1;
+    if (!Number.isFinite(v) || v !== g.version) return send(req, res, 200, { ...g.snapshot(pid, wv, rc), build: currentBuild() });
     let done = false;
     const finish = () => {
       if (done) return;
       done = true; g.watchers.delete(finish); clearTimeout(timer);
       if (res.writableEnded || res.destroyed) return;
       if (g !== game) fail(req, res, 401, 'A new game has started. Please log in again.');
-      else send(req, res, 200, { ...g.snapshot(pid, wv), build: currentBuild() });
+      else send(req, res, 200, { ...g.snapshot(pid, wv, rc), build: currentBuild() });
     };
     const timer = setTimeout(finish, POLL_MS);
     g.watchers.add(finish);

@@ -22,6 +22,7 @@ import {
 } from '../src/world/world.js';
 import { decodeDesign } from '../src/shared/shipStats.js';
 import { writeJsonAtomic } from './accounts.mjs';
+import { WorldSync } from './worldSync.mjs';
 
 const WORKER = new URL('./battleWorker.mjs', import.meta.url);
 
@@ -45,6 +46,7 @@ export class Game {
     this.worldVersion = 1; // the world itself changed
     this.status = null; // { battle: { planet, title, ... progress } } while one resolves
     this.watchers = new Set();
+    this.sync = new WorldSync(); // sends clients only the parts of the world that changed
     this.queue = Promise.resolve();
     this.failures = 0;
     this.stopped = false; // shutting down: stop processing events
@@ -274,14 +276,24 @@ export class Game {
   }
 
   /** What a client needs. The world is only included when it changed since the client's copy. */
-  snapshot(pid, haveWorld) {
+  /**
+   * What a client needs. haveWorld: the world layout id it holds (worldSync.mjs; -1 none); haveReplays: how many replay
+   * ids it has. The world goes as a delta (`wdelta`, see worldSync.mjs) and the replay list only when it
+   * grew (owner, 15 Nov 2026: both were sent whole, the list on every 25 s poll, and egress is billed).
+   */
+  snapshot(pid, haveWorld, haveReplays = -1) {
     const now = Date.now();
-    return {
-      v: this.version, wv: this.worldVersion, me: pid,
+    const s = {
+      v: this.version, me: pid,
       gameNow: this.gameNow(now), speed: this.speed,
-      status: this.status, replays: [...this.replays],
-      world: haveWorld === this.worldVersion ? undefined : this.world,
+      status: this.status, rc: this.replays.size,
     };
+    if (haveReplays !== this.replays.size) s.replays = [...this.replays];
+    // As before, the world goes only when its version moved on since the client's copy (the page runs
+    // the clock forward itself in between); `wv` is then the id of the layout sent.
+    if (this.sync.versionOf(haveWorld) !== this.worldVersion) { s.wdelta = this.sync.delta(this.world, this.worldVersion, haveWorld); s.wv = s.wdelta.sid; }
+    else s.wv = haveWorld;
+    return s;
   }
 }
 

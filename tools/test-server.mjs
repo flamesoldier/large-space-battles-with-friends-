@@ -11,6 +11,7 @@ import { gunzipSync } from 'node:zlib';
 import { makeDesign } from '../src/shared/designs.js';
 import { encodeDesign } from '../src/shared/shipStats.js';
 import { unpackReplay } from '../src/shared/replayFormat.js';
+import { WorldCopy } from '../src/galaxy/worldDelta.js';
 
 if (!existsSync('dist/play.html')) { console.error('dist/play.html missing: run npm run build'); process.exit(1); }
 
@@ -64,7 +65,22 @@ function client() {
     if (set) c.cookie = set.split(';')[0];
     return res;
   };
-  c.json = async (method, path, body, headers) => { const r = await c.req(method, path, body, headers); return { status: r.status, body: await r.json(), res: r }; };
+  // The server sends the world in pieces (server/worldSync.mjs); rebuild it like the page does.
+  c.copy = new WorldCopy();
+  c.bytes = 0;
+  const rebuild = (s) => {
+    if (!s?.wdelta) return;
+    if (s.wdelta.from === -1) c.copy = new WorldCopy();
+    s.world = c.copy.apply(s.wdelta, s.wv) ?? undefined;
+  };
+  c.json = async (method, path, body, headers) => {
+    const r = await c.req(method, path, body, headers);
+    const text = await r.text();
+    c.bytes += text.length;
+    const b = JSON.parse(text);
+    rebuild(b); rebuild(b.state);
+    return { status: r.status, body: b, res: r };
+  };
   c.act = (a, build = BUILD) => c.json('POST', '/api/act', a, build ? { 'X-LSB-Build': build } : {});
   c.state = () => c.json('GET', '/api/state');
   return c;
@@ -232,6 +248,22 @@ try {
   await ann.act({ type: 'propose', player: 1 });
   const woke = await waiting;
   ok(woke.body.v > st.v && woke.body.world.proposals.length === 1, 'a waiting client hears about the change');
+
+  // Only what changed is sent (15 Nov 2026, Railway bills egress): a page that has the world gets a
+  // small delta, the replay list only when it grew, and an unchanged game page is a 304.
+  {
+    const a = client(); a.cookie = ann.cookie; a.ip = ann.ip;
+    const full = await a.state(), have = full.body.wv, rc = full.body.rc;
+    ok(full.body.world && full.body.wdelta.from === -1 && Array.isArray(full.body.replays), 'a page with nothing gets the whole world and the replay list');
+    const r = await a.json('POST', '/api/act', { type: 'renamePlanet', planet: annHome, name: 'Ann Prime' }, { 'X-LSB-Build': BUILD, 'X-LSB-WV': String(have), 'X-LSB-RC': String(rc) });
+    const d = r.body.state.wdelta;
+    ok(r.body.ok && d && d.from === have && r.body.state.world.planets[annHome].name === 'Ann Prime' && !r.body.state.replays, 'an order\'s answer carries only what changed');
+    ok(JSON.stringify(d).length < JSON.stringify(full.body.wdelta).length / 5, `and is much smaller (${JSON.stringify(d).length} vs ${JSON.stringify(full.body.wdelta).length} bytes)`);
+    const p1 = await a.req('GET', '/');
+    const etag = p1.headers.get('etag');
+    const p2 = await a.req('GET', '/', undefined, { 'If-None-Match': etag });
+    ok(p1.status === 200 && etag && p2.status === 304, 'an unchanged game page isn\'t sent again');
+  }
 
   // ---- a real battle, resolved by the worker, with a replay
   // At 3600× a second is an hour: wait for some ships, then attack the nearest militia world.

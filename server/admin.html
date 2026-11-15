@@ -101,6 +101,16 @@ a { color: var(--azure); }
     <p style="margin-top:14px">"New password" logs that player out everywhere and shows their new password above.</p>
   </section>
 
+  <section id="traffic" hidden>
+    <h2>Data sent to players</h2>
+    <p>Railway charges for data the server sends out (egress), 5 cents a GB. This counts it since the server last started (every update restarts it).</p>
+    <div class="kv" id="traffic-kv"></div>
+    <table>
+      <thead><tr><th>What</th><th>Sent</th><th>Times</th></tr></thead>
+      <tbody id="traffic-rows"></tbody>
+    </table>
+  </section>
+
   <section id="time" hidden>
     <h2>Game speed</h2>
     <p>How fast time runs for <b>everyone</b>: one galaxy, one clock. 1× is real time (a shipyard builds every 30 minutes). Speed it up to test, then put it back to 1× before your friends play for real. Players see the speed next to the galaxy clock.</p>
@@ -175,7 +185,7 @@ let armed = null;
 function render(st) {
   $('login').hidden = true; $('logout').hidden = false; $('create').hidden = false;
   const G = st.game;
-  $('game').hidden = !G; $('time').hidden = !G;
+  $('game').hidden = !G; $('time').hidden = !G; if (!G) $('traffic').hidden = true;
   $('replace-row').hidden = !G;
   $('create-title').textContent = G ? 'Start a new game instead' : 'Create the game';
   $('create-go').textContent = G ? 'Replace with a new game' : 'Create the game';
@@ -183,6 +193,16 @@ function render(st) {
   if (!G) return;
   const h = G.clock / 3600e3, clock = `Day ${Math.floor(h / 24) + 1} · ${String(Math.floor(h % 24)).padStart(2, '0')}:${String(Math.floor((h * 60) % 60)).padStart(2, '0')}`;
   $('game-kv').innerHTML = `<span><b>${clock}</b></span><span><b>${G.worlds}</b> worlds</span><span>seed <b>${G.seed}</b></span><span>speed <b>${G.speed === 0 ? 'paused' : `${G.speed}×`}</b></span><span><b>${G.replays}</b> replays</span>`;
+  const T = G.traffic;
+  $('traffic').hidden = !T;
+  if (T) {
+    const mb = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(2)} GB` : `${(b / 1e6).toFixed(1)} MB`);
+    const total = Object.values(T.bytes).reduce((a, b) => a + b, 0), hours = Math.max(1 / 60, (Date.now() - T.since) / 3600e3);
+    const perDay = (total / hours) * 24;
+    $('traffic-kv').innerHTML = `<span><b>${mb(total)}</b> in ${hours < 48 ? `${hours.toFixed(1)} hours` : `${(hours / 24).toFixed(1)} days`}</span><span>about <b>${mb(perDay)}</b> a day</span><span>about <b>$${((perDay * 30) / 1e9 * 0.05).toFixed(2)}</b> a month at this rate</span>`;
+    const NAMES = { updates: 'Galaxy updates', actions: 'Answers to orders', replays: 'Battle replays', pages: 'Opening the game page', other: 'Other' };
+    $('traffic-rows').innerHTML = Object.keys(NAMES).map((k) => `<tr><td>${NAMES[k]}</td><td class="num">${mb(T.bytes[k])}</td><td class="num">${T.count[k].toLocaleString('en')}</td></tr>`).join('');
+  }
   $('speeds').innerHTML = SPEEDS.map(([v, l]) => `<button data-speed="${v}" aria-pressed="${v === G.speed}">${l}</button>`).join('');
   $('jumps').innerHTML = JUMPS.map(([v, l]) => `<button data-jump="${v}">+${l}</button>`).join('');
   $('players').innerHTML = G.players.map((p) => `<tr class="${p.eliminated ? 'out' : ''}"><td><span class="dot" style="background:${esc(p.color)}"></span>${esc(p.name)}${p.joined ? '' : ' <span class="num">(not joined yet)</span>'}${p.team ? ` <span class="num">team ${esc(p.team)}</span>` : ''}${p.eliminated ? ' <span class="num">(out)</span>' : ''}</td><td class="num">${p.worlds}</td>

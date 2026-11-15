@@ -8,6 +8,12 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-15d', date: '15 Nov 2026', title: 'Faster updates, less data',
+    items: [
+      'Behind the scenes: the game now downloads only what changed in the galaxy instead of the whole galaxy every time anything happens, and doesn\'t download the game page again when it hasn\'t changed. Nothing changes in how it plays; it just uses far less data (handy on phones).',
+    ],
+  },
+  {
     id: '2026-11-15c', date: '15 Nov 2026', title: 'Shields: refilling adds up less, bubbles follow the hull',
     items: [
       'Shields still add up in full (5,000 for each generator), but refilling now adds up less and less: one generator refills 100 a second, two 180, three 244, four 295, and no ship ever refills faster than 500 a second. Before, every generator added another 100, so a fortress covered in generators refilled faster than a whole fleet could hurt it and never took any damage.',

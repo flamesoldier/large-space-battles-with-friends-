@@ -1174,6 +1174,26 @@ game in progress carries on because it lives on the volume (`/data`: `game.json`
   carried out**; the page then shows the `#update` bar ("Refresh now", `location.reload()`), and also
   as soon as a state answer carries another build. Server-only changes don't change the page hash, so
   they don't prompt. Tests: `tools/test-server.mjs` sends the header and checks refusals.
+- **Only what changed is sent (owner, 15 Nov 2026: Railway bills egress, $0.05/GB; ~58 GB in the first 11
+  days).** The server used to send every open tab the whole world (designs and log included) on every
+  change, the whole world again in every `/api/act` answer, and the replay id list on every 25 s poll.
+  Now: `server/worldSync.mjs` cuts the world into pieces (each element of a top-level array, each entry of
+  a top-level object with > 8 entries, every other top-level value whole), named by a 12-char sha1 of
+  their JSON, kept as JSON text taken at layout time (the live world drifts between versions: clock,
+  credits, yards' ships). Every distinct layout gets an id (`sid`, starting at `Date.now()` so ids keep
+  rising across restarts); the page sends the id it holds as `wv` (query param on `/api/state`, header
+  `X-LSB-WV` on `/api/act`) and gets `wdelta` = `{ from, sid, keys, drop, vals }`: layouts of changed keys
+  (arrays as `[start, count]` runs of its old layout plus new hashes) and only the pieces it lacks; an
+  unknown or -1 `from` gets everything. The world still goes only when `worldVersion` moved on since the
+  page's layout (as before; the page runs the clock forward itself). `src/galaxy/worldDelta.js`
+  (`WorldCopy`, used by `net.js`) remembers the last 6 layouts (so an answer that crossed a newer one still
+  applies; an older one is ignored), rebuilds a fresh world by joining JSON text and parsing it (no shared
+  objects; the page mutates its copy), and on any mismatch asks for everything again. Replay ids go only
+  when the count changed (`rc` param / `X-LSB-RC`). The game page has an `ETag` (304 when unchanged; was
+  ~330 KB every load). `/admin` shows **Data sent to players** since the server started, by kind
+  (`TRAFFIC` in `server.mjs`, +400 bytes a response for headers). Tests: `tools/test-sync.mjs` (300 random
+  world changes, a page 7 versions behind, a late answer; 3% of the bytes) and `tools/test-server.mjs`
+  (deltas in act answers, replay list, 304); the test client rebuilds worlds with `WorldCopy`.
 - **Never break the live save.** `game.json` is `{ world, anchor, speed }` (older: `{ world, wall }`).
   Any change to the world format must load an existing world: add defaults in `upgradeWorld()`
   (`src/world/world.js`) the way `sieges`, `proposals`, `relations` and `fleet.leg` were added.
