@@ -219,6 +219,26 @@ const resolve = (scen) => {
   ok(w.players[2].eliminated, 'Cy, with nothing left, is out');
   ok(w.winner && w.winner.includes(0) && w.winner.includes(1), 'Ann and Bo (allies) win');
 
+  // End-of-game stats (16 Nov 2026): frozen at the moment of victory, and rebuilt for old saves.
+  {
+    const F = w.final;
+    ok(F && F.winners.includes(0) && F.standings.length === 3, 'victory freezes the final standings');
+    ok(F.standings[0].winner && F.standings[2].id === 2 && F.standings[2].eliminated, 'winners first, the knocked-out player last');
+    ok([0, 1].includes(F.throne) && F.standings.find((r) => r.id === F.throne).worlds === Math.max(...F.standings.filter((r) => r.winner).map((r) => r.worlds)), 'throne goes to the winner with the most worlds');
+    const ann = F.standings.find((r) => r.id === 0);
+    ok(ann.battles >= 1 && ann.taken >= 2 && ann.built >= 1 && ann.earned > 0, `Ann's stats add up (${JSON.stringify({ b: ann.battles, t: ann.taken, built: ann.built, e: ann.earned })})`);
+    ok(F.battles >= 1 && F.biggest && F.biggest.ships > 0, 'biggest battle recorded');
+    const frozen = JSON.stringify(F);
+    advanceTo(w, w.clock + HOUR_MS);
+    ok(JSON.stringify(w.final) === frozen && w.stats.p[0].earned > ann.income_earned, 'play carries on after victory; the card stays as it was');
+    const old = JSON.parse(JSON.stringify(w));
+    delete old.stats; delete old.final;
+    upgradeWorld(old);
+    const o = old.final.standings.find((r) => r.id === 0);
+    ok(old.stats.backfilled && o.battles === w.stats.p[0].battles && o.taken === w.stats.p[0].taken, 'an old save rebuilds battles and captures from the log');
+    ok(Math.abs(o.income_earned - w.stats.p[0].earned) / w.stats.p[0].earned < 0.02, `income rebuilt from who held each world (${o.income_earned} vs ${Math.round(w.stats.p[0].earned)})`);
+  }
+
   // The world survives a JSON round trip and keeps working.
   const w2 = JSON.parse(JSON.stringify(w));
   advanceTo(w2, w2.clock + HOUR_MS);

@@ -1066,6 +1066,23 @@ economy, fleets, captures, with real battles).
   and its id, textured with 3D noise on a lit sphere and cached as sprites at three sizes. The
   starfield is a fixed backdrop that doesn't move when you pan or zoom (owner's request).
 
+- **End-of-game screens** (owner, 16 Nov 2026: the old one-line victory banner was too understated
+  for a game that runs for weeks): `src/world/stats.js` keeps `world.stats` (per player: ships built,
+  defences built, ships lost and their value, enemy value lost in their battles, income earned,
+  bounty, battles fought/won, worlds taken, most worlds at once, biggest battle; galaxy: battles,
+  ships destroyed, biggest and longest battle), updated from `advanceTo`, `finishJob`, `siegeEnds`
+  and `capture`. Games from before rebuild it once in `upgradeWorld` (`backfillStats`: battles and
+  captures from the log, income from who held each world when by walking captures back from today's
+  owners, ships built ≈ ships left + ships lost; `backfilled: true`, the card says so). When the
+  galaxy is won `checkPlayers` calls `finalize()`: `world.final` freezes the standings, so the card
+  shows the moment of victory while play carries on. Throne = the winner with the most worlds then
+  (ties: income, credits earned). Page: `src/galaxy/endCard.js` (full-screen `#endcard`: Victory /
+  Defeat / Knocked out, Your war tiles, war records, standings table, honours, Save the picture as
+  PNG) and `src/galaxy/throneArt.js` (original SVG: sovereign on the throne in their colour, other
+  winners kneeling with swords, fallen players' torn banners). Opens by itself once per browser
+  (`lsb.endcard.v1.<online|local>.<seed>.<player>.<win|out>`), the banner's Final results / Your
+  results button reopens it, Esc closes. Tests in `tools/test-world.mjs`.
+
 ## Status: server and accounts (`server/`, `docs/SERVER.md`)
 
 The live game. Plain Node, no dependencies (esbuild is a regular dependency so hosts can build).

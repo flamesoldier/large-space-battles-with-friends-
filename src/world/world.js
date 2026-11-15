@@ -26,6 +26,7 @@ import {
 import { generateGalaxy, linkHomesInward } from './galaxyGen.js';
 import { planRoute, travelSpeed, laneMap } from './routes.js';
 import { makeBattleScenario } from './battleSetup.js';
+import { backfillStats, finalize, noteIncome, noteBuilt, noteCapture, noteBattle, playerStats } from './stats.js';
 import { HOUR_MS, MIN_FLEET_SPEED, NEUTRAL_COLOR, PLAYER_COLORS, CHOOSABLE_COLORS, MIN_PLAYERS, MAX_PLAYERS, BATTLE_MAX_TIME, BATTLE_HOLD_MIN } from './rules.js';
 
 export const YARD_MS = SHIPYARD_INTERVAL_MIN * 60 * 1000;
@@ -63,6 +64,7 @@ export function createWorld({ players, seed = 1, planetsPerPlayer, clock = 0 }) 
     proposals: [],
     jobs: [],
     log: [],
+    stats: { since: clock, p: {}, battles: 0, destroyed: 0, biggest: null, longest: null },
   };
   // Starting teams only decide who begins allied; diplomacy can change it later.
   for (const a of world.players) for (const b of world.players) if (a.id < b.id && a.team && a.team === b.team) world.relations[`${a.id}|${b.id}`] = 'ally';
@@ -250,6 +252,7 @@ function finishJob(world, job) {
     log(world, 'yard', `${pl.name} sold the ${world.designs[y.design].name} shipyard at ${p.name} for ${job.refund.toLocaleString()} cr.`, { planet: p.id, players: [job.owner] });
   } else {
     addShips(p, job.owner, job.design, job.count);
+    noteBuilt(world, job.owner, job.count, true);
     const name = world.designs[job.design].name;
     log(world, 'yard', `${job.count === 1 ? `A ${name} defence is` : `${job.count.toLocaleString()} ${name} defences are`} ready at ${p.name} (${pl.name}).`, { planet: p.id, players: [job.owner] });
   }
@@ -342,11 +345,13 @@ export function advanceTo(world, t, { rally = true } = {}) {
   for (const p of world.planets) {
     if (p.owner === null) continue;
     world.players[p.owner].credits += (p.income * dt) / HOUR_MS;
+    noteIncome(world, p.owner, (p.income * dt) / HOUR_MS);
     for (const y of p.yards) {
       if (y.next > t || y.sellAt != null) continue; // a shipyard being sold has stopped building
       const k = Math.floor((t - y.next) / YARD_MS) + 1;
       addShips(p, p.owner, y.design, k);
       y.next += k * YARD_MS; y.built += k;
+      noteBuilt(world, p.owner, k);
       if (rally && p.rally) {
         fresh ??= new Map();
         const m = fresh.get(p) || {};
@@ -612,6 +617,10 @@ export function upgradeWorld(world) {
     try { const dd = decodeDesign(d.data); d.cost = d.fixed ? defensePrice(dd) : designCost(dd); d.worth = designCost(dd); } catch { /* keep the stored price */ }
     d.worth ??= d.cost;
   }
+  // Nov 2026: stats for the end-of-game screens. Games from before rebuild theirs from the log.
+  if (!world.stats) backfillStats(world);
+  for (const pl of world.players) playerStats(world, pl.id);
+  if (world.winner && !world.final) finalize(world);
   world.version = 3;
   return world;
 }
@@ -885,6 +894,7 @@ function siegeEnds(world, s, plan, result) {
     winner, passing, captured: won, seconds: result.seconds, ships, survived, value, lost, target: P.id, players: per,
     camps: B.camps || 2, bounty,
   };
+  noteBattle(world, battle, P.name, world.clock);
   const who = [...new Set(per.map((q) => q.id).filter((x) => x !== null))];
   const ownerTxt = P.owner === null ? ' (militia)' : ` (${playerName(world, P.owner)})`;
   // "N-way" counts groups of allies that fought each other, not players.
@@ -959,6 +969,7 @@ function capture(world, P, owner, ships, battleInfo) {
   const unbuilt = lostJobs.reduce((s, j) => s + (j.kind === 'defence' ? j.count : 0), 0);
   if (lostJobs.length) world.jobs = world.jobs.filter((j) => j.planet !== P.id);
   P.owner = owner;
+  noteCapture(world, owner);
   // Defences can't leave: any not on the new owner's side are destroyed with the world.
   let razed = 0;
   P.garrison = P.garrison.filter((s) => {
@@ -1023,6 +1034,7 @@ function checkPlayers(world) {
   if (left.length && allFriends && world.players.length > left.length) {
     world.winner = left.map((p) => p.id);
     log(world, 'win', `${left.map((p) => p.name).join(' and ')} ${left.length > 1 ? 'have' : 'has'} won the galaxy.`, { players: world.winner });
+    finalize(world);
   }
 }
 

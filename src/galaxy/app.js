@@ -30,6 +30,8 @@ import { PlanetSprites, planetLook } from './planetArt.js';
 import { ReplayStore } from './replayStore.js';
 import { Net } from './net.js';
 import { PATCH_NOTES } from '../shared/patchNotes.js';
+import { endReport } from '../world/stats.js';
+import { endCardHTML, reportArt, savePicture, END_CARD_CSS } from './endCard.js';
 import { HOUR_MS, PLAYER_COLORS, NEUTRAL_COLOR, MIN_PLAYERS, MAX_PLAYERS, HYPERLANE_SPEEDUP, MIN_FLEET_SPEED } from '../world/rules.js';
 
 /* global __ONLINE__ */
@@ -432,6 +434,8 @@ for (const ev of ['pointerup', 'pointercancel']) canvas.addEventListener(ev, (e)
 // WASD / arrows pan while held, like the designer.
 const keys = new Set();
 addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('endcard').hidden) { closeEndCard(); return; }
+  if (!$('endcard').hidden) return; // the end card covers the map
   if (e.target.closest?.('input, select, textarea, dialog') || e.ctrlKey || e.metaKey || e.altKey) return;
   const k = e.key.toLowerCase();
   if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'].includes(k)) { keys.add(k); if (k.startsWith('arrow')) e.preventDefault(); }
@@ -1429,12 +1433,36 @@ function updateTop() {
   const sp = ONLINE ? net.state?.speed ?? 1 : 1;
   $('clock').textContent = clockText(world.clock) + (sp === 1 ? '' : sp === 0 ? ' · paused' : ` · ${sp}×`);
   const b = $('banner');
-  if (world.winner) { b.hidden = false; b.innerHTML = `<span>${world.winner.map((id) => who(id)).join(' &amp; ')} won the galaxy.</span>${ONLINE ? '' : '<button class="small" id="banner-new">New game</button>'}`; }
-  else if (p.eliminated) { b.hidden = false; b.innerHTML = `<span>${esc(p.name)} has been knocked out.${ONLINE ? ' You can still watch the galaxy and its battles.' : ' Pick another player above, or start a new game.'}</span>`; }
-  else b.hidden = true;
+  const ends = world.winner ? 'win' : p.eliminated ? 'out' : '';
+  if (b.dataset.ends !== `${ends}|${ui.me}|${(world.winner || []).join(',')}`) {
+    b.dataset.ends = `${ends}|${ui.me}|${(world.winner || []).join(',')}`;
+    if (world.winner) { b.hidden = false; b.innerHTML = `<span>${world.winner.map((id) => who(id)).join(' &amp; ')} won the galaxy.</span><button class="small go" id="banner-results">Final results</button>${ONLINE ? '' : '<button class="small" id="banner-new">New game</button>'}`; }
+    else if (p.eliminated) { b.hidden = false; b.innerHTML = `<span>${esc(p.name)} has been knocked out.${ONLINE ? ' You can still watch the galaxy and its battles.' : ' Pick another player above, or start a new game.'}</span><button class="small" id="banner-results">Your results</button>`; }
+    else b.hidden = true;
+  }
+  // The end card opens by itself once per browser (per game, player and ending); the banner's
+  // button brings it back.
+  if (ends && !endShown) {
+    const key = `lsb.endcard.v1.${ONLINE ? 'online' : 'local'}.${world.seed}.${ui.me}.${ends}`;
+    endShown = true;
+    if (!store.get(key, false)) { store.set(key, true); openEndCard(); }
+  }
 }
+
+// ------------------------------------------------------------ end of game (16 Nov 2026)
+let endShown = false;
+{ const st = document.createElement('style'); st.textContent = END_CARD_CSS; document.head.appendChild(st); }
+function openEndCard() {
+  const R = endReport(world), el = $('endcard');
+  el.innerHTML = endCardHTML(R, ONLINE || ui.me !== undefined ? ui.me : null, { seed: world.seed, online: ONLINE });
+  el.hidden = false; el.scrollTop = 0;
+  $('ec-close')?.focus({ preventScroll: true });
+  el.querySelector('#ec-close')?.addEventListener('click', closeEndCard);
+  el.querySelector('#ec-save')?.addEventListener('click', () => savePicture(reportArt(R, world.seed), `galaxy-${world.seed}-victory.png`));
+}
+function closeEndCard() { const el = $('endcard'); el.hidden = true; el.innerHTML = ''; }
 $('update-go').addEventListener('click', () => location.reload());
-$('banner').addEventListener('click', (e) => { if (e.target.id === 'banner-new') openNewGame(); });
+$('banner').addEventListener('click', (e) => { if (e.target.id === 'banner-new') openNewGame(); if (e.target.id === 'banner-results') openEndCard(); });
 
 // ------------------------------------------------------------ new game
 const ngPlayers = [];
