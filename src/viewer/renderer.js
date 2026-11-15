@@ -207,21 +207,6 @@ void main(){
     o = vec4(vCol.rgb * a * vCol.a, 0.0);
   } else if (vShape < 3.5) {     // flat (far-zoom ship silhouette)
     o = vec4(vCol.rgb, 1.0);
-  } else if (vShape > 4.5) {     // shield bubble: a rounded box hugging the hull, bright rim, faint shimmering fill
-    // Shape 5 + corner radius / 1000. Measured in world units (vSize = half size), so the rim is
-    // the same width all round however long, thin or square the ship is (15 Nov 2026: an ellipse
-    // let the corners of big ships poke out and gave long thin ships huge glowing ends).
-    vec2 p = vUV * vSize;
-    float rr = min((vShape - 5.0) * 1000.0, min(vSize.x, vSize.y));
-    vec2 q = abs(p) - (vSize - rr);
-    float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - rr; // < 0 inside, 0 on the edge
-    float fw = max(fwidth(d), 1e-3), rw = max(1.2 + 0.2 * min(vSize.x, vSize.y), 2.0 * fw);
-    float in1 = 1.0 - smoothstep(-fw, fw, d), g = 1.0 - clamp(-d / rw, 0.0, 1.0);
-    float rim = (g * g * 0.8 + smoothstep(1.0 - 1.5 * fw / rw, 1.0, g) * 0.6) * in1; // soft inner glow plus a crisp edge
-    float k = clamp(1.0 + d / min(vSize.x, vSize.y), 0.0, 1.0);
-    float shim = 0.5 + 0.5 * sin(p.x * 0.9 + uTime * 0.35) * sin(p.y * 0.9 - uTime * 0.25);
-    float a = rim + (0.1 + 0.08 * shim) * k * k * in1;
-    o = vec4(vCol.rgb * a * vCol.a, 0.0);
   } else {                       // beam: even along its length
     float ay = 1.0 - abs(vUV.y);
     float a = ay * ay * (1.0 - smoothstep(0.85, 1.0, abs(vUV.x)));
@@ -230,6 +215,33 @@ void main(){
 }`;
 
 const STRIDE = 7; // x, y, angle, sx, sy, shape, rgba(u32)
+
+// Shield bubbles (15 Nov 2026): one quad per shielded ship over its distance map (model.shieldMap), so
+// the bubble hugs the hull's real outline (holes in hollow fortresses included) with a rim of even width.
+const SVS = `#version 300 es
+layout(location=0) in vec2 corner;
+uniform vec2 uCam, uScale, uC, uH; uniform float uA;
+out vec2 vUV; out vec2 vP;
+void main(){
+  vP = corner * uH; vUV = corner * 0.5 + 0.5;
+  float c = cos(uA), s = sin(uA);
+  vec2 w = uC + vec2(vP.x*c - vP.y*s, vP.x*s + vP.y*c);
+  gl_Position = vec4((w - uCam) * uScale, 0.0, 1.0);
+}`;
+const SFS = `#version 300 es
+precision highp float;
+in vec2 vUV; in vec2 vP; out vec4 o;
+uniform sampler2D uMap; uniform float uMaxD, uEdge, uRim, uTime; uniform vec4 uCol;
+void main(){
+  float d = texture(uMap, vUV).r * uMaxD;            // distance to the hull, in blocks
+  float x = d - uEdge;                                // < 0 inside the bubble
+  float fw = max(fwidth(x), 1e-3), rw = max(uRim, 2.0 * fw);
+  float in1 = 1.0 - smoothstep(-fw, fw, x), g = 1.0 - clamp(-x / rw, 0.0, 1.0);
+  float rim = (g * g * 0.8 + smoothstep(1.0 - 1.5 * fw / rw, 1.0, g) * 0.6) * in1;
+  float shim = 0.5 + 0.5 * sin(vP.x * 0.9 + uTime * 0.35) * sin(vP.y * 0.9 - uTime * 0.25);
+  float a = rim + (0.07 + 0.06 * shim) * in1;
+  o = vec4(uCol.rgb * a * uCol.a, 0.0);
+}`;
 
 class Batch {
   constructor(cap = 65536) { this.alloc(cap); this.n = 0; }
@@ -385,6 +397,20 @@ export class Renderer {
     gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, S, 0); gl.vertexAttribDivisor(1, 1);
     gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 3, gl.FLOAT, false, S, 12); gl.vertexAttribDivisor(2, 1);
     gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.UNSIGNED_BYTE, true, S, 24); gl.vertexAttribDivisor(3, 1);
+    const sp = gl.createProgram();
+    for (const [type, src] of [[gl.VERTEX_SHADER, SVS], [gl.FRAGMENT_SHADER, SFS]]) {
+      const sh = gl.createShader(type);
+      gl.shaderSource(sh, src); gl.compileShader(sh);
+      if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh));
+      gl.attachShader(sp, sh);
+    }
+    gl.linkProgram(sp);
+    this.sprog = sp;
+    this.su = {};
+    for (const n of ['uCam', 'uScale', 'uC', 'uH', 'uA', 'uMap', 'uMaxD', 'uEdge', 'uRim', 'uTime', 'uCol']) this.su[n] = gl.getUniformLocation(sp, n);
+    this.shields = []; // shield bubbles to draw this frame: [entity, x, y, angle, alpha, grow]
+    this.shTex = new Map(); // entity -> { tex, ver }
+    this.shModel = null;
     this.solid = new Batch(1 << 17);
     this.glow = new Batch(1 << 16);
     this.tr = { x: 0, y: 0, a: 0 };
@@ -401,7 +427,8 @@ export class Renderer {
   draw(model, t, cam) {
     this.resize();
     const { gl, solid, glow, tr } = this;
-    solid.n = 0; glow.n = 0;
+    solid.n = 0; glow.n = 0; this.shields.length = 0;
+    if (this.shModel !== model) { for (const v of this.shTex.values()) gl.deleteTexture(v.tex); this.shTex.clear(); this.shModel = model; }
     const cw = this.canvas.clientWidth, chh = this.canvas.clientHeight, z = cam.zoom;
     const hw = cw / 2 / z, hh = chh / 2 / z;
     const vx0 = cam.x - hw, vx1 = cam.x + hw, vy0 = cam.y - hh, vy1 = cam.y + hh;
@@ -417,8 +444,11 @@ export class Renderer {
       if (!vis(tr.x, tr.y, e.radius)) continue;
       const dead = e.kind === 1;
       if (!dead) ships++;
-      if (lod) {
-        // Far zoom: one quad per ship, debris as faint specks.
+      // Far zoom: one quad per ship, unless the ship is still big on screen (15 Nov 2026: an Aegis
+      // fortress was drawn as one plain box; past ~60 px across, draw its blocks, each at least ~1 px).
+      const bigOnScreen = Math.max(e.w, e.h) * z > 60;
+      if (lod && !bigOnScreen) {
+        // one quad per ship, debris as faint specks
         if (dead) { if (e.size > 2) solid.push(tr.x, tr.y, tr.a, Math.max(e.w * 0.35, px), Math.max(e.h * 0.35, px), 3, C.lodDead); }
         else {
           solid.push(tr.x, tr.y, tr.a, Math.max(e.w * 0.45, px * 1.2), Math.max(e.h * 0.32, px * 1.2), 3, e.look ? e.look.lod : C.lod[e.team]);
@@ -429,9 +459,10 @@ export class Renderer {
       const c = Math.cos(tr.a), s = Math.sin(tr.a), pal = e.look ? e.look.pal[dead ? 1 : 0] : PAL[dead ? 1 : 0][e.team];
       const lx = e.lx, ly = e.ly, ty = e.type, de = e.death;
       if (!detail) {
+        const bs = Math.max(0.5, px * 0.6);
         for (let i = 0; i < lx.length; i++) {
           if (de[i] <= t) continue;
-          solid.push(tr.x + lx[i] * c - ly[i] * s, tr.y + lx[i] * s + ly[i] * c, tr.a, 0.5, 0.5, 0, pal[ty[i]]);
+          solid.push(tr.x + lx[i] * c - ly[i] * s, tr.y + lx[i] * s + ly[i] * c, tr.a, bs, bs, 0, pal[ty[i]]);
           blocks++;
         }
       } else {
@@ -486,26 +517,54 @@ export class Renderer {
     gl.blendFunc(gl.ONE, gl.ONE);
     gl.bufferData(gl.ARRAY_BUFFER, glow.f.subarray(0, glow.n * STRIDE), gl.STREAM_DRAW);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, glow.n);
+    if (this.shields.length) this.drawShieldPass(model, t, cam, z, cw, chh);
   }
 
-  /** Shield generators: a bubble round the ship, brighter when struck, popping when the shield goes down. */
+  /** The shield bubbles collected this frame, each one quad over its ship's distance map. */
+  drawShieldPass(model, t, cam, z, cw, chh) {
+    const gl = this.gl, u = this.su, L = this.shields;
+    gl.useProgram(this.sprog);
+    gl.uniform2f(u.uCam, cam.x, cam.y);
+    gl.uniform2f(u.uScale, (2 * z) / cw, (-2 * z) / chh);
+    gl.uniform1f(u.uTime, t);
+    gl.uniform1i(u.uMap, 0);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    // the vertex array's attribute 0 is the unit quad; the instanced attributes are unused here
+    for (let k = 0; k < L.length; k += 6) {
+      const e = L[k], M = e.shMap;
+      let T = this.shTex.get(e);
+      if (!T) { T = { tex: gl.createTexture(), ver: -1 }; this.shTex.set(e, T); }
+      gl.bindTexture(gl.TEXTURE_2D, T.tex);
+      if (T.ver !== M.ver) {
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, M.gw, M.gh, 0, gl.RED, gl.UNSIGNED_BYTE, M.d);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        T.ver = M.ver;
+      }
+      const a = L[k + 3], grow = L[k + 5], hx = (M.gw * M.s) / 2, hy = (M.gh * M.s) / 2;
+      const cx = M.ox + hx, cy = M.oy + hy, c = Math.cos(a), s = Math.sin(a);
+      gl.uniform2f(u.uC, L[k + 1] + cx * c - cy * s, L[k + 2] + cx * s + cy * c);
+      gl.uniform2f(u.uH, hx, hy);
+      gl.uniform1f(u.uA, a);
+      gl.uniform1f(u.uMaxD, M.maxD);
+      gl.uniform1f(u.uEdge, Math.min(M.maxD - 0.5, M.m * grow));
+      gl.uniform1f(u.uRim, 1.2 + 0.3 * M.m);
+      const col = C.shield;
+      gl.uniform4f(u.uCol, (col & 255) / 255, ((col >> 8) & 255) / 255, ((col >> 16) & 255) / 255, L[k + 4]);
+      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, 1);
+    }
+  }
+
+  /** Shield generators: a bubble hugging the ship, brighter when struck, popping when the shield goes down. */
   drawShield(model, e, t, tr, px) {
     const S = model.shieldAt(e, t, this._sh || (this._sh = { v: 0, hit: 0, down: -1 }));
     if (!(S.v > 0.004) && !(S.down >= 0 && S.down < 10)) return;
-    // A rounded box round the blocks still there (15 Nov 2026: it was an ellipse round the whole
-    // design grid, so it stayed full size round empty space when half a ship was gone, cut through the
-    // corners of big square ships and bulged off the ends of long thin ones).
-    const B = model.liveBox(e, t, this._shb || (this._shb = { cx: 0, cy: 0, hw: 0, hh: 0, n: 0 }));
-    if (!B.n) return;
-    const m = Math.max(3 + 0.1 * Math.min(B.hw, B.hh), px * 2); // clearance between hull and bubble
-    let hw = B.hw + m, hh = B.hh + m;
-    const mn = Math.min(hw, hh), rr = Math.min(mn, 0.6 * mn + m, 3.2 * m); // round, but never cutting a corner of the hull
-    const c = Math.cos(tr.a), s = Math.sin(tr.a), x = tr.x + B.cx * c - B.cy * s, y = tr.y + B.cx * s + B.cy * c;
-    if (hw < px * 3) hw = px * 3;
-    if (hh < px * 3) hh = px * 3;
-    const shape = 5 + Math.min(rr, 4000) / 1000;
-    if (S.v > 0.004) this.glow.push(x, y, tr.a, hw, hh, shape, alpha2(C.shield, 0.2 + 0.4 * S.v + Math.min(0.9, S.hit * 6)));
-    else { const k = S.down / 10, g = 1 + k * 0.4; this.glow.push(x, y, tr.a, hw + (g - 1) * mn, hh + (g - 1) * mn, shape, alpha2(C.shield, 1 - k)); }
+    if (!model.shieldMap(e, t, px)) return;
+    if (S.v > 0.004) this.shields.push(e, tr.x, tr.y, tr.a, Math.min(1, 0.2 + 0.4 * S.v + Math.min(0.9, S.hit * 6)), 1);
+    else { const k = S.down / 10; this.shields.push(e, tr.x, tr.y, tr.a, 1 - k, 1 + k * 0.6); }
   }
 
   drawEffects(m, t, vis, px) {

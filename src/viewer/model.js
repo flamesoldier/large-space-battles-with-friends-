@@ -139,26 +139,73 @@ export class ReplayModel {
   }
 
   /**
-   * Box round a ship's blocks still there at time t, in its local frame: out = { cx, cy, hw, hh, n }
-   * (n = live blocks). For the shield bubble, so it hugs what's left of the hull, whatever its
-   * shape, instead of the whole design grid. Cached per ship for a third of a second of replay time.
+   * Distance map for a shielded ship's bubble at time t (owner, 15 Nov 2026: shields should hug the
+   * outline of ships and defences; a box round an Aegis fortress was just a big box). A grid over the
+   * live blocks plus a margin, each cell holding its distance (in blocks) to the nearest live block,
+   * scaled to 0..255 over 0..maxD. Cells are `s` blocks wide so a giant stays under ~160
+   * cells a side. Rebuilt only when the number of live blocks changes (checked at most every 0.3 s of
+   * replay time). Returns { d: Uint8Array, gw, gh, s, ox, oy (local position of cell 0's corner), m
+   * (bubble margin), maxD, ver (bumped on rebuild) } or null if no block is left.
    */
-  liveBox(e, t, out) {
-    const c = e.shBox || (e.shBox = { t: -1e9, cx: 0, cy: 0, hw: 0, hh: 0, n: 0 });
-    if (Math.abs(t - c.t) > 3) {
-      const lx = e.lx, ly = e.ly, de = e.death;
-      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, n = 0;
-      for (let i = 0; i < lx.length; i++) {
-        if (de[i] <= t) continue;
-        n++;
-        const x = lx[i], y = ly[i];
-        if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
-      }
-      c.t = t; c.n = n;
-      if (n) { c.cx = (x0 + x1) / 2; c.cy = (y0 + y1) / 2; c.hw = (x1 - x0) / 2 + 0.5; c.hh = (y1 - y0) / 2 + 0.5; }
+  shieldMap(e, t, px) {
+    const c = e.shMap || (e.shMap = { t: -1e9, n: -1, d: null, gw: 0, gh: 0, s: 1, ox: 0, oy: 0, m: 0, maxD: 1, ver: 0 });
+    if (Math.abs(t - c.t) <= 3 && c.d) return c;
+    c.t = t;
+    const lx = e.lx, ly = e.ly, de = e.death;
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, n = 0;
+    for (let i = 0; i < lx.length; i++) {
+      if (de[i] <= t) continue;
+      n++;
+      const x = lx[i], y = ly[i];
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
     }
-    out.cx = c.cx; out.cy = c.cy; out.hw = c.hw; out.hh = c.hh; out.n = c.n;
-    return out;
+    if (!n) { c.n = 0; c.d = null; return null; }
+    if (n === c.n && c.d) return c;
+    c.n = n;
+    const hw = (x1 - x0) / 2 + 0.5, hh = (y1 - y0) / 2 + 0.5;
+    const m = Math.min(12, 3 + 0.05 * Math.min(hw, hh)); // gap between hull and bubble, in blocks
+    const maxD = m * 1.6 + 2, pad = maxD;
+    const W = x1 - x0 + 1 + 2 * pad, H = y1 - y0 + 1 + 2 * pad;
+    const s = Math.max(1, Math.ceil(Math.max(W, H) / 160));
+    const gw = Math.ceil(W / s) + 1, gh = Math.ceil(H / s) + 1;
+    const ox = x0 - 0.5 - pad, oy = y0 - 0.5 - pad;
+    // Nearest live cell for every cell by two sweeps passing nearest-source coordinates on (dead
+    // reckoning), so distances are Euclidean and the bubble's corners come out round.
+    const sx = new Int32Array(gw * gh).fill(-1), sy = new Int32Array(gw * gh), dist = new Float32Array(gw * gh).fill(1e9);
+    for (let i = 0; i < lx.length; i++) {
+      if (de[i] <= t) continue;
+      const gx = Math.floor((lx[i] - ox) / s), gy = Math.floor((ly[i] - oy) / s), k = gy * gw + gx;
+      sx[k] = gx; sy[k] = gy; dist[k] = 0;
+    }
+    const tryN = (k, x, y, j) => {
+      if (sx[j] < 0) return;
+      const dx = x - sx[j], dy = y - sy[j], d = Math.sqrt(dx * dx + dy * dy);
+      if (d < dist[k]) { dist[k] = d; sx[k] = sx[j]; sy[k] = sy[j]; }
+    };
+    for (let y = 0; y < gh; y++) {
+      for (let x = 0; x < gw; x++) {
+        const k = y * gw + x;
+        if (x > 0) tryN(k, x, y, k - 1);
+        if (y > 0) { tryN(k, x, y, k - gw); if (x > 0) tryN(k, x, y, k - gw - 1); if (x < gw - 1) tryN(k, x, y, k - gw + 1); }
+      }
+      for (let x = gw - 2; x >= 0; x--) tryN(y * gw + x, x, y, y * gw + x + 1);
+    }
+    for (let y = gh - 1; y >= 0; y--) {
+      for (let x = gw - 1; x >= 0; x--) {
+        const k = y * gw + x;
+        if (x < gw - 1) tryN(k, x, y, k + 1);
+        if (y < gh - 1) { tryN(k, x, y, k + gw); if (x < gw - 1) tryN(k, x, y, k + gw + 1); if (x > 0) tryN(k, x, y, k + gw - 1); }
+      }
+      for (let x = 1; x < gw; x++) tryN(y * gw + x, x, y, y * gw + x - 1);
+    }
+    const out = new Uint8Array(gw * gh);
+    for (let k = 0; k < out.length; k++) {
+      // cell centre to the nearest block's cell centre, less half a cell so big cells don't shrink the bubble
+      const b = Math.max(0, dist[k] * s - (s - 1) / 2);
+      out[k] = Math.min(255, Math.round((b / maxD) * 255));
+    }
+    Object.assign(c, { d: out, gw, gh, s, ox, oy, m, maxD, ver: c.ver + 1 });
+    return c;
   }
 
   decodeShoves(meta, c) {
@@ -234,7 +281,8 @@ export class ReplayModel {
       idx.forEach((i, k) => {
         const f = c.shotFlight[i] / 10, a = (c.shotAng[i] / 65536) * Math.PI * 2;
         S.t0[k] = c.shotT0[i]; S.t1[k] = c.shotT0[i] + f; S.x[k] = c.shotX[i] / q; S.y[k] = c.shotY[i] / q;
-        S.vx[k] = Math.cos(a) * spd; S.vy[k] = Math.sin(a) * spd; // units per tick
+        const v = c.shotSpd && c.shotSpd[i] ? (spd * c.shotSpd[i]) / 200 : spd; // shrapnel speeds vary (shotSpd, 15 Nov 2026)
+        S.vx[k] = Math.cos(a) * v; S.vy[k] = Math.sin(a) * v; // units per tick
         S.hit[k] = c.shotHit[i]; S.team[k] = c.shotTeam[i];
         if (f > S.maxFlight) S.maxFlight = f;
       });

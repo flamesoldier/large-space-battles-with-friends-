@@ -8,10 +8,13 @@
 
 export const PATCH_NOTES = [
   {
-    id: '2026-11-15c', date: '15 Nov 2026', title: 'Shield refilling adds up less',
+    id: '2026-11-15c', date: '15 Nov 2026', title: 'Shields: refilling adds up less, bubbles follow the hull',
     items: [
       'Shields still add up in full (5,000 for each generator), but refilling now adds up less and less: one generator refills 100 a second, two 180, three 244, four 295, and no ship ever refills faster than 500 a second. Before, every generator added another 100, so a fortress covered in generators refilled faster than a whole fleet could hurt it and never took any damage.',
       'Ordinary ships with one or two generators barely change. Big defences still get huge shields, but a big enough fleet can now wear them down.',
+      'Shield bubbles now follow the real outline of ships and defences, round every arm and through every gap, instead of a box round the whole thing.',
+      'Big ships and fortresses now keep their real shape when you zoom out in replays, instead of turning into a plain box.',
+      'Fixed: in replays, flak shrapnel sometimes looked as if it flew straight through ships. It always stopped at the hull; replays just drew some pieces at the wrong speed. Now each piece is drawn stopping where it really hit (battles recorded from now on).',
     ],
   },
   {

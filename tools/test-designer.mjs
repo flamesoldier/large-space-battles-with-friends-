@@ -12,6 +12,8 @@ import { ShipEditor } from '../src/designer/editor.js';
 import { makeTestScenario } from '../src/designer/testBattle.js';
 import { FORTRESSES, loadFortress } from '../src/shared/fortresses.js';
 import { defensePrice } from '../src/shared/economy.js';
+import { packReplay, unpackReplay } from '../src/shared/replayFormat.js';
+import { ReplayModel } from '../src/viewer/model.js';
 
 let checked = 0;
 const close = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, `${msg}: ${a} vs ${b}`);
@@ -284,6 +286,27 @@ assert.ok(Math.abs(sc.enemyCost - sc.budget) / sc.budget < 0.1, `budgets ${sc.en
   // Shrapnel is real projectiles (shot kind 6), many per burst.
   let frags = 0; for (let k = 0; k < fb.R.shotKind.n; k++) if (fb.R.shotKind.a[k] === 6) frags++;
   assert.ok(frags >= bursts * 20, `each burst throws shrapnel projectiles (${frags} for ${bursts} bursts)`);
+  // The replay draws each piece ending where it really stopped (15 Nov 2026: pieces fly at different
+  // speeds, but replays drew them all at one, so slow ones seemed to fly on through the ship they hit).
+  {
+    const ends = new Map();
+    const fb2 = new Battle({ designs: [plat, boat, brick], ships: [
+      { design: 0, team: 0, x: 0, y: 0, a: 0, fixed: true }, { design: 1, team: 1, x: 300, y: 20, a: Math.PI, fixed: true },
+      { design: 2, team: 1, x: 300, y: -20, a: Math.PI, fixed: true }], seed: 4, maxTime: 40 });
+    let hx = 0, hy = 0;
+    const sw2 = fb2.sweep.bind(fb2), se2 = fb2.shotEnd.bind(fb2);
+    fb2.sweep = (x0, y0, x1, y1, ...r) => { const h = sw2(x0, y0, x1, y1, ...r); if (h) { hx = x0 + (x1 - x0) * fb2.hitT; hy = y0 + (y1 - y0) * fb2.hitT; } return h; };
+    fb2.shotEnd = (rec, t1, hit) => { if (fb2.R.shotKind.a[rec] === 6 && hit === 1) ends.set(rec, [hx, hy]); return se2(rec, t1, hit); };
+    fb2.run();
+    const rp = fb2.toReplay(), u = unpackReplay(packReplay(rp.meta, rp.cols)), S = new ReplayModel(u).frag;
+    const recs = []; for (let k = 0; k < u.cols.shotKind.length; k++) if (u.cols.shotKind[k] === 6) recs.push(k);
+    let worst = 0, n = 0;
+    for (let j = 0; j < S.n; j++) {
+      const e = ends.get(recs[j]); if (!e) continue;
+      const f = S.t1[j] - S.t0[j]; worst = Math.max(worst, Math.hypot(S.x[j] + S.vx[j] * f - e[0], S.y[j] + S.vy[j] * f - e[1])); n++;
+    }
+    assert.ok(n >= 20 && worst < 1, `replays draw shrapnel stopping where it hit (${n} hits, worst ${worst.toFixed(2)} blocks off)`);
+  }
   // An allied brick right in front of the platform: shells fly over it, shrapnel never hurts it.
   {
     const ab = new Battle({ designs: [plat, boat, brick], ships: [

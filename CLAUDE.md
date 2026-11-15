@@ -417,6 +417,26 @@ Weapons (numbers in `blocks.js`):
   hull lost, still routs them. III with 40: old 12–29% hull lost, new 39–57%; III with 20: old 31–98%, new
   34–100%; II with 20 is destroyed either way (as with none). Tried too: n^0.75 (80 gens: 10–30% lost) and 90%
   per generator (cap 1,000/s; 48–98%). Ships with 2 generators: 200 → 180/s.
+- **Shield bubbles hug the hull; shrapnel drawn right; big ships keep their shape zoomed out (15 Nov 2026,
+  owner)**:
+  - **Bubble = distance map** (replaces the rounded box below): `ReplayModel.shieldMap(e, t)` builds a grid
+    over the live blocks plus a margin (cells `s` blocks wide, ≤ ~160 a side), each cell's Euclidean
+    distance to the nearest live block (two dead-reckoning sweeps), as bytes over 0..`maxD`; rebuilt only
+    when the live-block count changes, checked every 0.3 s of replay time. Margin `m` = min(12, 3 + 5% of
+    the shorter half side). Renderer: its own program (`SVS`/`SFS`), one quad per shielded ship drawn
+    after the glow pass (`drawShieldPass`), an R8 texture per ship (`shTex`, freed when the model changes);
+    the edge is where distance = `m` (× growth for the popping ring), rim of even width, `fwidth` AA. Holes
+    in hollow fortresses get their own inner rim. The old glow shape 5 and `liveBox` are gone.
+  - **Shrapnel speed is in the replay** (`shotSpd`, Uint8 per shot: speed × 200 / `shotSpeed`, 0 =
+    nominal). The sim picks each piece's speed in 0.5% steps (170–230 → 85–115%) so it's exact. The viewer
+    drew every piece at the nominal 90, so a slow piece that hit was drawn up to 50 blocks past the hull
+    (mean 6.3 blocks off); now mean 0.24, worst 0.65 (test in `tools/test-designer.mjs`). In the sim
+    shrapnel really did stop (153 of ~850k piece-ticks ended inside a block). Old replays keep the error.
+  - **Fewer pieces measured, not changed**: 324 flak units both sides (600 v 600 generated ×6 big ships),
+    20 pieces × 30 vs 7 × 90: 12.1 → 11.4 s compute (−6%), 5.6 → 4.8 MB replay, peak projectiles 9.4k →
+    5.1k; 300 v 300: no measurable compute change. Owner told it isn't worth the gameplay change.
+  - **Fleet view draws big ships' blocks**: past ~60 px across on screen a ship isn't drawn as one quad
+    (Aegis was a plain box); blocks at least ~1 px (`bs`).
 - Future weapons the owner wants: bigger cannons, a medium laser.
 
 Combat rules:

@@ -1242,8 +1242,11 @@ export class Battle {
     const life = Math.round(W.fragLife / DT);
     for (let f = 0; f < n; f++) {
       const a = f < nf ? fwd + (this.rng() * 2 - 1) * cw : this.rng() * 2 * Math.PI;
-      const sp = W.fragSpeed * (0.85 + 0.3 * this.rng());
-      const rec = this.shotStart(K_FRAG, team, x, y, a);
+      // Speed 85-115% of fragSpeed, in steps of 0.5% so the replay can store it exactly (shotSpd):
+      // replays drew every piece at the same speed, so slow pieces looked as if they flew on through
+      // the ship they had hit (owner, 15 Nov 2026).
+      const q = 170 + Math.floor(this.rng() * 61), sp = (W.fragSpeed * q) / 200;
+      const rec = this.shotStart(K_FRAG, team, x, y, a, false, q);
       // Not added straight away: this runs inside updateProjectiles, whose loop holds the projectile
       // arrays, and adding could grow them (replace this.P) under it.
       this.fragQ.push(P.wtype[i], x, y, Math.cos(a) * sp, Math.sin(a) * sp, life, owner, team, dmg, rec);
@@ -1963,9 +1966,10 @@ export class Battle {
   // Straight projectiles need only launch time, point, angle and flight time: the viewer
   // recomputes every position, so nothing is recorded while they fly (guided missiles add
   // a point every MISSILE_EVERY ticks, see guidedPoint).
-  shotStart(kind, team, x, y, ang, guided = false) {
+  shotStart(kind, team, x, y, ang, guided = false, spd = 0) {
     const R = this.R;
     const rec = R.shotT0.push(this.now);
+    R.shotSpd.push(spd); // speed × 200 / the kind's shotSpeed, 0 = exactly shotSpeed (only shrapnel varies)
     R.shotFlight.push(0); R.shotX.push(q16(x)); R.shotY.push(q16(y)); R.shotAng.push(qAng(ang));
     R.shotHit.push(0); R.shotTeam.push(team); R.shotKind.push(kind === K_FRAG ? 6 : kind === K_FLAK ? 5 : kind === K_FIGHTER ? 4 : guided ? 3 : kind === K_MISSILE ? 1 : kind === K_PLASMA ? 2 : 0);
     return rec;
@@ -2474,7 +2478,7 @@ export class Battle {
       bdT: C(Uint16Array), bdEnt: C(Uint32Array), bdCell: C(Uint32Array), bdCause: C(Uint8Array),
       // Shells and missiles fly straight: launch + angle + flight time (in 0.01 s) is enough.
       shotT0: C(Uint16Array), shotFlight: C(Uint16Array), shotX: C(Int16Array), shotY: C(Int16Array),
-      shotAng: C(Uint16Array), shotHit: C(Uint8Array), shotTeam: C(Uint8Array), shotKind: C(Uint8Array),
+      shotAng: C(Uint16Array), shotSpd: C(Uint8Array), shotHit: C(Uint8Array), shotTeam: C(Uint8Array), shotKind: C(Uint8Array),
       lasT: C(Uint16Array), lasX: C(Int16Array), lasY: C(Int16Array), lasAng: C(Uint16Array), lasLen: C(Uint16Array), lasKind: C(Uint8Array),
       lasTeam: C(Uint8Array), lasHit: C(Uint8Array),
       lasSrc: C(Uint32Array), lasDst: C(Uint32Array), lasSX: C(Int16Array), lasSY: C(Int16Array), lasDX: C(Int16Array), lasDY: C(Int16Array),
