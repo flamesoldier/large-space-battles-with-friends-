@@ -405,6 +405,18 @@ Weapons (numbers in `blocks.js`):
     gave long thin ships huge glowing ends, and stayed full size round lost hull.
   - Designer flak tooltip rewritten from the live numbers (pieces per block kind, shield share, never
     bursts inside a hull, `FLAK_POP` numbers).
+- **Shield refilling stacks less, 15 Nov 2026 (owner: "20 shield generators on an Aegis citadel makes it
+  basically unkillable"; his rule: each extra generator adds 80% of the one before)**. `shieldRegen(n)` in
+  `blocks.js` = `SHIELD.regen × (1 − stack^n) / (1 − stack)`, `SHIELD.stack` 0.8: 100, 180, 244, 295, …, never
+  above 500/s. Capacity still 5,000 each, in full. Used by `refit`/`popShield`/start in the sim and by
+  `analyzeDesign` (test checks they agree). Not a bug: a shield is all-or-nothing, so once total refill beat
+  the attackers' damage per second nothing ever got through. Measured (`/tmp`-style harness: generators
+  added inside an Aegis fortress, buried, ≥ 14 apart, ≥ 30 from the hub; designer-test layout vs an
+  equal-value mixed fleet, 15-min limit, 2 seeds): Citadel III with 80 generators, old rule: shield never
+  went down, 0% hull lost (the fleet did ~10,000/s, refill was 8,000/s); new rule: shield down at 48 s, 39–43%
+  hull lost, still routs them. III with 40: old 12–29% hull lost, new 39–57%; III with 20: old 31–98%, new
+  34–100%; II with 20 is destroyed either way (as with none). Tried too: n^0.75 (80 gens: 10–30% lost) and 90%
+  per generator (cap 1,000/s; 48–98%). Ships with 2 generators: 200 → 180/s.
 - Future weapons the owner wants: bigger cannons, a medium laser.
 
 Combat rules:

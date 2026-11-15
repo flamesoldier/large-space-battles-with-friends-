@@ -8,6 +8,13 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-15c', date: '15 Nov 2026', title: 'Shield refilling adds up less',
+    items: [
+      'Shields still add up in full (5,000 for each generator), but refilling now adds up less and less: one generator refills 100 a second, two 180, three 244, four 295, and no ship ever refills faster than 500 a second. Before, every generator added another 100, so a fortress covered in generators refilled faster than a whole fleet could hurt it and never took any damage.',
+      'Ordinary ships with one or two generators barely change. Big defences still get huge shields, but a big enough fleet can now wear them down.',
+    ],
+  },
+  {
     id: '2026-11-15b', date: '15 Nov 2026', title: 'Flak and shield fixes',
     items: [
       'Flak shrapnel now does 30 damage a piece (was 60). A whole salvo is still 100 pieces, so it still shreds small, lightly armoured ships and fighters, but big armoured hulls shrug it off far better.',

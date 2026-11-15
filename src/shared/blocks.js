@@ -65,7 +65,12 @@ export const FLAK_POP = { after: 25, radius: 8, damage: 30 };
 // absorbed goes through. Flak shrapnel drains it at WEAPON[BT.FLAK].shieldMult. If any block of a
 // generator dies the whole unit explodes (a blast of `radius` / peak `damage` from its centre, hurting
 // anyone, own ship included: less than a plasma cook-off, but enough to set off a generator close by).
-export const SHIELD = { capacity: 5000, regen: 100, radius: 20, damage: 200 };
+export const SHIELD = { capacity: 5000, regen: 100, stack: 0.8, radius: 20, damage: 200 };
+// Refill rate of a ship with n working generators (owner, 15 Nov 2026: 20+ generators on an Aegis fortress
+// refilled faster than a whole fleet could hurt it, so it took no damage at all). Each generator after the
+// first adds `stack` (80%) of what the one before it added: 100, 180, 244, 295, ... never more than
+// regen / (1 - stack) = 500/s. Capacity still adds up in full (5,000 each).
+export function shieldRegen(n) { return n > 0 ? (SHIELD.regen * (1 - SHIELD.stack ** n)) / (1 - SHIELD.stack) : 0; }
 
 // Weapon behaviour. Ranges/speeds in world units (blocks) and seconds.
 export const WEAPON = {

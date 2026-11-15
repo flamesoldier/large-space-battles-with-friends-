@@ -7,7 +7,7 @@
 // the two agree; if you change the formulas in battle.js, change them here too.
 
 import { bayRoute } from './bayRoute.js';
-import { BT, BLOCKS, WEAPON, MULTIBLOCK, HULL_CLASSES, MAX_BLOCKS, MAX_W, MAX_H, COOKOFF, SHIELD, isWeapon } from './blocks.js';
+import { BT, BLOCKS, WEAPON, MULTIBLOCK, HULL_CLASSES, MAX_BLOCKS, MAX_W, MAX_H, COOKOFF, SHIELD, shieldRegen as shieldRegenOf, isWeapon } from './blocks.js';
 import { lineOfFire, openDegrees } from './arcs.js';
 
 // Escort and Brawler were taken out (owner, Nov 2026). A design saved with either loads as Front
@@ -184,7 +184,7 @@ export function analyzeDesign(d) {
   // Shield generators: each whole one adds to the shield pool. One that dies explodes, and that sets
   // off any other generator within reach of the blast (where it would kill a 45 hp block).
   const okGens = gens.filter((g) => g.ok);
-  const shield = okGens.length * SHIELD.capacity, shieldRegen = okGens.length * SHIELD.regen;
+  const shield = okGens.length * SHIELD.capacity, shieldRegen = shieldRegenOf(okGens.length);
   const kill = SHIELD.radius * (1 - Math.sqrt(BLOCKS[BT.SHIELD].hp / SHIELD.damage)); // ~10.5 blocks from the centre
   let close = 0;
   for (let a = 0; a < okGens.length; a++)
