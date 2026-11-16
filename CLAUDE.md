@@ -1073,12 +1073,12 @@ economy, fleets, captures, with real battles).
   ships destroyed, biggest and longest battle), updated from `advanceTo`, `finishJob`, `siegeEnds`
   and `capture`. Games from before rebuild it once in `upgradeWorld` (`backfillStats`: battles and
   captures from the log, income from who held each world when by walking captures back from today's
-  owners, ships built ≈ ships left + ships lost; `backfilled: true`, the card says so). When the
+  owners, ships built ≈ ships left + ships lost; `backfilled: true`; owner chose not to show a note about it). When the
   galaxy is won `checkPlayers` calls `finalize()`: `world.final` freezes the standings, so the card
   shows the moment of victory while play carries on. Throne = the winner with the most worlds then
   (ties: income, credits earned). Page: `src/galaxy/endCard.js` (full-screen `#endcard`: Victory /
   Defeat / Knocked out, Your war tiles, war records, standings table, honours, Save the picture as
-  PNG) and `src/galaxy/throneArt.js` (original SVG: sovereign on the throne in their colour, other
+  PNG) and `src/galaxy/throneArt.js` (original SVG: the "Emperor of the galaxy" on the throne in their colour, other
   winners kneeling with swords, fallen players' torn banners). Opens by itself once per browser
   (`lsb.endcard.v1.<online|local>.<seed>.<player>.<win|out>`), the banner's Final results / Your
   results button reopens it, Esc closes. Tests in `tools/test-world.mjs`.

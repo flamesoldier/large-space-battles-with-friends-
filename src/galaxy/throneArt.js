@@ -197,7 +197,7 @@ export function throneSVG({ sovereign: S, allies = [], fallen = [], caption = ''
       <text x="${CX}" y="${base - 30}" text-anchor="middle" font-family="${FONT}" font-weight="700" font-size="${name.length > 14 ? 26 : 32}" letter-spacing="5" fill="url(#tGold)" stroke="#05070c" stroke-width="5" paint-order="stroke">${esc(name)}</text>
       ${caption ? `<text x="${CX}" y="${base - 8}" text-anchor="middle" font-family="${FONT}" font-weight="600" font-size="13" letter-spacing="3" fill="${C}" stroke="#05070c" stroke-width="4" paint-order="stroke">${esc(caption.toUpperCase())}</text>` : ''}
     </g>`;
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(S.name)} on the throne of the galaxy${allies.length ? `, with ${esc(allies.map((a) => a.name).join(', '))} kneeling before it` : ''}">
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(S.name)} on the throne of the galaxy as emperor${allies.length ? `, with ${esc(allies.map((a) => a.name).join(', '))} kneeling before it` : ''}">
   <defs>
     <radialGradient id="tSky" cx="50%" cy="35%" r="75%"><stop offset="0" stop-color="${mix(S.color, '#05070c', 0.72)}"/><stop offset="0.55" stop-color="#070a12"/><stop offset="1" stop-color="#030409"/></radialGradient>
     <radialGradient id="tNeb" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="${C}" stop-opacity="0.35"/><stop offset="1" stop-color="${C}" stop-opacity="0"/></radialGradient>

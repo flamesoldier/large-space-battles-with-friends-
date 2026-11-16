@@ -10,11 +10,11 @@ export const PATCH_NOTES = [
   {
     id: '2026-11-16a', date: '16 Nov 2026', title: 'Victory and defeat screens',
     items: [
-      'When the galaxy is won, everyone gets a full-screen Victory or Defeat card: a picture of the player holding the most worlds on the throne of the galaxy, their allies kneeling before it and the fallen players\' torn banners in the hall, plus the final standings and the war\'s records.',
+      'When the galaxy is won, everyone gets a full-screen Victory or Defeat card: a picture of the player holding the most worlds on the throne as Emperor of the galaxy, their allies kneeling before it and the fallen players\' torn banners in the hall, plus the final standings and the war\'s records.',
       'Final standings for every player: worlds held (and the most held at once), income, credits earned (income plus bounties), ships built and lost, enemy hulls destroyed in their battles, battles won and fought, worlds taken and their biggest battle. Plus the biggest and longest battles of the war, and honours: Warlord, Tycoon, Shipwright, Conqueror, Veteran and Martyr.',
       'The card is frozen at the moment of victory. You can close it and carry on playing and watching replays as before; the Final results button on the map brings it back. "Save the picture" downloads the throne picture.',
       'Knocked out before the end? You get a card with your own war and the standings so far.',
-      'The game now keeps these statistics as it goes. Everything before today was rebuilt from the game\'s history (ships built before today are estimated).',
+      'The game now keeps these statistics as it goes. Everything from before today was rebuilt from the game\'s history.',
     ],
   },
   {

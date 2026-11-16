@@ -30,7 +30,7 @@ export function reportArt(R, seed = 1) {
   if (!top) return '';
   const allies = rows.filter((r) => r.winner && r.id !== top.id);
   const fallen = rows.filter((r) => !r.winner);
-  const caption = `${top.worlds} world${top.worlds === 1 ? '' : 's'} · Sovereign of the galaxy`;
+  const caption = `${top.worlds} world${top.worlds === 1 ? '' : 's'} · Emperor of the galaxy`;
   return throneSVG({ sovereign: top, allies, fallen, caption, seed });
 }
 
@@ -110,7 +110,7 @@ export function endCardHTML(R, me, { seed = 1, online = true } = {}) {
   const honoursHTML = hon.length ? `<section class="ec-sec"><h3>Honours</h3><div class="ec-honours">${hon.map((h) => `<div class="ec-hon" style="--c:${esc(h.r.color)}">
       <small>${h.title}</small><b>${esc(h.r.name)}</b><span>${h.val}</span><i>${h.what}</i></div>`).join('')}</div></section>` : '';
 
-  const note = R.backfilled ? '<p class="ec-note">Battles, worlds taken and credits earned before 16 Nov were rebuilt from the game\'s history; ships built before then are estimated from the ships left plus those lost.</p>' : '';
+  const note = '';
   const keep = online ? (won ? 'Keep playing' : 'Keep watching') : 'Close';
   return `<div class="ec-inner ${mode}">
     <header class="ec-head">
