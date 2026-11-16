@@ -9,6 +9,7 @@ import {
   shipsAt, incomeOf, allied, YARD_MS, HOLD_MS, designOf, upgradeWorld,
   proposeAlliance, acceptAlliance, breakAlliance, proposalsFor, dueEvent, siegeAt, renameDesign, renamePlanet,
   buildDefense, planEvent, applyEvent, registerDesign, cancelSale, jobsAt, payBounties, giveCredits, worthOf, fleetValue, stopFleet, setRally, rallyAll,
+  checkWin,
 } from '../src/world/world.js';
 import { writeFileSync } from 'node:fs';
 import { packReplay } from '../src/shared/replayFormat.js';
@@ -214,6 +215,9 @@ const resolve = (scen) => {
   advanceTo(w, w.clock + YARD_MS * 4);
   const atk = sendFleet(w, 0, src.id, cyHome.id, { [did]: Math.max(1, shipsAt(src, 0)[did]) });
   ok(atk.ok, `attack Cy: ${atk.error}`);
+  // Victory needs every world held by one alliance: hand Ann and Bo the rest of the galaxy first.
+  for (const p of w.planets) if (p !== cyHome && p.owner === null) { p.owner = 1; p.garrison = p.garrison.filter((s) => s.owner !== null); }
+  ok(w.winner === null, 'no winner while Cy still holds a world');
   runWorld(w, atk.fleet.arrive + HOLD_MS + 1, resolve);
   ok(cyHome.owner === 0 && cyHome.yards.length === 0, 'undefended enemy world taken, its shipyards destroyed');
   ok(w.players[2].eliminated, 'Cy, with nothing left, is out');
@@ -560,6 +564,31 @@ const resolve = (scen) => {
   ok(!w2.log.some((e) => e.battle), 'peace during the hold: no battle');
   ok(shipsAt(w2.planets[w2.players[1].home], 0)[y.yard.design] === 4, 'the fleet stays as a guest of its new ally');
   ok(w2.winner === null, 'nobody wins while nobody has been knocked out');
+}
+
+// ---- victory = one alliance holds every world (owner, 16 Nov 2026)
+{
+  const w = createWorld({ players: [{ name: 'A' }, { name: 'B' }, { name: 'C' }, { name: 'D' }], seed: 11 });
+  const d = Object.keys(w.designs)[0];
+  for (const p of w.planets) { p.owner = p.id % 2; p.garrison = []; }
+  w.fleets.push({ id: 999, owner: 2, ships: { [d]: 5 }, from: 0, to: 1, depart: w.clock, arrive: w.clock + 1e12, legs: [], wait: 0 });
+  w.planets[3].garrison.push({ owner: 3, design: d, n: 2 }); // D: a guest on a world it doesn't hold
+  checkWin(w);
+  ok(w.winner === null, 'two enemies hold every world between them: no winner');
+  ok(proposeAlliance(w, 0, 1).ok && proposeAlliance(w, 1, 0).allied, 'A and B ally');
+  ok(w.winner && w.winner.length === 2 && w.winner.includes(0) && w.winner.includes(1), 'their alliance holds every world: they win, though C still has a fleet');
+  ok(!w.players[2].eliminated, 'C, with a fleet left, is not knocked out but has lost');
+  ok(w.final && w.final.winners.length === 2, 'standings frozen at the win');
+
+  const w2 = createWorld({ players: [{ name: 'A' }, { name: 'B' }, { name: 'C' }], seed: 12 });
+  for (const p of w2.planets) { p.owner = 0; p.garrison = []; }
+  w2.planets[5].owner = null; // one militia world left
+  w2.planets[0].garrison.push({ owner: 1, design: Object.keys(w2.designs)[0], n: 3 }); // B: ships, no worlds
+  proposeAlliance(w2, 0, 1); acceptAlliance(w2, 1, 0);
+  ok(w2.winner === null, 'a militia world left: no winner');
+  w2.planets[5].owner = 0;
+  checkWin(w2);
+  ok(w2.winner && w2.winner.includes(0) && w2.winner.includes(1) && !w2.winner.includes(2), 'every world held: A wins, and B, an ally still in the game with no worlds, shares it');
 }
 
 // ---- fixed defences: a ship with no engines can't leave

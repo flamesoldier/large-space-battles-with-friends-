@@ -620,6 +620,8 @@ export function upgradeWorld(world) {
   // Nov 2026: stats for the end-of-game screens. Games from before rebuild theirs from the log.
   if (!world.stats) backfillStats(world);
   for (const pl of world.players) playerStats(world, pl.id);
+  // 16 Nov 2026: victory became "one alliance holds every world"; a game already there ends on load.
+  if (world.winner === null) checkPlayers(world);
   if (world.winner && !world.final) finalize(world);
   world.version = 3;
   return world;
@@ -1022,6 +1024,9 @@ function retreatTarget(world, fleet, here) {
 }
 
 /** Knock out players with no worlds, ships or fleets left, and see if one side has won. */
+/** Knock out players with nothing left and check for victory (also run after every event). */
+export function checkWin(world) { checkPlayers(world); }
+
 function checkPlayers(world) {
   for (const pl of world.players) {
     if (pl.eliminated) continue;
@@ -1029,9 +1034,14 @@ function checkPlayers(world) {
     if (!alive) { pl.eliminated = true; log(world, 'out', `${pl.name} has been knocked out of the game.`, { players: [pl.id] }); }
   }
   if (world.winner !== null) return;
-  const left = world.players.filter((p) => !p.eliminated);
-  const allFriends = left.every((a) => left.every((b) => allied(world, a.id, b.id)));
-  if (left.length && allFriends && world.players.length > left.length) {
+  // Victory (owner, 16 Nov 2026): one alliance holds every world in the galaxy. The players who hold
+  // worlds must all be allied with each other; any other player still in who is allied with all of
+  // them shares the win. Enemies left with only fleets or guest ships don't stop it.
+  if (!world.planets.length || world.planets.some((p) => p.owner === null || p.owner === undefined)) return;
+  const holders = [...new Set(world.planets.map((p) => p.owner))];
+  if (!holders.every((a) => holders.every((b) => allied(world, a, b)))) return;
+  const left = world.players.filter((p) => holders.includes(p.id) || (!p.eliminated && holders.every((h) => allied(world, p.id, h))));
+  {
     world.winner = left.map((p) => p.id);
     log(world, 'win', `${left.map((p) => p.name).join(' and ')} ${left.length > 1 ? 'have' : 'has'} won the galaxy.`, { players: world.winner });
     finalize(world);

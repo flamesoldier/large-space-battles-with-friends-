@@ -1053,8 +1053,11 @@ economy, fleets, captures, with real battles).
   "allied with both sides sits out" with free-for-all battles): their ships stay at the world idle
   and untouched. If the world then falls to someone they aren't allied with, their ships fly home
   unharmed. Alliance changes during a hold need no special handling: who fights whom is worked out
-  when the battle starts. A player with no worlds, ships or fleets is knocked out; when someone has
-  been knocked out and everyone left is allied with everyone else, they win.
+  when the battle starts. A player with no worlds, ships or fleets is knocked out. **Victory** (owner, 16 Nov
+  2026): as soon as every world is held by players who are all allied with each other (no militia world
+  left), they win, plus any player still in who is allied with all of them; enemies left with only
+  fleets or guest ships don't stop it (`checkPlayers`, also run by `upgradeWorld`, exported as `checkWin`).
+  Before: someone knocked out and everyone left allied, whatever the worlds.
 - Unclaimed worlds are held by **militia** (generated corvettes/frigates/destroyers worth 4 hours
   of the world's income, `NEUTRAL_GARRISON_HOURS`), so taking one is a real battle.
 - Designs used in the world are stored in `world.designs` (owner, cost, speed, encoded cells),

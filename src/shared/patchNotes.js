@@ -8,6 +8,13 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-16b', date: '16 Nov 2026', title: 'How the galaxy is won',
+    items: [
+      'The galaxy is won as soon as one alliance holds every world in it, militia worlds included. Every player in that alliance wins.',
+      'Enemies who still have fleets or ships parked on someone else\'s world no longer hold up the win. Players are still knocked out one by one when they have no worlds, ships or fleets left.',
+    ],
+  },
+  {
     id: '2026-11-16a', date: '16 Nov 2026', title: 'Victory and defeat screens',
     items: [
       'When the galaxy is won, everyone gets a full-screen Victory or Defeat card: a picture of the player holding the most worlds on the throne as Emperor of the galaxy, their allies kneeling before it and the fallen players\' torn banners in the hall, plus the final standings and the war\'s records.',
