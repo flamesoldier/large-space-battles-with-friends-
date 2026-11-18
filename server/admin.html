@@ -132,8 +132,9 @@ a { color: var(--azure); }
     <h2 id="create-title">Create the game</h2>
     <form id="create-form" class="stack">
       <div class="grid">
-        <label>Number of players (2–10)<input id="count" type="number" min="2" max="10" value="4" required></label>
-        <label>Worlds per player (3–14)<input id="worlds" type="number" min="3" max="14" value="7"></label>
+        <label>Number of players (people, 1–10)<input id="count" type="number" min="1" max="10" value="4" required></label>
+        <label>Bots (0–9): extra seats the server plays<input id="bots" type="number" min="0" max="9" value="0"></label>
+        <label>Worlds per seat (3–14)<input id="worlds" type="number" min="3" max="14" value="7"></label>
       </div>
       <label>Names (optional): one per line, for the first seats. Leave it empty and every player picks their own name and colour the first time they log in.
         <textarea id="names" placeholder="(empty: everyone chooses their own)"></textarea>
@@ -188,7 +189,7 @@ $('jumps').addEventListener('click', async (e) => {
   const r = await api('/api/admin/jump', { hours: Number(b.dataset.jump) });
   if (r.ok) render(r); else { $('time-err').textContent = r.error; for (const x of $('jumps').children) x.disabled = false; }
 });
-let armed = null;
+let armed = null, armedBot = null;
 function render(st) {
   $('login').hidden = true; $('logout').hidden = false; $('create').hidden = false;
   const G = st.game;
@@ -220,10 +221,19 @@ function render(st) {
   }
   $('speeds').innerHTML = SPEEDS.map(([v, l]) => `<button data-speed="${v}" aria-pressed="${v === G.speed}">${l}</button>`).join('');
   $('jumps').innerHTML = JUMPS.map(([v, l]) => `<button data-jump="${v}">+${l}</button>`).join('');
-  $('players').innerHTML = G.players.map((p) => `<tr class="${p.eliminated ? 'out' : ''}"><td><span class="dot" style="background:${esc(p.color)}"></span>${esc(p.name)}${p.joined ? '' : ' <span class="num">(not joined yet)</span>'}${p.team ? ` <span class="num">team ${esc(p.team)}</span>` : ''}${p.eliminated ? ' <span class="num">(out)</span>' : ''}</td><td class="num">${p.worlds}</td>
-    <td><button class="small" data-reset="${p.id}">${armed === p.id ? 'Click again to confirm' : 'New password'}</button></td></tr>`).join('');
+  $('players').innerHTML = G.players.map((p) => `<tr class="${p.eliminated ? 'out' : ''}"><td><span class="dot" style="background:${esc(p.color)}"></span>${esc(p.name)}${p.bot ? ' <span class="num">(bot)</span>' : p.joined ? '' : ' <span class="num">(not joined yet)</span>'}${p.team ? ` <span class="num">team ${esc(p.team)}</span>` : ''}${p.eliminated ? ' <span class="num">(out)</span>' : ''}</td><td class="num">${p.worlds}</td>
+    <td>${p.bot ? '' : `<button class="small" data-reset="${p.id}">${armed === p.id ? 'Click again to confirm' : 'New password'}</button> ${p.eliminated ? '' : `<button class="small" data-bot="${p.id}" title="The server plays this seat from now on: it buys shipyards and builds defences. Nobody can log in as it any more.">${armedBot === p.id ? 'Click again to confirm' : 'Make it a bot'}</button>`}`}</td></tr>`).join('');
 }
 $('players').addEventListener('click', async (e) => {
+  const bb = e.target.closest('[data-bot]');
+  if (bb) {
+    const id = Number(bb.dataset.bot);
+    if (armedBot !== id) { armedBot = id; bb.textContent = 'Click again to confirm'; setTimeout(() => { if (armedBot === id) { armedBot = null; bb.textContent = 'Make it a bot'; } }, 4000); return; }
+    armedBot = null; bb.disabled = true;
+    const r = await api('/api/admin/make-bot', { player: id });
+    if (!r.ok) { alert(r.error); return load(); }
+    return render(r);
+  }
   const b = e.target.closest('[data-reset]');
   if (!b) return;
   const id = Number(b.dataset.reset);
@@ -240,13 +250,13 @@ $('create-form').addEventListener('submit', async (e) => {
   const lines = (s) => s.split(/\n|,/).map((x) => x.trim()).filter(Boolean);
   const players = lines($('names').value);
   const teams = $('teams').value.split('\n').map((x) => x.trim());
-  const count = Number($('count').value);
-  if (!(count >= 2 && count <= 10)) { $('create-err').textContent = 'A game needs 2 to 10 players.'; return; }
+  const count = Number($('count').value), bots = Number($('bots').value) || 0;
+  if (!(count >= 1 && bots >= 0 && count + bots >= 2 && count + bots <= 10)) { $('create-err').textContent = 'A game needs at least 1 player and 2 to 10 seats in all, bots included.'; return; }
   if (players.length > count) { $('create-err').textContent = `That's ${players.length} names for ${count} players: raise the number of players or remove some names.`; return; }
   const replace = !$('replace-row').hidden && $('replace').checked;
   if (!$('replace-row').hidden && !replace) { $('create-err').textContent = 'Tick the box to confirm replacing the current game.'; return; }
   $('create-go').disabled = true;
-  const r = await api('/api/admin/new-game', { count, players, teams, worlds: Number($('worlds').value) || 7, seed: Number($('seed').value) || undefined, replace });
+  const r = await api('/api/admin/new-game', { count, players, teams, bots, worlds: Number($('worlds').value) || 7, seed: Number($('seed').value) || undefined, replace });
   $('create-go').disabled = false;
   if (!r.ok) { $('create-err').textContent = r.error; return; }
   $('replace').checked = false; $('names').value = ''; $('teams').value = ''; $('seed').value = '';

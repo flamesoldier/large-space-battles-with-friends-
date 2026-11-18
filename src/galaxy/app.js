@@ -1338,11 +1338,13 @@ function renderDiplomacy() {
     let status = al ? '<span class="res good">Allied</span>' : '<span class="res bad">Enemy</span>';
     if (theyAsked) status += ' <span class="tag">wants an alliance</span>';
     if (iAsked) status += ' <span class="tag">you proposed</span>';
+    if (p.bot) status += ' <span class="tag">bot</span>';
     let acts = '';
     if (out) acts = '<span class="hint">Out of the game</span>';
     else if (al) acts = `<button class="small danger" data-dip="break" data-p="${p.id}">${armedBreak === p.id ? `${CLICK} again: declare war` : 'Break alliance'}</button>`;
     else if (theyAsked) acts = `<button class="small go" data-dip="accept" data-p="${p.id}">Accept</button><button class="small" data-dip="decline" data-p="${p.id}">Decline</button>`;
     else if (iAsked) acts = `<button class="small" data-dip="decline" data-p="${p.id}">Withdraw</button>`;
+    else if (p.bot) acts = '<span class="hint">Bots never make alliances</span>';
     else acts = `<button class="small go" data-dip="propose" data-p="${p.id}">Propose alliance</button>`;
     // Credit gifts (owner, Nov 2026): to anyone, ally or enemy.
     if (!out) acts += `<button class="small" data-dip="gift" data-p="${p.id}">Send credits</button>`;

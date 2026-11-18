@@ -69,6 +69,8 @@ export class Accounts {
     for (const a of this.load().list) if (checkPassword(pw, a.hash) && hit === null) hit = a;
     return hit;
   }
+  /** Delete a player's password (e.g. the seat became a bot): nobody can log in as them. */
+  remove(id) { this.load(); this.list = this.list.filter((a) => a.id !== id); this.save(); }
   /** Set a player's password (unique across players). Returns it. */
   setPassword(id, pw = generatePassword()) {
     this.load();

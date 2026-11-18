@@ -148,12 +148,28 @@ try {
 
     const adm = (await boss.json('GET', '/api/admin/state')).body.game.players;
     ok(adm[1].name === 'Dan bthe/b Bold' && adm[1].joined && !adm[3].joined, 'the admin page shows who has joined');
+    // ---- bots (owner, 18 Nov 2026): an open seat handed to a bot; nobody can log in as it
+    const p4 = client();
+    await p4.json('POST', '/api/login', { password: seats.body.passwords[3].password });
+    ok((await p4.state()).status === 200, 'seat 4 can log in before');
+    ok((await p2.json('POST', '/api/admin/make-bot', { player: 3 })).status === 401, 'players can\'t make bots');
+    const mb = await boss.json('POST', '/api/admin/make-bot', { player: 3 });
+    ok(mb.body.ok && mb.body.game.players[3].bot && mb.body.game.players[3].name === 'Bot 1', 'admin turns the open seat into Bot 1');
+    ok((await p4.state()).status === 401 && (await client().json('POST', '/api/login', { password: seats.body.passwords[3].password })).status === 401, 'its password and session stop working');
+    ok(!(await boss.json('POST', '/api/admin/make-bot', { player: 3 })).body.ok && !(await boss.json('POST', '/api/admin/reset-password', { player: 3 })).body.ok, 'no second time, and no password for a bot');
+    await boss.json('POST', '/api/admin/jump', { hours: 1 });
+    ok((await p2.state()).body.world.planets.some((P) => P.owner === 3 && P.yards.length), 'the bot buys a shipyard by itself');
 
     const dan = client();
     await dan.json('POST', '/api/login', { password: catNow });
     const waiting = dan.json('GET', `/api/state?v=${(await dan.state()).body.v}`);
     const again = await boss.json('POST', '/api/admin/new-game', { players: ['Fay', 'Gus'], replace: true });
     ok(again.body.ok && again.body.game.players.length === 2, 'admin replaces the game');
+    const withBots = await boss.json('POST', '/api/admin/new-game', { count: 1, players: ['Hal'], bots: 3, replace: true });
+    ok(withBots.body.ok && withBots.body.game.players.length === 4 && withBots.body.game.players.filter((p) => p.bot).length === 3 && withBots.body.passwords.length === 1, 'a new game with 1 player and 3 bots: one password');
+    ok(!(await boss.json('POST', '/api/admin/new-game', { count: 1, players: ['Hal'], replace: true })).body.ok && !(await boss.json('POST', '/api/admin/new-game', { count: 2, bots: 9, replace: true })).body.ok, 'a game needs 2–10 seats with bots');
+    const again2 = await boss.json('POST', '/api/admin/new-game', { players: ['Fay', 'Gus'], replace: true });
+    ok(again2.body.ok, 'and back to Fay and Gus');
     ok((await waiting).status === 401 && (await dan.state()).status === 401, 'players of the old game are sent back to the login screen');
     ok((await dan.json('POST', '/api/login', { password: made.body.passwords[1].password })).status === 401, 'old passwords stop working');
   }

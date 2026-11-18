@@ -9,7 +9,7 @@ import {
   shipsAt, incomeOf, allied, YARD_MS, HOLD_MS, designOf, upgradeWorld,
   proposeAlliance, acceptAlliance, breakAlliance, proposalsFor, dueEvent, siegeAt, renameDesign, renamePlanet,
   buildDefense, planEvent, applyEvent, registerDesign, cancelSale, jobsAt, payBounties, giveCredits, worthOf, fleetValue, stopFleet, setRally, rallyAll,
-  checkWin, nextHop, pinned, dispatchAll, holdReason, addShips, setDestination, destinationAll, countShips,
+  checkWin, nextHop, pinned, dispatchAll, holdReason, addShips, setDestination, destinationAll, countShips, makeBot,
 } from '../src/world/world.js';
 import { writeFileSync } from 'node:fs';
 import { packReplay } from '../src/shared/replayFormat.js';
@@ -1176,6 +1176,34 @@ const lanePlanHours = (W, a, b, d) => { const A = W.planets[a], B = W.planets[b]
     ok(!idle, `no ship sits at a world without a reason: pinned, waiting for a siege, or nothing to fight (${idle})`);
     ok(g.planets.filter((p) => p.owner === null).length < owners0.filter((o) => o === null).length / 2, 'militia worlds get taken');
     ok(changes >= 4, `player worlds change hands (${changes} times in 4 days)`);
+  }
+
+  // Bots (owner, 18 Nov 2026): the server spends their credits; they expand, defend and refuse alliances.
+  {
+    const g = createAutoWorld({ players: [{ name: 'Ann' }, { name: 'Bot 1', bot: true }, { name: 'Bot 2', bot: true }, { name: 'Bot 3', bot: true }], seed: 8 });
+    ok(g.players[1].bot && !g.players[0].bot && g.players[1].claimed, 'createWorld marks bot seats');
+    proposeAlliance(g, 0, 1);
+    const res = fake(g);
+    let defOrders = 0;
+    const seenJobs = new Set();
+    const worlds0 = [1, 2, 3].map((b) => g.planets.filter((P) => P.owner === b).length);
+    for (let t = 0; t <= 72 * HOUR_MS; t += HOUR_MS / 4) {
+      runWorld(g, t, res);
+      for (const j of g.jobs) if (j.kind === 'defence' && g.players[j.owner].bot && !seenJobs.has(j.id)) { seenJobs.add(j.id); defOrders++; }
+    }
+    ok(!proposalsFor(g, 1).length && !allied(g, 0, 1), 'a bot turns down alliance proposals');
+    ok(g.log.filter((e) => /shipyard/i.test(e.text) && /^Bot/.test(e.text)).length >= 6, 'bots buy shipyards');
+    const worlds = [1, 2, 3].map((b) => g.planets.filter((P) => P.owner === b).length);
+    ok(worlds.some((n, i) => n > worlds0[i]), `bots take worlds (${worlds0.join('/')} → ${worlds.join('/')})`);
+    ok(defOrders > 0, `bots build defences when an enemy is coming (${defOrders} orders)`);
+    ok(g.players.filter((p) => p.bot).every((p) => p.eliminated || p.credits >= 0), 'bots never go into debt');
+    ok(g.players[0].credits > 0 && !g.log.some((e) => /^Ann (started|bought)/.test(e.text)), 'the person\'s credits are left alone');
+    // makeBot: an open seat becomes "Bot N" and starts playing.
+    const h = createAutoWorld({ players: [{ name: 'Ann' }, { name: 'Player 2', open: true }], seed: 3 });
+    ok(makeBot(h, 1).ok && h.players[1].name === 'Bot 1' && h.players[1].bot && h.players[1].claimed, 'an open seat can be made a bot');
+    ok(!makeBot(h, 1).ok, 'only once');
+    runWorld(h, 2 * HOUR_MS, fake(h));
+    ok(h.planets.some((P) => P.owner === 1 && P.yards.length), 'the new bot buys a shipyard');
   }
 }
 

@@ -26,6 +26,7 @@ import {
 import { generateGalaxy, linkHomesInward } from './galaxyGen.js';
 import { planRoute, travelSpeed, laneMap, laneSpeed } from './routes.js';
 import { makeBattleScenario } from './battleSetup.js';
+import { botsDue, runBots } from './bots.js';
 import { backfillStats, finalize, noteIncome, noteBuilt, noteCapture, noteBattle, playerStats } from './stats.js';
 import { HOUR_MS, MIN_FLEET_SPEED, NEUTRAL_COLOR, PLAYER_COLORS, CHOOSABLE_COLORS, MIN_PLAYERS, MAX_PLAYERS, BATTLE_MAX_TIME, BATTLE_HOLD_MIN } from './rules.js';
 
@@ -62,7 +63,7 @@ export function createWorld({ players, seed = 1, planetsPerPlayer, clock = 0 }) 
     players: players.map((p, k) => ({
       id: k, name: String(p.name || `Player ${k + 1}`).slice(0, 24), color: p.color || PLAYER_COLORS[k % PLAYER_COLORS.length],
       team: String(p.team || '').slice(0, 12), credits: STARTING_CREDITS, home: g.spawns[k], eliminated: false,
-      claimed: !p.open,
+      claimed: !p.open, ...(p.bot ? { bot: true } : {}),
     })),
     planets: g.planets.map((p) => ({
       id: p.id, name: p.name, x: p.x, y: p.y, size: p.size, income: p.income,
@@ -486,6 +487,9 @@ export function dueEvent(world, t) {
     if (s.startsAt > t) continue;
     if (!ev || s.startsAt < ev.at || (s.startsAt === ev.at && ev.kind === 'siege' && s.id < ev.siege.id)) ev = { kind: 'siege', siege: s, at: s.startsAt };
   }
+  // Bot players take a turn every BOT_EVERY_MIN (bots.js), after anything else due at that moment.
+  const bt = botsDue(world);
+  if (bt <= t && (!ev || bt < ev.at)) ev = { kind: 'bots', at: bt };
   return ev;
 }
 
@@ -1019,6 +1023,7 @@ function pickWinner(world, s, cands, ships) {
 export function planEvent(world, ev) {
   if (ev.kind === 'job') return { kind: 'job' };
   if (ev.kind === 'build') return { kind: 'build' };
+  if (ev.kind === 'bots') return { kind: 'bots' };
   if (ev.kind === 'fleet') {
     const f = ev.fleet, L = f.legs[f.leg], final = f.leg >= f.legs.length - 1, P = world.planets[L.to];
     if (allied(world, f.owner, P.owner)) return { kind: final ? 'join' : 'pass' };
@@ -1077,6 +1082,7 @@ export function applyEvent(world, ev, plan, result) {
   let entry = null;
   if (ev.kind === 'job') entry = finishJob(world, ev.job);
   else if (ev.kind === 'build') entry = null; // advanceTo built the ships; dispatch sends them below
+  else if (ev.kind === 'bots') { runBots(world); entry = null; }
   else if (ev.kind === 'fleet') entry = fleetArrives(world, ev.fleet, plan);
   else entry = siegeEnds(world, ev.siege, plan, result);
   // 2.0 (owner): after a battle, whoever holds that world moves first (a successful defender gets
@@ -1427,12 +1433,33 @@ export function claimPlayer(world, pid, name, color) {
   if (!name) return { ok: false, error: 'Pick a name.' };
   if (name.length > 24) return { ok: false, error: 'Names can be at most 24 characters.' };
   if (world.players.some((p) => p.id !== pid && p.name.toLowerCase() === name.toLowerCase())) return { ok: false, error: `Someone is already called ${name}.` };
-  if (/^(militia|player \d+)$/i.test(name)) return { ok: false, error: 'Pick a name of your own.' };
+  if (/^(militia|player \d+|bot \d+)$/i.test(name)) return { ok: false, error: 'Pick a name of your own.' };
   color = String(color ?? '').toLowerCase();
   if (!freeColors(world, pid).includes(color)) return { ok: false, error: 'Pick one of the colours shown.' };
   const old = pl.name;
   pl.name = name; pl.color = color; pl.claimed = true;
   log(world, 'join', `${old} is now ${name}.`, { players: [pid] });
+  return { ok: true };
+}
+
+/**
+ * Hand a seat to a bot (admin; owner, 18 Nov 2026). An open seat nobody took becomes "Bot N"; a
+ * named seat keeps its name. From now on bots.js spends its credits. Nobody can log in as it.
+ */
+export function makeBot(world, pid) {
+  const pl = world.players[pid];
+  if (!pl) return { ok: false, error: 'No such player.' };
+  if (pl.bot) return { ok: false, error: `${pl.name} is already a bot.` };
+  if (pl.eliminated) return { ok: false, error: `${pl.name} is out of the game.` };
+  const old = pl.name;
+  if (pl.claimed === false) {
+    let k = 1;
+    while (world.players.some((p) => p.name.toLowerCase() === `bot ${k}`)) k++;
+    pl.name = `Bot ${k}`; pl.claimed = true;
+  }
+  pl.bot = true;
+  world.botNext = Math.min(world.botNext ?? world.clock, world.clock);
+  log(world, 'join', old === pl.name ? `${pl.name} is now played by a bot.` : `${old} is now ${pl.name}, played by a bot.`, { players: [pid] });
   return { ok: true };
 }
 

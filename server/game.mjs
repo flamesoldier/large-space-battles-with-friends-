@@ -157,7 +157,7 @@ export class Game {
   /** Bring the world up to now: income, shipyards, fleet arrivals, sieges and battles, in order. Call under the lock. */
   async catchUp() {
     const target = this.gameNow();
-    let n = 0;
+    let n = 0, dirty = false;
     for (let guard = 0; guard < 2000 && !this.stopped; guard++) {
       const ev = dueEvent(this.world, target);
       if (!ev) break;
@@ -173,9 +173,11 @@ export class Game {
       if (entry?.battle && replay) this.storeReplay(entry, plan.battle, replay);
       if (entry) this.log(`[${new Date().toISOString()}] ${entry.text}`);
       n++;
-      // Tell everyone after each event, so a long string of battles shows up as it happens.
-      this.save(); this.changed();
+      // Tell everyone after each event, so a long string of battles shows up as it happens
+      // (bot turns, every 10 game minutes, are saved once at the end instead).
+      if (ev.kind === 'bots') dirty = true; else { this.save(); this.changed(); dirty = false; }
     }
+    if (dirty) { this.save(); this.changed(); }
     // New ships leaving for a rally point change the world: tell everyone.
     if (advanceTo(this.world, Math.max(this.world.clock, target))) { this.save(); this.changed(); }
     return n;

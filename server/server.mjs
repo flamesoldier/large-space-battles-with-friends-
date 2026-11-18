@@ -26,6 +26,7 @@ import { gzipSync } from 'node:zlib';
 import { Accounts, sha256, writeJsonAtomic } from './accounts.mjs';
 import { Game, gameExists } from './game.mjs';
 import { makeNewGame } from './setup.mjs';
+import { makeBot } from '../src/world/world.js';
 
 const ROOT = resolve(new URL('..', import.meta.url).pathname);
 const env = process.env;
@@ -79,7 +80,7 @@ function sessionPlayer(req) {
   if (!s || s.admin) return null;
   const acc = accounts.get(s.player);
   // Expired, or the password was reset since this session was made.
-  if (s.expires < Date.now() || !acc || acc.gen !== s.gen || !game.world.players[s.player]) { delete sessions[key]; saveSessions(); return null; }
+  if (s.expires < Date.now() || !acc || acc.gen !== s.gen || !game.world.players[s.player] || game.world.players[s.player].bot) { delete sessions[key]; saveSessions(); return null; }
   return s.player;
 }
 function isAdmin(req) {
@@ -220,7 +221,7 @@ function adminState() {
       seed: W.seed, worlds: W.planets.length, day: Math.floor(game.gameNow() / 864e5) + 1, speed: game.speed, clock: game.gameNow(),
       winner: W.winner, replays: game.replays.size, traffic: TRAFFIC,
       disk: { ...game.disk(), replayBytes: [...game.replayBytes.values()].reduce((a, b) => a + b, 0), saveError: game.saveError },
-      players: W.players.map((p) => ({ id: p.id, name: p.name, color: p.color, team: p.team, eliminated: p.eliminated, joined: p.claimed !== false, password: !!accounts.get(p.id), worlds: W.planets.filter((x) => x.owner === p.id).length })),
+      players: W.players.map((p) => ({ id: p.id, name: p.name, color: p.color, team: p.team, eliminated: p.eliminated, bot: !!p.bot, joined: p.claimed !== false, password: !!accounts.get(p.id), worlds: W.planets.filter((x) => x.owner === p.id).length })),
     },
   };
 }
@@ -266,7 +267,7 @@ async function handleAdmin(req, res, path, body) {
     if (game && body.replace !== true) return fail(req, res, 409, 'There is already a game. Tick the box to replace it.');
     let made;
     if (body.players !== undefined && !Array.isArray(body.players)) return fail(req, res, 400, 'Bad player list.');
-    try { made = await replaceGame({ count: body.count, names: body.players, teams: Array.isArray(body.teams) ? body.teams : [], seed: body.seed, worlds: body.worlds }); } catch (e) { return fail(req, res, 400, e.message); }
+    try { made = await replaceGame({ count: body.count, names: body.players, teams: Array.isArray(body.teams) ? body.teams : [], seed: body.seed, worlds: body.worlds, bots: body.bots }); } catch (e) { return fail(req, res, 400, e.message); }
     return send(req, res, 200, { ...adminState(), passwords: made.passwords.map(([id, pw]) => ({ id, name: made.world.players[id].name, open: made.world.players[id].claimed === false, password: pw })) });
   }
   if (path === '/api/admin/speed') {
@@ -285,10 +286,24 @@ async function handleAdmin(req, res, path, body) {
     console.log(`${stamp()} Admin jumped the game ${h} h ahead`);
     return send(req, res, 200, adminState());
   }
+  if (path === '/api/admin/make-bot') {
+    if (!game) return fail(req, res, 400, 'There is no game yet.');
+    const r = await game.locked(async () => {
+      await game.catchUp();
+      const r = makeBot(game.world, body.player);
+      if (r.ok) { game.save(); game.changed(); }
+      return r;
+    });
+    if (!r.ok) return fail(req, res, 400, r.error);
+    accounts.remove(body.player); // nobody logs in as a bot (their sessions end with the password)
+    console.log(`${stamp()} Admin made ${game.world.players[body.player].name} a bot`);
+    return send(req, res, 200, adminState());
+  }
   if (path === '/api/admin/reset-password') {
     if (!game) return fail(req, res, 400, 'There is no game yet.');
     const p = game.world.players[body.player];
     if (!Number.isInteger(body.player) || !p) return fail(req, res, 400, 'No such player.');
+    if (p.bot) return fail(req, res, 400, `${p.name} is a bot: nobody logs in as it.`);
     const pw = accounts.setPassword(p.id);
     console.log(`${stamp()} Admin reset ${p.name}'s password`);
     return send(req, res, 200, { ...adminState(), passwords: [{ id: p.id, name: p.name, open: p.claimed === false, password: pw }] });
