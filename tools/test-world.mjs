@@ -5,11 +5,11 @@ import assert from 'node:assert/strict';
 import { generateGalaxy } from '../src/world/galaxyGen.js';
 import { planRoute, fleetPosition, laneMap, laneSpeed, travelSpeed } from '../src/world/routes.js';
 import {
-  createWorld, advanceTo, runWorld, buildShipyard, sellShipyard, quoteShipyard, sendFleet, previewFleet,
+  createWorld as createAutoWorld, advanceTo, runWorld, buildShipyard, sellShipyard, quoteShipyard, sendFleet, previewFleet,
   shipsAt, incomeOf, allied, YARD_MS, HOLD_MS, designOf, upgradeWorld,
   proposeAlliance, acceptAlliance, breakAlliance, proposalsFor, dueEvent, siegeAt, renameDesign, renamePlanet,
   buildDefense, planEvent, applyEvent, registerDesign, cancelSale, jobsAt, payBounties, giveCredits, worthOf, fleetValue, stopFleet, setRally, rallyAll,
-  checkWin,
+  checkWin, nextHop, pinned, dispatchAll, setDestination, destinationAll, countShips,
 } from '../src/world/world.js';
 import { writeFileSync } from 'node:fs';
 import { packReplay } from '../src/shared/replayFormat.js';
@@ -22,6 +22,10 @@ import { BT } from '../src/shared/blocks.js';
 import { designCost, encodeDesign, decodeDesign } from '../src/shared/shipStats.js';
 import { STARTING_CREDITS, HOME_INCOME, SHIPYARD_SELL_REFUND, SHIPS_PER_BUILD, BOUNTY_SHARE, shipyardPrice, defensePrice, SELL_HOURS, DEFENSE_BUILD_HOURS } from '../src/shared/economy.js';
 import { HOUR_MS, HYPERLANE_SPEEDUP, MAX_PLAYERS, PLANET_SPACING } from '../src/world/rules.js';
+
+// The 1.0 tests below drive fleets by hand (sieges, captures, bounties and so on all still apply in
+// 2.0), so they use a world with the fleet brain off. The 2.0 tests at the end use createAutoWorld.
+const createWorld = (o) => Object.assign(createAutoWorld(o), { auto: false });
 
 let checks = 0;
 const countShipsT = (o) => Object.values(o).reduce((a, n) => a + n, 0);
@@ -946,6 +950,117 @@ const resolve = (scen) => {
   ok(!giveCredits(w, 2, 0, 0).ok && !giveCredits(w, 2, 0, -5).ok && !giveCredits(w, 2, 0, 'x').ok, 'gift must be at least 1');
   ok(!giveCredits(w, 2, 2, 10).ok && !giveCredits(w, 2, 9, 10).ok, 'no gifts to yourself or nobody');
   ok(w.log.some((e) => e.gift && e.gift.from === 2 && e.gift.amount === 1234), 'gifts are logged');
+}
+
+// ---- 2.0: the fleet brain (owner, 18 Nov 2026)
+{
+  const fake = (W) => (scen) => {
+    // Stand-in battle: the side worth most wins and keeps what's left after the others' worth.
+    const val = {};
+    for (const g of scen.groups) val[g.team] = (val[g.team] || 0) + g.n * worthOf(W, g.design);
+    const teams = Object.keys(val).map(Number).sort((a, b) => val[b] - val[a] || a - b);
+    const top = teams[0], rest = teams.slice(1).reduce((x, t) => x + val[t], 0), keep = Math.max(0, 1 - rest / val[top]);
+    return { groups: scen.groups.map((g) => ({ ...g, survived: g.team === top ? Math.floor(g.n * keep) : 0 })), routed: [], seconds: 60 };
+  };
+  const lanes = (W) => laneMap(W.lanes);
+  const w = createAutoWorld({ players: [{ name: 'A' }, { name: 'B' }], seed: 21 });
+  ok(w.auto, '2.0 worlds have the fleet brain on');
+  const home = w.players[0].home, H = w.planets[home];
+  w.players[0].credits = 1e7;
+  const d1 = { ...makeDesign('destroyer', 3), name: 'One' }, d2 = { ...makeDesign('frigate', 4), name: 'Two' };
+  const y1 = buildShipyard(w, 0, home, d1).yard, y2 = buildShipyard(w, 0, home, d2).yard;
+  ok(y1.next === y2.next, 'both shipyards on a world build at the same moment');
+  const nb = nextHop(w, home, 0);
+  ok(nb && lanes(w).get(home).has(nb.hop) && w.planets[nb.target].owner === null, 'the nearest target along the lanes is a militia world');
+  const t1 = y1.next;
+  runWorld(w, t1, null);
+  const out = w.fleets.filter((f) => f.owner === 0);
+  ok(out.length === 1 && out[0].ships[y1.design] === SHIPS_PER_BUILD && out[0].ships[y2.design] === SHIPS_PER_BUILD, 'everything built there leaves at once, as one fleet');
+  ok(out[0].legs.length === 1 && out[0].legs[0].lane && out[0].to === nb.hop && out[0].depart === t1, '…one hyperlane hop, to the nearest enemy');
+  ok(!countShipsT(shipsAt(H, 0)), 'nothing is left sitting at home');
+  // Destinations: any world; fleets head there along the lanes.
+  const far = w.planets.filter((p) => p.owner === null).sort((a, b) => Math.hypot(b.x - H.x, b.y - H.y) - Math.hypot(a.x - H.x, a.y - H.y))[0];
+  ok(!setDestination(w, 1, home, far.id).ok && !setDestination(w, 0, home, home).ok, 'only the owner sets it, and not to the world itself');
+  ok(setDestination(w, 0, home, far.id).ok && H.dest.to === far.id, 'destination set');
+  const toFar = nextHop(w, home, 0, far.id);
+  ok(toFar && lanes(w).get(home).has(toFar.hop) && toFar.target === far.id, 'the route to it goes along the lanes');
+  runWorld(w, y1.next, null);
+  const f2 = w.fleets.find((f) => f.owner === 0 && f.depart === w.clock);
+  ok(f2 && f2.goal === far.id && f2.to === toFar.hop, 'the next fleet heads for the destination');
+  ok(setDestination(w, 0, home, null).ok && !H.dest, 'cleared');
+  const mine = w.planets.filter((p) => p.owner === 0).map((p) => p.id);
+  ok(destinationAll(w, 0, far.id).n === mine.length && destinationAll(w, 0, far.id, false).n === mine.length, 'send every world\'s fleets here, and stop');
+  // Pinned: an enemy fleet heading here keeps new ships at home; they leave once it's gone.
+  w.fleets = []; w.sieges = [];
+  const bHome = w.players[1].home;
+  w.planets.find((p) => p.id === nb.hop).owner = 1;
+  const bd = registerDesign(w, 1, { ...makeDesign('destroyer', 9), name: 'Raider' });
+  const raid = { id: 990001, owner: 1, ships: { [bd]: 3 }, from: nb.hop, to: home, legs: [{ from: nb.hop, to: home, lane: true, hours: 50, at: w.clock + 50 * HOUR_MS }], leg: 0, next: w.clock + 50 * HOUR_MS, wait: null, speed: 1, retreat: false, depart: w.clock - 1, arrive: w.clock + 50 * HOUR_MS };
+  w.fleets.push(raid);
+  ok(pinned(w, H, 0) && !pinned(w, H, 1), 'an enemy fleet heading here pins the world (for its owner)');
+  runWorld(w, y1.next, null);
+  ok(countShipsT(shipsAt(H, 0)) === 2 * SHIPS_PER_BUILD && !w.fleets.some((f) => f.owner === 0), 'new ships stay to defend it');
+  const others = w.fleets.filter((f) => f !== raid);
+  ok(!others.length, 'and nothing else of ours moved');
+  w.fleets = w.fleets.filter((f) => f !== raid);
+  dispatchAll(w);
+  ok(!countShipsT(shipsAt(H, 0)) && w.fleets.some((f) => f.owner === 0), 'threat gone: they leave');
+  // Retreat targets and fighting are checked in the game below; tie-break: two fleets launching at
+  // each other's worlds along one lane at the same moment, the one arriving later turns back.
+  {
+    const t = createAutoWorld({ players: [{ name: 'A' }, { name: 'B' }], seed: 22 });
+    const [a, b] = t.lanes.find(([x, y]) => t.planets[x].home < 0 && t.planets[y].home < 0);
+    for (const P of t.planets) { P.owner = P.id === b ? 1 : 0; P.garrison = []; }
+    const fast = registerDesign(t, 0, { ...makeDesign('corvette', 3), name: 'Fast' }), slow = registerDesign(t, 1, { ...makeDesign('titan', 3), name: 'Slow' });
+    ok(t.designs[fast].speed > t.designs[slow].speed, 'tie-break test: a fast fleet and a slow one');
+    t.planets[a].garrison.push({ owner: 0, design: fast, n: 4 });
+    t.planets[b].garrison.push({ owner: 1, design: slow, n: 4 });
+    // Make each side's nearest target the other's world.
+    for (const P of t.planets) if (P.id !== a && P.id !== b) P.owner = 0;
+    t.planets[b].dest = { to: a, owner: 1 }; // B goes for A's world, along the same lane
+    ok(nextHop(t, a, 0).hop === b && nextHop(t, b, 1, a).hop === a, 'each heads straight for the other along one lane');
+    for (const first of [a, b]) {
+      // Both leave at the same moment; whichever world is handled first, the result is the same.
+      const tt = structuredClone(t), F = tt.planets[first], other = tt.planets[first === a ? b : a];
+      const held = other.garrison; other.garrison = [];
+      dispatchAll(tt);
+      other.garrison = held;
+      dispatchAll(tt);
+      const fa = tt.fleets.filter((f) => f.owner === 0), fb = tt.fleets.filter((f) => f.owner === 1);
+      ok(F && fa.length === 1 && fa[0].to === b && !fb.length && countShipsT(shipsAt(tt.planets[b], 1)) === 4, `the fast fleet goes, the slow one turns back to defend (${first === a ? 'A' : 'B'} handled first)`);
+    }
+  }
+  // A whole game with stand-in battles: hyperlanes only, never a swap, the front moves both ways.
+  {
+    const g = createAutoWorld({ players: [{ name: 'A' }, { name: 'B' }, { name: 'C' }, { name: 'D' }], seed: 5 });
+    for (const pl of g.players) { pl.credits = 1e6; buildShipyard(g, pl.id, pl.home, { ...makeDesign('destroyer', 3 + pl.id), name: `D${pl.id}` }); }
+    const lm = laneMap(g.lanes);
+    let swaps = 0, offLane = 0, changes = 0, idle = 0, hops = 0;
+    const owners0 = g.planets.map((p) => p.owner);
+    let prev = owners0.slice();
+    const res = fake(g);
+    for (let t = 0; t <= 96 * HOUR_MS; t += HOUR_MS / 4) {
+      runWorld(g, t, res);
+      for (const f of g.fleets) {
+        if (f.wait != null) continue;
+        const L = f.legs[f.leg];
+        if (!f.retreat && (!L.lane || !lm.get(L.from)?.has(L.to))) offLane++;
+        if (!f.retreat) hops++;
+        for (const e of g.fleets) if (e !== f && e.wait == null && !f.retreat && !e.retreat && e.owner !== f.owner && !allied(g, e.owner, f.owner)) {
+          const M = e.legs[e.leg];
+          if (M.from === L.to && M.to === L.from) swaps++;
+        }
+      }
+      for (const P of g.planets) if (P.owner !== null && countShipsT(Object.fromEntries(P.garrison.filter((x) => x.owner === P.owner && !g.designs[x.design].fixed).map((x) => [x.design, x.n]))) && !pinned(g, P, P.owner) && nextHop(g, P.id, P.owner)) idle++;
+      g.planets.forEach((P, i) => { if (P.owner !== prev[i] && prev[i] !== null) changes++; });
+      prev = g.planets.map((p) => p.owner);
+    }
+    ok(hops > 0 && !offLane, `fleets only move along hyperlanes (${hops} fleet-quarter-hours, ${offLane} off-lane)`);
+    ok(!swaps, `no two enemy fleets ever fly past each other on a lane (${swaps})`);
+    ok(!idle, `no ship sits at a world unless it's pinned (${idle})`);
+    ok(g.planets.filter((p) => p.owner === null).length < owners0.filter((o) => o === null).length / 2, 'militia worlds get taken');
+    ok(changes >= 4, `player worlds change hands (${changes} times in 4 days)`);
+  }
 }
 
 console.log(`world: ${checks} checks passed`);

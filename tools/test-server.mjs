@@ -225,14 +225,17 @@ try {
   r = await ann.act({ type: 'defend', planet: annHome, design: fort, count: 2 });
   const fortId = r.body.ok && Object.values(r.body.state.world.designs).find((d) => d.fixed)?.id;
   ok(fortId && r.body.state.world.jobs.some((j) => j.kind === 'defence' && j.design === fortId && j.count === 2 && j.owner === 0 && j.planet === annHome), 'Ann orders 2 defences on her world');
-  r = await ann.act({ type: 'fleet', from: annHome, to: benHome, ships: { [fortId]: 1 } });
-  ok(!r.body.ok, 'defences can\'t be sent');
-  r = await ben.act({ type: 'fleet', from: annHome, to: benHome, ships: { [after.planets[annHome].yards[0].design]: 1 } });
-  ok(!r.body.ok, 'Ben can\'t move Ann\'s ships');
-  r = await ann.act({ type: 'fleet', from: annHome, to: 'constructor', ships: {} });
-  ok(!r.body.ok && r.status === 400, 'bad world ids are refused');
-  r = await ann.act({ type: 'fleet', from: annHome, to: benHome, ships: JSON.parse('{"__proto__": 5}') });
-  ok(!r.body.ok, 'odd ship keys are refused');
+  // 2.0: nobody commands fleets; worlds get destinations.
+  for (const order of [{ type: 'fleet', from: annHome, to: benHome, ships: { [after.planets[annHome].yards[0].design]: 1 } }, { type: 'stop', fleet: 1 }, { type: 'rally', planet: annHome, to: null }, { type: 'rallyAll', to: annHome }])
+    ok(!(r = await ann.act(order)).body.ok && /by themselves/.test(r.body.error), `2.0: "${order.type}" orders are refused`);
+  r = await ben.act({ type: 'dest', planet: annHome, to: benHome });
+  ok(!r.body.ok, 'Ben can\'t set the destination of Ann\'s world');
+  r = await ann.act({ type: 'dest', planet: 'constructor', to: benHome });
+  ok(!r.body.ok && !(await ann.act({ type: 'dest', planet: annHome, to: -1 })).body.ok && !(await ann.act({ type: 'destAll', to: 'x' })).body.ok, 'destinations need real worlds');
+  r = await ann.act({ type: 'dest', planet: annHome, to: benHome });
+  ok(r.body.ok && r.body.state.world.planets[annHome].dest?.to === benHome, 'Ann points her home world at Ben\'s');
+  r = await ann.act({ type: 'dest', planet: annHome, to: null });
+  ok(r.body.ok && !r.body.state.world.planets[annHome].dest, 'and back to "nearest enemy"');
   r = await ann.act({ type: 'build', planet: annHome, design: { w: 5000, h: 5000, cells: '' } });
   ok(!r.body.ok, 'malformed designs are refused');
   r = await ann.act({ type: 'propose', player: 0 });
@@ -267,14 +270,8 @@ try {
   }
 
   // ---- a real battle, resolved by the worker, with a replay
-  // At 3600× a second is an hour: wait for some ships, then attack the nearest militia world.
-  await sleep(2500);
-  st = (await ann.state()).body;
-  const home = st.world.planets[annHome];
-  const mine = home.garrison.filter((g) => g.owner === 0 && !st.world.designs[g.design].fixed);
-  ok(mine.length && mine[0].n >= 2, `the shipyard has built ships (${mine[0]?.n})`);
-  const target = st.world.planets.filter((p) => p.owner === null).sort((a, b) => Math.hypot(a.x - home.x, a.y - home.y) - Math.hypot(b.x - home.x, b.y - home.y))[0];
-  r = await ann.act({ type: 'fleet', from: annHome, to: target.id, ships: { [mine[0].design]: mine[0].n } });
+  // At 3600× a second is an hour. 2.0: Ann's new ships leave by themselves for the nearest enemy
+  // world (militia at first) and fight there.
   // Out-of-date pages (another build, or one from before build ids) can't send orders.
   ok(!!BUILD, 'the game page carries a build id');
   const stBefore = (await ann.state()).body;
@@ -284,24 +281,17 @@ try {
     ok(o.status === 409 && o.body.outdated && /Refresh/.test(o.body.error) && o.body.build === BUILD, `orders from a page with ${what} are refused with "refresh"`);
   }
   ok((await ann.state()).body.v === stBefore.v, '…and not carried out (nothing changed)');
-  ok(r.body.ok && r.body.fleet.owner === 0, 'Ann launches a fleet');
-  r = await ben.act({ type: 'stop', fleet: r.body.fleet.id });
-  ok(!r.body.ok, 'Ben can\'t call off Ann\'s fleet');
-  r = await ann.act({ type: 'stop', fleet: 'x' });
-  ok(!r.body.ok, 'stop needs a fleet id');
-  ok(!(await ben.act({ type: 'rally', planet: annHome, to: null })).body.ok, 'Ben can\'t change Ann\'s rally points');
   ok(!(await ben.act({ type: 'renamePlanet', planet: annHome, name: 'Bens Now' })).body.ok, 'Ben can\'t rename Ann\'s world');
   ok((await ann.act({ type: 'renamePlanet', planet: annHome, name: 'Annhold' })).body.ok, 'Ann renames her world');
   ok(!(await ann.act({ type: 'renamePlanet', planet: 'x', name: 'Q' })).body.ok, 'world rename needs a real world');
-  ok(!(await ann.act({ type: 'rally', planet: annHome, to: benHome })).body.ok, 'no rally point at an enemy world');
-  ok(!(await ann.act({ type: 'rally', planet: 'x', to: 1 })).body.ok && !(await ann.act({ type: 'rallyAll', to: -1 })).body.ok, 'rally orders need real worlds');
   let battle = null;
   for (let k = 0; k < 600 && !battle; k++) {
     await sleep(250);
     st = (await ann.state()).body;
-    battle = st.world.log.find((e) => e.battle && e.battle.target === target.id);
+    battle = st.world.log.find((e) => e.battle && e.battle.players?.some((q) => q.id === 0));
   }
-  ok(battle, `the battle at ${target.name} was fought: ${battle?.text}`);
+  const target = st.world.planets[battle?.battle.target ?? 0];
+  ok(battle, `Ann's ships went and fought by themselves, at ${target.name}: ${battle?.text}`);
   ok(st.replays.includes(battle.battle.id), 'its replay is listed');
   const rep = await ann.req('GET', `/api/replay/${battle.battle.id}`);
   const meta = JSON.parse(decodeURIComponent(rep.headers.get('x-replay-meta')));

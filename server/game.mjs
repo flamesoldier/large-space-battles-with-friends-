@@ -17,7 +17,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSy
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import {
-  advanceTo, dueEvent, planEvent, applyEvent, upgradeWorld, sendFleet, stopFleet, setRally, rallyAll, buildShipyard, sellShipyard, cancelSale, renameDesign, renamePlanet, buildDefense, giveCredits,
+  advanceTo, dueEvent, planEvent, applyEvent, upgradeWorld, sendFleet, stopFleet, setRally, rallyAll, setDestination, destinationAll, dispatchAll, buildShipyard, sellShipyard, cancelSale, renameDesign, renamePlanet, buildDefense, giveCredits,
   proposeAlliance, acceptAlliance, declineAlliance, breakAlliance, playerName, claimPlayer,
 } from '../src/world/world.js';
 import { decodeDesign } from '../src/shared/shipStats.js';
@@ -261,6 +261,7 @@ export class Game {
       if (this.retired) return { ok: false, error: 'A new game has started. Please log in again.' };
       await this.catchUp();
       const r = this.apply(pid, a ?? {});
+      if (r.ok && this.world.auto) dispatchAll(this.world); // 2.0: e.g. an alliance ended, so there are new enemies to go for
       if (r.ok) { this.save(); this.changed(); }
       return r;
     });
@@ -268,7 +269,19 @@ export class Game {
 
   apply(pid, a) {
     const W = this.world, nP = W.planets.length, nPl = W.players.length;
+    // 2.0: nobody commands fleets; worlds get destinations instead.
+    const manual = ['fleet', 'rally', 'rallyAll', 'stop'];
+    if (W.auto && manual.includes(a.type)) return { ok: false, error: 'In this version fleets move by themselves: set a destination for a world instead.' };
     switch (a.type) {
+      case 'dest': { // where new fleets from one of your worlds go; to = null: the nearest enemy
+        const okId = (x) => Number.isInteger(x) && x >= 0 && x < W.planets.length;
+        if (!okId(a.planet) || !(a.to === null || okId(a.to))) return { ok: false, error: 'No such world.' };
+        return setDestination(W, pid, a.planet, a.to);
+      }
+      case 'destAll': { // every world of yours → here (on), or stop sending them here
+        if (!Number.isInteger(a.to) || a.to < 0 || a.to >= W.planets.length) return { ok: false, error: 'No such world.' };
+        return destinationAll(W, pid, a.to, a.on !== false);
+      }
       case 'fleet': {
         const from = index(a.from, nP), to = index(a.to, nP);
         if (from === null || to === null) return { ok: false, error: 'No such world.' };

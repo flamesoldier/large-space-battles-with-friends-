@@ -24,7 +24,7 @@ import {
   defensePrice, MAX_DEFENSE_ORDER, BOUNTY_SHARE, STARTING_CREDITS, NEUTRAL_GARRISON_HOURS, SELL_HOURS, DEFENSE_BUILD_HOURS,
 } from '../shared/economy.js';
 import { generateGalaxy, linkHomesInward } from './galaxyGen.js';
-import { planRoute, travelSpeed, laneMap } from './routes.js';
+import { planRoute, travelSpeed, laneMap, laneSpeed } from './routes.js';
 import { makeBattleScenario } from './battleSetup.js';
 import { backfillStats, finalize, noteIncome, noteBuilt, noteCapture, noteBattle, playerStats } from './stats.js';
 import { HOUR_MS, MIN_FLEET_SPEED, NEUTRAL_COLOR, PLAYER_COLORS, CHOOSABLE_COLORS, MIN_PLAYERS, MAX_PLAYERS, BATTLE_MAX_TIME, BATTLE_HOLD_MIN } from './rules.js';
@@ -57,6 +57,7 @@ export function createWorld({ players, seed = 1, planetsPerPlayer, clock = 0 }) 
   const g = generateGalaxy({ players: players.length, seed, planetsPerPlayer });
   const world = {
     format: 'lsb-world', version: 3, seed, clock, nextId: 1, winner: null,
+    auto: true, // 2.0: fleets launch and move by themselves (see "the fleet brain"); 1.0 saves have no flag
     radius: g.radius,
     players: players.map((p, k) => ({
       id: k, name: String(p.name || `Player ${k + 1}`).slice(0, 24), color: p.color || PLAYER_COLORS[k % PLAYER_COLORS.length],
@@ -363,7 +364,7 @@ export function advanceTo(world, t, { rally = true } = {}) {
       addShips(p, p.owner, y.design, k);
       y.next += (k / SHIPS_PER_BUILD) * YARD_MS; y.built += k;
       noteBuilt(world, p.owner, k);
-      if (rally && p.rally) {
+      if (rally && p.rally && !world.auto) {
         fresh ??= new Map();
         const m = fresh.get(p) || {};
         m[y.design] = (m[y.design] || 0) + k;
@@ -467,9 +468,17 @@ export function dueEvent(world, t) {
     if (j.done > t) continue;
     if (!ev || j.done < ev.at || (j.done === ev.at && j.id < ev.job.id)) ev = { kind: 'job', job: j, at: j.done };
   }
+  // 2.0: a world's build moment is an event, so the new ships leave at once (after jobs, before fleets).
+  if (world.auto) for (const P of world.planets) {
+    if (P.owner === null) continue;
+    for (const y of P.yards) {
+      if (y.sellAt != null || y.next > t) continue;
+      if (!ev || y.next < ev.at || (y.next === ev.at && ev.kind === 'build' && P.id < ev.planet)) ev = { kind: 'build', planet: P.id, at: y.next };
+    }
+  }
   for (const f of world.fleets) {
     if (f.wait != null || f.next > t) continue;
-    if (!ev || f.next < ev.at || (f.next === ev.at && ev.kind === 'fleet' && f.id < ev.fleet.id)) ev = { kind: 'fleet', fleet: f, at: f.next };
+    if (!ev || f.next < ev.at || (f.next === ev.at && (ev.kind === 'siege' || (ev.kind === 'fleet' && f.id < ev.fleet.id)))) ev = { kind: 'fleet', fleet: f, at: f.next };
   }
   for (const s of world.sieges) {
     if (s.startsAt > t) continue;
@@ -638,6 +647,201 @@ export function upgradeWorld(world) {
   return world;
 }
 
+
+// ---------------------------------------------------------------- 2.0: the fleet brain
+//
+// Owner, 18 Nov 2026 (version 2.0: "the game plays itself between visits"). Players don't command
+// fleets. In a world with `auto` set:
+//  - Every ship that can fly leaves the world it's at, unless that world is PINNED for it: an enemy
+//    fleet is heading there, or an enemy is besieging it. Pinned ships stay and defend. Nothing else
+//    ever sits at a world (defences and militia don't move). dispatchAll() runs after every event.
+//  - Fleets move ONE HYPERLANE HOP at a time and decide again at every world before leaving it
+//    (owner: "every time, before a fleet leaves a planet, recalculate the nearest enemy").
+//  - Where to: the fleet's goal if it has one (ships leaving a world from its garrison take that
+//    world's destination, P.dest, set by its owner), else the NEAREST TARGET along the hyperlanes:
+//    a world not held by the player or an ally (an enemy's or militia's), or a friendly world an
+//    enemy fleet is heading to or besieging (go and defend it). The search only passes through
+//    friendly worlds; an enemy world on the way is itself the nearest target. Reaching its goal
+//    clears it, and the fleet seeks from there.
+//  - Hostile worlds are fought as in 1.0 (siege, 90-minute hold, battle). Beaten fleets fall back
+//    to a friendly neighbour along a lane, or through normal space if there is none, then seek again.
+//  - Tie-break (owner: no 1.0 "swap"): two enemy fleets leaving at the same moment to fly at each
+//    other's worlds along the same lane: the one that would arrive later turns back. (Pinning stops
+//    every other swap: a world with an enemy fleet heading to it launches nothing.)
+
+/** Designs at a world that can fly (not defences, real engines). */
+const canFly = (world, d) => { const D = world.designs[d]; return !!D && !D.fixed && D.speed >= MIN_FLEET_SPEED; };
+
+/** Is an enemy of `who` heading to world P (its next stop) or besieging it? */
+export function pinned(world, P, who, ignore = null) {
+  for (const f of world.fleets) {
+    if (f.wait != null || ignore?.includes(f)) continue;
+    const L = f.legs[f.leg];
+    if (L && L.to === P.id && hostile(world, f.owner, who) && countShips(f.ships)) return true;
+  }
+  return siegeAt(world, P.id).some((s) => siegeFleets(world, s).some((f) => hostile(world, f.owner, who) && countShips(f.ships)));
+}
+
+/** A friendly world (to `who`) that needs defending: an enemy fleet heading there or besieging it. */
+const underThreat = (world, P, who) => allied(world, P.owner, who) && pinned(world, P, who);
+
+/**
+ * Where a fleet of `who` at world `from` goes next: { hop, target } or null (nothing to do).
+ * goal: a world to head for (any world), or null to seek the nearest target. Hyperlanes only.
+ */
+export function nextHop(world, from, who, goal = null) {
+  const planets = world.planets, adj = lanesOf(world), n = planets.length;
+  const d = (a, b) => Math.hypot(planets[a].x - planets[b].x, planets[a].y - planets[b].y);
+  const best = new Float64Array(n).fill(Infinity), prev = new Int32Array(n).fill(-1), done = new Uint8Array(n);
+  best[from] = 0;
+  const isTarget = (id) => (goal !== null ? id === goal : !allied(world, planets[id].owner, who) || underThreat(world, planets[id], who));
+  let found = -1;
+  for (;;) {
+    let u = -1;
+    for (let i = 0; i < n; i++) if (!done[i] && best[i] < Infinity && (u < 0 || best[i] < best[u] || (best[i] === best[u] && i < u))) u = i;
+    if (u < 0) break;
+    done[u] = 1;
+    if (u !== from && isTarget(u)) { found = u; break; }
+    // Seeking only passes through friendly worlds (a hostile one is a target itself). A fleet with a
+    // goal goes straight through, fighting whatever is on the way.
+    if (u !== from && goal === null && !allied(world, planets[u].owner, who)) continue;
+    for (const v of adj.get(u) || []) {
+      if (done[v]) continue;
+      const c = best[u] + d(u, v);
+      if (c < best[v] - 1e-9) { best[v] = c; prev[v] = u; }
+    }
+  }
+  if (found < 0) return null;
+  let hop = found;
+  while (prev[hop] !== from) hop = prev[hop];
+  return { hop, target: found };
+}
+
+/** One hyperlane leg from `from` to its neighbour `to` for these ships: a plan like previewFleet's. */
+function lanePlan(world, from, to, ships) {
+  const speed = travelSpeed(fleetSpeed(world, ships)), A = world.planets[from], B = world.planets[to];
+  const hours = Math.hypot(A.x - B.x, A.y - B.y) / laneSpeed(speed);
+  return { ok: true, speed, hours, legs: [{ from, to, lane: true, hours }], stops: [] };
+}
+
+/**
+ * Tie-break before `who` leaves `from` for its neighbour `to`, taking `hours`: an enemy fleet that
+ * left `to` for `from` this very moment along the same lane is pinning `from`. The one arriving
+ * later turns back. Returns true if this fleet may go (the other one, if any, was turned back).
+ */
+function settleSwap(world, who, from, to, hours) {
+  const rivals = world.fleets.filter((f) => f.wait == null && f.depart === world.clock && f.legs.length === 1 && f.leg === 0
+    && f.from === to && f.legs[0].to === from && f.legs[0].lane && hostile(world, f.owner, who) && !f.retreat);
+  if (!rivals.length) return false;
+  const mine = world.clock + Math.round(hours * HOUR_MS);
+  if (rivals.some((f) => f.next <= mine)) return false; // they get there first (ties: whoever left first keeps going)
+  // We'd arrive first, so they turn back, but only if nothing else pins `from` (else we stay too,
+  // and so do they).
+  if (pinned(world, world.planets[from], who, rivals)) return false;
+  const T = world.planets[to];
+  for (const f of rivals) { dropFleet(world, f); for (const [dd, k] of Object.entries(f.ships)) addShips(T, f.owner, dd, k); }
+  return true;
+}
+
+/** Put a fleet (new or existing) on one lane leg from P to hop. */
+function setOff(world, f, who, P, hop, ships, goal) {
+  const plan = lanePlan(world, P.id, hop, ships);
+  if (!f) { f = launch(world, who, P.id, hop, ships, plan, false); f.goal = goal; return f; }
+  const at = world.clock + Math.round(plan.hours * HOUR_MS);
+  Object.assign(f, { from: P.id, to: hop, legs: [{ ...plan.legs[0], at }], leg: 0, next: at, wait: null, speed: plan.speed, retreat: false, depart: world.clock, arrive: at, goal });
+  return f;
+}
+
+/** Can ships of `who` leave P for `hop` now (not pinned, or the tie-break lets them)? */
+function mayLeave(world, who, P, hop, ships) {
+  if (!pinned(world, P, who)) return true;
+  return settleSwap(world, who, P.id, hop, lanePlan(world, P.id, hop, ships).hours);
+}
+
+/** A fleet reached a friendly world: carry on (deciding again where to), or stay if it's pinned. */
+function moveOn(world, f, P) {
+  if (f.goal === P.id) f.goal = null;
+  const next = countShips(f.ships) ? nextHop(world, P.id, f.owner, f.goal ?? null) : null;
+  if (next && mayLeave(world, f.owner, P, next.hop, f.ships)) { setOff(world, f, f.owner, P, next.hop, f.ships, f.goal ?? null); return; }
+  dropFleet(world, f);
+  for (const [d, n] of Object.entries(f.ships)) addShips(P, f.owner, d, n);
+}
+
+/** Send every ship that can fly and isn't pinned on its way (runs after every event in an auto world). */
+export function dispatchAll(world) {
+  let sent = 0;
+  for (const P of world.planets) {
+    const owners = [...new Set(P.garrison.filter((g) => g.n > 0 && g.owner !== null && canFly(world, g.design)).map((g) => g.owner))];
+    for (const o of owners) {
+      if (!allied(world, P.owner, o)) continue; // guests on a world that turned hostile are sent home elsewhere
+      const ships = {};
+      for (const g of P.garrison) if (g.owner === o && g.n > 0 && canFly(world, g.design)) ships[g.design] = (ships[g.design] || 0) + g.n;
+      const goal = P.owner === o && P.dest && P.dest.to !== P.id ? P.dest.to : null;
+      const next = nextHop(world, P.id, o, goal);
+      if (!next || !mayLeave(world, o, P, next.hop, ships)) continue;
+      for (const g of P.garrison) if (g.owner === o && canFly(world, g.design)) g.n = 0;
+      tidyGarrison(P);
+      setOff(world, null, o, P, next.hop, ships, goal);
+      sent++;
+    }
+  }
+  return sent;
+}
+
+/** 2.0 retreat: a friendly lane neighbour (where it came from first), else the nearest friendly world through normal space. */
+function autoRetreatTarget(world, fleet, here) {
+  const near = [...(lanesOf(world).get(here.id) || [])].filter((id) => allied(world, world.planets[id].owner, fleet.owner));
+  if (near.includes(fleet.from)) return fleet.from;
+  const dist = (p) => Math.hypot(p.x - here.x, p.y - here.y);
+  const pick = (ids) => ids.map((id) => world.planets[id]).sort((a, b) => dist(a) - dist(b) || a.id - b.id)[0]?.id ?? null;
+  if (near.length) return pick(near);
+  return pick(world.planets.filter((p) => p.id !== here.id && allied(world, p.owner, fleet.owner)).map((p) => p.id));
+}
+
+/** Route for a retreat to `back`: one lane leg to a neighbour, else a straight flight through normal space. */
+function retreatPlan(world, who, from, back, ships) {
+  const ids = Object.keys(ships).filter((d) => ships[d] > 0);
+  if (!ids.length || ids.some((d) => !canFly(world, d))) return { ok: false };
+  if ((lanesOf(world).get(from) || new Set()).has(back)) return lanePlan(world, from, back, ships);
+  const speed = travelSpeed(fleetSpeed(world, ships));
+  return { ok: true, speed, ...planRoute(world.planets, lanesOf(world), from, back, speed, false), stops: [] };
+}
+
+/**
+ * Set (to = null: clear) where new fleets from one of your worlds go (2.0, replaces rally points).
+ * Any world but itself, friendly or not. Returns { ok, error? }.
+ */
+export function setDestination(world, pid, planetId, to) {
+  const P = world.planets[planetId];
+  if (!P || P.owner !== pid) return { ok: false, error: 'You can only set destinations for your own worlds.' };
+  if (to === null || to === undefined) {
+    if (!P.dest) return { ok: true };
+    const old = world.planets[P.dest.to];
+    delete P.dest;
+    log(world, 'fleet', `${playerName(world, pid)}: fleets from ${P.name} now go for the nearest enemy (destination ${old?.name ?? '?'} removed).`, { planet: P.id, players: [pid] });
+    return { ok: true };
+  }
+  if (!world.planets[to]) return { ok: false, error: 'No such world.' };
+  if (to === planetId) return { ok: false, error: 'Pick another world.' };
+  P.dest = { to, owner: pid };
+  log(world, 'fleet', `${playerName(world, pid)}: fleets from ${P.name} will head for ${world.planets[to].name}.`, { planet: P.id, players: [pid] });
+  return { ok: true };
+}
+
+/** Point every one of your worlds at `to` (on), or clear those pointing at it (on = false). Returns { ok, n }. */
+export function destinationAll(world, pid, to, on = true) {
+  if (!world.planets[to]) return { ok: false, error: 'No such world.' };
+  let n = 0;
+  for (const P of world.planets) {
+    if (P.owner !== pid || P.id === to) continue;
+    if (on && P.dest?.to !== to) { P.dest = { to, owner: pid }; n++; }
+    if (!on && P.dest?.to === to) { delete P.dest; n++; }
+  }
+  if (n) log(world, 'fleet', on ? `${playerName(world, pid)}: fleets from ${n} world${n > 1 ? 's' : ''} will head for ${world.planets[to].name}.`
+    : `${playerName(world, pid)}: ${n} world${n > 1 ? 's' : ''} stopped sending fleets to ${world.planets[to].name}.`, { planet: to, players: [pid] });
+  return { ok: true, n };
+}
+
 export const countShips = (ships) => Object.values(ships).reduce((s, n) => s + n, 0);
 // A design's worth is its full block price, for defences too (owner, Nov 2026: a defence bought
 // for 2,000 cr that fights like 10,000 cr of ships is worth 10,000). `cost` stays what it costs to
@@ -729,6 +933,7 @@ function pickWinner(world, s, cands, ships) {
  */
 export function planEvent(world, ev) {
   if (ev.kind === 'job') return { kind: 'job' };
+  if (ev.kind === 'build') return { kind: 'build' };
   if (ev.kind === 'fleet') {
     const f = ev.fleet, L = f.legs[f.leg], final = f.leg >= f.legs.length - 1, P = world.planets[L.to];
     if (allied(world, f.owner, P.owner)) return { kind: final ? 'join' : 'pass' };
@@ -786,8 +991,10 @@ export function planEvent(world, ev) {
 export function applyEvent(world, ev, plan, result) {
   let entry = null;
   if (ev.kind === 'job') entry = finishJob(world, ev.job);
+  else if (ev.kind === 'build') entry = null; // advanceTo built the ships; dispatch sends them below
   else if (ev.kind === 'fleet') entry = fleetArrives(world, ev.fleet, plan);
   else entry = siegeEnds(world, ev.siege, plan, result);
+  if (world.auto) dispatchAll(world);
   checkPlayers(world);
   return entry;
 }
@@ -797,6 +1004,7 @@ function lastLog(world) { return world.log[world.log.length - 1]; }
 function fleetArrives(world, f, plan) {
   const L = f.legs[f.leg], P = world.planets[L.to], me = playerName(world, f.owner);
   if (plan.kind === 'pass') { f.leg++; f.next = f.legs[f.leg].at; return null; }
+  if (plan.kind === 'join' && world.auto) { moveOn(world, f, P); return null; }
   if (plan.kind === 'join') {
     dropFleet(world, f);
     for (const [d, n] of Object.entries(f.ships)) addShips(P, f.owner, d, n);
@@ -844,7 +1052,7 @@ function fallBack(world, f, P) {
   const n = countShips(f.ships);
   if (!n) return null;
   const back = retreatTarget(world, f, P);
-  const pv = back === null ? null : previewFleet(world, P.id, back, f.ships, { owner: f.owner, lanes: true, avoid: true });
+  const pv = back === null ? null : world.auto ? retreatPlan(world, f.owner, P.id, back, f.ships) : previewFleet(world, P.id, back, f.ships, { owner: f.owner, lanes: true, avoid: true });
   const ships = `${n} of ${playerName(world, f.owner)}'s ships`, one = n === 1;
   if (pv?.ok) { launch(world, f.owner, P.id, back, f.ships, pv, true); return `${ships} ${one ? 'falls' : 'fall'} back to ${world.planets[back].name}`; }
   return `${ships} ${one ? 'has' : 'have'} nowhere to go and ${one ? 'is' : 'are'} lost`;
@@ -976,6 +1184,7 @@ function capture(world, P, owner, ships, battleInfo) {
   const old = P.owner, yards = P.yards.length;
   P.yards = [];
   delete P.rally; // the old owner's rally point goes with the world
+  delete P.dest; // and so does its 2.0 destination
   // Unfinished jobs here are lost with the world: shipyards being sold (destroyed above, no
   // payout) and defences still being built (already paid for).
   const lostJobs = (world.jobs || []).filter((j) => j.planet === P.id);
@@ -1015,7 +1224,7 @@ function sendHome(world, P, guest) {
   P.garrison = P.garrison.filter((s) => s.owner !== guest);
   const back = retreatTarget(world, { from: -1, owner: guest }, P);
   const mobile = Object.fromEntries(Object.entries(ships).filter(([d]) => world.designs[d].speed >= MIN_FLEET_SPEED));
-  const pv = back === null || !countShips(mobile) ? null : previewFleet(world, P.id, back, mobile, { owner: guest, lanes: true, avoid: true });
+  const pv = back === null || !countShips(mobile) ? null : world.auto ? retreatPlan(world, guest, P.id, back, mobile) : previewFleet(world, P.id, back, mobile, { owner: guest, lanes: true, avoid: true });
   if (pv?.ok) launch(world, guest, P.id, back, mobile, pv, true);
   const n = countShips(ships), one = n === 1;
   return `${n} of ${world.players[guest].name}'s ships ${pv?.ok ? (one ? 'leaves' : 'leave') : one ? 'is stranded and lost at' : 'are stranded and lost at'} ${P.name}`;
@@ -1023,6 +1232,7 @@ function sendHome(world, P, guest) {
 
 /** Where beaten attackers go: where they came from if it's still friendly, else the nearest friendly world. */
 function retreatTarget(world, fleet, here) {
+  if (world.auto) return autoRetreatTarget(world, fleet, here);
   const from = world.planets[fleet.from];
   if (from && from.id !== here.id && allied(world, from.owner, fleet.owner)) return from.id;
   let best = null, bd = Infinity;

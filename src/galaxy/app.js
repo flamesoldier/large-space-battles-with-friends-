@@ -19,7 +19,7 @@ import { packReplay } from '../shared/replayFormat.js';
 import { mulberry32 } from '../shared/rng.js';
 import {
   createWorld, advanceTo, dueEvent, planEvent, applyEvent, siegeAt, siegeParties, hostile, defendersAt, buildShipyard, sellShipyard, quoteShipyard,
-  sendFleet, stopFleet, setRally, rallyAll, previewFleet, shipsAt, incomeOf, allied, playerName, designOf, fleetValue, worthOf, countShips, fmtHours,
+  sendFleet, stopFleet, setRally, rallyAll, setDestination, destinationAll, nextHop, pinned, previewFleet, shipsAt, incomeOf, allied, playerName, designOf, fleetValue, worthOf, countShips, fmtHours,
   sellValue, yardListValue, YARD_MS, HOLD_MS, upgradeWorld,
   proposeAlliance, acceptAlliance, declineAlliance, breakAlliance, proposalsFor, hasProposed, giveCredits,
   isOpenSeat, freeColors, renameDesign, renamePlanet, buildDefense, defenseProblem, cancelSale, jobsAt,
@@ -234,8 +234,9 @@ function draw(now) {
   if (sel?.kind === 'planet') {
     g.save(); g.setLineDash([6, 5]); g.lineWidth = 1.5; g.strokeStyle = g.fillStyle = hexA(colorOf(ui.me), 0.85);
     for (const P of world.planets) {
-      if (P.owner !== ui.me || !P.rally || (P.id !== sel.id && P.rally.to !== sel.id)) continue;
-      const T = world.planets[P.rally.to], [x0, y0] = toScreen(P.x, P.y), [x1, y1] = toScreen(T.x, T.y);
+      const R = world.auto ? P.dest : P.rally;
+      if (P.owner !== ui.me || !R || (P.id !== sel.id && R.to !== sel.id)) continue;
+      const T = world.planets[R.to], [x0, y0] = toScreen(P.x, P.y), [x1, y1] = toScreen(T.x, T.y);
       const a = Math.atan2(y1 - y0, x1 - x0), r1 = outerR(Math.max(3.5, planetR(T) * z)) + 6;
       const ex = x1 - Math.cos(a) * r1, ey = y1 - Math.sin(a) * r1;
       g.beginPath(); g.moveTo(x0, y0); g.lineTo(ex, ey); g.stroke();
@@ -604,11 +605,14 @@ function planetPanel(P) {
 
   // Ships, and moving them.
   html += `<h2>Ships here</h2>${garrisonTable(P)}`;
-  if (haveShips && !me().eliminated) {
+  if (world.auto) {
+    // 2.0: nobody moves ships. Say what yours here will do.
+    if (haveShips && friendly) html += `<p class="hint">${pinned(world, P, ui.me) ? '<b>An enemy fleet is on its way here</b>, so your ships stay to defend this world.' : 'Your ships here leave by themselves.'}</p>`;
+  } else if (haveShips && !me().eliminated) {
     if (!move || move.from !== P.id) html += `<div class="row"><button class="go" data-act="move" ${busy ? 'disabled' : ''}>Move ships…</button></div>`;
     else html += movePanel(P, myShips);
   }
-  if (!friendly && !haveShips) html += `<p class="hint">${P.owner === null ? 'Unclaimed: held by militia.' : 'Enemy world.'} Send a fleet here and win the battle to take it: every shipyard on it is destroyed and its income becomes yours.</p>`;
+  if (!friendly && !haveShips) html += `<p class="hint">${P.owner === null ? 'Unclaimed: held by militia.' : 'Enemy world.'} ${world.auto ? 'Your fleets attack the nearest enemy worlds by themselves; to aim them here, make it a destination for your worlds (below).' : 'Send a fleet here and win the battle to take it:'} Winning it destroys every shipyard on it and its income becomes yours.</p>`;
   // Shipyards: below the ships so they don't push the move controls down; collapsible (the
   // choice is remembered in ui.yardsOpen). The Build button stays in the header either way.
   if (mine) {
@@ -635,7 +639,37 @@ function planetPanel(P) {
       }
     }
   }
-  html += rallyPanel(P, mine, friendly);
+  html += world.auto ? destPanel(P, mine) : rallyPanel(P, mine, friendly);
+  return html;
+}
+
+// 2.0 destinations (owner, 18 Nov 2026; replace rally points): where new fleets from a world go.
+// Unset: the nearest enemy along the hyperlanes. Fleets decide again at every world they reach.
+function destPanel(P, mine) {
+  if (!world || me().eliminated) return '';
+  let html = '';
+  const here = world.planets.filter((Q) => Q.owner === ui.me && Q.dest?.to === P.id);
+  const label = (Q) => `${esc(Q.name)}${Q.owner === ui.me ? '' : Q.owner === null ? ' (militia)' : ` (${esc(playerName(world, Q.owner))})`}`;
+  if (mine) {
+    const D = P.dest ? world.planets[P.dest.to] : null;
+    const opts = world.planets.filter((Q) => Q.id !== P.id)
+      .sort((a, b) => (a.owner === ui.me ? 0 : 1) - (b.owner === ui.me ? 0 : 1) || a.name.localeCompare(b.name));
+    const next = nextHop(world, P.id, ui.me, D ? D.id : null);
+    html += `<h2>Destination</h2>
+      <label class="rally">Fleets from here go to
+        <select data-act="dest" ${busy ? 'disabled' : ''} aria-label="Destination for fleets from ${esc(P.name)}">
+          <option value="">The nearest enemy</option>
+          ${opts.map((Q) => `<option value="${Q.id}" ${P.dest?.to === Q.id ? 'selected' : ''}>${label(Q)}</option>`).join('')}
+        </select></label>
+      ${D ? `<div class="row"><button class="small" data-act="goto" data-planet="${D.id}">Show ${esc(D.name)}</button></div>` : ''}
+      <p class="hint">${next ? `Right now the next fleet from here would go to <b>${esc(world.planets[next.hop].name)}</b>${next.target !== next.hop ? ` on its way to ${esc(world.planets[next.target].name)}` : ''}. ` : ''}Ships built here leave together as one fleet. ${D ? `They fly along the hyperlanes to ${esc(D.name)}, fighting any enemy world on the way, then go for the nearest enemy from there.` : 'They go for the nearest enemy world along the hyperlanes, or to defend one of your or your allies\' worlds an enemy fleet is heading for.'} At every world they reach they decide again where to go. If an enemy fleet is heading here, ships here stay to defend it.</p>`;
+  }
+  const mineAll = world.planets.filter((Q) => Q.owner === ui.me && Q.id !== P.id);
+  if (mineAll.length) {
+    if (!mine) html += '<h2>Destination</h2>';
+    if (here.length) html += `<p class="hint">Fleets from ${here.map((Q) => `<b>${esc(Q.name)}</b>`).join(', ')} head here.</p>`;
+    html += `<div class="row">${mineAll.some((Q) => Q.dest?.to !== P.id) ? `<button class="small go" data-act="dest-all" ${busy ? 'disabled' : ''} title="Every one of your worlds sends its new fleets here">Send fleets from all my worlds here</button>` : ''}${here.length ? `<button class="small" data-act="dest-none" ${busy ? 'disabled' : ''}>Stop sending them here</button>` : ''}</div>`;
+  }
   return html;
 }
 
@@ -713,7 +747,8 @@ function fleetPanel(f) {
   const rows = Object.entries(f.ships).map(([d, n]) => `<tr><td>${esc(world.designs[d].name)}</td><td>${fmt(n)}</td></tr>`).join('');
   const lanes = f.legs.filter((l) => l.lane).length;
   const N = world.planets[f.legs[f.leg].to];
-  const canStop = f.owner === ui.me && !f.retreat && f.leg < f.legs.length - 1;
+  const canStop = !world.auto && f.owner === ui.me && !f.retreat && f.leg < f.legs.length - 1;
+  const G = f.goal != null ? world.planets[f.goal] : null;
   return `<h1><span class="swatch" style="background:${colorOf(f.owner)}"></span>Fleet${f.retreat ? ' <span class="tag">retreating</span>' : ''}</h1>
     <div class="sub">${who(f.owner)}</div>
     <dl class="kv">
@@ -723,13 +758,16 @@ function fleetPanel(f) {
         ? `<dt>Holding at</dt><dd>${esc(world.planets[f.legs[f.leg].to].name)}</dd><dt>Battle in</dt><dd data-arrive="${world.sieges.find((x) => x.id === f.wait)?.startsAt ?? world.clock}"></dd>`
         : `<dt>Next stop</dt><dd>${esc(world.planets[f.legs[f.leg].to].name)}, <span data-arrive="${f.next}"></span></dd>`}
       <dt>Arrives in</dt><dd data-arrive="${f.arrive}"></dd>
+      ${world.auto && !f.retreat ? `<dt>Plan</dt><dd>${G ? `head for ${esc(G.name)}` : 'the nearest enemy'}</dd>` : ''}
       <dt>Route</dt><dd>${lanes} lane / ${f.legs.length - lanes} space</dd>
       <dt>Speed</dt><dd>${f.speed.toFixed(1)}</dd>
       <dt>Value</dt><dd>${fmt(fleetValue(world, f.ships))} cr</dd>
     </dl>
     <h2>Ships</h2><table><tbody>${rows}</tbody></table>
     ${f.legs.length > 1 ? `<p class="hint">Route: ${[f.from, ...f.legs.map((l) => l.to)].map((id, k) => { const N = esc(world.planets[id].name); return k === f.leg + 1 ? `<b>${N}</b>` : N; }).join(' → ')}</p>` : ''}
-    <p class="hint">Fleets stop at every world on their route. At a world they mean to attack, or where defenders bar the way, the battle starts ${fmtHours(HOLD_MS / HOUR_MS)} after they arrive, so both sides can bring reinforcements. Winning takes the world. Fleets can't be recalled once launched, but a trip through several worlds can be called off: the fleet still reaches its next stop, then goes no further.</p>
+    <p class="hint">${world.auto
+      ? `Fleets move by themselves, one hyperlane at a time, and decide again at every world where to go next. At an enemy world the battle starts ${fmtHours(HOLD_MS / HOUR_MS)} after they arrive, so both sides can bring reinforcements; winning takes the world. A fleet that loses falls back to a friendly world nearby.`
+      : `Fleets stop at every world on their route. At a world they mean to attack, or where defenders bar the way, the battle starts ${fmtHours(HOLD_MS / HOUR_MS)} after they arrive, so both sides can bring reinforcements. Winning takes the world. Fleets can't be recalled once launched, but a trip through several worlds can be called off: the fleet still reaches its next stop, then goes no further.`}</p>
     <div class="row"><button data-act="goto" data-planet="${T.id}">Show destination</button>${canStop ? `<button data-act="stop-fleet" data-fleet="${f.id}" ${busy ? 'disabled' : ''} title="The fleet still arrives at ${esc(N.name)} (and fights there if it isn't yours), then goes no further">${armedStop === f.id ? `${CLICK} again: stop at ${esc(N.name)}` : `Stop at ${esc(N.name)}`}</button>` : ''}</div>`;
 }
 
@@ -743,7 +781,7 @@ function overviewPanel() {
   const mine = world.planets.filter((p) => p.owner === ui.me);
   let html = `<h1><span class="swatch" style="background:${P.color}"></span>${esc(P.name)}</h1>
     <div class="sub">${alliesText(ui.me)}${P.eliminated ? ' · <span style="color:var(--bad)">knocked out</span>' : ''}</div>
-    <p class="hint">${CLICK} a world to see it. Build shipyards on your worlds; select a world with your ships on it to move them. Hyperlanes (bright lines) are ${HYPERLANE_SPEEDUP}× faster than normal space.</p>
+    <p class="hint">${CLICK} a world to see it. ${world.auto ? 'Build shipyards on your worlds: the ships they build go and fight by themselves, along the hyperlanes (bright lines). Give a world a destination to aim its fleets.' : `Build shipyards on your worlds; select a world with your ships on it to move them. Hyperlanes (bright lines) are ${HYPERLANE_SPEEDUP}× faster than normal space.`}</p>
     <h2>Your worlds</h2><div class="list">`;
   html += mine.map((p) => `<button data-act="goto" data-planet="${p.id}"><span class="swatch" style="background:${P.color}"></span><span>${esc(p.name)}</span><em>${fmt(p.income)}/h · ${p.yards.length} yd · ${shipTotal(p)} sh</em></button>`).join('') || '<p class="hint">None.</p>';
   html += '</div>';
@@ -775,6 +813,8 @@ $('panel').addEventListener('click', (e) => {
   else if (act === 'unsell') keepYard(sel.id, b.dataset.yard);
   else if (act === 'stop-fleet') stopTrip(Number(b.dataset.fleet));
   else if (act === 'rally-all') rallyHere(sel.id, true);
+  else if (act === 'dest-all') destHere(sel.id, true);
+  else if (act === 'dest-none') destHere(sel.id, false);
   else if (act === 'rally-none') rallyHere(sel.id, false);
   else if (act === 'rename') openRename(b.dataset.design);
   else if (act === 'rename-planet') openRename(null, sel.id);
@@ -790,6 +830,7 @@ $('panel').addEventListener('click', (e) => {
 });
 $('panel').addEventListener('change', (e) => {
   if (e.target.dataset.act === 'rally') setRallyPoint(sel.id, e.target.value === '' ? null : Number(e.target.value));
+  if (e.target.dataset.act === 'dest') setDest(sel.id, e.target.value === '' ? null : Number(e.target.value));
   if (e.target.dataset.act === 'lanes') { move.lanes = e.target.checked; refreshPreview(); renderPanel(true); }
   if (e.target.dataset.act === 'avoid') { move.avoid = e.target.checked; refreshPreview(); renderPanel(true); }
 });
@@ -864,6 +905,20 @@ async function setRallyPoint(planetId, to) {
   const r = await perform({ type: 'rally', planet: planetId, to }, () => setRally(world, ui.me, planetId, to));
   if (!r.ok) { toast(r.error, true); return renderPanel(true); }
   toast(to === null ? 'Rally point removed: new ships stay here.' : `New ships from ${world.planets[planetId].name} will go to ${world.planets[to].name}.`);
+  save(); renderPanel(true); renderEvents();
+}
+async function setDest(planetId, to) {
+  if (busy) return;
+  const r = await perform({ type: 'dest', planet: planetId, to }, () => setDestination(world, ui.me, planetId, to));
+  if (!r.ok) { toast(r.error, true); return renderPanel(true); }
+  toast(to === null ? `Fleets from ${world.planets[planetId].name} go for the nearest enemy.` : `Fleets from ${world.planets[planetId].name} will head for ${world.planets[to].name}.`);
+  save(); renderPanel(true); renderEvents();
+}
+async function destHere(to, on) {
+  if (busy) return;
+  const r = await perform({ type: 'destAll', to, on }, () => destinationAll(world, ui.me, to, on));
+  if (!r.ok) return toast(r.error, true);
+  toast(on ? `Fleets from ${r.n} world${r.n === 1 ? '' : 's'} will head for ${world.planets[to].name}.` : `${r.n} world${r.n === 1 ? '' : 's'} stopped sending fleets to ${world.planets[to].name}.`);
   save(); renderPanel(true); renderEvents();
 }
 async function rallyHere(to, on) {
