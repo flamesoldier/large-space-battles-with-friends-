@@ -38,10 +38,10 @@ export const BLOCKS = {
   [BT.HEAVY]: { name: 'Heavy armor', hp: 240, mass: 4, cost: 7 },
   [BT.FRAME]: { name: 'Frame', hp: 45, mass: 1, cost: 1 },
   [BT.THRUSTER]: { name: 'Thruster', hp: 60, mass: 1.5, thrust: 10, cost: 20 },
-  [BT.LASER]: { name: 'Laser', hp: 300, mass: 2, cost: 80 }, // was 45: lasers out-fought everything at equal cost (tools/balance.mjs)
-  [BT.CANNON]: { name: 'Cannon', hp: 300, mass: 3, cost: 50 }, // hp 300 (owner, 12 Nov 2026: every weapon except plasma and bays; laser was 130, cannon 150, missile/guided 200, PD 80); was 60: slow shells lose a lot to wrecks and overkill
+  [BT.LASER]: { name: 'Laser', hp: 300, mass: 2, cost: 120 }, // 2.0 (owner, 18 Nov 2026): 120 (1.0: 80); // was 45: lasers out-fought everything at equal cost (tools/balance.mjs)
+  [BT.CANNON]: { name: 'Cannon', hp: 300, mass: 3, cost: 120 }, // 2.0 (owner, 18 Nov 2026): 120 (1.0: 50); // hp 300 (owner, 12 Nov 2026: every weapon except plasma and bays; laser was 130, cannon 150, missile/guided 200, PD 80); was 60: slow shells lose a lot to wrecks and overkill
   [BT.MISSILE]: { name: 'Missile launcher', hp: 300, mass: 5, cost: 75 }, // was 120, then 90 (spread-out fleets take fewer ships per blast)
-  [BT.PD]: { name: 'Anti-missile point defence', hp: 300, mass: 1.5, cost: 60 }, // renamed (owner, Nov 2026): a friend didn't know it shoots missiles down; cost was 30 (makes missiles better)
+  [BT.PD]: { name: 'Anti-missile point defence', hp: 300, mass: 1.5, cost: 90 }, // 2.0 (owner, 18 Nov 2026): 90 (1.0: 60); // renamed (owner, Nov 2026): a friend didn't know it shoots missiles down; cost was 30 (makes missiles better)
   [BT.GUIDED]: { name: 'Guided missile launcher', hp: 300, mass: 5, cost: 135 }, // owner, Nov 2026: the missile launcher's stats, steering missiles, dearer
   [BT.BAY]: { name: 'Fighter bay', hp: 150, mass: 3, cost: 6.25 }, // owner, Nov 2026: 225 cr a 6x6 unit (asked for 200-250)
   [BT.LANCE]: { name: 'Plasma cannon', hp: 750, mass: 4, cost: 15 },

@@ -31,7 +31,8 @@ export const shipyardPrice = (design) => designCost(design) * SHIPYARD_PRICE_MUL
 // own price, so one big shipyard and many small ones of the same total pay the same share (the
 // old rule, a flat 1% of the yards already there, let big shipyards dodge it). List prices, not
 // what was paid, so it doesn't compound. Measured per world, so spreading out keeps list price.
-export const SHIPYARD_CROWDING_VALUE = 750000;
+// 2.0 (owner, 18 Nov 2026): +100% for every 325,000 cr (1.0: 750,000), for more, smaller fleets.
+export const SHIPYARD_CROWDING_VALUE = 325000;
 export const crowdingMult = (existingListValue) => 1 + existingListValue / SHIPYARD_CROWDING_VALUE;
 export const crowdingSurcharge = (list, existingListValue) => Math.round(list * (existingListValue / SHIPYARD_CROWDING_VALUE));
 export const shipyardPriceAt = (design, existingListValue) => shipyardPrice(design) + crowdingSurcharge(shipyardPrice(design), existingListValue);

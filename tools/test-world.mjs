@@ -20,7 +20,7 @@ import { makeDesign } from '../src/shared/designs.js';
 import { makeTestScenario } from '../src/designer/testBattle.js';
 import { BT } from '../src/shared/blocks.js';
 import { designCost, encodeDesign, decodeDesign } from '../src/shared/shipStats.js';
-import { STARTING_CREDITS, HOME_INCOME, SHIPYARD_SELL_REFUND, SHIPS_PER_BUILD, BOUNTY_SHARE, shipyardPrice, defensePrice, SELL_HOURS, DEFENSE_BUILD_HOURS } from '../src/shared/economy.js';
+import { STARTING_CREDITS, HOME_INCOME, SHIPYARD_SELL_REFUND, SHIPYARD_CROWDING_VALUE, SHIPS_PER_BUILD, BOUNTY_SHARE, shipyardPrice, defensePrice, SELL_HOURS, DEFENSE_BUILD_HOURS } from '../src/shared/economy.js';
 import { HOUR_MS, HYPERLANE_SPEEDUP, MAX_PLAYERS, PLANET_SPACING } from '../src/world/rules.js';
 
 // The 1.0 tests below drive fleets by hand (sieges, captures, bounties and so on all still apply in
@@ -119,7 +119,7 @@ const resolve = (scen) => {
   ok(q2.mult > 1 && q2.price > shipyardPrice(corv), 'second shipyard on the same world costs more');
   const elsewhere = w.planets.find((p) => p.owner === null);
   ok(quoteShipyard(w, elsewhere.id, corv).mult === 1, 'crowding is per world');
-  // The owner's rule (Nov 2026): +100% for every 750,000 cr of shipyards already on the world,
+  // The owner's rule (Nov 2026): +100% for every SHIPYARD_CROWDING_VALUE cr (2.0: 325,000) of shipyards already on the world,
   // however that value is split (one big yard or many small ones).
   {
     const fill = (design, n) => {
@@ -129,14 +129,14 @@ const resolve = (scen) => {
       return { t, h };
     };
     const big = { ...dest, cells: dest.cells.slice() }, list = shipyardPrice(big);
-    const nBig = Math.round(750000 / list);
+    const nBig = Math.round(SHIPYARD_CROWDING_VALUE / list);
     const { t, h } = fill(big, nBig);
-    const q = quoteShipyard(t, h, big), m = 1 + (nBig * list) / 750000;
+    const q = quoteShipyard(t, h, big), m = 1 + (nBig * list) / SHIPYARD_CROWDING_VALUE;
     ok(Math.abs(q.mult - m) < 0.001, `${nBig} yards worth ${nBig * list} cr: next costs ${q.mult.toFixed(3)}× (want ${m.toFixed(3)}×)`);
     // Same value in corvette yards gives (about) the same multiplier for the next yard of any kind.
     const nSmall = Math.round((nBig * list) / shipyardPrice(corv));
     const s = fill(corv, nSmall), q2 = quoteShipyard(s.t, s.h, big);
-    ok(Math.abs(q2.mult - (1 + (nSmall * shipyardPrice(corv)) / 750000)) < 0.001, 'small yards count by value too');
+    ok(Math.abs(q2.mult - (1 + (nSmall * shipyardPrice(corv)) / SHIPYARD_CROWDING_VALUE)) < 0.001, 'small yards count by value too');
     ok(Math.abs(q2.mult - q.mult) < 0.02, `one kind or many: same share (${q.mult.toFixed(3)} vs ${q2.mult.toFixed(3)})`);
   }
   ok(!buildShipyard(w, 0, elsewhere.id, corv).ok, 'can\'t build on a world you don\'t hold');
