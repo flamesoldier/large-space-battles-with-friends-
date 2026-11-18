@@ -9,7 +9,7 @@ import {
   shipsAt, incomeOf, allied, YARD_MS, HOLD_MS, designOf, upgradeWorld,
   proposeAlliance, acceptAlliance, breakAlliance, proposalsFor, dueEvent, siegeAt, renameDesign, renamePlanet,
   buildDefense, planEvent, applyEvent, registerDesign, cancelSale, jobsAt, payBounties, giveCredits, worthOf, fleetValue, stopFleet, setRally, rallyAll,
-  checkWin, nextHop, pinned, dispatchAll, setDestination, destinationAll, countShips,
+  checkWin, nextHop, pinned, dispatchAll, holdReason, addShips, setDestination, destinationAll, countShips,
 } from '../src/world/world.js';
 import { writeFileSync } from 'node:fs';
 import { packReplay } from '../src/shared/replayFormat.js';
@@ -953,6 +953,7 @@ const resolve = (scen) => {
 }
 
 // ---- 2.0: the fleet brain (owner, 18 Nov 2026)
+const lanePlanHours = (W, a, b, d) => { const A = W.planets[a], B = W.planets[b]; return Math.hypot(A.x - B.x, A.y - B.y) / laneSpeed(travelSpeed(W.designs[d].speed)); };
 {
   const fake = (W) => (scen) => {
     // Stand-in battle: the side worth most wins and keeps what's left after the others' worth.
@@ -1030,6 +1031,62 @@ const resolve = (scen) => {
       ok(F && fa.length === 1 && fa[0].to === b && !fb.length && countShipsT(shipsAt(tt.planets[b], 1)) === 4, `the fast fleet goes, the slow one turns back to defend (${first === a ? 'A' : 'B'} handled first)`);
     }
   }
+  // Orders are kept, and fleets that fought together split up again (owner, 18 Nov 2026).
+  {
+    const t = createAutoWorld({ players: [{ name: 'A' }, { name: 'B' }], seed: 23 });
+    const W = t.players[0].home, P = t.planets[W];
+    for (const Q of t.planets) if (Q.owner === null) Q.owner = 0;
+    const nb = [...lanes(t).get(W)];
+    const G = nb[0], D = nb[1] ?? nb[0];
+    const mine = registerDesign(t, 0, { ...makeDesign('destroyer', 5), name: 'Mine' });
+    const bd = registerDesign(t, 1, { ...makeDesign('destroyer', 9), name: 'Raider' });
+    P.dest = { to: D, owner: 0 };
+    // A fleet heading for G passes through W while an enemy fleet is on its way to W.
+    const raid = { id: 990101, owner: 1, ships: { [bd]: 3 }, from: G, to: W, legs: [{ from: G, to: W, lane: true, hours: 50, at: t.clock + 50 * HOUR_MS }], leg: 0, next: t.clock + 50 * HOUR_MS, wait: null, speed: 1, retreat: false, depart: t.clock - 1, arrive: t.clock + 50 * HOUR_MS };
+    t.fleets.push(raid);
+    const f = { id: 990102, owner: 0, ships: { [mine]: 4 }, from: nb.at(-1), to: W, legs: [{ from: nb.at(-1), to: W, lane: true, hours: 1, at: t.clock }], leg: 0, next: t.clock, wait: null, speed: 1, retreat: false, depart: t.clock - HOUR_MS, arrive: t.clock, goal: G };
+    t.fleets.push(f);
+    addShips(P, 0, mine, 5); // ships built here (no orders of their own)
+    runWorld(t, t.clock, null);
+    const st = P.garrison.filter((x) => x.owner === 0);
+    ok(st.length === 2 && st.some((x) => x.goal === G && x.n === 4) && st.some((x) => x.goal === undefined && x.n === 5), 'a fleet that stays to defend keeps its own orders, apart from the ships built there');
+    // The threat goes: they leave as two fleets, each with its own orders.
+    t.fleets = t.fleets.filter((x) => x !== raid);
+    dispatchAll(t);
+    const out = t.fleets.filter((x) => x.owner === 0);
+    ok(out.length === (G === D ? 1 : 2), `then they split up by where they're going (${out.length} fleets)`);
+    ok(out.some((x) => x.goal === G && x.ships[mine] >= 4) && out.some((x) => x.goal === D && x.ships[mine] >= 5), 'the passing fleet still heads for its own goal; the new ships take the world\'s destination');
+  }
+  // No arriving late to a siege; after a successful defence the defender moves first (owner).
+  {
+    const t = createAutoWorld({ players: [{ name: 'A' }, { name: 'B' }], seed: 24 });
+    const [a, b] = t.lanes.find(([x, y]) => t.planets[x].home < 0 && t.planets[y].home < 0);
+    for (const Q of t.planets) { Q.owner = Q.id === b ? 1 : 0; Q.garrison = []; }
+    const fast = registerDesign(t, 0, { ...makeDesign('corvette', 3), name: 'Fast' }), def = registerDesign(t, 1, { ...makeDesign('destroyer', 4), name: 'Guard' });
+    const hop = lanePlanHours(t, a, b, fast);
+    // A siege at b by A, its battle sooner than a fresh fleet from a could get there.
+    const lead = { id: 990201, owner: 0, ships: { [fast]: 2 }, from: a, to: b, legs: [{ from: a, to: b, lane: true, hours: hop, at: t.clock }], leg: 0, next: Infinity, wait: 990202, speed: 1, retreat: false, depart: t.clock - 1, arrive: t.clock };
+    t.fleets.push(lead);
+    t.sieges.push({ id: 990202, planet: b, leader: 0, fleets: [lead.id], startsAt: t.clock + Math.round(hop * HOUR_MS / 2), against: 1 });
+    t.planets[b].garrison.push({ owner: 1, design: def, n: 10 });
+    t.planets[a].garrison.push({ owner: 0, design: fast, n: 3 });
+    t.planets[a].dest = { to: b, owner: 0 };
+    dispatchAll(t);
+    ok(countShipsT(shipsAt(t.planets[a], 0)) === 3 && holdReason(t, t.planets[a], 0, { [fast]: 3 }, b) === 'siege', 'a fleet that would arrive after the battle starts waits instead');
+    const s0 = t.sieges[0];
+    s0.startsAt = t.clock + Math.round(hop * HOUR_MS) + 60000;
+    dispatchAll(t);
+    ok(!countShipsT(shipsAt(t.planets[a], 0)) && t.fleets.some((x) => x.owner === 0 && x.from === a && x.to === b && x.wait == null), 'one that gets there in time sets off and joins');
+    // Now B defends (stand-in battle: the bigger side wins) with A's next fleet waiting at a: B strikes first.
+    t.fleets = t.fleets.filter((x) => x === lead); s0.startsAt = t.clock + Math.round(hop * HOUR_MS / 2);
+    t.planets[a].garrison.push({ owner: 0, design: fast, n: 3 });
+    delete t.planets[a].dest;
+    t.planets[b].dest = { to: a, owner: 1 }; // B strikes back along the same lane
+    runWorld(t, s0.startsAt, fake(t));
+    ok(t.planets[b].owner === 1, 'B held its world');
+    const counter = t.fleets.find((x) => x.owner === 1 && x.from === b && x.to === a);
+    ok(counter && countShipsT(shipsAt(t.planets[a], 0)) === 3 && !t.fleets.some((x) => x.owner === 0 && x.from === a && !x.retreat), 'the successful defender strikes back first; A\'s waiting ships stay to meet it');
+  }
   // A whole game with stand-in battles: hyperlanes only, never a swap, the front moves both ways.
   {
     const g = createAutoWorld({ players: [{ name: 'A' }, { name: 'B' }, { name: 'C' }, { name: 'D' }], seed: 5 });
@@ -1051,13 +1108,17 @@ const resolve = (scen) => {
           if (M.from === L.to && M.to === L.from) swaps++;
         }
       }
-      for (const P of g.planets) if (P.owner !== null && countShipsT(Object.fromEntries(P.garrison.filter((x) => x.owner === P.owner && !g.designs[x.design].fixed).map((x) => [x.design, x.n]))) && !pinned(g, P, P.owner) && nextHop(g, P.id, P.owner)) idle++;
+      for (const P of g.planets) for (const x of P.garrison) {
+        if (x.owner === null || g.designs[x.design].fixed || !allied(g, x.owner, P.owner)) continue;
+        const goal = x.goal === undefined ? (P.dest?.to ?? null) : x.goal;
+        if (!holdReason(g, P, x.owner, { [x.design]: x.n }, goal)) idle++;
+      }
       g.planets.forEach((P, i) => { if (P.owner !== prev[i] && prev[i] !== null) changes++; });
       prev = g.planets.map((p) => p.owner);
     }
     ok(hops > 0 && !offLane, `fleets only move along hyperlanes (${hops} fleet-quarter-hours, ${offLane} off-lane)`);
     ok(!swaps, `no two enemy fleets ever fly past each other on a lane (${swaps})`);
-    ok(!idle, `no ship sits at a world unless it's pinned (${idle})`);
+    ok(!idle, `no ship sits at a world without a reason: pinned, waiting for a siege, or nothing to fight (${idle})`);
     ok(g.planets.filter((p) => p.owner === null).length < owners0.filter((o) => o === null).length / 2, 'militia worlds get taken');
     ok(changes >= 4, `player worlds change hands (${changes} times in 4 days)`);
   }

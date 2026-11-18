@@ -19,7 +19,7 @@ import { packReplay } from '../shared/replayFormat.js';
 import { mulberry32 } from '../shared/rng.js';
 import {
   createWorld, advanceTo, dueEvent, planEvent, applyEvent, siegeAt, siegeParties, hostile, defendersAt, buildShipyard, sellShipyard, quoteShipyard,
-  sendFleet, stopFleet, setRally, rallyAll, setDestination, destinationAll, nextHop, pinned, previewFleet, shipsAt, incomeOf, allied, playerName, designOf, fleetValue, worthOf, countShips, fmtHours,
+  sendFleet, stopFleet, setRally, rallyAll, setDestination, destinationAll, nextHop, pinned, holdReason, previewFleet, shipsAt, incomeOf, allied, playerName, designOf, fleetValue, worthOf, countShips, fmtHours,
   sellValue, yardListValue, YARD_MS, HOLD_MS, upgradeWorld,
   proposeAlliance, acceptAlliance, declineAlliance, breakAlliance, proposalsFor, hasProposed, giveCredits,
   isOpenSeat, freeColors, renameDesign, renamePlanet, buildDefense, defenseProblem, cancelSale, jobsAt,
@@ -555,7 +555,12 @@ function updateLive() {
 
 function garrisonTable(P) {
   const byOwner = new Map();
-  for (const s of P.garrison) { if (!byOwner.has(s.owner)) byOwner.set(s.owner, []); byOwner.get(s.owner).push(s); }
+  for (const s of P.garrison) {
+    if (!byOwner.has(s.owner)) byOwner.set(s.owner, []);
+    // 2.0: one row per design, even when groups of it have different orders.
+    const list = byOwner.get(s.owner), same = list.find((x) => x.design === s.design);
+    if (same) same.n += s.n; else list.push({ ...s });
+  }
   if (!byOwner.size) return '<p class="hint">No ships here.</p>';
   let html = '';
   for (const [owner, list] of byOwner) {
@@ -607,7 +612,15 @@ function planetPanel(P) {
   html += `<h2>Ships here</h2>${garrisonTable(P)}`;
   if (world.auto) {
     // 2.0: nobody moves ships. Say what yours here will do.
-    if (haveShips && friendly) html += `<p class="hint">${pinned(world, P, ui.me) ? '<b>An enemy fleet is on its way here</b>, so your ships stay to defend this world.' : 'Your ships here leave by themselves.'}</p>`;
+    if (haveShips && friendly) {
+      const why = new Set();
+      for (const g of P.garrison) {
+        if (g.owner !== ui.me || g.n <= 0 || world.designs[g.design].fixed) continue;
+        why.add(holdReason(world, P, ui.me, { [g.design]: g.n }, g.goal === undefined ? (P.dest?.to ?? null) : g.goal));
+      }
+      const say = { pinned: '<b>An enemy fleet is on its way here</b>, so your ships stay to defend this world.', siege: 'Some of your ships are <b>waiting</b>: the battle where they\'d go next starts before they could get there, so they stay until it\'s over.', nothing: 'There\'s no enemy left for some of your ships to go for.', null: 'Your ships here leave by themselves.' };
+      html += `<p class="hint">${[...why].map((r) => say[r]).join(' ')}</p>`;
+    }
   } else if (haveShips && !me().eliminated) {
     if (!move || move.from !== P.id) html += `<div class="row"><button class="go" data-act="move" ${busy ? 'disabled' : ''}>Move ships…</button></div>`;
     else html += movePanel(P, myShips);
@@ -662,7 +675,7 @@ function destPanel(P, mine) {
           ${opts.map((Q) => `<option value="${Q.id}" ${P.dest?.to === Q.id ? 'selected' : ''}>${label(Q)}</option>`).join('')}
         </select></label>
       ${D ? `<div class="row"><button class="small" data-act="goto" data-planet="${D.id}">Show ${esc(D.name)}</button></div>` : ''}
-      <p class="hint">${next ? `Right now the next fleet from here would go to <b>${esc(world.planets[next.hop].name)}</b>${next.target !== next.hop ? ` on its way to ${esc(world.planets[next.target].name)}` : ''}. ` : ''}Ships built here leave together as one fleet. ${D ? `They fly along the hyperlanes to ${esc(D.name)}, fighting any enemy world on the way, then go for the nearest enemy from there.` : 'They go for the nearest enemy world along the hyperlanes, or to defend one of your or your allies\' worlds an enemy fleet is heading for.'} At every world they reach they decide again where to go. If an enemy fleet is heading here, ships here stay to defend it.</p>`;
+      <p class="hint">${next ? `Right now the next fleet from here would go to <b>${esc(world.planets[next.hop].name)}</b>${next.target !== next.hop ? ` on its way to ${esc(world.planets[next.target].name)}` : ''}. ` : ''}Ships built here leave together as one fleet. ${D ? `They fly along the hyperlanes to ${esc(D.name)}, fighting any enemy world on the way, then go for the nearest enemy from there.` : 'They go for the nearest enemy world along the hyperlanes, or to defend one of your or your allies\' worlds an enemy fleet is heading for.'} At every world they reach they decide again where to go. If an enemy fleet is heading here, ships here stay to defend it, keeping their own orders. They never set off for a battle that would start before they got there: they wait for it to end instead.</p>`;
   }
   const mineAll = world.planets.filter((Q) => Q.owner === ui.me && Q.id !== P.id);
   if (mineAll.length) {

@@ -133,10 +133,12 @@ export const playerName = (world, id) => (id === null || id === undefined ? 'Mil
 /** Credits per hour from every world a player holds. */
 export const incomeOf = (world, pid) => world.planets.reduce((s, p) => s + (p.owner === pid ? p.income : 0), 0);
 
-export function addShips(planet, owner, design, n) {
+export function addShips(planet, owner, design, n, goal = undefined) {
   if (n <= 0) return;
-  const s = planet.garrison.find((g) => g.owner === owner && g.design === design);
-  if (s) s.n += n; else planet.garrison.push({ owner, design, n });
+  // 2.0: ships waiting at a world keep their fleet's orders (`goal`: a world id, or null = the
+  // nearest enemy); ships with no `goal` were built here and take the world's destination.
+  const s = planet.garrison.find((g) => g.owner === owner && g.design === design && g.goal === goal);
+  if (s) s.n += n; else planet.garrison.push(goal === undefined ? { owner, design, n } : { owner, design, n, goal });
 }
 
 function tidyGarrison(planet) { planet.garrison = planet.garrison.filter((s) => s.n > 0); }
@@ -668,6 +670,15 @@ export function upgradeWorld(world) {
 //  - Tie-break (owner: no 1.0 "swap"): two enemy fleets leaving at the same moment to fly at each
 //    other's worlds along the same lane: the one that would arrive later turns back. (Pinning stops
 //    every other swap: a world with an enemy fleet heading to it launches nothing.)
+//  - Orders are kept (owner, 18 Nov 2026): ships waiting at a world (pinned, or waiting for a siege,
+//    below) keep their fleet's goal in their garrison stack (`goal`), not the world's destination.
+//    Ships fighting side by side split up again afterwards: one fleet per goal.
+//  - No arriving late to a siege (owner): a fleet doesn't set off for a world with a siege under
+//    way unless it gets there before the battle starts; otherwise it waits where it is. (Else its
+//    stream of late fleets would keep the defender pinned, and it could never strike back.)
+//  - After a battle the world's holder moves first (dispatchAll's `first`): a successful defender
+//    strikes back before the attacker's waiting fleets go again, and the tie-break never turns
+//    those first movers back.
 
 /** Designs at a world that can fly (not defences, real engines). */
 const canFly = (world, d) => { const D = world.designs[d]; return !!D && !D.fixed && D.speed >= MIN_FLEET_SPEED; };
@@ -733,6 +744,7 @@ function settleSwap(world, who, from, to, hours) {
   const rivals = world.fleets.filter((f) => f.wait == null && f.depart === world.clock && f.legs.length === 1 && f.leg === 0
     && f.from === to && f.legs[0].to === from && f.legs[0].lane && hostile(world, f.owner, who) && !f.retreat);
   if (!rivals.length) return false;
+  if (rivals.some((f) => f.first === world.clock)) return false; // they hold the world where a battle just ended: they go first
   const mine = world.clock + Math.round(hours * HOUR_MS);
   if (rivals.some((f) => f.next <= mine)) return false; // they get there first (ties: whoever left first keeps going)
   // We'd arrive first, so they turn back, but only if nothing else pins `from` (else we stay too,
@@ -752,8 +764,29 @@ function setOff(world, f, who, P, hop, ships, goal) {
   return f;
 }
 
-/** Can ships of `who` leave P for `hop` now (not pinned, or the tie-break lets them)? */
+/** Would ships leaving now reach `hop` only after a battle there has started? (Then they wait.) */
+function lateForSiege(world, P, hop, ships) {
+  const sg = siegeAt(world, hop)[0];
+  if (!sg) return false;
+  return world.clock + Math.round(lanePlan(world, P.id, hop, ships).hours * HOUR_MS) > sg.startsAt;
+}
+
+/**
+ * Why ships of `who` at world P (with this goal, null = the nearest enemy) aren't leaving now, or
+ * null if they would go: 'nothing' (no target left), 'siege' (they'd reach the next world after its
+ * battle has started), 'pinned' (an enemy fleet is heading here). Doesn't change anything.
+ */
+export function holdReason(world, P, who, ships, goal = null) {
+  const next = nextHop(world, P.id, who, goal === P.id ? null : goal);
+  if (!next) return 'nothing';
+  if (lateForSiege(world, P, next.hop, ships)) return 'siege';
+  if (pinned(world, P, who)) return 'pinned';
+  return null;
+}
+
+/** Can ships of `who` leave P for `hop` now (not late for a siege there; not pinned, or the tie-break lets them)? */
 function mayLeave(world, who, P, hop, ships) {
+  if (lateForSiege(world, P, hop, ships)) return false;
   if (!pinned(world, P, who)) return true;
   return settleSwap(world, who, P.id, hop, lanePlan(world, P.id, hop, ships).hours);
 }
@@ -763,27 +796,46 @@ function moveOn(world, f, P) {
   if (f.goal === P.id) f.goal = null;
   const next = countShips(f.ships) ? nextHop(world, P.id, f.owner, f.goal ?? null) : null;
   if (next && mayLeave(world, f.owner, P, next.hop, f.ships)) { setOff(world, f, f.owner, P, next.hop, f.ships, f.goal ?? null); return; }
+  // Stays (pinned, waiting for a siege, or nothing to do): its ships wait here with their orders.
   dropFleet(world, f);
-  for (const [d, n] of Object.entries(f.ships)) addShips(P, f.owner, d, n);
+  for (const [d, n] of Object.entries(f.ships)) addShips(P, f.owner, d, n, f.goal ?? null);
 }
 
-/** Send every ship that can fly and isn't pinned on its way (runs after every event in an auto world). */
-export function dispatchAll(world) {
+/**
+ * Send every ship that can fly and isn't held back on its way (runs after every event in an auto
+ * world). One fleet per player and goal: ships built here take the world's destination, ships
+ * waiting here keep their own. `first`: a world whose ships go before everyone else's (and can't
+ * be turned back by the tie-break), used after a battle there.
+ */
+export function dispatchAll(world, first = null) {
   let sent = 0;
-  for (const P of world.planets) {
-    const owners = [...new Set(P.garrison.filter((g) => g.n > 0 && g.owner !== null && canFly(world, g.design)).map((g) => g.owner))];
-    for (const o of owners) {
-      if (!allied(world, P.owner, o)) continue; // guests on a world that turned hostile are sent home elsewhere
+  const order = first === null ? world.planets : [world.planets[first], ...world.planets.filter((P) => P.id !== first)];
+  for (const P of order) {
+    const flyers = P.garrison.filter((g) => g.n > 0 && g.owner !== null && canFly(world, g.design));
+    if (!flyers.length) continue;
+    // Group by player and where they're going.
+    const groups = new Map();
+    for (const g of flyers) {
+      if (!allied(world, P.owner, g.owner)) continue; // guests on a world that turned hostile are sent home elsewhere
+      let goal = g.goal === undefined ? (P.owner === g.owner && P.dest ? P.dest.to : null) : g.goal;
+      if (goal === P.id) goal = null;
+      const key = `${g.owner}|${goal}`;
+      if (!groups.has(key)) groups.set(key, { owner: g.owner, goal, stacks: [] });
+      groups.get(key).stacks.push(g);
+    }
+    let changed = false;
+    for (const grp of groups.values()) {
       const ships = {};
-      for (const g of P.garrison) if (g.owner === o && g.n > 0 && canFly(world, g.design)) ships[g.design] = (ships[g.design] || 0) + g.n;
-      const goal = P.owner === o && P.dest && P.dest.to !== P.id ? P.dest.to : null;
-      const next = nextHop(world, P.id, o, goal);
-      if (!next || !mayLeave(world, o, P, next.hop, ships)) continue;
-      for (const g of P.garrison) if (g.owner === o && canFly(world, g.design)) g.n = 0;
-      tidyGarrison(P);
-      setOff(world, null, o, P, next.hop, ships, goal);
+      for (const g of grp.stacks) ships[g.design] = (ships[g.design] || 0) + g.n;
+      const next = nextHop(world, P.id, grp.owner, grp.goal);
+      if (!next || !mayLeave(world, grp.owner, P, next.hop, ships)) continue;
+      for (const g of grp.stacks) g.n = 0;
+      changed = true;
+      const f = setOff(world, null, grp.owner, P, next.hop, ships, grp.goal);
+      if (P.id === first) f.first = world.clock;
       sent++;
     }
+    if (changed) tidyGarrison(P);
   }
   return sent;
 }
@@ -959,7 +1011,7 @@ export function planEvent(world, ev) {
   fighters.forEach((q, team) => {
     const side = defends(q.owner) ? 1 : 0;
     const color = q.owner === null ? NEUTRAL_COLOR : world.players[q.owner]?.color || null;
-    for (const g of q.stacks) groups.push({ team, side, owner: q.owner, design: g.design, n: g.n, garrison: true, color, ...(world.designs[g.design]?.fixed ? { fixed: true } : {}) });
+    for (const g of q.stacks) groups.push({ team, side, owner: q.owner, design: g.design, n: g.n, garrison: true, color, ...(world.designs[g.design]?.fixed ? { fixed: true } : {}), ...(g.goal !== undefined ? { goal: g.goal } : {}) });
     for (const f of q.fleets) for (const [design, n] of Object.entries(f.ships)) if (n > 0) groups.push({ team, side, owner: q.owner, design, n, fleet: f.id, color });
   });
   // Starting positions: the owner's side holds the world; attackers come in from around it, each
@@ -994,7 +1046,9 @@ export function applyEvent(world, ev, plan, result) {
   else if (ev.kind === 'build') entry = null; // advanceTo built the ships; dispatch sends them below
   else if (ev.kind === 'fleet') entry = fleetArrives(world, ev.fleet, plan);
   else entry = siegeEnds(world, ev.siege, plan, result);
-  if (world.auto) dispatchAll(world);
+  // 2.0 (owner): after a battle, whoever holds that world moves first (a successful defender gets
+  // to strike back before the attacker's waiting fleets go again).
+  if (world.auto) dispatchAll(world, ev.kind === 'siege' ? ev.siege.planet : null);
   checkPlayers(world);
   return entry;
 }
@@ -1054,7 +1108,7 @@ function fallBack(world, f, P) {
   const back = retreatTarget(world, f, P);
   const pv = back === null ? null : world.auto ? retreatPlan(world, f.owner, P.id, back, f.ships) : previewFleet(world, P.id, back, f.ships, { owner: f.owner, lanes: true, avoid: true });
   const ships = `${n} of ${playerName(world, f.owner)}'s ships`, one = n === 1;
-  if (pv?.ok) { launch(world, f.owner, P.id, back, f.ships, pv, true); return `${ships} ${one ? 'falls' : 'fall'} back to ${world.planets[back].name}`; }
+  if (pv?.ok) { const r = launch(world, f.owner, P.id, back, f.ships, pv, true); if (world.auto) r.goal = f.goal ?? null; return `${ships} ${one ? 'falls' : 'fall'} back to ${world.planets[back].name}`; }
   return `${ships} ${one ? 'has' : 'have'} nowhere to go and ${one ? 'is' : 'are'} lost`;
 }
 
@@ -1088,7 +1142,7 @@ function siegeEnds(world, s, plan, result) {
       if (!byFleet.has(g.fleet)) byFleet.set(g.fleet, {});
       if (g.survived) { const m = byFleet.get(g.fleet); m[g.design] = (m[g.design] || 0) + g.survived; }
     } else {
-      const st = P.garrison.find((x) => x.owner === g.owner && x.design === g.design);
+      const st = P.garrison.find((x) => x.owner === g.owner && x.design === g.design && x.goal === g.goal);
       if (st) st.n = Math.max(0, st.n - (g.n - g.survived));
     }
   }
