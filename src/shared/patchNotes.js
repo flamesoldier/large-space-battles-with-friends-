@@ -8,6 +8,19 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-v2', date: 'Nov 2026', title: 'Version 2.0: the galaxy plays itself',
+    items: [
+      'Fleets now move by themselves, so you no longer need to be online to defend or attack. What matters is your ship designs, where you build shipyards, which way you push and your diplomacy.',
+      'Every 90 minutes all the shipyards on a world build at the same moment, 5 ships each, and everything built there leaves together as one fleet. Each world has its own build clock: the world panel shows when its next fleet leaves and where it will go, and a small arrow on the map points the way.',
+      'Fleets fly along the hyperlanes one world at a time and decide again at every world. With no orders they go for the nearest enemy: an enemy or militia world, or one of your or your allies\' worlds that an enemy fleet is heading for. They never set off for a battle that would start before they got there; they pick the nearest one they can make instead, or wait.',
+      'Give a world a Destination and its fleets head there instead, fighting any enemy world on the way, then go for the nearest enemy once they arrive. "Send fleets from all my worlds here" points all your worlds at one world. Move ships, Stop and rally points are gone.',
+      'If an enemy fleet is heading for one of your worlds, your ships there stay to defend it, and keep their own orders. Fleets already on their way to a world when a siege starts there turn back if they would arrive after its battle starts. After a battle, whoever holds the world moves first, so a successful defence can strike straight back.',
+      'Two enemy fleets setting off at each other\'s worlds along the same hyperlane at the same moment: the one that would arrive later turns back to defend. Lanes between players at war glow red on the map: that\'s the front line.',
+      'Everything is about 3× slower: home worlds 500 cr/h, other worlds 130 to 330, fleets fly a third as fast, battles wait 3 hours after the first attackers arrive, and selling a shipyard or building defences takes 15 hours. Speed matters less on hyperlanes: a ship twice as fast is 40% faster there.',
+      'New prices: cannons and lasers 120 cr, point defence 90. A world\'s shipyards make the next one there +100% dearer for every 325,000 cr of them. Bounty is 10% of enemy losses.',
+    ],
+  },
+  {
     id: '2026-11-16b', date: '16 Nov 2026', title: 'How the galaxy is won',
     items: [
       'The galaxy is won as soon as one alliance holds every world in it, militia worlds included. Every player in that alliance wins.',

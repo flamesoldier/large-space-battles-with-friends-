@@ -674,8 +674,11 @@ export function upgradeWorld(world) {
 //    below) keep their fleet's goal in their garrison stack (`goal`), not the world's destination.
 //    Ships fighting side by side split up again afterwards: one fleet per goal.
 //  - No arriving late to a siege (owner): a fleet doesn't set off for a world with a siege under
-//    way unless it gets there before the battle starts; otherwise it waits where it is. (Else its
-//    stream of late fleets would keep the defender pinned, and it could never strike back.)
+//    way unless it gets there before the battle starts. (Else its stream of late fleets would keep
+//    the defender pinned, and it could never strike back.) A fleet with no orders of its own (none
+//    given, or it has reached its destination) goes for the nearest target it CAN reach in time
+//    instead, and only waits if there is none (owner, 18 Nov 2026: "it should redirect unless it is
+//    still completing its order to go to a specific planet"); a fleet heading for its destination waits.
 //  - Fleets already on their way when a siege starts there turn back if they'd arrive after its
 //    battle starts (turnBackLate), and wait at the world they came from.
 //  - After a battle the world's holder moves first (dispatchAll's `first`): a successful defender
@@ -702,8 +705,13 @@ const underThreat = (world, P, who) => allied(world, P.owner, who) && pinned(wor
  * Where a fleet of `who` at world `from` goes next: { hop, target } or null (nothing to do).
  * goal: a world to head for (any world), or null to seek the nearest target. Hyperlanes only.
  */
-export function nextHop(world, from, who, goal = null) {
+export function nextHop(world, from, who, goal = null, ships = null) {
   const planets = world.planets, adj = lanesOf(world), n = planets.length;
+  // Seeking with ships known (owner, 18 Nov 2026): skip any target with a siege whose battle starts
+  // before these ships could get there, and go for the nearest one they can reach in time instead.
+  // (A fleet heading for its own goal doesn't redirect: it waits, see lateForSiege.)
+  const ls = goal === null && ships && countShips(ships) ? laneSpeed(travelSpeed(fleetSpeed(world, ships))) : 0;
+  const tooLate = (id, dist) => { if (!ls) return false; const sg = siegeAt(world, id)[0]; return !!sg && world.clock + Math.round((dist / ls) * HOUR_MS) > sg.startsAt; };
   const d = (a, b) => Math.hypot(planets[a].x - planets[b].x, planets[a].y - planets[b].y);
   const best = new Float64Array(n).fill(Infinity), prev = new Int32Array(n).fill(-1), done = new Uint8Array(n);
   best[from] = 0;
@@ -714,6 +722,8 @@ export function nextHop(world, from, who, goal = null) {
     for (let i = 0; i < n; i++) if (!done[i] && best[i] < Infinity && (u < 0 || best[i] < best[u] || (best[i] === best[u] && i < u))) u = i;
     if (u < 0) break;
     done[u] = 1;
+    // A world whose battle we'd miss is neither a target nor a way through (seeking only).
+    if (u !== from && tooLate(u, best[u])) continue;
     if (u !== from && isTarget(u)) { found = u; break; }
     // Seeking only passes through friendly worlds (a hostile one is a target itself). A fleet with a
     // goal goes straight through, fighting whatever is on the way.
@@ -799,8 +809,9 @@ function lateForSiege(world, P, hop, ships) {
  * battle has started), 'pinned' (an enemy fleet is heading here). Doesn't change anything.
  */
 export function holdReason(world, P, who, ships, goal = null) {
-  const next = nextHop(world, P.id, who, goal === P.id ? null : goal);
-  if (!next) return 'nothing';
+  const g = goal === P.id ? null : goal;
+  const next = nextHop(world, P.id, who, g, ships);
+  if (!next) return g === null && nextHop(world, P.id, who, null) ? 'siege' : 'nothing';
   if (lateForSiege(world, P, next.hop, ships)) return 'siege';
   if (pinned(world, P, who)) return 'pinned';
   return null;
@@ -816,7 +827,7 @@ function mayLeave(world, who, P, hop, ships) {
 /** A fleet reached a friendly world: carry on (deciding again where to), or stay if it's pinned. */
 function moveOn(world, f, P) {
   if (f.goal === P.id) f.goal = null;
-  const next = countShips(f.ships) ? nextHop(world, P.id, f.owner, f.goal ?? null) : null;
+  const next = countShips(f.ships) ? nextHop(world, P.id, f.owner, f.goal ?? null, f.ships) : null;
   if (next && mayLeave(world, f.owner, P, next.hop, f.ships)) { setOff(world, f, f.owner, P, next.hop, f.ships, f.goal ?? null); return; }
   // Stays (pinned, waiting for a siege, or nothing to do): its ships wait here with their orders.
   dropFleet(world, f);
@@ -849,7 +860,7 @@ export function dispatchAll(world, first = null) {
     for (const grp of groups.values()) {
       const ships = {};
       for (const g of grp.stacks) ships[g.design] = (ships[g.design] || 0) + g.n;
-      const next = nextHop(world, P.id, grp.owner, grp.goal);
+      const next = nextHop(world, P.id, grp.owner, grp.goal, ships);
       if (!next || !mayLeave(world, grp.owner, P, next.hop, ships)) continue;
       for (const g of grp.stacks) g.n = 0;
       changed = true;

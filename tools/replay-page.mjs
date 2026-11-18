@@ -3,6 +3,7 @@
 // after combat changes: the file opens in any browser, no server needed.
 //
 // Usage: node tools/replay-page.mjs [perSide=600] [seed=1] [out=dist/replay.html] [title]
+//        node tools/replay-page.mjs --file battle.bin [out] [title]   (a packed replay, e.g. from tools/sim-galaxy.mjs)
 // Run `npm run build:viewer` first (it embeds dist/viewer.html).
 import { BATTLE_MAX_TIME } from '../src/world/rules.js';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -11,14 +12,19 @@ import { Battle } from '../src/sim/battle.js';
 import { makeScenario } from '../src/shared/designs.js';
 import { packReplay } from '../src/shared/replayFormat.js';
 
-const [perSide = 600, seed = 1, out = 'dist/replay.html', title = 'Test battle'] = process.argv.slice(2);
-const scen = makeScenario({ perSide: Number(perSide), seed: Number(seed) });
-const t0 = performance.now();
-const b = new Battle({ ...scen, seed: Number(seed), maxTime: BATTLE_MAX_TIME }); // same limit as real battles
-b.run();
-const ms = performance.now() - t0;
-const rep = b.toReplay();
-const bytes = packReplay(rep.meta, rep.cols);
+const fromFile = process.argv[2] === '--file';
+const [perSide = 600, seed = 1, out = 'dist/replay.html', title = 'Test battle'] = fromFile ? [0, 0, ...process.argv.slice(4)] : process.argv.slice(2);
+let bytes, ms = 0, b;
+if (fromFile) bytes = readFileSync(process.argv[3]);
+else {
+  const scen = makeScenario({ perSide: Number(perSide), seed: Number(seed) });
+  const t0 = performance.now();
+  b = new Battle({ ...scen, seed: Number(seed), maxTime: BATTLE_MAX_TIME }); // same limit as real battles
+  b.run();
+  ms = performance.now() - t0;
+  const rep = b.toReplay();
+  bytes = packReplay(rep.meta, rep.cols);
+}
 const gz = gzipSync(bytes, { level: 9 });
 const viewer = readFileSync('dist/viewer.html', 'utf8');
 
@@ -39,4 +45,4 @@ addEventListener('message', async (e) => {
 frame.src = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
 </script></body></html>`;
 writeFileSync(out, page);
-console.log(`${out}: ${perSide} vs ${perSide}, ${(b.tick / 10).toFixed(0)} s (${b.endReason}), ${(ms / 1000).toFixed(1)} s compute, page ${(page.length / 1e6).toFixed(1)} MB`);
+console.log(fromFile ? `${out}: page ${(page.length / 1e6).toFixed(1)} MB` : `${out}: ${perSide} vs ${perSide}, ${(b.tick / 10).toFixed(0)} s (${b.endReason}), ${(ms / 1000).toFixed(1)} s compute, page ${(page.length / 1e6).toFixed(1)} MB`);

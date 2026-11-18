@@ -1112,6 +1112,29 @@ const lanePlanHours = (W, a, b, d) => { const A = W.planets[a], B = W.planets[b]
     runWorld(t, late.next, null);
     ok(!t.fleets.includes(late) && countShipsT(shipsAt(t.planets[a], 0)) === 4 && holdReason(t, t.planets[a], 0, { [sh]: 4 }) === 'siege', 'back home it waits for the battle to end');
   }
+  // A fleet with no orders skips a battle it would be late for and goes for the next nearest
+  // target instead; one heading for its own destination waits (owner, 18 Nov 2026).
+  {
+    const t = createAutoWorld({ players: [{ name: 'A' }, { name: 'B' }], seed: 26 });
+    const lm = lanes(t);
+    const a = t.planets.find((P) => P.home < 0 && (lm.get(P.id)?.size || 0) >= 2).id;
+    const [b, c] = [...lm.get(a)].map((id) => ({ id, d: Math.hypot(t.planets[id].x - t.planets[a].x, t.planets[id].y - t.planets[a].y) })).sort((x, y) => x.d - y.d).map((x) => x.id);
+    for (const Q of t.planets) { Q.owner = Q.id === b || Q.id === c ? 1 : 0; Q.garrison = []; }
+    const sh = registerDesign(t, 0, { ...makeDesign('destroyer', 3), name: 'Ship' });
+    t.sieges.push({ id: 990401, planet: b, leader: 0, fleets: [], startsAt: t.clock + 60000, against: 1 });
+    ok(nextHop(t, a, 0).hop === b, 'redirect test: the nearest target is the besieged world');
+    t.planets[a].garrison.push({ owner: 0, design: sh, n: 5 });
+    dispatchAll(t);
+    ok(t.fleets.some((f) => f.owner === 0 && f.from === a && f.to === c) && !countShipsT(shipsAt(t.planets[a], 0)), 'with no orders it skips the battle it would be late for and goes for the next nearest');
+    t.fleets = [];
+    t.planets[a].garrison.push({ owner: 0, design: sh, n: 5, goal: b });
+    dispatchAll(t);
+    ok(!t.fleets.length && countShipsT(shipsAt(t.planets[a], 0)) === 5 && holdReason(t, t.planets[a], 0, { [sh]: 5 }, b) === 'siege', 'a fleet heading for its own destination waits for the battle there');
+    t.planets[c].owner = 0;
+    t.planets[a].garrison = [{ owner: 0, design: sh, n: 5 }];
+    dispatchAll(t);
+    ok(!t.fleets.length && holdReason(t, t.planets[a], 0, { [sh]: 5 }) === 'siege', 'with nothing else in reach it waits too');
+  }
   // A whole game with stand-in battles: hyperlanes only, never a swap, the front moves both ways.
   {
     const g = createAutoWorld({ players: [{ name: 'A' }, { name: 'B' }, { name: 'C' }, { name: 'D' }], seed: 5 });

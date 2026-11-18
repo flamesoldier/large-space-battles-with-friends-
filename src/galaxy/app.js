@@ -160,6 +160,26 @@ function lookOf(P) {
 }
 function makeStars() { sprites.reset(); looks.clear(); skyKey = ''; }
 
+// 2.0: each of your worlds' next fleet (the ships its shipyards build next): when, how many, and the
+// first world it would head for right now. Worked out a few times a second, not every frame.
+function nextFleetOf(P) {
+  const yards = P.yards.filter((y) => y.sellAt == null);
+  if (!yards.length || P.owner === null) return null;
+  const at = Math.min(...yards.map((y) => y.next));
+  const ships = {};
+  for (const y of yards) ships[y.design] = (ships[y.design] || 0) + SHIPS_PER_BUILD;
+  const goal = P.dest && P.dest.to !== P.id ? P.dest.to : null;
+  const next = nextHop(world, P.id, P.owner, goal, ships);
+  return { from: P.id, at, n: yards.length * SHIPS_PER_BUILD, hop: next?.hop ?? null, target: next?.target ?? null, goal };
+}
+let nfCache = { t: -1, list: [] };
+function nextFleets() {
+  const now = performance.now();
+  if (now - nfCache.t < 300) return nfCache.list;
+  nfCache = { t: now, list: world.planets.filter((P) => P.owner === ui.me).map(nextFleetOf).filter((x) => x && x.hop !== null) };
+  return nfCache.list;
+}
+
 // Where to draw a fleet: on its route, or (waiting in a siege) in a ring round the world.
 function fleetWorldPos(f) {
   const pos = fleetPosition(world.planets, f, world.clock);
@@ -206,8 +226,26 @@ function draw(now) {
     if (len <= ra + rb + 2) continue;
     const ux = (x2 - x1) / len, uy = (y2 - y1) / len;
     x1 += ux * ra; y1 += uy * ra; x2 -= ux * rb; y2 -= uy * rb;
-    g.strokeStyle = 'rgba(134,232,255,0.10)'; g.lineWidth = 5; line(x1, y1, x2, y2);
-    g.strokeStyle = 'rgba(134,232,255,0.42)'; g.lineWidth = 1.3; line(x1, y1, x2, y2);
+    // 2.0 front lines: a lane between two players at war glows red.
+    const front = world.auto && A.owner !== null && B.owner !== null && hostile(world, A.owner, B.owner);
+    g.strokeStyle = front ? 'rgba(255,90,70,0.22)' : 'rgba(134,232,255,0.10)'; g.lineWidth = front ? 8 : 5; line(x1, y1, x2, y2);
+    g.strokeStyle = front ? 'rgba(255,120,95,0.85)' : 'rgba(134,232,255,0.42)'; g.lineWidth = front ? 1.8 : 1.3; line(x1, y1, x2, y2);
+  }
+
+  // 2.0: where each of your worlds' next fleet will go (an arrow part-way along its first lane).
+  if (world.auto && !me().eliminated) {
+    for (const nf of nextFleets()) {
+      const A = world.planets[nf.from], B = world.planets[nf.hop];
+      const [x0, y0] = toScreen(A.x, A.y), [x1, y1] = toScreen(B.x, B.y);
+      const len = Math.hypot(x1 - x0, y1 - y0), ra = outerR(Math.max(3.5, planetR(A) * z)) + 4;
+      if (len < ra * 2 + 10) continue;
+      const ux = (x1 - x0) / len, uy = (y1 - y0) / len, sx = x0 + ux * ra, sy = y0 + uy * ra;
+      const ex = x0 + ux * Math.min(len * 0.45, ra + 46), ey = y0 + uy * Math.min(len * 0.45, ra + 46);
+      g.strokeStyle = g.fillStyle = hexA(colorOf(ui.me), 0.95); g.lineWidth = 2.2;
+      line(sx, sy, ex, ey);
+      const a = Math.atan2(uy, ux);
+      g.beginPath(); g.moveTo(ex + ux * 5, ey + uy * 5); g.lineTo(ex - Math.cos(a - 0.5) * 8, ey - Math.sin(a - 0.5) * 8); g.lineTo(ex - Math.cos(a + 0.5) * 8, ey - Math.sin(a + 0.5) * 8); g.closePath(); g.fill();
+    }
   }
 
   // Fleet routes (remaining part), then the move preview.
@@ -593,6 +631,12 @@ function planetPanel(P) {
       <dt>Hyperlanes</dt><dd>${lanes}</dd>
       <dt>Shipyards</dt><dd>${P.yards.length}${P.yards.length ? ` (${fmt(yardListValue(P))} cr)` : ''}</dd>
       ${defenseCount(P) ? `<dt>Defences</dt><dd>${fmt(defenseCount(P))}</dd>` : ''}
+      ${(() => { // 2.0: when the next fleet leaves and where it would go now
+        const nf = world.auto && friendly ? nextFleetOf(P) : null;
+        if (!nf) return '';
+        const where = nf.hop === null ? 'nowhere to go yet' : `→ ${esc(world.planets[nf.hop].name)}${nf.target !== nf.hop ? ` (for ${esc(world.planets[nf.target].name)})` : ''}`;
+        return `<dt>Next fleet</dt><dd>${fmt(nf.n)} ships in <span data-arrive="${nf.at}"></span> ${where}</dd>`;
+      })()}
     </dl>`;
 
   // Siege: everyone at the world, and whether they'll fight when the battle starts (free-for-all:

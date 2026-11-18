@@ -81,6 +81,13 @@ live", then he replaces the game on `/admin`.
 - **20×**: slower (yards 34/0/23/26 at day 6, bounty ≈ income), but one bot knocked out on day 3 and the front froze (15/0/8/8 from day 4); biggest battle still 4,000 by day 6.
 - 30× / 50× (unfair first-version bots): one bot took the galaxy by day 4.
 - **Ships pile up at the front**: battles are big because whole armies wait at front worlds, pinned or waiting for a 3-hour siege to end (Bot1 at day 6 in one run: ~3,700 pinned + ~4,900 waiting of ~9,700 ships), not because they're idle. Raised with the owner with the options.
+- **Owner's verdict (18 Nov 2026): "a success".** Huge battles are what he wants ("we will find other ways later so Railway can handle it"); the runaway economy is fine (1.0's game lasted 8 days); no economy change. He noted the bots never build battleships, titans or defences, as real players would.
+
+**Redirect (owner, 18 Nov 2026):** a fleet with no orders of its own (none given, or it has reached its destination) goes for the nearest target it can reach **before that target's battle starts**; it only waits if every target is like that. A fleet still on its way to a destination waits as before. `nextHop(world, from, who, goal, ships)`: with `goal` null and `ships` given, any world with a siege whose `startsAt` comes before these ships could arrive (path length / `laneSpeed`) is neither a target nor a way through (the first version only skipped it as a target, so ships whose route ran through a besieged friendly world waited; caught on the page). `holdReason` says 'siege' when only late targets are left. Test in `tools/test-world.mjs`.
+
+**(5) Map and panels done 18 Nov 2026 (not live):** lanes between players at war glow red (front lines); every world of yours with shipyards draws an arrow part-way along the lane its next fleet will take (`nextFleetOf()` / `nextFleets()` in `galaxy/app.js`, refreshed ~3× a second); the world panel's **Next fleet** row ("10 ships in 1 h 30 min → Hesugon Prime (for Oridis)"); map key updated (Hyperlane / Front line / Where your next fleet goes); patch notes entry `2026-11-v2` written for players (date to be set when it goes live). Checked in a headless browser with a mid-game galaxy (bots, stand-in battles): no page errors.
+
+**(6) Preview sent 18 Nov 2026:** `dist/galaxy.html` (offline hot-seat game with every 2.0 rule) and two replay pages from the 10× test game (`node tools/replay-page.mjs --file <packed replay> <out> <title>`, new option): a typical 179-ship battle and the biggest, 3,796 ships (15 MB page). Waiting for "make it live"; then push `v2-dev` to `main` and he replaces the game on `/admin`.
 
 ## The game
 
