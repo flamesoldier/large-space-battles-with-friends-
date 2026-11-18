@@ -29,8 +29,9 @@ export const BATTLE_MAX_TIME = 900;
 
 // When a fleet reaches a world it means to attack (or defenders bar its way), the battle waits
 // this long so reinforcements from both sides can arrive and join in. Game minutes.
-// 2.0: 90 (was 30), one build cycle, so each side gets one wave of reinforcements.
-export const BATTLE_HOLD_MIN = 90;
+// 2.0: 180 (owner, 18 Nov 2026; 1.0: 30), two build cycles, so each side gets two waves of
+// reinforcements and fleets a few hyperlane hops away still make it.
+export const BATTLE_HOLD_MIN = 180;
 
 export const HOUR_MS = 3600 * 1000;
 

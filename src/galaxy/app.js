@@ -762,7 +762,7 @@ function fleetPanel(f) {
   const N = world.planets[f.legs[f.leg].to];
   const canStop = !world.auto && f.owner === ui.me && !f.retreat && f.leg < f.legs.length - 1;
   const G = f.goal != null ? world.planets[f.goal] : null;
-  return `<h1><span class="swatch" style="background:${colorOf(f.owner)}"></span>Fleet${f.retreat ? ' <span class="tag">retreating</span>' : ''}</h1>
+  return `<h1><span class="swatch" style="background:${colorOf(f.owner)}"></span>Fleet${f.retreat ? ' <span class="tag">retreating</span>' : ''}${f.turned != null ? ' <span class="tag">turned back</span>' : ''}</h1>
     <div class="sub">${who(f.owner)}</div>
     <dl class="kv">
       <dt>From</dt><dd>${esc(F.name)}</dd>

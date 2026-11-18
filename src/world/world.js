@@ -676,6 +676,8 @@ export function upgradeWorld(world) {
 //  - No arriving late to a siege (owner): a fleet doesn't set off for a world with a siege under
 //    way unless it gets there before the battle starts; otherwise it waits where it is. (Else its
 //    stream of late fleets would keep the defender pinned, and it could never strike back.)
+//  - Fleets already on their way when a siege starts there turn back if they'd arrive after its
+//    battle starts (turnBackLate), and wait at the world they came from.
 //  - After a battle the world's holder moves first (dispatchAll's `first`): a successful defender
 //    strikes back before the attacker's waiting fleets go again, and the tie-break never turns
 //    those first movers back.
@@ -742,7 +744,7 @@ function lanePlan(world, from, to, ships) {
  */
 function settleSwap(world, who, from, to, hours) {
   const rivals = world.fleets.filter((f) => f.wait == null && f.depart === world.clock && f.legs.length === 1 && f.leg === 0
-    && f.from === to && f.legs[0].to === from && f.legs[0].lane && hostile(world, f.owner, who) && !f.retreat);
+    && f.from === to && f.legs[0].to === from && f.legs[0].lane && hostile(world, f.owner, who) && !f.retreat && f.turned == null);
   if (!rivals.length) return false;
   if (rivals.some((f) => f.first === world.clock)) return false; // they hold the world where a battle just ended: they go first
   const mine = world.clock + Math.round(hours * HOUR_MS);
@@ -760,8 +762,28 @@ function setOff(world, f, who, P, hop, ships, goal) {
   const plan = lanePlan(world, P.id, hop, ships);
   if (!f) { f = launch(world, who, P.id, hop, ships, plan, false); f.goal = goal; return f; }
   const at = world.clock + Math.round(plan.hours * HOUR_MS);
-  Object.assign(f, { from: P.id, to: hop, legs: [{ ...plan.legs[0], at }], leg: 0, next: at, wait: null, speed: plan.speed, retreat: false, depart: world.clock, arrive: at, goal });
+  Object.assign(f, { from: P.id, to: hop, legs: [{ ...plan.legs[0], at }], leg: 0, next: at, wait: null, speed: plan.speed, retreat: false, depart: world.clock, arrive: at, goal, turned: null });
   return f;
+}
+
+/**
+ * A siege has just started at s.planet (owner, 18 Nov 2026): every fleet already on its way there
+ * that would only arrive after the battle starts turns back to the world it came from, then waits
+ * there like any other fleet that would be late. Retreating fleets carry on. It turns round where it
+ * is: the way back takes as long as it has flown so far.
+ */
+function turnBackLate(world, s) {
+  const X = world.planets[s.planet];
+  for (const f of world.fleets) {
+    if (f.wait != null || f.retreat || f.legs.length !== f.leg + 1) continue;
+    const L = f.legs[f.leg];
+    if (L.to !== X.id || f.next <= s.startsAt) continue;
+    const flown = Math.max(0, world.clock - (L.at - L.hours * HOUR_MS));
+    const at = world.clock + Math.round(flown);
+    // A leg from X back to where it came from, timed so the fleet is exactly where it is now.
+    Object.assign(f, { from: X.id, to: L.from, legs: [{ from: X.id, to: L.from, lane: L.lane, hours: L.hours, at }], leg: 0, next: at, arrive: at, depart: world.clock, turned: X.id });
+    log(world, 'fleet', `${countShips(f.ships)} of ${playerName(world, f.owner)}'s ships turned back to ${world.planets[L.from].name}: they would have reached ${X.name} after its battle started.`, { planet: L.from, players: [f.owner] });
+  }
 }
 
 /** Would ships leaving now reach `hop` only after a battle there has started? (Then they wait.) */
@@ -1081,6 +1103,7 @@ function fleetArrives(world, f, plan) {
   const s = { id: newId(world), planet: P.id, leader: f.owner, fleets: [f.id], startsAt: world.clock + HOLD_MS, against: P.owner };
   world.sieges.push(s);
   f.wait = s.id; f.next = Infinity;
+  if (world.auto) turnBackLate(world, s);
   const why = f.leg < f.legs.length - 1 ? ` on its way to ${world.planets[f.to].name}` : '';
   log(world, 'siege', `${me}'s fleet (${countShips(f.ships)} ships) reached the ${held}world ${P.name}${owner}${why}. The battle starts in ${startsIn}: everyone can still send ships.`,
     { planet: P.id, players: [f.owner, P.owner].filter((x) => x !== null), siege: { by: f.owner, against: P.owner, startsAt: s.startsAt } });

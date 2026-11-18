@@ -1087,6 +1087,31 @@ const lanePlanHours = (W, a, b, d) => { const A = W.planets[a], B = W.planets[b]
     const counter = t.fleets.find((x) => x.owner === 1 && x.from === b && x.to === a);
     ok(counter && countShipsT(shipsAt(t.planets[a], 0)) === 3 && !t.fleets.some((x) => x.owner === 0 && x.from === a && !x.retreat), 'the successful defender strikes back first; A\'s waiting ships stay to meet it');
   }
+  // Fleets already on their way turn back if they'd get there after the battle starts (owner).
+  {
+    const t = createAutoWorld({ players: [{ name: 'A' }, { name: 'B' }], seed: 25 });
+    const [a, b] = t.lanes.find(([x, y]) => t.planets[x].home < 0 && t.planets[y].home < 0);
+    for (const Q of t.planets) { Q.owner = Q.id === b ? 1 : 0; Q.garrison = []; }
+    const sh = registerDesign(t, 0, { ...makeDesign('destroyer', 3), name: 'Ship' });
+    const hop = lanePlanHours(t, a, b, sh);
+    const mk = (id, leftAgo, n) => { const at = t.clock - Math.round(leftAgo * HOUR_MS) + Math.round(hop * HOUR_MS); return { id, owner: 0, ships: { [sh]: n }, from: a, to: b, legs: [{ from: a, to: b, lane: true, hours: hop, at }], leg: 0, next: at, wait: null, speed: 1, retreat: false, depart: at - Math.round(hop * HOUR_MS), arrive: at, goal: null }; };
+    const first = mk(990301, hop, 2); // arriving now: starts the siege
+    const soon = mk(990302, hop - 1, 3); // an hour out: in time for a 3-hour hold
+    const late = mk(990303, 0.25 * hop, 4); // just left: would be far too late
+    t.fleets.push(first, soon, late);
+    ok(HOLD_MS === 3 * HOUR_MS, 'sieges hold for 3 hours');
+    const before = fleetPosition(t.planets, late, t.clock);
+    runWorld(t, t.clock, null);
+    const s = t.sieges[0];
+    ok(s && s.planet === b && first.wait === s.id, 'the first fleet starts a siege');
+    ok(soon.to === b && soon.turned == null, 'a fleet that gets there in time carries on');
+    ok(late.to === a && late.turned === b, 'one that would arrive after the battle starts turns back');
+    const now = fleetPosition(t.planets, late, t.clock);
+    ok(Math.hypot(now.x - before.x, now.y - before.y) < 1e-3, 'it turns round where it is');
+    ok(Math.abs(late.next - t.clock - 0.25 * hop * HOUR_MS) < 2, 'the way back takes as long as it had flown');
+    runWorld(t, late.next, null);
+    ok(!t.fleets.includes(late) && countShipsT(shipsAt(t.planets[a], 0)) === 4 && holdReason(t, t.planets[a], 0, { [sh]: 4 }) === 'siege', 'back home it waits for the battle to end');
+  }
   // A whole game with stand-in battles: hyperlanes only, never a swap, the front moves both ways.
   {
     const g = createAutoWorld({ players: [{ name: 'A' }, { name: 'B' }, { name: 'C' }, { name: 'D' }], seed: 5 });
