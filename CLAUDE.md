@@ -1,7 +1,7 @@
 # Large Space Battles with Friends: project context
 
 Read this first, then `docs/ARCHITECTURE.md` for how the battle engine works and
-`docs/SERVER.md` for the online game. **Current phase: building version 2.0** (see "Version 2.0"
+`docs/SERVER.md` for the online game. **Current phase: version 2.0 is live (18 Nov 2026); bug fixing and balance** (see "Version 2.0"
 just below; where it disagrees with anything later in this file, 2.0 wins). "Working on the live
 game" at the end still applies.
 
@@ -87,7 +87,7 @@ live", then he replaces the game on `/admin`.
 
 **(5) Map and panels done 18 Nov 2026 (not live):** lanes between players at war glow red (front lines); every world of yours with shipyards draws an arrow part-way along the lane its next fleet will take (`nextFleetOf()` / `nextFleets()` in `galaxy/app.js`, refreshed ~3× a second); the world panel's **Next fleet** row ("10 ships in 1 h 30 min → Hesugon Prime (for Oridis)"); map key updated (Hyperlane / Front line / Where your next fleet goes); patch notes entry `2026-11-v2` written for players (date to be set when it goes live). Checked in a headless browser with a mid-game galaxy (bots, stand-in battles): no page errors.
 
-**(6) Preview sent 18 Nov 2026:** `dist/galaxy.html` (offline hot-seat game with every 2.0 rule) and two replay pages from the 10× test game (`node tools/replay-page.mjs --file <packed replay> <out> <title>`, new option): a typical 179-ship battle and the biggest, 3,796 ships (15 MB page). Waiting for "make it live"; then push `v2-dev` to `main` and he replaces the game on `/admin`.
+**(6) Preview sent 18 Nov 2026:** `dist/galaxy.html` (offline hot-seat game with every 2.0 rule) and two replay pages from the 10× test game (`node tools/replay-page.mjs --file <packed replay> <out> <title>`, new option): a typical 179-ship battle and the biggest, 3,796 ships (15 MB page). **Live 18 Nov 2026** (owner: "make it live"): `v2-dev` pushed to `main`; he starts the fresh game on `/admin`. Patch notes entry `2026-11-v2` dated 18 Nov 2026.
 
 ## The game
 

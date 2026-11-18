@@ -8,7 +8,7 @@
 
 export const PATCH_NOTES = [
   {
-    id: '2026-11-v2', date: 'Nov 2026', title: 'Version 2.0: the galaxy plays itself',
+    id: '2026-11-v2', date: '18 Nov 2026', title: 'Version 2.0: the galaxy plays itself',
     items: [
       'Fleets now move by themselves, so you no longer need to be online to defend or attack. What matters is your ship designs, where you build shipyards, which way you push and your diplomacy.',
       'Every 90 minutes all the shipyards on a world build at the same moment, 5 ships each, and everything built there leaves together as one fleet. Each world has its own build clock: the world panel shows when its next fleet leaves and where it will go, and a small arrow on the map points the way.',
