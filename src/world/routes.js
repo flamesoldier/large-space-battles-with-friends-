@@ -4,10 +4,20 @@
 // length / (speed × 10), and every pair of worlds is also joined by a normal-space edge costing
 // length / speed. Fleets don't stop at the worlds they pass through.
 
-import { HYPERLANE_SPEEDUP, TRAVEL_SCALE, HOUR_MS } from './rules.js';
+import { HYPERLANE_SPEEDUP, TRAVEL_SCALE, HOUR_MS, LANE_REF_SPEED, LANE_SPEED_EXP } from './rules.js';
 
 /** Galaxy units per hour for a fleet whose slowest ship has this battle top speed. */
 export const travelSpeed = (maxSpeed) => maxSpeed * TRAVEL_SCALE;
+
+/**
+ * Galaxy units per hour along a hyperlane for a fleet with normal-space `speed` (units per hour,
+ * from travelSpeed). 2.0: speed counts for less on lanes (∝ speed^LANE_SPEED_EXP), equal to
+ * HYPERLANE_SPEEDUP × speed at LANE_REF_SPEED.
+ */
+export function laneSpeed(speed) {
+  const ref = LANE_REF_SPEED * TRAVEL_SCALE;
+  return HYPERLANE_SPEEDUP * ref * Math.pow(speed / ref, LANE_SPEED_EXP);
+}
 
 /** Lane adjacency for a planet list: Map(id → Set of ids). */
 export function laneMap(lanes) {
@@ -36,6 +46,7 @@ export function planRoute(planets, lanes, from, to, speed, useLanes = true, bloc
     const h = d(from, to) / speed;
     return { hours: h, legs: [{ from, to, lane: false, hours: h }] };
   }
+  const ls = laneSpeed(speed);
   const n = planets.length, best = new Float64Array(n).fill(Infinity), prev = new Int32Array(n).fill(-1), viaLane = new Uint8Array(n), done = new Uint8Array(n);
   best[from] = 0;
   for (;;) {
@@ -48,7 +59,7 @@ export function planRoute(planets, lanes, from, to, speed, useLanes = true, bloc
     for (let v = 0; v < n; v++) {
       if (done[v] || v === u) continue;
       const lane = lanesU ? lanesU.has(v) : false;
-      const c = best[u] + d(u, v) / (lane ? speed * HYPERLANE_SPEEDUP : speed);
+      const c = best[u] + d(u, v) / (lane ? ls : speed);
       // Ties go to the lane (same time, and the route reads better on the map).
       if (c < best[v] - 1e-9 || (lane && Math.abs(c - best[v]) <= 1e-9)) { best[v] = c; prev[v] = u; viaLane[v] = lane ? 1 : 0; }
     }
@@ -56,7 +67,7 @@ export function planRoute(planets, lanes, from, to, speed, useLanes = true, bloc
   const legs = [];
   for (let v = to; v !== from; v = prev[v]) {
     const u = prev[v];
-    legs.push({ from: u, to: v, lane: !!viaLane[v], hours: d(u, v) / (viaLane[v] ? speed * HYPERLANE_SPEEDUP : speed) });
+    legs.push({ from: u, to: v, lane: !!viaLane[v], hours: d(u, v) / (viaLane[v] ? ls : speed) });
   }
   legs.reverse();
   return { hours: best[to], legs };

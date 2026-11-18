@@ -13,7 +13,7 @@
 
 import { BT } from '../shared/blocks.js';
 import { decodeDesign, encodeDesign, analyzeDesign, designCost } from '../shared/shipStats.js';
-import { SHIPYARD_INTERVAL_MIN, SHIPYARD_CROWDING_VALUE, SHIPYARD_SELL_REFUND, crowdingMult, defensePrice, DEFENSE_PRICE_SHARE, MAX_DEFENSE_ORDER, SELL_HOURS, DEFENSE_BUILD_HOURS } from '../shared/economy.js';
+import { SHIPYARD_INTERVAL_MIN, SHIPS_PER_BUILD, SHIPYARD_PRICE_MULT, SHIPYARD_CROWDING_VALUE, SHIPYARD_SELL_REFUND, crowdingMult, defensePrice, DEFENSE_PRICE_SHARE, MAX_DEFENSE_ORDER, SELL_HOURS, DEFENSE_BUILD_HOURS } from '../shared/economy.js';
 import { Battle, DT } from '../sim/battle.js';
 import { packReplay } from '../shared/replayFormat.js';
 import { mulberry32 } from '../shared/rng.js';
@@ -623,7 +623,7 @@ function planetPanel(P) {
     const open = ui.yardsOpen !== false;
     html += `<h2><button class="fold" data-act="fold-yards" aria-expanded="${open}">${open ? '▾' : '▸'} Shipyards (${P.yards.length})</button>${mine ? `<button class="small go" data-act="yard" ${busy || me().eliminated ? 'disabled' : ''}>Build</button>` : ''}</h2>`;
     if (open) {
-      if (!P.yards.length) html += `<p class="hint">None yet. A shipyard builds one ship of its design every ${SHIPYARD_INTERVAL_MIN} min, for free, forever, and the ships guard this world.</p>`;
+      if (!P.yards.length) html += `<p class="hint">None yet. A shipyard builds ${SHIPS_PER_BUILD} ships of its design every ${SHIPYARD_INTERVAL_MIN} min, for free, forever. All the shipyards on a world build at the same moment.</p>`;
       for (const y of P.yards) {
         const d = world.designs[y.design], selling = y.sellAt != null;
         const sellBtn = !mine ? ''
@@ -967,7 +967,7 @@ function openYardDialog(planetId, mode = yardMode) {
     ? `A defence takes <b>${DEFENSE_BUILD_HOURS} hours</b> to build (paid now) and costs <b>${Math.round(DEFENSE_PRICE_SHARE * 100)}%</b> of its blocks' price, paid once. It can't have thrusters, never moves or turns (its front, the right-hand side in the designer, always faces the enemy) and never leaves ${esc(P.name)}. Destroyed is gone for good, and all of them, finished or not, are lost if the world falls. You have <b>${fmt(me().credits)}</b> credits.`
     : P.yards.length
       ? `${P.name} already has <b>${P.yards.length}</b> shipyard${P.yards.length > 1 ? 's' : ''} worth ${fmt(existing)} cr, so a new one here costs <b>${pct}% more</b> than its list price (+100% for every ${fmt(SHIPYARD_CROWDING_VALUE)} cr of shipyards already on a world). Building on your other worlds avoids that. You have <b>${fmt(me().credits)}</b> credits.`
-      : `A shipyard costs 10× the ship it builds, and makes one every ${SHIPYARD_INTERVAL_MIN} min for free. Shipyards already on a world make the next one there dearer: +100% for every ${fmt(SHIPYARD_CROWDING_VALUE)} cr of them. You have <b>${fmt(me().credits)}</b> credits.`;
+      : `A shipyard costs ${SHIPYARD_PRICE_MULT}× the ship it builds, and makes ${SHIPS_PER_BUILD} every ${SHIPYARD_INTERVAL_MIN} min for free. Shipyards already on a world make the next one there dearer: +100% for every ${fmt(SHIPYARD_CROWDING_VALUE)} cr of them. You have <b>${fmt(me().credits)}</b> credits.`;
   // Your designs already in the game, then your designer library. Each can be starred (goes to
   // the top) or removed from this list; removed ones can be brought back. Defences are listed
   // only for defences, ships only for shipyards.
@@ -1059,7 +1059,7 @@ $('yard-design').addEventListener('click', () => { $('yard-dlg').close(); openDe
 async function build(planetId, design) {
   const r = await perform({ type: 'build', planet: planetId, design: encodeDesign(design) }, () => buildShipyard(world, ui.me, planetId, design));
   if (!r.ok) { toast(r.error, true); return false; }
-  toast(`Shipyard built at ${world.planets[planetId].name}: first ${world.designs[r.yard.design].name} in ${SHIPYARD_INTERVAL_MIN} min.`);
+  toast(`Shipyard built at ${world.planets[planetId].name}: first ${SHIPS_PER_BUILD} ${world.designs[r.yard.design].name} in ${fmtHours((r.yard.next - world.clock) / HOUR_MS)}.`);
   save(); renderPanel(true); renderEvents(); updateTop();
   return true;
 }

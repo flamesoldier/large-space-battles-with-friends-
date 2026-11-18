@@ -6,7 +6,7 @@ import { BT, BLOCKS, WEAPON, MULTIBLOCK, HULL_CLASSES, COOKOFF, SHIELD, FLAK_POP
 import { ARC_BINS, binAngle, binOpen } from '../shared/arcs.js';
 import { routeLength } from '../shared/bayRoute.js';
 import { analyzeDesign, encodeDesign, decodeDesign, designCost, STANCE_INFO, PLACE_INFO } from '../shared/shipStats.js';
-import { shipyardPrice, shipyardPriceAt, crowdingSurcharge, SHIPYARD_INTERVAL_MIN, SHIPYARD_PRICE_MULT, defensePrice, DEFENSE_PRICE_SHARE, DEFENSE_BUILD_HOURS } from '../shared/economy.js';
+import { shipyardPrice, shipyardPriceAt, crowdingSurcharge, SHIPYARD_INTERVAL_MIN, SHIPS_PER_BUILD, SHIPYARD_PRICE_MULT, defensePrice, DEFENSE_PRICE_SHARE, DEFENSE_BUILD_HOURS } from '../shared/economy.js';
 import { makeDesign, CLASSES } from '../shared/designs.js';
 import { FORTRESSES, loadFortress } from '../shared/fortresses.js';
 import { Battle, DT } from '../sim/battle.js';
@@ -207,7 +207,7 @@ function refresh(force = false) {
   $('stats-cost').textContent = `${fmt(a.cost)} cr`; // phone Stats button (hidden on computers)
   $('stats-btn').classList.toggle('bad', !a.ok);
   $('yard').textContent = fmt(shipyardPrice(design));
-  $('yard-hint').textContent = `A shipyard costs ${SHIPYARD_PRICE_MULT}× the ship and builds one free every ${SHIPYARD_INTERVAL_MIN} min until the world falls. It pays for itself in ${(SHIPYARD_PRICE_MULT * SHIPYARD_INTERVAL_MIN / 60).toFixed(0)} h.`;
+  $('yard-hint').textContent = `A shipyard costs ${SHIPYARD_PRICE_MULT}× the ship and builds ${SHIPS_PER_BUILD} free every ${SHIPYARD_INTERVAL_MIN} min until the world falls. It pays for itself in ${(SHIPYARD_PRICE_MULT / SHIPS_PER_BUILD * SHIPYARD_INTERVAL_MIN / 60).toFixed(0)} h.`;
   const cls = a.hullClass || HULL_CLASSES[HULL_CLASSES.length - 1];
   $('cls').textContent = a.hullClass ? cls.name : 'Too big';
   $('cls').style.color = a.hullClass ? '' : 'var(--bad)';
@@ -1124,8 +1124,8 @@ function syncEmbed() {
   b.title = !info.ok ? 'Fix the red issues first' : price > embed.credits ? `You have ${fmt(embed.credits)} credits` : `Build a shipyard for this design at ${embed.planet}`;
   $('yard').textContent = fmt(price);
   $('yard-hint').textContent = extra
-    ? `At ${embed.planet}: list price ${fmt(shipyardPrice(design))} cr + ${fmt(extra)} cr (+${Math.round((extra / shipyardPrice(design)) * 100)}%) for the ${fmt(embed.existing)} cr of shipyards already there. Builds one ship free every ${SHIPYARD_INTERVAL_MIN} min.`
-    : `At ${embed.planet}: builds one ship free every ${SHIPYARD_INTERVAL_MIN} min until the world falls. Each shipyard on a world makes the next one there a little dearer.`;
+    ? `At ${embed.planet}: list price ${fmt(shipyardPrice(design))} cr + ${fmt(extra)} cr (+${Math.round((extra / shipyardPrice(design)) * 100)}%) for the ${fmt(embed.existing)} cr of shipyards already there. Builds ${SHIPS_PER_BUILD} ships free every ${SHIPYARD_INTERVAL_MIN} min.`
+    : `At ${embed.planet}: builds ${SHIPS_PER_BUILD} ships free every ${SHIPYARD_INTERVAL_MIN} min until the world falls. Each shipyard on a world makes the next one there a little dearer.`;
 }
 if (window.parent !== window) {
   addEventListener('message', (e) => {

@@ -3,7 +3,7 @@
 // battles resolved by the sim.
 import assert from 'node:assert/strict';
 import { generateGalaxy } from '../src/world/galaxyGen.js';
-import { planRoute, fleetPosition, laneMap } from '../src/world/routes.js';
+import { planRoute, fleetPosition, laneMap, laneSpeed, travelSpeed } from '../src/world/routes.js';
 import {
   createWorld, advanceTo, runWorld, buildShipyard, sellShipyard, quoteShipyard, sendFleet, previewFleet,
   shipsAt, incomeOf, allied, YARD_MS, HOLD_MS, designOf, upgradeWorld,
@@ -20,7 +20,7 @@ import { makeDesign } from '../src/shared/designs.js';
 import { makeTestScenario } from '../src/designer/testBattle.js';
 import { BT } from '../src/shared/blocks.js';
 import { designCost, encodeDesign, decodeDesign } from '../src/shared/shipStats.js';
-import { STARTING_CREDITS, HOME_INCOME, SHIPYARD_SELL_REFUND, shipyardPrice, defensePrice, SELL_HOURS, DEFENSE_BUILD_HOURS } from '../src/shared/economy.js';
+import { STARTING_CREDITS, HOME_INCOME, SHIPYARD_SELL_REFUND, SHIPS_PER_BUILD, BOUNTY_SHARE, shipyardPrice, defensePrice, SELL_HOURS, DEFENSE_BUILD_HOURS } from '../src/shared/economy.js';
 import { HOUR_MS, HYPERLANE_SPEEDUP, MAX_PLAYERS, PLANET_SPACING } from '../src/world/rules.js';
 
 let checks = 0;
@@ -58,7 +58,12 @@ for (let n = 2; n <= MAX_PLAYERS; n++)
   const d = Math.hypot(g.planets[a].x - g.planets[b].x, g.planets[a].y - g.planets[b].y);
   const lane = planRoute(g.planets, g.lanes, a, b, 5, true), space = planRoute(g.planets, g.lanes, a, b, 5, false);
   ok(Math.abs(space.hours - d / 5) < 1e-9, 'normal space at fleet speed');
-  ok(Math.abs(lane.hours - d / 5 / HYPERLANE_SPEEDUP) < 1e-9 && lane.legs[0].lane, 'hyperlane is 10× faster');
+  ok(Math.abs(lane.hours - d / laneSpeed(5)) < 1e-9 && lane.legs[0].lane, 'hyperlane at lane speed');
+  // 2.0: a typical destroyer is exactly 10× faster on a lane; twice the speed is only 40% faster there.
+  const ref = travelSpeed(7.7);
+  ok(Math.abs(laneSpeed(ref) / ref - HYPERLANE_SPEEDUP) < 1e-9, 'reference ship: lanes 10× faster');
+  ok(Math.abs(laneSpeed(2 * ref) / laneSpeed(ref) - 1.4) < 1e-9, 'twice as fast is 40% faster on a lane');
+  ok(Math.abs(travelSpeed(2 * 7.7) / ref - 2) < 1e-9, 'normal space still at full speed');
   // The world passes a prebuilt lane Map: it must route exactly like the plain list.
   const m = laneMap(g.lanes);
   let usedLane = 0;
@@ -135,14 +140,15 @@ const resolve = (scen) => {
   const broke = buildShipyard(w, 2, w.players[2].home, { ...makeDesign('titan', 2), name: 'Big' });
   ok(!broke.ok && /credits/.test(broke.error), 'can\'t buy what you can\'t afford');
 
-  // Production: one ship every 30 minutes, also across a long gap.
-  advanceTo(w, w.clock + YARD_MS * 10 + 1);
+  // Production (2.0): SHIPS_PER_BUILD ships every interval, also across a long gap.
+  advanceTo(w, w.clock + YARD_MS * 2 + 1);
   const did = r1.yard.design;
-  ok(shipsAt(P, 0)[did] === 10, `shipyard built 10 ships in 5 hours (${shipsAt(P, 0)[did]})`);
+  ok(shipsAt(P, 0)[did] === 2 * SHIPS_PER_BUILD, `shipyard built ${2 * SHIPS_PER_BUILD} ships in 2 intervals (${shipsAt(P, 0)[did]})`);
 
   // Selling takes SELL_HOURS: the yard stops building at once and pays SHIPYARD_SELL_REFUND at the end.
   const r2 = buildShipyard(w, 0, home, corv);
   ok(r2.ok, 'second yard');
+  ok(r2.yard.next === r1.yard.next, '2.0: a new shipyard joins its world\'s build clock');
   const s = sellShipyard(w, 0, home, r2.yard.id);
   ok(s.ok && P.yards.length === 2 && r2.yard.sellAt === w.clock + SELL_HOURS * HOUR_MS, 'a sale starts and the yard stays until it\'s done');
   ok(!sellShipyard(w, 0, home, r2.yard.id).ok, 'can\'t sell a yard twice');
@@ -363,7 +369,7 @@ const resolve = (scen) => {
   const before = shipsAt(w.planets[home], 0)[did] || 0, fleets0 = w.fleets.length;
   runWorld(w, yard.yard.next + 1, null);
   const rf = w.fleets.filter((f) => f.rally);
-  ok(rf.length === 1 && rf[0].ships[did] === 1 && rf[0].to === T.id && rf[0].from === home, 'the new ship leaves at once for the rally point');
+  ok(rf.length === 1 && rf[0].ships[did] === SHIPS_PER_BUILD && rf[0].to === T.id && rf[0].from === home, 'the new ship leaves at once for the rally point');
   ok((shipsAt(w.planets[home], 0)[did] || 0) === before, 'ships already at the world stay');
   ok(rf[0].legs.every((l) => l.to === T.id || allied(w, w.planets[l.to].owner, 0)), 'the route only passes friendly worlds');
   const atT = shipsAt(T, 0)[did] || 0;
@@ -392,7 +398,7 @@ const resolve = (scen) => {
   T.owner = 1;
   const stay = shipsAt(w.planets[home], 0)[did] || 0;
   advanceTo(w, yard.yard.next + 1);
-  ok(!w.planets[home].rally && (shipsAt(w.planets[home], 0)[did] || 0) === stay + 1, 'a rally point that fell to an enemy is cancelled and the ship stays');
+  ok(!w.planets[home].rally && (shipsAt(w.planets[home], 0)[did] || 0) === stay + SHIPS_PER_BUILD, 'a rally point that fell to an enemy is cancelled and the ship stays');
   ok(w.log.some((e) => /rally point at .* is cancelled/.test(e.text)), 'and that is logged');
   // An ally's world is fine.
   w.relations['0|1'] = 'ally';
@@ -914,15 +920,17 @@ const resolve = (scen) => {
     { id: 0, lost: 100000 }, { id: 1, lost: 50000 }, { id: 2, lost: 100000 }, { id: 3, lost: 100000 }, { id: null, lost: 0 },
   ];
   const b = payBounties(w, per);
-  ok(b[0] === 20000 && b[1] === 20000, `allies P1 and P2 split 40,000 evenly (${b[0]}, ${b[1]})`);
-  ok(b[2] === 50000 && b[3] === 50000, `P3 and P4 each get 20% of 250,000 (${b[2]}, ${b[3]})`);
+  // (2.0: BOUNTY_SHARE 10%, was 20%; the owner's example was at 20%.)
+  const B = (x) => Math.floor(x * BOUNTY_SHARE);
+  ok(b[0] === B(200000) / 2 && b[1] === B(200000) / 2, `allies P1 and P2 split ${B(200000)} evenly (${b[0]}, ${b[1]})`);
+  ok(b[2] === B(250000) && b[3] === B(250000), `P3 and P4 each get ${BOUNTY_SHARE * 100}% of 250,000 (${b[2]}, ${b[3]})`);
   ok(w.players.every((p, i) => p.credits === before[i] + b[i]), 'bounties are paid into credits');
   // Militia losses pay too; militia is never paid.
   const m = payBounties(w, [{ id: 2, lost: 0 }, { id: null, lost: 30000 }]);
-  ok(m[2] === 6000 && !(null in m), 'killing 30,000 cr of militia pays 6,000');
+  ok(m[2] === B(30000) && !(null in m), `killing 30,000 cr of militia pays ${B(30000)}`);
   // Defences razed with the world count as lost.
   const r = payBounties(w, [{ id: 2, lost: 0 }, { id: 3, lost: 1000 }], new Map([[3, 9000]]));
-  ok(r[2] === 2000, 'defences razed after the battle count towards the bounty');
+  ok(r[2] === B(10000), 'defences razed after the battle count towards the bounty');
   // A defence is worth its full block price.
   const dd = { ...makeDesign('frigate', 5), name: 'Wall' };
   for (let i = 0; i < dd.cells.length; i++) if (dd.cells[i] === BT.THRUSTER) dd.cells[i] = BT.ARMOR;

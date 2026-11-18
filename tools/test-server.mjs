@@ -12,6 +12,7 @@ import { makeDesign } from '../src/shared/designs.js';
 import { encodeDesign } from '../src/shared/shipStats.js';
 import { unpackReplay } from '../src/shared/replayFormat.js';
 import { WorldCopy } from '../src/galaxy/worldDelta.js';
+import { HOME_INCOME } from '../src/shared/economy.js';
 
 if (!existsSync('dist/play.html')) { console.error('dist/play.html missing: run npm run build'); process.exit(1); }
 
@@ -140,7 +141,7 @@ try {
     const j = await boss.json('POST', '/api/admin/jump', { hours: 2 });
     ok(j.body.ok && Math.abs(j.body.game.clock - t1.gameNow - 2 * 3600e3) < 1000, 'jump ahead moves the clock');
     const yard2 = (await p2.state()).body.world;
-    ok(yard2.players[1].credits > t1.world.players[1].credits + 2500, 'and income arrives for the jump');
+    ok(yard2.players[1].credits > t1.world.players[1].credits + 2 * HOME_INCOME * 0.9, 'and income arrives for the jump');
     ok(!(await boss.json('POST', '/api/admin/jump', { hours: -1 })).body.ok && !(await boss.json('POST', '/api/admin/speed', { speed: 'fast' })).body.ok, 'bad speeds and jumps are refused');
     sp = await boss.json('POST', '/api/admin/speed', { speed: 600 });
     ok(sp.body.game.speed === 600 && (await p2.state()).body.speed === 600, 'players get the new speed');

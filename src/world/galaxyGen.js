@@ -7,7 +7,7 @@
 // player count always give the same map.
 
 import { mulberry32 } from '../shared/rng.js';
-import { HOME_INCOME, PLANET_INCOME } from '../shared/economy.js';
+import { HOME_INCOME, PLANET_INCOME, PLANET_INCOME_STEP } from '../shared/economy.js';
 import { PLANET_SPACING, HOME_CLEARANCE, DEFAULT_PLANETS_PER_PLAYER } from './rules.js';
 
 const SYL_A = ['Ar', 'Bel', 'Cor', 'Dra', 'El', 'Fen', 'Gal', 'Hes', 'Ix', 'Jor', 'Kal', 'Lyr', 'Mor', 'Nex', 'Or', 'Pyr', 'Quin', 'Rho', 'Sel', 'Tar', 'Ul', 'Vey', 'Wyr', 'Xan', 'Yor', 'Zeph'];
@@ -95,7 +95,7 @@ export function generateGalaxy({ players, seed = 1, planetsPerPlayer = DEFAULT_P
     if (pts.every((q) => Math.hypot(q.x - p.x, q.y - p.y) >= (q.home >= 0 ? HOME_CLEARANCE : PLANET_SPACING))) pts.push(p);
   }
 
-  const step = 50, [lo, hi] = PLANET_INCOME;
+  const step = PLANET_INCOME_STEP, [lo, hi] = PLANET_INCOME;
   const planets = pts.map((p, id) => ({
     id, name: name(), x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10,
     size: p.home >= 0 ? 1 : 0.55 + r() * 0.45,

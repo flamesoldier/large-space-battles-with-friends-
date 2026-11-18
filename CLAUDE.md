@@ -1,8 +1,78 @@
 # Large Space Battles with Friends: project context
 
 Read this first, then `docs/ARCHITECTURE.md` for how the battle engine works and
-`docs/SERVER.md` for the online game. **Current phase: bug fixing and balance on the live game**
-(see "Working on the live game" and "Bug fixing and balance" at the end).
+`docs/SERVER.md` for the online game. **Current phase: building version 2.0** (see "Version 2.0"
+just below; where it disagrees with anything later in this file, 2.0 wins). "Working on the live
+game" at the end still applies.
+
+## Version 2.0 (started 18 Nov 2026)
+
+**Branches.** Version 1.0 is finished (the owner and friends completed their game). Its code is
+frozen on **`v1.0-stable` (commit 65fcad7): never change that branch.** `main` is now 2.0. Nobody
+is playing, so pushing to `main` is safe, but the owner's rules still hold: **show him first, push
+only when he says "make it live"**, and after any big change to how battles play send him a replay
+page. When 2.0 is ready he starts a fresh game from `/admin` ("Replace the current game"), so 2.0
+doesn't have to keep the 1.0 save playable, only load without crashing.
+
+**Why 2.0.** In 1.0 players had to keep logging on to defend their worlds or catch good moments to
+attack. 2.0 makes the game play itself between visits: what matters is ship design, where you
+build shipyards, which way you push, and diplomacy, not being online. **Players no longer command
+fleets at all.**
+
+**Owner's answers (18 Nov 2026), the plan to build:**
+
+1. **Everything about 3× slower than 1.0**: income ÷3 (home 500 cr/h, other worlds 133–333),
+   travel ÷3 (`TRAVEL_SCALE`), the battle hold 30 → **90 min** (one build cycle, so a defender
+   gets one wave of reinforcements), selling a shipyard and building defences 5 → **15 h**.
+   Starting credits and militia strength: settle with the test games (militia is "4 h of income",
+   so ÷3 income would weaken it; default: keep its credit value as in 1.0).
+2. **Shipyards build every 90 minutes, 5 ships each time** (owner chose 5, not 6). **All
+   shipyards on a world build at the same moment**: each world has its own 90-minute build clock
+   (not one galaxy-wide clock: spreads server load, less predictable), and everything built
+   there leaves together as one fleet. That's ~5× more ships compared with the rest of the
+   slowed-down game; the owner accepts it because fleets fight until they die, so battles stay
+   manageable, and the server gets 3× longer per battle. **The owner plans to raise weapon prices
+   and the shipyard crowding tax** (to encourage more, smaller fleets); set the numbers with the
+   test games.
+3. **New fleets launch automatically.** Enemies = players you're at war with **and militia**
+   (that's how players expand now). Distance = travel time **along hyperlanes**.
+   - **No destination set for the world**: go and fight the nearest enemy target: an enemy world,
+     or an enemy fleet. Battles only happen at worlds, so "an enemy fleet" means the world it's at
+     or flying to (including your own or an ally's world it's attacking: fleets go to defend).
+   - **Destination set** (any world, enemy or friendly; set per world by its owner, plus a "send
+     every world's fleets here" button like 1.0's rally-all; replaces rally points): go there,
+     fighting enemy worlds on the way (1.0's "stop at every world" rule), then keep seeking the
+     nearest enemy after arriving. A friendly destination is a gathering point, not a parking spot.
+   - **Fleets never sit and build up** (owner: "they fight till they die"). No "stay home"
+     setting. The only ships that stay at a world are pinned ones (point 5).
+4. **No manual fleet control**: 1.0's Send fleet, Stop at next world, Avoid worlds you don't
+   hold and rally points go. Only the server launches fleets (like 1.0's rally fleets).
+5. **No more "swap"** (1.0: two fleets fly past each other and take each other's worlds). Aim: a
+   tug of war, the front line moving back and forth one world at a time.
+   - **Pinned**: any of your ships at a world that an enemy fleet is heading to stay and defend it
+     (not only new ships: this also makes a fleet that just took a world hold it while it's being
+     counter-attacked). When the threat is gone they launch as normal.
+   - **Hyperlanes only**: fleets choose routes along hyperlanes. Normal space only when there's a
+     reason, e.g. a beaten fleet with no friendly world to fall back to along the lanes.
+   - **Tie-break**, generalised from "two worlds launch at each other at the same moment": whenever
+     two enemy fleets are flying at each other's worlds along the same lane, **the one that would
+     arrive later turns back** to defend.
+6. **Speed matters less on hyperlanes**: lane speed ∝ speed^0.485 (`log2(1.4)`), so a ship twice
+   as fast is 40% faster on a lane (1.0: 100%). Normal-space travel and battle speed unchanged.
+7. **No battle size cap** (owner: "the game is large space battles"): if the server struggles,
+   optimise, don't cap.
+8. **Bounty 20% → 10%** (more ships, more fighting). Everything else unchanged: defences,
+   selling shipyards, alliances, credit gifts, victory, every battle and weapon rule.
+
+**Build order (agreed):** (1) this section; (2) the slower numbers, 5-ship world builds, softened
+lane speed; (3) the fleet brain (auto launch, targets, destinations, pinned, tie-break, lanes
+only), removing manual fleet controls; (4) a headless test game with bot players at high speed:
+check for a tug of war, battle sizes and server time, set prices from it; (5) map and panels
+(arrows for each world's next fleet, "next fleet in N min", front line, patch notes); (6) send the
+owner an offline `dist/galaxy.html` preview and a replay of a typical 2.0 battle, then "make it
+live", then he replaces the game on `/admin`.
+
+**Progress:** (1) done 18 Nov 2026. (2) done 18 Nov 2026 on branch `v2-dev` (not live): `SHIPYARD_INTERVAL_MIN` 90, `SHIPS_PER_BUILD` 5, world build clock (`nextBuildAt()` in `world.js`: a new or kept shipyard joins the next build moment of the yards already building there, else a full interval), income 500 / 130–330 (steps of 10), `TRAVEL_SCALE` 1/3, `laneSpeed()` in `routes.js` (`LANE_REF_SPEED` 7.7, `LANE_SPEED_EXP` log2 1.4), hold 90 min, sell/defences 15 h, bounty 10%, militia 12 h of income. Builds are not yet events: fleets launch at build moments in step 3.
 
 ## The game
 

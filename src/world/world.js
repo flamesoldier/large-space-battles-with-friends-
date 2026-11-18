@@ -20,7 +20,7 @@ import { BT } from '../shared/blocks.js';
 import { makeDesign } from '../shared/designs.js';
 import { mulberry32 } from '../shared/rng.js';
 import {
-  SHIPYARD_INTERVAL_MIN, shipyardPrice, crowdingSurcharge, SHIPYARD_SELL_REFUND,
+  SHIPYARD_INTERVAL_MIN, SHIPS_PER_BUILD, shipyardPrice, crowdingSurcharge, SHIPYARD_SELL_REFUND,
   defensePrice, MAX_DEFENSE_ORDER, BOUNTY_SHARE, STARTING_CREDITS, NEUTRAL_GARRISON_HOURS, SELL_HOURS, DEFENSE_BUILD_HOURS,
 } from '../shared/economy.js';
 import { generateGalaxy, linkHomesInward } from './galaxyGen.js';
@@ -31,6 +31,17 @@ import { HOUR_MS, MIN_FLEET_SPEED, NEUTRAL_COLOR, PLAYER_COLORS, CHOOSABLE_COLOR
 
 export const YARD_MS = SHIPYARD_INTERVAL_MIN * 60 * 1000;
 export const HOLD_MS = BATTLE_HOLD_MIN * 60 * 1000;
+
+/**
+ * 2.0: all the shipyards on a world build at the same moment, on the world's own clock. The next
+ * build moment of world P: the next one of the yards already building there, else a full interval
+ * from now (so each world's clock starts when its first shipyard does, which spreads builds out).
+ */
+export function nextBuildAt(world, P, except = null) {
+  let t = Infinity;
+  for (const y of P.yards) if (y !== except && y.sellAt == null && y.next > world.clock && y.next < t) t = y.next;
+  return t < Infinity ? t : world.clock + YARD_MS;
+}
 const LOG_KEEP = 400;
 
 // ---------------------------------------------------------------- creation
@@ -192,7 +203,7 @@ export function buildShipyard(world, pid, planetId, design) {
   const q = quoteShipyard(world, planetId, design);
   if (pl.credits + 1e-6 < q.price) return { ok: false, error: `Needs ${Math.round(q.price).toLocaleString()} credits; you have ${Math.floor(pl.credits).toLocaleString()}.` };
   pl.credits -= q.price;
-  const yard = { id: `y${newId(world)}`, design: id, list: q.list, paid: q.price, built: 0, since: world.clock, next: world.clock + YARD_MS };
+  const yard = { id: `y${newId(world)}`, design: id, list: q.list, paid: q.price, built: 0, since: world.clock, next: nextBuildAt(world, p) };
   p.yards.push(yard);
   log(world, 'yard', `${pl.name} built a shipyard for ${world.designs[id].name} at ${p.name} (${q.price.toLocaleString()} cr).`, { planet: p.id, players: [pid] });
   return { ok: true, yard };
@@ -234,7 +245,7 @@ export function cancelSale(world, pid, planetId, yardId) {
   if (!y || y.sellAt == null) return { ok: false, error: 'That shipyard isn\'t being sold.' };
   world.jobs = world.jobs.filter((j) => !(j.kind === 'sell' && j.yard === yardId));
   delete y.sellAt;
-  y.next = world.clock + YARD_MS;
+  y.next = nextBuildAt(world, p, y); // joins the world's build clock again (alone: a full interval)
   log(world, 'yard', `${pl.name} kept the ${world.designs[y.design].name} shipyard at ${p.name} (sale called off).`, { planet: p.id, players: [pid] });
   return { ok: true };
 }
@@ -348,9 +359,9 @@ export function advanceTo(world, t, { rally = true } = {}) {
     noteIncome(world, p.owner, (p.income * dt) / HOUR_MS);
     for (const y of p.yards) {
       if (y.next > t || y.sellAt != null) continue; // a shipyard being sold has stopped building
-      const k = Math.floor((t - y.next) / YARD_MS) + 1;
+      const k = (Math.floor((t - y.next) / YARD_MS) + 1) * SHIPS_PER_BUILD;
       addShips(p, p.owner, y.design, k);
-      y.next += k * YARD_MS; y.built += k;
+      y.next += (k / SHIPS_PER_BUILD) * YARD_MS; y.built += k;
       noteBuilt(world, p.owner, k);
       if (rally && p.rally) {
         fresh ??= new Map();

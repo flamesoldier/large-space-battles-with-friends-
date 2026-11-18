@@ -11,10 +11,15 @@
 
 import { designCost } from './shipStats.js';
 
-export const SHIPYARD_INTERVAL_MIN = 30;
+// Version 2.0 (owner, 18 Nov 2026): every SHIPYARD_INTERVAL_MIN each shipyard builds SHIPS_PER_BUILD
+// ships, and all the shipyards on a world build at the same moment (the world's own build clock), so
+// everything built there leaves together as one fleet. 1.0 was one ship every 30 min.
+export const SHIPYARD_INTERVAL_MIN = 90;
+export const SHIPS_PER_BUILD = 5;
 
 // A shipyard costs this many ships' worth of credits. At 10 it pays for itself after 10 ships
-// (5 hours at one ship per 30 min); everything after that is profit while the world holds.
+// (3 hours at 5 ships per 90 min); everything after that is profit while the world holds.
+// 2.0: to be raised with the test games (owner plans dearer weapons and a higher crowding tax).
 export const SHIPYARD_PRICE_MULT = 10;
 
 /** List price of a shipyard for this design on an empty world. */
@@ -44,25 +49,28 @@ export const MAX_DEFENSE_ORDER = 1000;
 // of the value (full block price, defences and militia included) its enemies lost there, split
 // evenly between the group's players. Nobody tracks who killed whom: in a free-for-all every
 // enemy group is paid for the same losses, and the losing side is paid too.
-export const BOUNTY_SHARE = 0.2;
+export const BOUNTY_SHARE = 0.1; // 2.0 (owner, 18 Nov 2026: more ships, more fighting); was 0.2
 
 // Selling a shipyard gives back this share of what was actually paid for it.
 export const SHIPYARD_SELL_REFUND = 0.95; // owner, Nov 2026 (was 0.5)
 
 // Selling a shipyard and building defences take time (owner, Nov 2026: so neither can be done
-// as a reaction to an attack, which only gives 30 minutes' warning). A shipyard being sold stops
+// as a reaction to an attack, which only gives 90 minutes' warning; 2.0: 15 h, 3× 1.0's 5 h). A shipyard being sold stops
 // building and pays out when the time is up; defences are paid for up front and join the garrison
 // when they're finished. If the world falls first, both are lost.
-export const SELL_HOURS = 5;
-export const DEFENSE_BUILD_HOURS = 5;
+export const SELL_HOURS = 15;
+export const DEFENSE_BUILD_HOURS = 15;
 
 // Income: every world pays a fixed number of credits per hour into its owner's global pool.
 // Home worlds pay HOME_INCOME; every other world rolls a fixed value in PLANET_INCOME (in
-// steps of 50) when the galaxy is made, and keeps it whoever owns it.
-export const HOME_INCOME = 1500;
-export const PLANET_INCOME = [400, 1000];
+// steps of PLANET_INCOME_STEP) when the galaxy is made, and keeps it whoever owns it.
+// 2.0: a third of 1.0's 1,500 and 400–1,000 (steps of 50).
+export const HOME_INCOME = 500;
+export const PLANET_INCOME = [130, 330];
+export const PLANET_INCOME_STEP = 10;
 export const STARTING_CREDITS = 20000;
 
 // Unclaimed worlds are held by militia ships worth this many hours of the world's income
-// (0 = undefended: the first fleet to arrive takes it).
-export const NEUTRAL_GARRISON_HOURS = 4;
+// (0 = undefended: the first fleet to arrive takes it). 2.0: 12 (1.0: 4) so militia keeps 1.0's
+// credit value with a third of the income; to be checked with the test games.
+export const NEUTRAL_GARRISON_HOURS = 12;
