@@ -793,7 +793,14 @@ const resolve = (scen) => {
   const yd = buildShipyard(w, 0, P.id, { ...makeDesign('corvette', 2), name: 'Gnat' });
   const sg = siegeAt(w, P.id)[0];
   ok(sg && yd.ok, 'siege on an empty world');
-  // Under attack, with 30 minutes to go: A tries to sell up and throw up defences. Neither is done in time.
+  // Under attack: started with 10 minutes to go (2.0: 5-minute jobs), defences are ready in time.
+  const early = buildDefense(w, 0, P.id, fort, 1);
+  ok(early.ok && early.done === w.clock + DEFENSE_BUILD_HOURS * HOUR_MS, 'a defence order is ready DEFENSE_BUILD_HOURS later');
+  runWorld(w, sg.startsAt - 10 * 60000, resolve);
+  const inTime = buildDefense(w, 0, P.id, fort, 2);
+  ok(inTime.ok && inTime.done < sg.startsAt, 'defences ordered 10 minutes before the battle are ready for it');
+  // With 2 minutes to go: A tries to sell up and throw up more defences. Neither is done in time.
+  runWorld(w, sg.startsAt - 2 * 60000, resolve);
   const sold = sellShipyard(w, 0, P.id, yd.yard.id), def = buildDefense(w, 0, P.id, fort, 20);
   ok(sold.ok && def.ok && sold.done > sg.startsAt && def.done > sg.startsAt, 'both take longer than the siege');
   const credits = w.players[0].credits;

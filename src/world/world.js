@@ -213,7 +213,7 @@ export function buildShipyard(world, pid, planetId, design) {
 }
 
 // Jobs (owner, Nov 2026): selling a shipyard and building defences take SELL_HOURS /
-// DEFENSE_BUILD_HOURS, so they can't be done in reaction to an attack. Each is an entry in
+// DEFENSE_BUILD_HOURS (2.0: 5 minutes, so defences can be built when an attack is coming). Each is an entry in
 // world.jobs, { id, kind: 'sell' | 'defence', planet, owner, done, ... }, finished by a 'job'
 // event (dueEvent) at `done`. If the world changes hands first, capture() cancels them: the
 // shipyard is destroyed with the rest and the defences under construction are lost.
@@ -236,7 +236,7 @@ export function sellShipyard(world, pid, planetId, yardId) {
   y.sellAt = world.clock + SELL_MS;
   const job = { id: newId(world), kind: 'sell', planet: p.id, owner: pid, yard: y.id, refund, done: y.sellAt };
   world.jobs.push(job);
-  log(world, 'yard', `${pl.name} started selling the ${world.designs[y.design].name} shipyard at ${p.name}: +${refund.toLocaleString()} cr in ${SELL_HOURS} hours.`, { planet: p.id, players: [pid] });
+  log(world, 'yard', `${pl.name} started selling the ${world.designs[y.design].name} shipyard at ${p.name}: +${refund.toLocaleString()} cr in ${fmtHours(SELL_HOURS)}.`, { planet: p.id, players: [pid] });
   return { ok: true, refund, done: y.sellAt, job };
 }
 
@@ -304,7 +304,7 @@ export function buildDefense(world, pid, planetId, design, count = 1) {
   pl.credits -= price;
   const done = world.clock + DEFENSE_BUILD_MS;
   world.jobs.push({ id: newId(world), kind: 'defence', planet: p.id, owner: pid, design: id, count, price, done });
-  log(world, 'yard', `${pl.name} started building ${count === 1 ? 'a' : count.toLocaleString()} ${world.designs[id].name} defence${count > 1 ? 's' : ''} at ${p.name} (${price.toLocaleString()} cr, ready in ${DEFENSE_BUILD_HOURS} hours).`, { planet: p.id, players: [pid] });
+  log(world, 'yard', `${pl.name} started building ${count === 1 ? 'a' : count.toLocaleString()} ${world.designs[id].name} defence${count > 1 ? 's' : ''} at ${p.name} (${price.toLocaleString()} cr, ready in ${fmtHours(DEFENSE_BUILD_HOURS)}).`, { planet: p.id, players: [pid] });
   return { ok: true, design: id, count, price, done };
 }
 

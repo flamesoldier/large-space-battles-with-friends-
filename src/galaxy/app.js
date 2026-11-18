@@ -678,7 +678,7 @@ function planetPanel(P) {
     for (const j of jobsAt(world, P.id, 'defence')) {
       html += `<div class="yard building"><b>${fmt(j.count)} × ${esc(world.designs[j.design].name)}</b><span>under construction · ready in <span data-arrive="${j.done}"></span></span></div>`;
     }
-    html += `<p class="hint">${n ? 'Listed with the ships above. ' : ''}Defences cost ${Math.round(DEFENSE_PRICE_SHARE * 100)}% of their blocks' price and take <b>${DEFENSE_BUILD_HOURS} hours</b> to build, so build them before you're attacked. They never move and fight for this world. When one is destroyed it's gone, and they're all lost (finished or not) if the world falls.</p>`;
+    html += `<p class="hint">${n ? 'Listed with the ships above. ' : ''}Defences cost ${Math.round(DEFENSE_PRICE_SHARE * 100)}% of their blocks' price and take <b>${fmtHours(DEFENSE_BUILD_HOURS)}</b> to build, quick enough to build when an attack is coming. They never move and fight for this world. When one is destroyed it's gone, and they're all lost (finished or not) if the world falls.</p>`;
   }
   if (mine || P.yards.length) {
     const open = ui.yardsOpen !== false;
@@ -689,7 +689,7 @@ function planetPanel(P) {
         const d = world.designs[y.design], selling = y.sellAt != null;
         const sellBtn = !mine ? ''
           : selling ? `<button class="small" data-act="unsell" data-yard="${y.id}" ${busy ? 'disabled' : ''} title="Call off the sale: the shipyard starts building again">Keep it</button>`
-          : `<button class="small danger" data-act="sell" data-yard="${y.id}" ${busy ? 'disabled' : ''} title="Sell for ${Math.round(SHIPYARD_SELL_REFUND * 100)}% of what you paid. Selling takes ${SELL_HOURS} hours: the shipyard stops building now and pays out at the end, unless the world falls first.">Sell +${fmt(sellValue(y))}</button>`;
+          : `<button class="small danger" data-act="sell" data-yard="${y.id}" ${busy ? 'disabled' : ''} title="Sell for ${Math.round(SHIPYARD_SELL_REFUND * 100)}% of what you paid. Selling takes ${fmtHours(SELL_HOURS)}: the shipyard stops building now and pays out at the end, unless the world falls first.">Sell +${fmt(sellValue(y))}</button>`;
         const status = selling ? `<span class="selling">selling: +${fmt(sellValue(y))} cr in <span data-arrive="${y.sellAt}"></span></span>` : `next in <span data-next="${y.next}"></span>`;
         html += `<div class="yard${selling ? ' sold' : ''}"><b>${esc(d.name)}</b>${mine && d.owner === ui.me ? `<button class="small" data-act="rename" data-design="${esc(y.design)}" ${busy ? 'disabled' : ''} title="Rename this ship design (everywhere it appears)">Rename</button>` : ''}${sellBtn}
         <span>${esc(d.cls)} · ${status} · ${fmt(y.built)} built${mine ? ` · paid ${fmt(y.paid)}` : ''}</span></div>`;
@@ -1011,14 +1011,14 @@ async function sellYard(planetId, yardId) {
   if (armedSell !== yardId) {
     armedSell = yardId;
     const b = $('panel').querySelector(`[data-act=sell][data-yard="${yardId}"]`);
-    if (b) b.textContent = `${CLICK} again: sell in ${SELL_HOURS} hours`;
+    if (b) b.textContent = `${CLICK} again: sell in ${fmtHours(SELL_HOURS)}`;
     setTimeout(() => { if (armedSell === yardId) { armedSell = null; renderPanel(true); } }, 3000);
     return;
   }
   armedSell = null;
   const r = await perform({ type: 'sell', planet: planetId, yard: yardId }, () => sellShipyard(world, ui.me, planetId, yardId));
   if (!r.ok) return toast(r.error, true);
-  toast(`Selling: it has stopped building, and ${fmt(r.refund)} credits come in ${SELL_HOURS} hours.`);
+  toast(`Selling: it has stopped building, and ${fmt(r.refund)} credits come in ${fmtHours(SELL_HOURS)}.`);
   save(); renderPanel(true); renderEvents(); updateTop();
 }
 async function keepYard(planetId, yardId) {
@@ -1076,7 +1076,7 @@ function openYardDialog(planetId, mode = yardMode) {
   const count = def ? Math.max(1, Math.min(MAX_DEFENSE_ORDER, Math.floor(Number($('yard-count').value)) || 1)) : 1;
   const pct = Math.round((crowdingMult(existing) - 1) * 100);
   $('yard-info').innerHTML = def
-    ? `A defence takes <b>${DEFENSE_BUILD_HOURS} hours</b> to build (paid now) and costs <b>${Math.round(DEFENSE_PRICE_SHARE * 100)}%</b> of its blocks' price, paid once. It can't have thrusters, never moves or turns (its front, the right-hand side in the designer, always faces the enemy) and never leaves ${esc(P.name)}. Destroyed is gone for good, and all of them, finished or not, are lost if the world falls. You have <b>${fmt(me().credits)}</b> credits.`
+    ? `A defence takes <b>${fmtHours(DEFENSE_BUILD_HOURS)}</b> to build (paid now) and costs <b>${Math.round(DEFENSE_PRICE_SHARE * 100)}%</b> of its blocks' price, paid once. It can't have thrusters, never moves or turns (its front, the right-hand side in the designer, always faces the enemy) and never leaves ${esc(P.name)}. Destroyed is gone for good, and all of them, finished or not, are lost if the world falls. You have <b>${fmt(me().credits)}</b> credits.`
     : P.yards.length
       ? `${P.name} already has <b>${P.yards.length}</b> shipyard${P.yards.length > 1 ? 's' : ''} worth ${fmt(existing)} cr, so a new one here costs <b>${pct}% more</b> than its list price (+100% for every ${fmt(SHIPYARD_CROWDING_VALUE)} cr of shipyards already on a world). Building on your other worlds avoids that. You have <b>${fmt(me().credits)}</b> credits.`
       : `A shipyard costs ${SHIPYARD_PRICE_MULT}× the ship it builds, and makes ${SHIPS_PER_BUILD} every ${SHIPYARD_INTERVAL_MIN} min for free. Shipyards already on a world make the next one there dearer: +100% for every ${fmt(SHIPYARD_CROWDING_VALUE)} cr of them. You have <b>${fmt(me().credits)}</b> credits.`;
@@ -1179,7 +1179,7 @@ async function build(planetId, design) {
 async function buildDef(planetId, design, count) {
   const r = await perform({ type: 'defend', planet: planetId, design: encodeDesign(design), count }, () => buildDefense(world, ui.me, planetId, design, count));
   if (!r.ok) { toast(r.error, true); return false; }
-  toast(`${r.count === 1 ? 'Defence' : `${fmt(r.count)} defences`} ordered at ${world.planets[planetId].name} (${fmt(r.price)} cr): ready in ${DEFENSE_BUILD_HOURS} hours.`);
+  toast(`${r.count === 1 ? 'Defence' : `${fmt(r.count)} defences`} ordered at ${world.planets[planetId].name} (${fmt(r.price)} cr): ready in ${fmtHours(DEFENSE_BUILD_HOURS)}.`);
   save(); renderPanel(true); renderEvents(); updateTop();
   return true;
 }

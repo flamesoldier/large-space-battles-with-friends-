@@ -1112,7 +1112,7 @@ function syncEmbed() {
     b.title = !info.ok || thr ? 'Fix the red issues first' : price > embed.credits ? `You have ${fmt(embed.credits)} credits` : `Build one of these defences at ${embed.planet} (build more from the Build defences list)`;
     $('yard-label').textContent = 'Defence';
     $('yard').textContent = fmt(price);
-    $('yard-hint').textContent = `At ${embed.planet}: takes ${DEFENSE_BUILD_HOURS} hours to build and costs ${Math.round(DEFENSE_PRICE_SHARE * 100)}% of the blocks' price. It never moves, and when it's destroyed it's gone.`;
+    $('yard-hint').textContent = `At ${embed.planet}: takes ${DEFENSE_BUILD_HOURS < 1 ? `${Math.round(DEFENSE_BUILD_HOURS * 60)} minutes` : `${DEFENSE_BUILD_HOURS} hours`} to build and costs ${Math.round(DEFENSE_PRICE_SHARE * 100)}% of the blocks' price. It never moves, and when it's destroyed it's gone.`;
     $('stance-row').hidden = true; $('stance-hint').hidden = true; $('stance-head').hidden = true;
     return;
   }

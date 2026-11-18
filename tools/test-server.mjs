@@ -245,12 +245,18 @@ try {
   r = await ben.act({ type: 'decline', player: 0 });
   ok(r.body.ok, 'Ben declines');
 
-  // ---- long poll: a change wakes a waiting client
+  // ---- long poll: a change wakes a waiting client. At test speed the game also changes by itself
+  // (2.0's 5-minute defence jobs, builds, fleets), so a wake-up may come from that first: keep
+  // waiting (a few rounds) until Ann's proposal arrives.
   st = (await ben.state()).body;
-  const waiting = ben.json('GET', `/api/state?v=${st.v}&wv=${st.wv}`);
-  await sleep(200);
-  await ann.act({ type: 'propose', player: 1 });
-  const woke = await waiting;
+  let woke = null;
+  {
+    const waiting = ben.json('GET', `/api/state?v=${st.v}&wv=${st.wv}`);
+    await sleep(200);
+    await ann.act({ type: 'propose', player: 1 });
+    woke = await waiting;
+    for (let k = 0; k < 10 && !(woke.body.world?.proposals?.length === 1); k++) woke = await ben.state();
+  }
   ok(woke.body.v > st.v && woke.body.world.proposals.length === 1, 'a waiting client hears about the change');
 
   // Only what changed is sent (15 Nov 2026, Railway bills egress): a page that has the world gets a

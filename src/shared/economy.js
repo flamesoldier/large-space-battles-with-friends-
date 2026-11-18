@@ -53,14 +53,16 @@ export const MAX_DEFENSE_ORDER = 1000;
 export const BOUNTY_SHARE = 0.1; // 2.0 (owner, 18 Nov 2026: more ships, more fighting); was 0.2
 
 // Selling a shipyard gives back this share of what was actually paid for it.
-export const SHIPYARD_SELL_REFUND = 0.95; // owner, Nov 2026 (was 0.5)
+export const SHIPYARD_SELL_REFUND = 0.65; // 2.0 (owner, 18 Nov 2026); 1.0: 0.95 (before that 0.5)
 
-// Selling a shipyard and building defences take time (owner, Nov 2026: so neither can be done
-// as a reaction to an attack, which only gives 90 minutes' warning; 2.0: 15 h, 3× 1.0's 5 h). A shipyard being sold stops
+// Selling a shipyard and building defences take time. 1.0 (owner, Nov 2026): 5 h, so neither could
+// be done as a reaction to an attack. 2.0 (owner, 18 Nov 2026): 5 minutes, so defences CAN be built
+// in reaction to an attack ("building defences will be much more important"); selling is just as
+// quick but pays back less (SHIPYARD_SELL_REFUND). Both in hours. A shipyard being sold stops
 // building and pays out when the time is up; defences are paid for up front and join the garrison
 // when they're finished. If the world falls first, both are lost.
-export const SELL_HOURS = 15;
-export const DEFENSE_BUILD_HOURS = 15;
+export const SELL_HOURS = 5 / 60;
+export const DEFENSE_BUILD_HOURS = 5 / 60;
 
 // Income: every world pays a fixed number of credits per hour into its owner's global pool.
 // Home worlds pay HOME_INCOME; every other world rolls a fixed value in PLANET_INCOME (in
