@@ -637,6 +637,16 @@ function planetPanel(P) {
         const where = nf.hop === null ? 'nowhere to go yet' : `→ ${esc(world.planets[nf.hop].name)}${nf.target !== nf.hop ? ` (for ${esc(world.planets[nf.target].name)})` : ''}`;
         return `<dt>Next fleet</dt><dd>${fmt(nf.n)} ships in <span data-arrive="${nf.at}"></span> ${where}</dd>`;
       })()}
+      ${(() => { // 2.0 turn-taking: who can't attack whom from here until attacked back
+        if (!world.auto || !world.locks?.length || P.owner === null) return '';
+        const name = (id) => esc(world.planets[id].name);
+        const out = world.locks.filter((l) => l.from === P.id && l.by === P.owner).map((l) => name(l.to));
+        const safe = world.locks.filter((l) => l.to === P.id && l.def === P.owner).map((l) => name(l.from));
+        let h = '';
+        if (out.length) h += `<dt>Can't attack</dt><dd title="It was beaten off there. It can attack again once that world attacks it, or when either world changes hands.">${out.join(', ')} <span class="hint">until attacked from there</span></dd>`;
+        if (safe.length) h += `<dt>Safe from</dt><dd title="It beat off an attack from there. That world can't attack it again until this world attacks it, or when either world changes hands.">${safe.join(', ')} <span class="hint">until it attacks there</span></dd>`;
+        return h;
+      })()}
     </dl>`;
 
   // Siege: everyone at the world, and whether they'll fight when the battle starts (free-for-all:

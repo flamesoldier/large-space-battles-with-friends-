@@ -73,6 +73,7 @@ export function createWorld({ players, seed = 1, planetsPerPlayer, clock = 0 }) 
     designs: {},
     fleets: [],
     sieges: [],
+    locks: [],
     relations: {},
     proposals: [],
     jobs: [],
@@ -615,6 +616,7 @@ export function upgradeWorld(world) {
   }
   for (const f of world.fleets) if (f.wait === undefined) f.wait = null;
   world.sieges ??= [];
+  world.locks ??= [];
   // One siege per world (Nov 2026, free-for-all battles): merge any extra sieges at a world into
   // the one that started first.
   world.sieges.sort((a, b) => a.startsAt - b.startsAt || a.id - b.id);
@@ -705,6 +707,33 @@ export function pinned(world, P, who, ignore = null) {
 /** A friendly world (to `who`) that needs defending: an enemy fleet heading there or besieging it. */
 const underThreat = (world, P, who) => allied(world, P.owner, who) && pinned(world, P, who);
 
+// ---- Turn-taking (owner, 19 Nov 2026). When a player's world beats off an attack, the attackers'
+// world can't attack it again until the defending world attacks back: "planet 1 attacks planet 2,
+// planet 1 cannot attack again till planet 2 attacks planet 1". Planet 1 can still attack planet 3,
+// planet 3 can still attack planet 2, and if either world changes hands the lock is gone (capture).
+// Without it a neighbour launching every 90 minutes kept the defender pinned for good, so it never
+// struck back. Not against militia (it never attacks, so a lock would never lift).
+// world.locks: [{ from, to, by, def, at }]: `by`'s fleets at world `from` may not attack world `to` (held by `def`).
+
+/** Record the lock after `f` (owner `by`) was beaten off at P. */
+function addLock(world, f, P) {
+  const from = f.legs[f.leg]?.from;
+  if (from == null || from === P.id || P.owner === null || f.owner === null) return;
+  world.locks ??= [];
+  if (!world.locks.some((l) => l.from === from && l.to === P.id && l.by === f.owner)) world.locks.push({ from, to: P.id, by: f.owner, def: P.owner, at: world.clock });
+}
+
+/** A fleet of `who` from world `from` attacks P: that's planet 2 striking back, so planet 1 may attack it again. */
+function liftLocks(world, from, P, who) {
+  if (world.locks?.length) world.locks = world.locks.filter((l) => !(l.from === P.id && l.to === from && l.def === who));
+}
+
+/** May `who`'s fleets at world `from` not attack world `to`? */
+export const isLocked = (world, from, to, who) => !!world.locks?.some((l) => l.from === from && l.to === to && l.by === who);
+
+/** The locks on `who`'s fleets: [{ from, to }]. */
+export const locksOf = (world, who) => (world.locks || []).filter((l) => l.by === who);
+
 /**
  * Where a fleet of `who` at world `from` goes next: { hop, target } or null (nothing to do).
  * goal: a world to head for (any world), or null to seek the nearest target. Hyperlanes only.
@@ -720,7 +749,9 @@ export function nextHop(world, from, who, goal = null, ships = null) {
   const best = new Float64Array(n).fill(Infinity), prev = new Int32Array(n).fill(-1), done = new Uint8Array(n);
   best[from] = 0;
   const isTarget = (id) => (goal !== null ? id === goal : !allied(world, planets[id].owner, who) || underThreat(world, planets[id], who));
-  let found = -1;
+  let found = -1, blocked = false;
+  const locks = locksOf(world, who);
+  const locked = locks.length ? new Set(locks.map((l) => l.from * 100000 + l.to)) : null;
   for (;;) {
     let u = -1;
     for (let i = 0; i < n; i++) if (!done[i] && best[i] < Infinity && (u < 0 || best[i] < best[u] || (best[i] === best[u] && i < u))) u = i;
@@ -734,10 +765,14 @@ export function nextHop(world, from, who, goal = null, ships = null) {
     if (u !== from && goal === null && !allied(world, planets[u].owner, who)) continue;
     for (const v of adj.get(u) || []) {
       if (done[v]) continue;
+      // Turn-taking: no attack along a locked lane (it's fine to go there once the world is friendly).
+      if (locked?.has(u * 100000 + v) && !allied(world, planets[v].owner, who)) { blocked = true; continue; }
       const c = best[u] + d(u, v);
       if (c < best[v] - 1e-9) { best[v] = c; prev[v] = u; }
     }
   }
+  // A destination the locks cut off: seek the nearest target instead (fleets never sit and wait).
+  if (found < 0 && blocked && goal !== null) return nextHop(world, from, who, null, ships);
   if (found < 0) return null;
   let hop = found;
   while (prev[hop] !== from) hop = prev[hop];
@@ -1107,11 +1142,16 @@ function fleetArrives(world, f, plan) {
   const held = P.owner === null ? 'militia-held ' : '';
   const owner = P.owner === null ? '' : ` (${playerName(world, P.owner)})`;
   const startsIn = fmtHours(BATTLE_HOLD_MIN / 60);
+  if (world.auto && P.owner !== null && hostile(world, f.owner, P.owner)) liftLocks(world, L.from, P, f.owner);
   if (plan.kind === 'hold') {
     const s = world.sieges.find((x) => x.id === plan.siege);
     s.fleets.push(f.id);
     f.wait = s.id; f.next = Infinity;
-    const how = allied(world, f.owner, s.leader) ? 'joined the attack on' : 'arrived at';
+    const joining = allied(world, f.owner, s.leader);
+    // 2.0 (owner, 19 Nov 2026): fleets join attacks all the time, so that isn't logged. A new
+    // enemy turning up at a siege still is.
+    if (world.auto && joining) return null;
+    const how = joining ? 'joined the attack on' : 'arrived at';
     log(world, 'siege', `${countShips(f.ships)} of ${me}'s ships ${how} ${P.name}${owner}, where a battle starts ${clockIn(world, s.startsAt)}.`,
       { planet: P.id, players: [f.owner, s.leader, P.owner].filter((x) => x !== null), siege: { by: s.leader, against: P.owner, startsAt: s.startsAt, join: true } });
     return lastLog(world);
@@ -1231,7 +1271,10 @@ function siegeEnds(world, s, plan, result) {
     const friend = won ? allied(world, f.owner, winner) : defends(f.owner);
     if (friend && countShips(f.ships)) release(world, f);
     else if (friend) dropFleet(world, f);
-    else { const t = fallBack(world, f, P); if (t) tails.push(t); }
+    else {
+      if (!won && world.auto) addLock(world, f, P);
+      const t = fallBack(world, f, P); if (t) tails.push(t);
+    }
   }
   if (won) {
     if (tails.length) entry.text += ` ${tails.join('; ')}.`;
@@ -1279,6 +1322,8 @@ function capture(world, P, owner, ships, battleInfo) {
   P.yards = [];
   delete P.rally; // the old owner's rally point goes with the world
   delete P.dest; // and so does its 2.0 destination
+  // Turn-taking locks to or from this world end with it (owner: conquering a world "refreshes" it).
+  if (world.locks?.length) world.locks = world.locks.filter((l) => l.from !== P.id && l.to !== P.id);
   // Unfinished jobs here are lost with the world: shipyards being sold (destroyed above, no
   // payout) and defences still being built (already paid for).
   const lostJobs = (world.jobs || []).filter((j) => j.planet === P.id);

@@ -1178,6 +1178,41 @@ const lanePlanHours = (W, a, b, d) => { const A = W.planets[a], B = W.planets[b]
     ok(changes >= 4, `player worlds change hands (${changes} times in 4 days)`);
   }
 
+  // Turn-taking (owner, 19 Nov 2026): a world that beat off an attack can't be attacked from the same
+  // world again until it attacks back (or one of them changes hands).
+  {
+    const g = createAutoWorld({ players: [1, 2, 3, 4].map((k) => ({ name: `Bot ${k}`, bot: true })), seed: 8 });
+    const res = fake(g);
+    let bad = 0, locksMade = 0, lifted = 0, prevLocks = [];
+    for (let t = 0; t <= 72 * HOUR_MS; t += HOUR_MS / 12) {
+      runWorld(g, t, res);
+      for (const f of g.fleets) {
+        const L = f.legs[f.leg];
+        if (!L || f.retreat || f.wait != null || f.depart == null) continue;
+        const P = g.planets[L.to];
+        if (allied(g, f.owner, P.owner)) continue;
+        if (g.locks.some((l) => l.from === L.from && l.to === L.to && l.by === f.owner && l.at < f.depart)) bad++;
+      }
+      const key = (l) => `${l.from}>${l.to}>${l.by}`;
+      const now = new Set(g.locks.map(key)), was = new Set(prevLocks.map(key));
+      for (const k of now) if (!was.has(k)) locksMade++;
+      for (const l of prevLocks) if (!now.has(key(l)) && g.planets[l.from].owner === l.by && g.planets[l.to].owner === l.def) lifted++;
+      prevLocks = g.locks.map((l) => ({ ...l }));
+    }
+    ok(locksMade > 5, `beaten-off attacks lock the lane (${locksMade} locks in 3 days)`);
+    ok(!bad, `no fleet sets off along a locked lane (${bad})`);
+    ok(lifted > 0, `a lock lifts when the defender strikes back (${lifted} times)`);
+    // By hand: nextHop avoids a locked target, and capture clears the lock.
+    const h = createAutoWorld({ players: [{ name: 'A' }, { name: 'B' }], seed: 21 });
+    const a = h.players[0].home;
+    const nb = nextHop(h, a, 0);
+    h.planets[nb.target].owner = 1;
+    const first = nextHop(h, a, 0);
+    h.locks.push({ from: a, to: first.hop, by: 0, def: h.planets[first.hop].owner, at: 0 });
+    const second = nextHop(h, a, 0);
+    ok(!second || second.hop !== first.hop, 'a locked neighbour is not attacked');
+  }
+
   // Bots (owner, 18 Nov 2026): the server spends their credits; they expand, defend and refuse alliances.
   {
     const g = createAutoWorld({ players: [{ name: 'Ann' }, { name: 'Bot 1', bot: true }, { name: 'Bot 2', bot: true }, { name: 'Bot 3', bot: true }], seed: 8 });
