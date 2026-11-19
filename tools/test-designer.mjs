@@ -501,5 +501,18 @@ for (let k = 0; k < FORTRESSES.length; k++) {
   assert.equal(bt.ownHullInWay(e, e.weapons[0] || { cell: 0, cells: null }, e.x, e.y, 0, 300), false);
 }
 
+// Fleets that start far apart fight it out (owner, 19 Nov 2026: a battle "ended" at 34 s with no
+// damage because the 20 s with no damage were counted before the fleets had even met).
+{
+  const designs = [makeDesign('battleship', 3), makeDesign('battleship', 4)];
+  const ships = [];
+  for (let k = 0; k < 20; k++) {
+    ships.push({ design: 0, team: 0, x: -750, y: (k - 10) * 60, a: 0 });
+    ships.push({ design: 1, team: 1, x: 750, y: (k - 10) * 60, a: Math.PI });
+  }
+  const b = new Battle({ designs, ships, seed: 1, maxTime: 900 });
+  b.run();
+  assert.ok(b.endReason !== 'stalled' && b.lastDamage > 0 && b.tick > 600, `far-apart fleets meet and fight (ended ${b.endReason} at ${b.tick / 10} s)`);
+}
 console.log(`designer stats match the sim for ${checked} generated designs; validation ok`);
 console.log(`${FORTRESSES.length} Aegis fortresses are valid 150,000 cr defences`);

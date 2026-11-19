@@ -103,6 +103,7 @@ export class Battle {
     // Why the battle ended ('destroyed', 'rout', 'stalled', 'time') and the side that broke and ran
     // in a rout (-1 otherwise). A routed side has lost even though some of its ships still fire.
     this.endReason = null;
+    this.lastClosing = 0; // last tick an armed ship was still flying in toward its enemy (see step)
     this.routed = -1;
     this.ents = [];
     this.byId = [];
@@ -453,8 +454,10 @@ export class Battle {
     this.perf.peakEntities = Math.max(this.perf.peakEntities, this.ents.length);
 
     // End when a side has no warships left, when the fleets have disengaged (20 s with no
-    // damage dealt), or at the time limit.
-    const stalled = this.tick > 300 && this.now - (this.lastDamage || 0) > 200;
+    // damage dealt), or at the time limit. Ships still flying in count as engaging (owner, 19 Nov
+    // 2026: a 2.0 battle whose fleets started far apart "ended" at 34 s before anyone met, because
+    // the 20 s were counted from the start).
+    const stalled = this.tick > 300 && this.now - Math.max(this.lastDamage || 0, this.lastClosing) > 200;
     // Rout: a side down to <20% of its starting value (credits) still able to fight, and outgunned
     // 2:1 by value by its enemies together (against it plus its allies). By value, not ship count
     // (owner, Nov 2026), so a swarm of cheap ships dying fast doesn't make the big ships run. It breaks and runs (its ships flee like disarmed hulks and no longer
@@ -613,6 +616,8 @@ export class Battle {
     // holding, spinning on the spot).
     const d = tg && tg.tiles ? Math.max(1, (e.stance === 'charge' ? this.gapTo(e, tg) : this.nearGap(e, tg)) - Math.max(0, e.radius - 12) * 0.8)
       : Math.max(1, Math.hypot(dx, dy) - (tg ? Math.max(0, tg.radius - 12) * 0.8 : 0) - Math.max(0, e.radius - 12) * 0.8);
+    // Still flying in to its distance: the battle hasn't stalled, the fleets just haven't met yet.
+    if (!disarmed && d > e.prefRange * 1.1) this.lastClosing = this.now;
     let desired = Math.atan2(dy, dx);
     if (disarmed) desired += Math.PI; // crippled: run away from the enemy fleet
     const pr = e.prefRange;
