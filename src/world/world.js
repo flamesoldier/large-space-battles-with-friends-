@@ -751,7 +751,7 @@ export function nextHop(world, from, who, goal = null, ships = null) {
   // the trip there (as a lane distance at these ships' speed). The nearest by that measure wins; if
   // it's one of those, the ships wait (null) and decide again when the battle is over.
   const waitDist = (id) => (Math.max(0, siegeAt(world, id)[0].startsAt - world.clock) / HOUR_MS) * ls;
-  let lateBest = Infinity;
+  let lateBest = Infinity, lateT = -1;
   const d = (a, b) => Math.hypot(planets[a].x - planets[b].x, planets[a].y - planets[b].y);
   const best = new Float64Array(n).fill(Infinity), prev = new Int32Array(n).fill(-1), done = new Uint8Array(n);
   best[from] = 0;
@@ -765,7 +765,7 @@ export function nextHop(world, from, who, goal = null, ships = null) {
     if (u < 0 || best[u] >= lateBest) break; // waiting for a battle we'd miss is quicker than anything left
     done[u] = 1;
     // A world whose battle we'd miss is not a way through; as a target it counts as wait + trip.
-    if (u !== from && tooLate(u, best[u])) { if (isTarget(u)) lateBest = Math.min(lateBest, best[u] + waitDist(u)); continue; }
+    if (u !== from && tooLate(u, best[u])) { if (isTarget(u) && best[u] + waitDist(u) < lateBest) { lateBest = best[u] + waitDist(u); lateT = u; } continue; }
     if (u !== from && isTarget(u)) { found = u; break; }
     // Seeking only passes through friendly worlds (a hostile one is a target itself). A fleet with a
     // goal goes straight through, fighting whatever is on the way.
@@ -780,6 +780,14 @@ export function nextHop(world, from, who, goal = null, ships = null) {
   }
   // A destination the locks cut off: seek the nearest target instead (fleets never sit and wait).
   if (found < 0 && blocked && goal !== null) return nextHop(world, from, who, null, ships);
+  // Waiting for a battle wins: move up along friendly worlds to the one next to it and wait there
+  // (owner, 19 Nov 2026: fleets waited 2 or 3 worlds away; "they may as well keep moving towards the
+  // fight then wait"). Already next to it: wait here (null).
+  if (found < 0 && lateT >= 0) {
+    let hop = lateT;
+    while (prev[hop] !== from) hop = prev[hop];
+    return hop === lateT ? null : { hop, target: lateT };
+  }
   if (found < 0) return null;
   let hop = found;
   while (prev[hop] !== from) hop = prev[hop];

@@ -1150,6 +1150,27 @@ const lanePlanHours = (W, a, b, d) => { const A = W.planets[a], B = W.planets[b]
     dispatchAll(t);
     ok(!t.fleets.length && holdReason(t, t.planets[a], 0, { [sh]: 5 }) === 'siege', 'with nothing else in reach it waits too');
   }
+  // Waiting for a battle, it first moves up to the friendly world next to it (owner, 19 Nov 2026).
+  {
+    const t = createAutoWorld({ players: [{ name: 'A' }, { name: 'B' }], seed: 26 });
+    const lm = lanes(t);
+    let a = -1, m = -1, b = -1;
+    for (const P of t.planets) for (const q of lm.get(P.id) || []) for (const r of lm.get(q) || [])
+      if (a < 0 && r !== P.id && !lm.get(P.id).has(r)) { a = P.id; m = q; b = r; }
+    for (const Q of t.planets) { Q.owner = Q.id === b ? 1 : 0; Q.garrison = []; }
+    const sh = registerDesign(t, 0, { ...makeDesign('destroyer', 3), name: 'Ship' });
+    t.sieges.push({ id: 990501, planet: b, leader: 1, fleets: [], startsAt: t.clock + 60000, against: 0 });
+    t.planets[a].garrison.push({ owner: 0, design: sh, n: 5 });
+    dispatchAll(t);
+    const went = t.fleets.find((f) => f.owner === 0 && f.from === a);
+    ok(went && went.to !== b && lm.get(went.to).has(b), 'two worlds from a battle it would miss, it moves up next to it');
+    m = went.to;
+    t.fleets = [];
+    t.planets[a].garrison = [];
+    t.planets[m].garrison = [{ owner: 0, design: sh, n: 5 }];
+    dispatchAll(t);
+    ok(!t.fleets.length && countShipsT(shipsAt(t.planets[m], 0)) === 5 && holdReason(t, t.planets[m], 0, { [sh]: 5 }) === 'siege', 'next to it, it waits for the battle');
+  }
   // A whole game with stand-in battles: hyperlanes only, never a swap, the front moves both ways.
   {
     const g = createAutoWorld({ players: [{ name: 'A' }, { name: 'B' }, { name: 'C' }, { name: 'D' }], seed: 5 });
