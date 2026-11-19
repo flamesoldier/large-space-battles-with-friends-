@@ -63,6 +63,9 @@ let world = null;
 let ui = { me: 0, speed: 60, saved: Date.now(), mine: false, evOpen: innerWidth > 640, seen: {} };
 let sel = null; // { kind: 'planet' | 'fleet', id }
 let move = null; // { from, ships: { designId: n }, to, lanes, picking }
+// 2.0: choosing a world's destination on the map (owner, 19 Nov 2026: "click select target then click
+// the planet on the map", not a list). The world whose destination is being chosen, or null.
+let destPick = null;
 let busy = false; // a battle is being resolved
 let gameTarget = 0; // game time we're catching up to
 const replays = new ReplayStore(); // battle id → { bytes, sides, title, computeMs }, kept in IndexedDB (hot-seat)
@@ -282,6 +285,16 @@ function draw(now) {
     }
     g.restore();
   }
+  // Choosing a destination on the map: a bright arrow from the world to the world under the pointer.
+  if (destPick !== null && hover?.kind === 'planet' && hover.id !== destPick) {
+    const P = world.planets[destPick], T = world.planets[hover.id], [x0, y0] = toScreen(P.x, P.y), [x1, y1] = toScreen(T.x, T.y);
+    const a = Math.atan2(y1 - y0, x1 - x0), r1 = outerR(Math.max(3.5, planetR(T) * z)) + 6;
+    const ex = x1 - Math.cos(a) * r1, ey = y1 - Math.sin(a) * r1;
+    g.save(); g.setLineDash([6, 5]); g.lineWidth = 2.5; g.strokeStyle = g.fillStyle = '#ffffff';
+    g.beginPath(); g.moveTo(x0, y0); g.lineTo(ex, ey); g.stroke();
+    g.beginPath(); g.moveTo(ex, ey); g.lineTo(ex - Math.cos(a - 0.45) * 11, ey - Math.sin(a - 0.45) * 11); g.lineTo(ex - Math.cos(a + 0.45) * 11, ey - Math.sin(a + 0.45) * 11); g.closePath(); g.fill();
+    g.restore();
+  }
 
   // Planets.
   const showNames = z > 0.75;
@@ -313,7 +326,7 @@ function draw(now) {
       bracket(x, y, ro + k - 3);
     }
     if (hover?.kind === 'planet' && hover.id === P.id) { g.strokeStyle = 'rgba(230,238,255,0.5)'; g.lineWidth = 1; g.beginPath(); g.arc(x, y, ro + 9, 0, Math.PI * 2); g.stroke(); }
-    if (move?.picking && hover?.kind === 'planet' && hover.id === P.id && P.id !== move.from) { g.strokeStyle = '#e6eeff'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, ro + 11, 0, Math.PI * 2); g.stroke(); }
+    if (((move?.picking && P.id !== move.from) || (destPick !== null && P.id !== destPick)) && hover?.kind === 'planet' && hover.id === P.id) { g.strokeStyle = '#e6eeff'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, ro + 11, 0, Math.PI * 2); g.stroke(); }
     // Shipyards: one pip each above the world.
     const ny = P.yards.length;
     if (ny) {
@@ -424,7 +437,7 @@ canvas.addEventListener('pointermove', (e) => {
     if (to !== move.hoverTo) { move.hoverTo = to; if (move.to === null || move.picking) setMoveTarget(to, false); }
   }
   showTip(sx, sy);
-  if (!drag?.moved) canvas.style.cursor = hover ? 'pointer' : move?.picking ? 'crosshair' : 'default';
+  if (!drag?.moved) canvas.style.cursor = destPick !== null ? 'crosshair' : hover ? 'pointer' : move?.picking ? 'crosshair' : 'default';
 });
 canvas.addEventListener('pointerleave', () => { hover = null; $('tip').hidden = true; });
 canvas.addEventListener('pointerup', (e) => {
@@ -433,6 +446,12 @@ canvas.addEventListener('pointerup', (e) => {
   drag = null; canvas.style.cursor = 'default';
   if (wasDrag || !world) return;
   const r = canvas.getBoundingClientRect(), hit = pick(e.clientX - r.left, e.clientY - r.top);
+  if (destPick !== null) {
+    const from = destPick;
+    if (hit?.kind === 'planet' && hit.id !== from) { destPick = null; setDest(from, hit.id); renderPanel(true); return; }
+    if (!hit || (hit.kind === 'planet' && hit.id === from)) { destPick = null; renderPanel(true); } // empty space or the world itself: cancel
+    return;
+  }
   if (move?.picking) {
     if (hit?.kind === 'planet' && hit.id !== move.from) { setMoveTarget(hit.id, true); return; }
     if (!hit) { move.picking = false; setMoveTarget(null, false); renderPanel(true); return; }
@@ -478,7 +497,8 @@ addEventListener('keydown', (e) => {
   if (e.target.closest?.('input, select, textarea, dialog') || e.ctrlKey || e.metaKey || e.altKey) return;
   const k = e.key.toLowerCase();
   if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'].includes(k)) { keys.add(k); if (k.startsWith('arrow')) e.preventDefault(); }
-  if (k === 'escape' && move) { cancelMove(); }
+  if (k === 'escape' && destPick !== null) { destPick = null; renderPanel(true); }
+  else if (k === 'escape' && move) { cancelMove(); }
   else if (k === 'escape' && mapOnly) setMapOnly(false);
   else if (k === 'escape' && sel) select(null);
   if (k === '+' || k === '=') zoomAt(1.25);
@@ -558,6 +578,7 @@ function showTip(sx, sy) {
 // ------------------------------------------------------------ selection and the side panel
 function select(hit) {
   sel = hit;
+  destPick = null;
   if (move && !(hit?.kind === 'planet' && hit.id === move.from)) move = null;
   renderPanel(true);
 }
@@ -578,7 +599,7 @@ function renderPanel(force = false) {
 }
 // What the panel shows, coarsely: rebuild only when it changes (timers update in place).
 function panelSignature() {
-  const s = [ui.me, sel?.kind, sel?.id, move ? `${move.from}>${move.to}:${move.picking}:${move.lanes}:${move.avoid}:${JSON.stringify(move.ships)}` : '', busy];
+  const s = [ui.me, sel?.kind, sel?.id, destPick, move ? `${move.from}>${move.to}:${move.picking}:${move.lanes}:${move.avoid}:${JSON.stringify(move.ships)}` : '', busy];
   if (sel?.kind === 'planet') {
     const P = world.planets[sel.id];
     s.push(P.owner, JSON.stringify(P.garrison), P.yards.map((y) => `${y.id}:${y.sellAt ?? ''}`).join(), jobsAt(world, P.id).map((j) => j.id).join(), Math.floor(me().credits / 500), JSON.stringify(siegeAt(world, P.id).map((x) => x.fleets)), JSON.stringify(world.relations));
@@ -719,16 +740,14 @@ function destPanel(P, mine) {
   const label = (Q) => `${esc(Q.name)}${Q.owner === ui.me ? '' : Q.owner === null ? ' (militia)' : ` (${esc(playerName(world, Q.owner))})`}`;
   if (mine) {
     const D = P.dest ? world.planets[P.dest.to] : null;
-    const opts = world.planets.filter((Q) => Q.id !== P.id)
-      .sort((a, b) => (a.owner === ui.me ? 0 : 1) - (b.owner === ui.me ? 0 : 1) || a.name.localeCompare(b.name));
     const next = nextHop(world, P.id, ui.me, D ? D.id : null);
+    const picking = destPick === P.id;
     html += `<h2>Destination</h2>
-      <label class="rally">Fleets from here go to
-        <select data-act="dest" ${busy ? 'disabled' : ''} aria-label="Destination for fleets from ${esc(P.name)}">
-          <option value="">The nearest enemy</option>
-          ${opts.map((Q) => `<option value="${Q.id}" ${P.dest?.to === Q.id ? 'selected' : ''}>${label(Q)}</option>`).join('')}
-        </select></label>
-      ${D ? `<div class="row"><button class="small" data-act="goto" data-planet="${D.id}">Show ${esc(D.name)}</button></div>` : ''}
+      <dl class="kv"><dt>Fleets from here go to</dt><dd>${D ? label(D) : 'The nearest enemy'}</dd></dl>
+      ${picking
+        ? `<p class="hint pick">${CLICK} the world on the map that fleets from here should go to. ${CLICK} empty space or press Esc to stop.</p>
+           <div class="row"><button class="small" data-act="dest-pick-cancel">Cancel</button></div>`
+        : `<div class="row"><button class="small go" data-act="dest-pick" ${busy ? 'disabled' : ''}>Choose on map</button>${D ? `<button class="small" data-act="goto" data-planet="${D.id}">Show ${esc(D.name)}</button><button class="small" data-act="dest-clear" ${busy ? 'disabled' : ''}>Nearest enemy instead</button>` : ''}</div>`}
       <p class="hint">${next ? `Right now the next fleet from here would go to <b>${esc(world.planets[next.hop].name)}</b>${next.target !== next.hop ? ` on its way to ${esc(world.planets[next.target].name)}` : ''}. ` : ''}Ships built here leave together as one fleet. ${D ? `They fly along the hyperlanes to ${esc(D.name)}, fighting any enemy world on the way, then go for the nearest enemy from there.` : 'They go for the nearest enemy world along the hyperlanes, or to defend one of your or your allies\' worlds an enemy fleet is heading for.'} At every world they reach they decide again where to go. If an enemy fleet is heading here, ships here stay to defend it, keeping their own orders. They never set off for a battle that would start before they got there: they wait for it to end instead.</p>`;
   }
   const mineAll = world.planets.filter((Q) => Q.owner === ui.me && Q.id !== P.id);
@@ -880,6 +899,9 @@ $('panel').addEventListener('click', (e) => {
   else if (act === 'unsell') keepYard(sel.id, b.dataset.yard);
   else if (act === 'stop-fleet') stopTrip(Number(b.dataset.fleet));
   else if (act === 'rally-all') rallyHere(sel.id, true);
+  else if (act === 'dest-pick') { destPick = sel.id; renderPanel(true); }
+  else if (act === 'dest-pick-cancel') { destPick = null; renderPanel(true); }
+  else if (act === 'dest-clear') setDest(sel.id, null);
   else if (act === 'dest-all') destHere(sel.id, true);
   else if (act === 'dest-none') destHere(sel.id, false);
   else if (act === 'rally-none') rallyHere(sel.id, false);
