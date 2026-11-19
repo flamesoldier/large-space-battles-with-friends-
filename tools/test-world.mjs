@@ -9,7 +9,7 @@ import {
   shipsAt, incomeOf, allied, YARD_MS, HOLD_MS, designOf, upgradeWorld,
   proposeAlliance, acceptAlliance, breakAlliance, proposalsFor, dueEvent, siegeAt, renameDesign, renamePlanet,
   buildDefense, planEvent, applyEvent, registerDesign, cancelSale, jobsAt, payBounties, giveCredits, worthOf, fleetValue, stopFleet, setRally, rallyAll,
-  checkWin, nextHop, pinned, dispatchAll, holdReason, addShips, setDestination, destinationAll, countShips, makeBot,
+  checkWin, nextHop, pinned, dispatchAll, holdReason, addShips, setDestination, destinationAll, countShips, makeBot, fleetSpeed,
 } from '../src/world/world.js';
 import { writeFileSync } from 'node:fs';
 import { packReplay } from '../src/shared/replayFormat.js';
@@ -1119,8 +1119,9 @@ const lanePlanHours = (W, a, b, d) => { const A = W.planets[a], B = W.planets[b]
     runWorld(t, late.next, null);
     ok(!t.fleets.includes(late) && countShipsT(shipsAt(t.planets[a], 0)) === 4 && holdReason(t, t.planets[a], 0, { [sh]: 4 }) === 'siege', 'back home it waits for the battle to end');
   }
-  // A fleet with no orders skips a battle it would be late for and goes for the next nearest
-  // target instead; one heading for its own destination waits (owner, 18 Nov 2026).
+  // A fleet with no orders that would be late for a battle goes for another target only if that's
+  // sooner than waiting for the battle and then going there (owner, 18 + 19 Nov 2026); one heading
+  // for its own destination always waits.
   {
     const t = createAutoWorld({ players: [{ name: 'A' }, { name: 'B' }], seed: 26 });
     const lm = lanes(t);
@@ -1128,11 +1129,18 @@ const lanePlanHours = (W, a, b, d) => { const A = W.planets[a], B = W.planets[b]
     const [b, c] = [...lm.get(a)].map((id) => ({ id, d: Math.hypot(t.planets[id].x - t.planets[a].x, t.planets[id].y - t.planets[a].y) })).sort((x, y) => x.d - y.d).map((x) => x.id);
     for (const Q of t.planets) { Q.owner = Q.id === b || Q.id === c ? 1 : 0; Q.garrison = []; }
     const sh = registerDesign(t, 0, { ...makeDesign('destroyer', 3), name: 'Ship' });
-    t.sieges.push({ id: 990401, planet: b, leader: 0, fleets: [], startsAt: t.clock + 60000, against: 1 });
+    const tripH = (id) => Math.hypot(t.planets[id].x - t.planets[a].x, t.planets[id].y - t.planets[a].y) / laneSpeed(travelSpeed(fleetSpeed(t, { [sh]: 5 })));
+    ok(tripH(c) < 1.9 * tripH(b) && tripH(c) > tripH(b), `redirect test map: c is a bit further than b (${tripH(b).toFixed(2)} h, ${tripH(c).toFixed(2)} h)`);
+    const siege = { id: 990401, planet: b, leader: 0, fleets: [], startsAt: t.clock + 60000, against: 1 };
+    t.sieges.push(siege);
     ok(nextHop(t, a, 0).hop === b, 'redirect test: the nearest target is the besieged world');
     t.planets[a].garrison.push({ owner: 0, design: sh, n: 5 });
     dispatchAll(t);
-    ok(t.fleets.some((f) => f.owner === 0 && f.from === a && f.to === c) && !countShipsT(shipsAt(t.planets[a], 0)), 'with no orders it skips the battle it would be late for and goes for the next nearest');
+    ok(!t.fleets.length && countShipsT(shipsAt(t.planets[a], 0)) === 5 && holdReason(t, t.planets[a], 0, { [sh]: 5 }) === 'siege', 'late by a little: it waits for the battle rather than going further');
+    siege.startsAt = t.clock + Math.round(0.9 * tripH(b) * HOUR_MS);
+    dispatchAll(t);
+    ok(t.fleets.some((f) => f.owner === 0 && f.from === a && f.to === c) && !countShipsT(shipsAt(t.planets[a], 0)), 'late by a lot: it goes for the next nearest target, which it reaches sooner');
+    siege.startsAt = t.clock + 60000;
     t.fleets = [];
     t.planets[a].garrison.push({ owner: 0, design: sh, n: 5, goal: b });
     dispatchAll(t);

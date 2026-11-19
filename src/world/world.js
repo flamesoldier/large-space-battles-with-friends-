@@ -745,6 +745,13 @@ export function nextHop(world, from, who, goal = null, ships = null) {
   // (A fleet heading for its own goal doesn't redirect: it waits, see lateForSiege.)
   const ls = goal === null && ships && countShips(ships) ? laneSpeed(travelSpeed(fleetSpeed(world, ships))) : 0;
   const tooLate = (id, dist) => { if (!ls) return false; const sg = siegeAt(world, id)[0]; return !!sg && world.clock + Math.round((dist / ls) * HOUR_MS) > sg.startsAt; };
+  // But waiting can beat a long trip (owner, 19 Nov 2026: a fleet late for a battle next door flew off
+  // to a front line across the galaxy, then turned back when the battle ended; "it should have
+  // waited"). A target whose battle we'd miss still counts, as the time until that battle starts plus
+  // the trip there (as a lane distance at these ships' speed). The nearest by that measure wins; if
+  // it's one of those, the ships wait (null) and decide again when the battle is over.
+  const waitDist = (id) => (Math.max(0, siegeAt(world, id)[0].startsAt - world.clock) / HOUR_MS) * ls;
+  let lateBest = Infinity;
   const d = (a, b) => Math.hypot(planets[a].x - planets[b].x, planets[a].y - planets[b].y);
   const best = new Float64Array(n).fill(Infinity), prev = new Int32Array(n).fill(-1), done = new Uint8Array(n);
   best[from] = 0;
@@ -755,10 +762,10 @@ export function nextHop(world, from, who, goal = null, ships = null) {
   for (;;) {
     let u = -1;
     for (let i = 0; i < n; i++) if (!done[i] && best[i] < Infinity && (u < 0 || best[i] < best[u] || (best[i] === best[u] && i < u))) u = i;
-    if (u < 0) break;
+    if (u < 0 || best[u] >= lateBest) break; // waiting for a battle we'd miss is quicker than anything left
     done[u] = 1;
-    // A world whose battle we'd miss is neither a target nor a way through (seeking only).
-    if (u !== from && tooLate(u, best[u])) continue;
+    // A world whose battle we'd miss is not a way through; as a target it counts as wait + trip.
+    if (u !== from && tooLate(u, best[u])) { if (isTarget(u)) lateBest = Math.min(lateBest, best[u] + waitDist(u)); continue; }
     if (u !== from && isTarget(u)) { found = u; break; }
     // Seeking only passes through friendly worlds (a hostile one is a target itself). A fleet with a
     // goal goes straight through, fighting whatever is on the way.
