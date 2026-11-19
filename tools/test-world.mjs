@@ -9,7 +9,7 @@ import {
   shipsAt, incomeOf, allied, YARD_MS, HOLD_MS, designOf, upgradeWorld,
   proposeAlliance, acceptAlliance, breakAlliance, proposalsFor, dueEvent, siegeAt, renameDesign, renamePlanet,
   buildDefense, planEvent, applyEvent, registerDesign, cancelSale, jobsAt, payBounties, giveCredits, worthOf, fleetValue, stopFleet, setRally, rallyAll,
-  checkWin, nextHop, pinned, dispatchAll, holdReason, addShips, setDestination, destinationAll, countShips, makeBot, fleetSpeed,
+  checkWin, nextHop, pinned, dispatchAll, holdReason, addShips, setDestination, destinationAll, countShips, makeBot, fleetSpeed, retreatPlan,
 } from '../src/world/world.js';
 import { writeFileSync } from 'node:fs';
 import { packReplay } from '../src/shared/replayFormat.js';
@@ -1149,6 +1149,17 @@ const lanePlanHours = (W, a, b, d) => { const A = W.planets[a], B = W.planets[b]
     t.planets[a].garrison = [{ owner: 0, design: sh, n: 5 }];
     dispatchAll(t);
     ok(!t.fleets.length && holdReason(t, t.planets[a], 0, { [sh]: 5 }) === 'siege', 'with nothing else in reach it waits too');
+  }
+  // 2.0 retreats through normal space go at half lane speed (owner, 19 Nov 2026; was 10× slower).
+  {
+    const t = createAutoWorld({ players: [{ name: 'A' }, { name: 'B' }], seed: 26 });
+    const lm = lanes(t);
+    const sh = registerDesign(t, 0, { ...makeDesign('destroyer', 3), name: 'Ship' });
+    const a = t.planets[0].id, far = t.planets.find((P) => P.id !== a && !lm.get(a).has(P.id)).id;
+    const r = retreatPlan(t, 0, a, far, { [sh]: 5 });
+    const dist = Math.hypot(t.planets[far].x - t.planets[a].x, t.planets[far].y - t.planets[a].y);
+    const lane = laneSpeed(travelSpeed(fleetSpeed(t, { [sh]: 5 })));
+    ok(r.ok && r.legs.length === 1 && !r.legs[0].lane && Math.abs(r.hours - dist / (lane * 0.5)) < 1e-9, 'a retreat through normal space takes twice the hyperlane time for that distance');
   }
   // Waiting for a battle, it first moves up to the friendly world next to it (owner, 19 Nov 2026).
   {

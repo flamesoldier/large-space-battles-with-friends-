@@ -28,7 +28,7 @@ import { planRoute, travelSpeed, laneMap, laneSpeed } from './routes.js';
 import { makeBattleScenario } from './battleSetup.js';
 import { botsDue, runBots } from './bots.js';
 import { backfillStats, finalize, noteIncome, noteBuilt, noteCapture, noteBattle, playerStats } from './stats.js';
-import { HOUR_MS, MIN_FLEET_SPEED, NEUTRAL_COLOR, PLAYER_COLORS, CHOOSABLE_COLORS, MIN_PLAYERS, MAX_PLAYERS, BATTLE_MAX_TIME, BATTLE_HOLD_MIN } from './rules.js';
+import { HOUR_MS, MIN_FLEET_SPEED, NEUTRAL_COLOR, PLAYER_COLORS, CHOOSABLE_COLORS, MIN_PLAYERS, MAX_PLAYERS, BATTLE_MAX_TIME, BATTLE_HOLD_MIN, SPACE_VS_LANE } from './rules.js';
 
 export const YARD_MS = SHIPYARD_INTERVAL_MIN * 60 * 1000;
 export const HOLD_MS = BATTLE_HOLD_MIN * 60 * 1000;
@@ -938,11 +938,12 @@ function autoRetreatTarget(world, fleet, here) {
 }
 
 /** Route for a retreat to `back`: one lane leg to a neighbour, else a straight flight through normal space. */
-function retreatPlan(world, who, from, back, ships) {
+export function retreatPlan(world, who, from, back, ships) {
   const ids = Object.keys(ships).filter((d) => ships[d] > 0);
   if (!ids.length || ids.some((d) => !canFly(world, d))) return { ok: false };
   if ((lanesOf(world).get(from) || new Set()).has(back)) return lanePlan(world, from, back, ships);
-  const speed = travelSpeed(fleetSpeed(world, ships));
+  const base = travelSpeed(fleetSpeed(world, ships));
+  const speed = world.auto ? laneSpeed(base) * SPACE_VS_LANE : base; // 2.0: normal space at half lane speed
   return { ok: true, speed, ...planRoute(world.planets, lanesOf(world), from, back, speed, false), stops: [] };
 }
 
