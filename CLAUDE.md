@@ -832,7 +832,7 @@ All money numbers are in `src/shared/economy.js` (placeholders until balanced in
   in the embed message's `designs`), then Your shipyards; the ship designer doesn't list defences. Measured: 400 attackers (480k cr) beat 86 defences + 90 ships
   (137k cr counting defences at 1/5) in 95 s (`/tmp`-style script; replay sent to the owner).
 - **Arranged defences (owner, 20 Nov 2026, "highly requested": players place every defence at a world
-  and turn it, to build their own fortress)**, on `v2-dev`, not live. Owner's answers: attackers keep
+  and turn it, to build their own fortress)**, **live 21 Nov 2026** (with blueprints, Build missing and the click fix; no patch notes, as asked). Owner's answers: attackers keep
   **today's rule** (one attacker from the left, several spread evenly round the world: camps at
   2πc/n); **any angle, 15° snaps**; **new defences refill placed spots of their design first**, extras
   go in the usual rows; **touching allowed, not overlapping**.
