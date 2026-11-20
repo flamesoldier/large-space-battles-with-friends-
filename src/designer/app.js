@@ -3,7 +3,7 @@
 // battle sim and server use.
 
 import { BT, BLOCKS, WEAPON, MULTIBLOCK, HULL_CLASSES, COOKOFF, SHIELD, FLAK_POP, shieldRegen } from '../shared/blocks.js';
-import { ARC_BINS, binAngle, binOpen } from '../shared/arcs.js';
+import { ARC_BINS, binAngle, binOpen, arcCentre } from '../shared/arcs.js';
 import { routeLength } from '../shared/bayRoute.js';
 import { analyzeDesign, encodeDesign, decodeDesign, designCost, STANCE_INFO, PLACE_INFO } from '../shared/shipStats.js';
 import { shipyardPrice, shipyardPriceAt, crowdingSurcharge, SHIPYARD_INTERVAL_MIN, SHIPS_PER_BUILD, SHIPYARD_PRICE_MULT, defensePrice, DEFENSE_PRICE_SHARE, DEFENSE_BUILD_HOURS } from '../shared/economy.js';
@@ -363,7 +363,7 @@ function draw() {
       const gr = w.group;
       if (!visible(gr.x0, gr.y0, gr.x1, gr.y1)) continue;
       const x = sx(gr.x0 + ox), y = sy(gr.y0 + oy), ww = (gr.x1 - gr.x0 + 1) * z, hh = (gr.y1 - gr.y0 + 1) * z;
-      if (gr.ok && ww > 12) (gr.type === BT.BAY ? bayUnit : gr.type === BT.AUTO ? autoUnit : gr.type === BT.FLAK ? flakUnit : gr.type === BT.SHIELD ? shieldUnit : plasmaUnit)(x, y, ww, hh, z);
+      if (gr.ok && ww > 12) (gr.type === BT.BAY ? bayUnit : gr.type === BT.AUTO ? autoUnit : gr.type === BT.FLAK ? flakUnit : gr.type === BT.SHIELD ? shieldUnit : plasmaUnit)(x, y, ww, hh, z, w);
       g.strokeStyle = gr.ok ? 'rgba(200,205,255,0.4)' : '#ff6b6b'; g.lineWidth = Math.max(1, dpr());
       g.strokeRect(x + 0.5, y + 0.5, ww - 1, hh - 1);
     }
@@ -501,16 +501,36 @@ function bayUnit(x, y, ww, hh, z) {
   for (const [dx, dy] of [[0.25, 0.25], [0.75, 0.25], [0.25, 0.75], [0.75, 0.75]]) { g.beginPath(); g.arc(x + ww * dx, y + hh * dy, R * 0.035, 0, Math.PI * 2); g.fill(); }
 }
 
-/** An auto gun unit (20 Nov 2026): a gunmetal mount, an ammunition drum at the back, two barrels to the nose (+x). */
-function autoUnit(x, y, ww, hh, z) {
-  const R = Math.min(ww, hh), cy = y + hh / 2;
-  g.fillStyle = '#6f6a5d'; g.fillRect(x, y, ww, hh);
-  g.fillStyle = '#8c8676'; g.fillRect(x + R * 0.07, y + R * 0.07, ww - R * 0.14, hh - R * 0.14);
-  g.fillStyle = '#4b473e'; g.beginPath(); g.arc(x + ww * 0.38, cy, R * 0.22, 0, Math.PI * 2); g.fill();
-  g.fillStyle = '#d6cfba';
-  for (const dy of [-0.13, 0.13]) g.fillRect(x + ww * 0.45, cy + dy * hh - R * 0.05, ww * 0.55, R * 0.1);
-  g.fillStyle = '#17181b';
-  for (const dy of [-0.13, 0.13]) g.fillRect(x + ww * 0.9, cy + dy * hh - R * 0.025, ww * 0.1, R * 0.05);
+/**
+ * An auto gun unit (second look, 20 Nov 2026): a rotary cannon on an armoured mount, hazard-striped
+ * ammunition box behind, three barrels pointing out of the hull (the middle of its line of fire, in
+ * 45° steps, like the replay viewer).
+ */
+function autoUnit(x, y, ww, hh, z, wp) {
+  const R = Math.min(ww, hh), cx = x + ww / 2, cy = y + hh / 2;
+  const dir = wp && !wp.buried ? Math.round(arcCentre(wp.m0, wp.m1) / (Math.PI / 4)) * (Math.PI / 4) : 0;
+  g.fillStyle = '#5a564b'; g.fillRect(x, y, ww, hh);
+  g.fillStyle = '#8f8a7a'; g.fillRect(x, y, ww, R * 0.06); g.fillRect(x, y, R * 0.06, hh);
+  g.fillStyle = '#3c3a33'; g.fillRect(x, y + hh - R * 0.06, ww, R * 0.06); g.fillRect(x + ww - R * 0.06, y, R * 0.06, hh);
+  g.fillStyle = '#b9b3a0';
+  for (const [dx, dy] of [[0.14, 0.14], [0.86, 0.14], [0.14, 0.86], [0.86, 0.86]]) { g.beginPath(); g.arc(x + ww * dx, y + hh * dy, R * 0.035, 0, Math.PI * 2); g.fill(); }
+  g.save(); g.translate(cx, cy); g.rotate(dir);
+  // ammunition box with hazard stripes
+  g.fillStyle = '#6b6555'; g.fillRect(-R * 0.46, -R * 0.15, R * 0.26, R * 0.3);
+  g.fillStyle = '#e0b23a'; g.fillRect(-R * 0.46, -R * 0.15, R * 0.07, R * 0.3);
+  g.fillStyle = '#ffb347'; g.beginPath(); g.arc(-R * 0.3, 0, R * 0.025, 0, Math.PI * 2); g.fill();
+  // barrels
+  for (const by of [-0.085, 0, 0.085]) {
+    g.fillStyle = '#cfc8b2'; g.fillRect(R * 0.06, (by - 0.033) * R, R * 0.435, R * 0.066);
+    g.fillStyle = '#1a1b1e'; g.fillRect(R * 0.455, (by - 0.016) * R, R * 0.04, R * 0.032);
+  }
+  g.fillStyle = '#e8e2cc'; g.fillRect(R * 0.302, -R * 0.13, R * 0.056, R * 0.26);
+  g.restore();
+  // turret dome in its collar (lit from the upper left whichever way it points)
+  g.fillStyle = '#2f2d28'; g.beginPath(); g.arc(cx, cy, R * 0.25, 0, Math.PI * 2); g.fill();
+  const grd = g.createRadialGradient(cx - R * 0.08, cy - R * 0.08, R * 0.02, cx, cy, R * 0.21);
+  grd.addColorStop(0, '#e9e3cf'); grd.addColorStop(1, '#6e6959');
+  g.fillStyle = grd; g.beginPath(); g.arc(cx, cy, R * 0.21, 0, Math.PI * 2); g.fill();
 }
 
 /** A flak cannon unit: gunmetal deck in an armoured rim, a turret ring with four big barrels, ammunition feeds, amber lights. */

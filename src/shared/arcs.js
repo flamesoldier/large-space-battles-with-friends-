@@ -95,3 +95,20 @@ export function openDegrees(m0, m1) {
   for (let k = 0; k < ARC_BINS; k++) if (binOpen(m0, m1, k)) n++;
   return (n * 360) / ARC_BINS;
 }
+
+/**
+ * The middle of the widest run of open slices (a local angle, radians), or 0 (the nose) if the
+ * weapon is buried. The viewer and designer turn the auto gun's barrels this way, so a gun on the
+ * back or side of a ship visibly points out of the hull (owner, 20 Nov 2026).
+ */
+export function arcCentre(m0, m1) {
+  let bestLen = 0, bestStart = 0;
+  for (let s = 0; s < ARC_BINS; s++) {
+    if (!binOpen(m0, m1, s) || binOpen(m0, m1, (s + ARC_BINS - 1) % ARC_BINS)) continue; // start of a run
+    let n = 0;
+    while (n < ARC_BINS && binOpen(m0, m1, (s + n) % ARC_BINS)) n++;
+    if (n > bestLen) { bestLen = n; bestStart = s; }
+  }
+  if (!bestLen) return 0; // buried, or open all round: face the nose
+  return binAngle(bestStart) + ((bestLen - 1) * 2 * Math.PI) / ARC_BINS / 2;
+}

@@ -559,6 +559,31 @@ Weapons (numbers in `blocks.js`):
     hit). Load: 500 auto boats (1,500 guns) vs 707 cannon boats: 80 s battle, 3.6 s compute (4.5 ms a tick),
     343k bullets, peak 3,022 projectiles, 3.2 MB gzip replay, 64 MB heap. Bench (no auto guns) unchanged.
     **Cannon rework and auto gun live 20 Nov 2026.**
+  - **Third round (owner, 20 Nov 2026: "make the blocks look better, make sure it works from whatever side
+    they are attached, bullets visually more impactful, maybe a 0.2 fire rate and 200 range")**, on `v2-dev`,
+    not live. Where this disagrees with the lines above, this wins:
+    - **Every 0.2 s, range 200** (damage 55, speed 150, life 10 s unchanged; so half the damage per second).
+    - **Guns off the nose hardly fired** (an auto gun on the back of a ship: 0–17 bullets in 20 s against a
+      target anywhere round it). Not the gun: `holdFacing()` took the least turn among equally good directions,
+      which for a gun not facing forward is the very edge of its arc, so the target sat on the border and the
+      gun (a few blocks off the ship's centre) mostly didn't bear. Now `refit()` also builds `e.faceIn` /
+      `e.faceInMax`: each direction counts the least firepower within `FACE_MARGIN` (4) slices either side, the
+      widest margin (4…0) that still keeps 90% of the best firepower; `holdFacing` picks from that. Applies to
+      every ship holding range (broadside ships too); nose guns facing the target are unchanged. Back gun now
+      75–97 bullets in 20 s from every direction. Test in `tools/test-designer.mjs` (back/top/bottom gun fires;
+      fails with `FACE_MARGIN` 0). Bench 1,000 vs 1,000: 189.0 → 182.8 s, 7.00 → 6.89 ms a tick, survivors
+      206:79 → 211:83.
+    - **New look**: a rotary cannon on an armoured mount (bolted chamfered rim, lit dome in a collar, three
+      barrels with a clamp band and glowing muzzles, hazard-striped ammunition box behind). **Barrels point out
+      of the hull**: the middle of the gun's widest open run of arc slices (`arcCentre()` in `arcs.js`), in 45°
+      steps; the viewer stores it in the unit code (`unitPos()` in `model.js`: 1 + position + 4 × dir, shader
+      `var & 3` / `var >> 2`), the designer's `autoUnit()` rotates the same way.
+    - **Bullets** (`drawTracers`): muzzle flash at the gun for 0.15 s, longer tracer (≤ 4.5) in an orange glow
+      with a hot head, and on a hit a flash plus 5 sparks kicked back off the hull for 0.5 s. Viewer only.
+    - Measured (`/tmp`-style harness: 18×10 hulls, 3 nose auto units 1,845 cr ×33 vs 8 cannons 1,305 cr ×46,
+      60k a side, 4 seeds; live → now): line vs line −0.01 → −0.21, auto guns on the hull side +0.13 → +0.20,
+      charge vs line −0.12 → −0.15, line vs cannon standoff −0.27 → −0.18. Damage 110 (same dps as live) was
+      tried: −0.15 / +0.09 / −0.16 / −0.15, not clearly better; left at 55 pending the owner.
   - Measured (16×10 hull, 3 auto gun units 1,113 cr vs 8 cannons 1,317 cr, 60k cr a side, 4 seeds; score =
     enemy ships lost share − own): auto charge vs cannon line −0.06, line vs line −0.03, line vs cannon
     standoff −0.16; starting at 120 apart auto guns win (27/54 left vs 9/46). A third of bullets hit allied

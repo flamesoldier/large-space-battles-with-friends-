@@ -533,6 +533,23 @@ for (let k = 0; k < FORTRESSES.length; k++) {
   b.run();
   const K = b.R.shotKind, kinds = K.a.slice(0, K.n ?? K.length);
   assert.ok(Array.from(kinds).filter((k) => k === 7).length > 50, 'auto guns fire bullets (replay shot kind 7)');
+  // An auto gun works from whatever side it's on (owner, 20 Nov 2026): a ship holding its range
+  // turns so the target sits well inside the gun's arc, not on its edge (where it hardly fired).
+  for (const side of ['back', 'top', 'bottom']) {
+    const w = 14, h = 14, cells = new Uint8Array(w * h);
+    for (let j = 2; j < 12; j++) for (let i = 2; i < 12; i++) cells[j * w + i] = BT.ARMOR;
+    for (let j = 4; j < 10; j++) cells[j * w + 2] = BT.THRUSTER;
+    cells[7 * w + 7] = BT.HUB;
+    const [gx, gy] = side === 'back' ? [0, 6] : side === 'top' ? [6, 0] : [6, 12];
+    cells[gy * w + gx] = cells[gy * w + gx + 1] = cells[(gy + 1) * w + gx] = cells[(gy + 1) * w + gx + 1] = BT.AUTO;
+    const gun = { name: 'Side gun', cls: 'cruiser', w, h, cells, hub: 7 * w + 7, stance: 'line' };
+    const dm = new Uint8Array(36).fill(BT.ARMOR); dm[14] = BT.HUB; dm[20] = BT.CANNON;
+    const dummy = { name: 'Dummy', cls: 'frigate', w: 6, h: 6, cells: dm, hub: 14, stance: 'line' };
+    const b = new Battle({ designs: [gun, dummy], ships: [{ design: 0, team: 0, x: 0, y: 0, a: 0 }, { design: 1, team: 1, x: 100, y: 0, a: 0, fixed: true }], seed: 3, maxTime: 20 });
+    b.run();
+    const n = Array.from(b.R.shotKind.a.slice(0, b.R.shotKind.n)).filter((k) => k === 7).length;
+    assert.ok(n > 40, `an auto gun on the ${side} of a ship fires (${n} bullets in 20 s)`);
+  }
 }
 
 // Fleets that start far apart fight it out (owner, 19 Nov 2026: a battle "ended" at 34 s with no

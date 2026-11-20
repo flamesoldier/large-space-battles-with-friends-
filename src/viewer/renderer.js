@@ -170,21 +170,47 @@ vec3 hullBlock(int code, vec2 p) {
       glow = (vec3(1.0, 0.62, 0.2) * lights * (0.65 + 0.35 * sin(uTime * 0.7 + q.x * 7.0)) + vec3(1.0, 0.45, 0.15) * hot) * d;
     }
   }
-  else if (type == 15) { // auto gun (20 Nov 2026): the 2x2 unit is one twin-barrelled gun, barrels to the nose (+x)
-    vec2 q = (vec2(float(var / 2), float(var - (var / 2) * 2)) + p * 0.5 + 0.5) / 2.0 - 0.5; // -0.5..0.5 across the unit
+  else if (type == 15) { // auto gun (20 Nov 2026): the 2x2 unit is one rotary cannon on an armoured mount; its barrels point out of the hull (dir, 45° steps)
+    int pos = var & 3, dir = var >> 2;
+    vec2 q = (vec2(float(pos / 2), float(pos - (pos / 2) * 2)) + p * 0.5 + 0.5) / 2.0 - 0.5; // -0.5..0.5 across the unit
     vec2 aq = abs(q);
-    float m = max(aq.x, aq.y), R = length(q - vec2(-0.12, 0.0));
-    float base = 0.62 - dot(q, L) * 0.25;
-    float rim = smoothstep(0.42, 0.46, m);
-    base = mix(base, 0.85 - dot(q, L) * 0.4, rim);
-    float drum = 1.0 - smoothstep(0.2, 0.23, R); // ammunition drum at the back
-    base = mix(base, 0.4 + 0.25 * step(0.5, fract(atan(q.y, q.x + 0.12) * 1.6)), drum);
-    float barrel = step(abs(abs(q.y) - 0.13), 0.05) * step(-0.05, q.x); // two barrels
-    base = mix(base, 0.95 - dot(q, L) * 0.5, barrel);
-    float bore = barrel * step(0.4, q.x) * step(abs(abs(q.y) - 0.13), 0.025);
-    base = mix(base, 0.15, bore);
+    float ga = float(dir) * 0.7853982, ca = cos(ga), sa = sin(ga);
+    vec2 r = vec2(q.x * ca + q.y * sa, -q.x * sa + q.y * ca); // gun frame: barrels along +r.x
+    vec2 rL = vec2(L.x * ca + L.y * sa, -L.x * sa + L.y * ca);
+    float m = max(aq.x, aq.y), R = length(q);
+    // mount: dark plate, bright chamfered rim, a bolt in each corner
+    float base = 0.42 + 0.05 * step(0.5, fract((q.x + q.y) * 7.0));
+    float rim = smoothstep(0.40, 0.43, m) * (1.0 - smoothstep(0.47, 0.5, m));
+    base = mix(base, 0.95 - dot(q, L) * 0.8, rim);
+    float bolt = 1.0 - smoothstep(0.025, 0.04, length(aq - vec2(0.36)));
+    base = mix(base, 1.1 - dot(aq - vec2(0.36), L) * 6.0, bolt);
+    // ammunition box behind the turret, hazard-striped, with a feed chute
+    float box = step(abs(r.y), 0.15) * step(-0.46, r.x) * step(r.x, -0.2);
+    float hz = step(0.5, fract((r.x + r.y) * 9.0));
+    base = mix(base, mix(0.35, 0.95, hz * step(r.x, -0.39)) + 0.25 * step(-0.39, r.x) - dot(r, rL) * 0.3, box);
+    // turret: lit dome in a bright collar
+    float dome = 1.0 - smoothstep(0.2, 0.215, R);
+    float collar = (1.0 - smoothstep(0.215, 0.25, R)) * (1.0 - dome);
+    base = mix(base, 0.3, collar * 0.6);
+    base = mix(base, 1.2 * (0.72 - dot(q, L) * 1.6) * (1.0 - 0.25 * smoothstep(0.08, 0.2, R)), dome);
+    // three barrels in a rotary cluster, round shading, a clamp band and dark bores at the muzzles
+    float by = r.y - clamp(floor(r.y / 0.085 + 0.5), -1.0, 1.0) * 0.085;
+    float bw = 0.033, onB = step(abs(by), bw) * step(0.06, r.x) * step(r.x, 0.495) * step(abs(r.y), 0.12);
+    float cyl = 1.0 - (by / bw) * (by / bw);
+    float band = step(abs(r.x - 0.33), 0.028) * step(abs(r.y), 0.13);
+    float muzzle = onB * step(0.44, r.x);
+    float bore = muzzle * step(abs(by), bw * 0.45);
+    base = mix(base, 0.55 + 0.6 * cyl - rL.y * by * 6.0, max(onB, band) * (1.0 - dome));
+    base = mix(base, 1.25, band * 0.5 * (1.0 - dome));
+    base = mix(base, 0.1, bore);
     lit *= mix(1.0, base, d);
-    if (!dead) glow = vec3(1.0, 0.85, 0.4) * bore * (0.5 + 0.5 * sin(uTime * 3.0 + q.y * 9.0)) * d;
+    if (!dead) {
+      float heat = 0.55 + 0.45 * sin(uTime * 4.0 + float(var) * 1.7);
+      float lamp = 1.0 - smoothstep(0.015, 0.03, length(r - vec2(-0.3, 0.0)));
+      glow = (vec3(1.0, 0.55, 0.15) * muzzle * heat * 0.9 + vec3(1.0, 0.9, 0.5) * bore * heat
+            + vec3(1.0, 0.75, 0.2) * lamp * (0.6 + 0.4 * sin(uTime * 0.8 + float(var)))
+            + vec3(1.0, 0.85, 0.5) * dome * smoothstep(0.08, 0.0, R) * 0.25) * d;
+    }
   }
   else if (type == 14) { // shield generator: the 10x10 unit is one emitter, a glowing dish inside a ring of coils
     vec2 q = (vec2(float(var / 10), float(var - (var / 10) * 10)) + p * 0.5 + 0.5) / 10.0 - 0.5;
@@ -380,7 +406,7 @@ const C = {
   // Flak (14 Nov 2026): hot amber shells, a white flash and a spray of orange shrapnel streaks.
   flShell: rgba('#fff0c2', 255), flTrail: rgba('#ffb347', 210), flFlash: rgba('#fff8e8', 255), flGlow: rgba('#ff9a3c', 255),
   shield: rgba('#6fe8ff', 255),
-  flShrap: rgba('#ffc070', 255), tracer: rgba('#ffe58a', 255), tracerHot: rgba('#fffbe8', 255), flSmoke: rgba('#8c8278', 255),
+  autoHalo: rgba('#ff8a1e', 255), autoFlash: rgba('#ffd27a', 255), autoSpark: rgba('#ffb347', 255), flShrap: rgba('#ffc070', 255), tracer: rgba('#ffe58a', 255), tracerHot: rgba('#fffbe8', 255), flSmoke: rgba('#8c8278', 255),
 };
 
 export class Renderer {
@@ -827,24 +853,43 @@ export class Renderer {
    * Flak shrapnel: each piece a small hot streak flying straight from the burst until it hits
    * something (a tiny flash there) or burns out (fades over its last second).
    */
-  /** Auto gun bullets (shot kind 7, 20 Nov 2026): short bright yellow tracers, a spark where they hit. */
+  /**
+   * Auto gun bullets (shot kind 7). Second look (owner, 20 Nov 2026: "visually more impactful"):
+   * a muzzle flash where each leaves the gun, a long hot tracer in an orange glow, and on a hit a
+   * flash plus a few sparks kicked back off the hull. All pure functions of time (ticks).
+   */
   drawTracers(S, t, vis, minW) {
-    const g = this.glow;
-    for (let i = lowerBound(S.t0, t - S.maxFlight - 3); i < S.n && S.t0[i] <= t; i++) {
-      const age = t - S.t0[i];
+    const g = this.glow, FLASH = 1.5, HIT = 5;
+    for (let i = lowerBound(S.t0, t - S.maxFlight - HIT); i < S.n && S.t0[i] <= t; i++) {
+      const age = t - S.t0[i], vx = S.vx[i], vy = S.vy[i];
+      const a = Math.atan2(vy, vx), c = Math.cos(a), s = Math.sin(a), sp = Math.hypot(vx, vy);
+      if (age < FLASH && vis(S.x[i], S.y[i], 6)) { // muzzle flash: a burst and a short tongue of flame forward
+        const k = 1 - age / FLASH, r = Math.max(0.7 + 1.6 * k, minW * 2);
+        g.push(S.x[i], S.y[i], 0, r, r, 1, alpha2(C.autoFlash, 0.9 * k));
+        g.push(S.x[i] + c * 1.4, S.y[i] + s * 1.4, a, 1.8 * k + 0.4, Math.max(0.55 * k, minW), 2, alpha2(C.tracerHot, k));
+      }
       if (t > S.t1[i]) {
-        if (S.hit[i] && t - S.t1[i] < 3) {
-          const f = S.t1[i] - S.t0[i], x = S.x[i] + S.vx[i] * f, y = S.y[i] + S.vy[i] * f, k = 1 - (t - S.t1[i]) / 3;
-          if (vis(x, y, 4)) g.push(x, y, 0, Math.max(0.9, minW * 1.6), Math.max(0.9, minW * 1.6), 1, alpha2(C.tracerHot, k));
+        const since = t - S.t1[i];
+        if (S.hit[i] && since < HIT) {
+          const f = S.t1[i] - S.t0[i], x = S.x[i] + vx * f, y = S.y[i] + vy * f, k = 1 - since / HIT;
+          if (!vis(x, y, 8)) continue;
+          const r = Math.max(1.0 + 2.6 * (1 - k * k), minW * 2);
+          g.push(x, y, 0, r, r, 1, alpha2(C.autoHalo, 0.8 * k));
+          if (since < 1.5) g.push(x, y, 0, Math.max(1.5, minW * 2.5), Math.max(1.5, minW * 2.5), 1, alpha2(C.tracerHot, 1 - since / 1.5));
+          for (let j = 0; j < 5; j++) { // sparks thrown back off the hull, fanned out
+            const sa = a + Math.PI + (hash01(i, j) - 0.5) * 2.4, v = 0.5 + hash01(i, j + 9) * 0.9, d = v * since;
+            g.push(x + Math.cos(sa) * d, y + Math.sin(sa) * d, sa, 0.7 + v * 0.7, Math.max(0.16, minW * 0.7), 2, alpha2(C.autoSpark, k));
+          }
         }
         continue;
       }
-      const vx = S.vx[i], vy = S.vy[i], x = S.x[i] + vx * age, y = S.y[i] + vy * age;
-      if (!vis(x, y, 8)) continue;
+      const x = S.x[i] + vx * age, y = S.y[i] + vy * age;
+      if (!vis(x, y, 10)) continue;
       const fade = S.hit[i] ? 1 : Math.min(1, (S.t1[i] - t) / 6);
-      const a = Math.atan2(vy, vx), c = Math.cos(a), s = Math.sin(a), len = Math.min(2.6, age * Math.hypot(vx, vy) * 0.5 + 0.4);
-      g.push(x - c * len, y - s * len, a, len, Math.max(0.2, minW * 0.7), 4, alpha2(C.tracer, 0.9 * fade));
-      g.push(x, y, 0, Math.max(0.3, minW * 0.9), Math.max(0.3, minW * 0.9), 1, alpha2(C.tracerHot, fade));
+      const len = Math.min(4.5, age * sp * 0.5 + 0.4), core = Math.min(3.2, age * sp * 0.4 + 0.3);
+      g.push(x - c * len, y - s * len, a, len, Math.max(0.6, minW * 1.6), 4, alpha2(C.autoHalo, 0.35 * fade));
+      g.push(x - c * core, y - s * core, a, core, Math.max(0.24, minW * 0.8), 4, alpha2(C.tracer, fade));
+      g.push(x, y, 0, Math.max(0.5, minW * 1.1), Math.max(0.5, minW * 1.1), 1, alpha2(C.tracerHot, fade));
     }
   }
 

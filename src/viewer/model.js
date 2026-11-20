@@ -6,6 +6,7 @@
 
 import { unpackReplay } from '../shared/replayFormat.js';
 import { MULTIBLOCK, BT } from '../shared/blocks.js';
+import { lineOfFire, arcCentre } from '../shared/arcs.js';
 
 export function lowerBound(arr, v, n = arr.length) {
   let lo = 0, hi = n;
@@ -455,7 +456,14 @@ function unitPos(d) {
       for (const n of [x > 0 ? c - 1 : -1, x < w - 1 ? c + 1 : -1, y > 0 ? c - w : -1, y < h - 1 ? c + w : -1])
         if (n >= 0 && !seen[n] && cells[n] === T) { seen[n] = 1; stack.push(n); }
     }
-    for (const c of group) out[c] = 1 + Math.min(N - 1, (c % w) - x0) * N + Math.min(N - 1, ((c / w) | 0) - y0);
+    // Auto guns also carry which way their barrels point (dir 0..7, 45° steps from the nose): the
+    // middle of their open line of fire, so a gun on the back or side points out of the hull.
+    let dir = 0;
+    if (T === BT.AUTO) {
+      const lf = lineOfFire(cells, null, w, h, group[0], {}, group);
+      dir = ((Math.round(arcCentre(lf.m0, lf.m1) / (Math.PI / 4)) % 8) + 8) % 8;
+    }
+    for (const c of group) out[c] = 1 + Math.min(N - 1, (c % w) - x0) * N + Math.min(N - 1, ((c / w) | 0) - y0) + dir * N * N;
   }
   return (d._unit = out);
 }

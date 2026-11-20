@@ -34,6 +34,7 @@ const q16 = (v) => { const r = Math.round(v * EV_Q); return r > 32767 ? 32767 : 
 const qAng = (a) => Math.round((wrapAngle(a) / TWO_PI) * 65536) & 0xffff;
 const wrapAngle = (a) => a - TWO_PI * Math.floor((a + Math.PI) / TWO_PI);
 const SHIP = 0, CHUNK = 1;
+export const FACE_MARGIN = 4; // holdFacing keeps the target this many arc slices (5.6° each) inside a gun's arc
 export const MAX_TEAMS = 16; // sides in one battle (players plus militia); fr[] is indexed (a << 4) | b
 // Debris stays hittable and solid for the whole battle (owner: debris is part of the fight).
 // The retire mechanism is kept as a cap that can be set if very long battles ever get slow.
@@ -245,7 +246,7 @@ export class Battle {
       gapTo: -1, gapT: -1000, gap: 0, // cached distance to the first real block of a big target (see gapTo)
       tdist: null, tdistT: -1000, tdirty: false, // big hulls: distance from each tile to the nearest live one (see nearGap)
       mass: 1, maxSpeed: 0, turn: 0, agility: 0, prefRange: 60, ward: null,
-      face: null, faceMax: 0, // firepower that bears on a target at each of the 64 directions round the ship (see refit / holdFacing)
+      face: null, faceMax: 0, faceIn: null, faceInMax: 0, // faceIn: face with the arc edges trimmed (holdFacing); firepower that bears on a target at each of the 64 directions round the ship (see refit / holdFacing)
       worth: 0, // credit value of the ship's design (rout check)
       light: 0, flakIn: 0, // flak: how lightly armoured it is for its guns (see refit), flak shells on their way to it
       gens: null, shield: 0, shieldMax: 0, shieldRegen: 0, shQ: -1, shT: -1000, // shield generators and the ship's shield pool (see SHIELD)
@@ -352,6 +353,24 @@ export class Battle {
     }
     e.faceMax = 0;
     for (let k = 0; k < ARC_BINS; k++) if (e.face[k] > e.faceMax) e.faceMax = e.face[k];
+    // The same, trimmed to directions well inside the arcs (owner, 20 Nov 2026: an auto gun on the
+    // back of a ship hardly fired). holdFacing took the least turn among equally good directions,
+    // which for a gun that doesn't face forward is the very edge of its arc: the target sat on the
+    // border and the gun (a few blocks from the ship's centre) mostly didn't bear. Each direction
+    // counts the least firepower within FACE_MARGIN slices either side, the widest margin that
+    // still keeps 90% of the best firepower. Nose guns facing the target are unchanged.
+    if (!e.faceIn) e.faceIn = new Float32Array(ARC_BINS);
+    for (let m = FACE_MARGIN; m >= 0; m--) {
+      let best = 0;
+      for (let k = 0; k < ARC_BINS; k++) {
+        let v = e.face[k];
+        for (let j = 1; j <= m && v > 0; j++) v = Math.min(v, e.face[(k + j) & (ARC_BINS - 1)], e.face[(k - j + ARC_BINS) & (ARC_BINS - 1)]);
+        e.faceIn[k] = v;
+        if (v > best) best = v;
+      }
+      e.faceInMax = best;
+      if (best >= e.faceMax * 0.9) break;
+    }
     // Point defence doesn't drive positioning. "Direct" range is the main gun: cannons if fitted, else lasers.
     let shortest = Infinity, longest = 0, cannon = 0, laser = 0, far = 0, near = Infinity;
     for (const w of e.weapons) {
@@ -697,7 +716,7 @@ export class Battle {
    */
   holdFacing(e, to) {
     if (!(e.faceMax > 0)) return to;
-    const f = e.face, lim = e.faceMax * 0.9;
+    const f = e.faceIn, lim = e.faceInMax * 0.9;
     let best = to, bt = Infinity;
     for (let k = 0; k < ARC_BINS; k++) {
       if (f[k] < lim) continue;

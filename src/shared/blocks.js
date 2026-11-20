@@ -17,7 +17,7 @@ export const BT = {
   BAY: 12, // fighter bay (owner, Nov 2026): a 6x6 unit that launches a fighter every 30 s
   FLAK: 13, // flak cannon (owner, 14 Nov 2026): a 10x10 unit, long range, shells burst beside lightly armoured ships in a spray of shrapnel
   SHIELD: 14, // shield generator (owner, 15 Nov 2026): a 10x10 unit that gives its ship a regenerating shield pool
-  AUTO: 15, // auto gun (owner, 20 Nov 2026): a 2x2 unit, short range, fires fast inaccurate bullets every 0.3 s. Type 15 is the last the viewer's shape code can hold (10 + type + 16 × sides)
+  AUTO: 15, // auto gun (owner, 20 Nov 2026): a 2x2 unit, short range, fires fast inaccurate bullets every 0.2 s. Type 15 is the last the viewer's shape code can hold (10 + type + 16 × sides)
 };
 
 // Multi-block weapons: footprint in blocks, and the fraction of those blocks that must
@@ -90,9 +90,10 @@ export const WEAPON = {
   // 2 heavy armour (240 hp) or 11 frame (45 hp). Same damage per second as before.
   [BT.CANNON]: { kind: 'shell', range: 340, damage: 500, cooldown: 10, speed: 45, life: 30, splash: 8, budget: true, spread: 0.05 },
   // Auto gun (owner, 20 Nov 2026): a 2x2 unit spraying fast, fairly inaccurate bullets at close
-  // range, 55 damage each to the block it hits, every 0.3 s. Bullets fly `life` s (not 30 like
+  // range, 55 damage each to the block it hits, every 0.2 s out to 200 (owner, 20 Nov 2026, third
+  // round; was 0.1 s and 150). Bullets fly `life` s (not 30 like
   // cannon shells: at 3+ shots a second a long life would fill battles with spent bullets).
-  [BT.AUTO]: { kind: 'shell', auto: true, range: 150, damage: 55, cooldown: 0.1, speed: 150, life: 10, spread: 0.07 }, // each bullet damages only the block it hits
+  [BT.AUTO]: { kind: 'shell', auto: true, range: 200, damage: 55, cooldown: 0.2, speed: 150, life: 10, spread: 0.07 }, // each bullet damages only the block it hits
   // Heavy missile: unguided, crawls across the map in a straight line, flies over friendly
   // ships, devastating blast. Has hit points, so point defence can shoot it down on the way in.
   // Blast damage falls off with distance: peak * (1 - d / splash)^2, applied to every ship
