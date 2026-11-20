@@ -610,6 +610,7 @@ Weapons (numbers in `blocks.js`):
       deck with panel seams (colour overridden from the bay's gold, which made the old deck and fighter look
       yellow), thin hazard rim, a runway with running amber lamps to dark open doors on the exit side, a small
       grey fighter (fins, cockpit, engine glow) nose to the doors. Designer `gunGlyph` / `bayUnit` match.
+    - **Third round and the new weapon looks live 20 Nov 2026** (owner: "make it live"; no patch notes, as asked).
   - Measured (16×10 hull, 3 auto gun units 1,113 cr vs 8 cannons 1,317 cr, 60k cr a side, 4 seeds; score =
     enemy ships lost share − own): auto charge vs cannon line −0.06, line vs line −0.03, line vs cannon
     standoff −0.16; starting at 120 apart auto guns win (27/54 left vs 9/46). A third of bullets hit allied
