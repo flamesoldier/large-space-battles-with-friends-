@@ -871,7 +871,7 @@ All money numbers are in `src/shared/economy.js` (placeholders until balanced in
     the world panel's Defences section (`openArranger()` in `galaxy/app.js`), with a line saying how
     many stand where the player put them, how many are in rows, and empty spots. Full-screen canvas:
     defences drawn from their blocks (`BLOCK_COLOR` sprites), the world, the 1,000-block limit ring,
-    a red **ATTACKERS** arrow from the left and dashed arrows at 120°/240° for two attackers; drag to
+    a red **ATTACKERS** arrow and dashed arrows for two attackers; **the view is the battle frame turned half round** (owner, 21 Nov 2026: the designer says enemies come from the right, the arranger said left): `toScreen`/`toWorld` negate, `S.cam` is in view coordinates, sprites drawn at `p.a + π`, so attackers come from the right and noses face right as in the Defence Designer; stored spots and battles unchanged (replays still show one attacker coming from the left); drag to
     move (snaps blocks to whole-block lines when turned a multiple of 90°), round handle to turn
     (Shift snaps 15°; on touch it snaps near each 15° step), ⟲/⟳ 15° (Q/E, turns a group round its
     centre), Shift+click / Shift+drag box to select several, Select all (A), Remove empty spots

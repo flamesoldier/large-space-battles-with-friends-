@@ -4,7 +4,8 @@
 // they drag into place and turn to any angle (15° snaps on Q/E, the buttons, or Shift while
 // turning). What they save becomes P.layout (see src/world/defenceLayout.js), and battles there
 // stand each defence exactly as shown. The battle frame is used throughout: x right, y down, the
-// world at (0, 0), one attacker coming in from the left (several spread evenly round the world).
+// world at (0, 0), one attacker coming in from the left (several spread evenly round the world);
+// the screen shows it turned half round, so attackers come from the right (see toScreen).
 //
 // openArrange(opts) with opts = { title, designs: { id: { name, design } } (every defence design of
 //   the player's), counts: { id: n } (defences at this world), layout: spots | null,
@@ -330,8 +331,11 @@ function syncSize() {
   const cv = root.querySelector('canvas');
   if (cv.clientWidth !== W || cv.clientHeight !== H || Math.min(2, devicePixelRatio || 1) !== dpr) resize();
 }
-const toScreen = (x, y) => [(x - S.cam.x) * S.cam.z + W / 2, (y - S.cam.y) * S.cam.z + H / 2];
-const toWorld = (sx, sy) => [(sx - W / 2) / S.cam.z + S.cam.x, (sy - H / 2) / S.cam.z + S.cam.y];
+// The view is the battle frame turned half round (owner, 21 Nov 2026), so attackers come from the
+// right as in the Defence Designer, where a defence's nose (+x) faces right. S.cam is in view
+// coordinates (view = -battle); everything stored stays in the battle frame.
+const toScreen = (x, y) => [(-x - S.cam.x) * S.cam.z + W / 2, (-y - S.cam.y) * S.cam.z + H / 2];
+const toWorld = (sx, sy) => [-((sx - W / 2) / S.cam.z + S.cam.x), -((sy - H / 2) / S.cam.z + S.cam.y)];
 function fit() {
   syncSize();
   let r = 120;
@@ -342,7 +346,7 @@ function zoomAt(sx, sy, k) {
   syncSize();
   const [wx, wy] = toWorld(sx, sy);
   S.cam.z = Math.max(0.05, Math.min(40, S.cam.z * k));
-  S.cam.x = wx - (sx - W / 2) / S.cam.z; S.cam.y = wy - (sy - H / 2) / S.cam.z;
+  S.cam.x = -wx - (sx - W / 2) / S.cam.z; S.cam.y = -wy - (sy - H / 2) / S.cam.z;
   draw();
 }
 
@@ -376,7 +380,8 @@ function draw() {
   const z = S.cam.z;
   // grid every 10 blocks (every 50 when zoomed out)
   const step = z * 10 < 8 ? 50 : 10;
-  const [x0, y0] = toWorld(0, 0), [x1, y1] = toWorld(W, H);
+  const [ax0, ay0] = toWorld(0, 0), [ax1, ay1] = toWorld(W, H);
+  const x0 = Math.min(ax0, ax1), x1 = Math.max(ax0, ax1), y0 = Math.min(ay0, ay1), y1 = Math.max(ay0, ay1);
   g.strokeStyle = 'rgba(140,170,210,0.07)'; g.lineWidth = 1; g.beginPath();
   for (let x = Math.floor(x0 / step) * step; x <= x1; x += step) { const [sx] = toScreen(x, 0); g.moveTo(sx, 0); g.lineTo(sx, H); }
   for (let y = Math.floor(y0 / step) * step; y <= y1; y += step) { const [, sy] = toScreen(0, y); g.moveTo(0, sy); g.lineTo(W, sy); }
@@ -388,7 +393,7 @@ function draw() {
   const pr = Math.max(6, 22 * z), grd = g.createRadialGradient(cx - pr * 0.3, cy - pr * 0.3, pr * 0.1, cx, cy, pr);
   grd.addColorStop(0, '#9fd3ff'); grd.addColorStop(1, '#1b3d66');
   g.fillStyle = grd; g.beginPath(); g.arc(cx, cy, pr, 0, Math.PI * 2); g.fill();
-  // where attackers come from: one from the left; two from 120° / 240°
+  // where attackers come from (drawn on screen, so turned with the view): one from the right; two from ±60°
   const arrow = (ang, main) => {
     const R = Math.min(W, H) * 0.45, ux = Math.cos(ang), uy = Math.sin(ang);
     const ax = cx + ux * R, ay = cy + uy * R, bx = cx + ux * (R - (main ? 70 : 45)), by = cy + uy * (R - (main ? 70 : 45));
@@ -399,12 +404,12 @@ function draw() {
     g.beginPath(); g.moveTo(bx - ux * hs, by - uy * hs); g.lineTo(bx + px * hs * 0.7, by + py * hs * 0.7); g.lineTo(bx - px * hs * 0.7, by - py * hs * 0.7); g.fill();
     if (main) { g.font = '600 13px var(--display, sans-serif)'; g.textAlign = 'center'; g.fillText('ATTACKERS', ax + ux * -10, ay - 14); }
   };
-  arrow(Math.PI, true); arrow((2 * Math.PI) / 3, false); arrow((4 * Math.PI) / 3, false);
+  arrow(0, true); arrow(-Math.PI / 3, false); arrow(Math.PI / 3, false);
   // the defences
   S.pieces.forEach((p, i) => {
     const [sx, sy] = toScreen(p.x, p.y), r = p.shape.r * z;
     if (sx < -r || sy < -r || sx > W + r || sy > H + r) return;
-    g.save(); g.translate(sx, sy); g.rotate(p.a);
+    g.save(); g.translate(sx, sy); g.rotate(p.a + Math.PI);
     const w = p.shape.w * z, h = p.shape.h * z;
     g.globalAlpha = p.ghost ? 0.22 : 1;
     g.imageSmoothingEnabled = false;
@@ -525,7 +530,8 @@ function up(e) {
   if (d?.kind === 'pinch') { if (!S.pointers.size) S.drag = null; return; }
   if (d?.kind === 'pan' && !d.moved) { S.sel.clear(); hint(); }
   if (d?.kind === 'box') {
-    const [ax, ay] = toWorld(Math.min(d.sx0, d.sx1), Math.min(d.sy0, d.sy1)), [bx, by] = toWorld(Math.max(d.sx0, d.sx1), Math.max(d.sy0, d.sy1));
+    const [px, py] = toWorld(d.sx0, d.sy0), [qx, qy] = toWorld(d.sx1, d.sy1);
+    const ax = Math.min(px, qx), bx = Math.max(px, qx), ay = Math.min(py, qy), by = Math.max(py, qy);
     S.pieces.forEach((p, i) => { if (p.x >= ax && p.x <= bx && p.y >= ay && p.y <= by) S.sel.add(i); });
     hint();
   }
