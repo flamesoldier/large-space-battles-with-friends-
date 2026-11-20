@@ -306,6 +306,11 @@ try {
   ok(!(await ben.act({ type: 'renamePlanet', planet: annHome, name: 'Bens Now' })).body.ok, 'Ben can\'t rename Ann\'s world');
   ok((await ann.act({ type: 'renamePlanet', planet: annHome, name: 'Annhold' })).body.ok, 'Ann renames her world');
   ok(!(await ann.act({ type: 'renamePlanet', planet: 'x', name: 'Q' })).body.ok, 'world rename needs a real world');
+  // Arranging defences (owner, 20 Nov 2026): only your own world, only your own defence designs.
+  ok(!(await ben.act({ type: 'layout', planet: annHome, spots: [] })).body.ok, 'Ben can\'t arrange Ann\'s defences');
+  ok((await ann.act({ type: 'layout', planet: annHome, spots: [] })).body.ok, 'Ann can clear her own arrangement');
+  ok(!(await ann.act({ type: 'layout', planet: annHome, spots: [{ d: 'nope', x: 0, y: 0, a: 0 }] })).body.ok, 'only real defence designs of hers');
+  ok(!(await ann.act({ type: 'layout', planet: annHome, spots: 'x' })).body.ok, 'a broken layout is refused');
   let battle = null;
   for (let k = 0; k < 600 && !battle; k++) {
     await sleep(250);

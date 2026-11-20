@@ -831,6 +831,46 @@ All money numbers are in `src/shared/economy.js` (placeholders until balanced in
   Designer reopens with. None of this applies in ship mode. Its "Start from" menu lists **Your defences** first (your own `fixed` world designs, `defence: true`
   in the embed message's `designs`), then Your shipyards; the ship designer doesn't list defences. Measured: 400 attackers (480k cr) beat 86 defences + 90 ships
   (137k cr counting defences at 1/5) in 95 s (`/tmp`-style script; replay sent to the owner).
+- **Arranged defences (owner, 20 Nov 2026, "highly requested": players place every defence at a world
+  and turn it, to build their own fortress)**, on `v2-dev`, not live. Owner's answers: attackers keep
+  **today's rule** (one attacker from the left, several spread evenly round the world: camps at
+  2πc/n); **any angle, 15° snaps**; **new defences refill placed spots of their design first**, extras
+  go in the usual rows; **touching allowed, not overlapping**.
+  - `src/world/defenceLayout.js` (pure, shared): `P.layout = { owner, spots: [{ d, x, y, a }] }` (world
+    design id, grid centre in battle blocks with the world at 0,0, nose angle; battle frame x right, y
+    down). `shapeOf`, `piecesOverlap` (box SAT prefilter, then block-exact: two blocks overlap when
+    their centres are < 0.9 apart, so side-by-side blocks touch at any angle), `overlapping`,
+    `pieceReach`, `cleanLayout` (validates and rounds: own fixed designs only, within `LAYOUT_RADIUS`
+    1,000 blocks, ≤ `MAX_SPOTS` 2,000, no overlaps), `assignSpots` (the k-th defence of a design takes
+    the k-th spot of that design; owner must be the layout's owner).
+  - World: `setLayout(world, pid, planet, spots)` (owner of the world only; [] = back to automatic rows;
+    no log entry), server action `{ type: 'layout', planet, spots }`; `capture()` deletes `P.layout`;
+    `planEvent` passes `layout` (only if `P.layout.owner === P.owner`) to `makeBattleScenario`, which
+    keeps a fixed ship → `{ wid, owner }` map, places arranged ones with `assignSpots`, and lays the
+    rest with `layoutDefences(..., around = placed)`: each block of rows starts beyond the arranged
+    ones in its direction (`defenceReach(around, phi) + 40`). Fleets already start clear via
+    `defenceReach` of all defences. No layout = identical to before (tests and bench unchanged).
+  - Page: `src/galaxy/arrange.js` (`openArrange`, `arrangeOpen`), opened by **Arrange defences…** in
+    the world panel's Defences section (`openArranger()` in `galaxy/app.js`), with a line saying how
+    many stand where the player put them, how many are in rows, and empty spots. Full-screen canvas:
+    defences drawn from their blocks (`BLOCK_COLOR` sprites), the world, the 1,000-block limit ring,
+    a red **ATTACKERS** arrow from the left and dashed arrows at 120°/240° for two attackers; drag to
+    move (snaps blocks to whole-block lines when turned a multiple of 90°), round handle to turn
+    (Shift snaps 15°; on touch it snaps near each 15° step), ⟲/⟳ 15° (Q/E, turns a group round its
+    centre), Shift+click / Shift+drag box to select several, Select all (A), Remove empty spots
+    (Delete), Re-lay automatically, Fit (F), Save; wheel / pinch zoom, drag empty space to pan; Esc
+    deselects then leaves (asks if unsaved). Unplaced defences start where one-attacker rows would put
+    them (amber dashed outline) and are saved where shown; empty spots (lost defences) are faint and
+    saved after the filled ones so new defences refill them; overlaps and out-of-range pieces turn
+    red and block Save. Keys are captured while it's open (the galaxy keydown returns early). Phones:
+    swipeable bar with Back and Save first.
+  - Tests: `tools/test-world.mjs` "arranged defences" (touching OK, overlap / too far / not owner / not
+    your design refused, battle stands the first 4 of 6 walls exactly as placed, extras in rows beyond
+    them toward the attacker, survivors take the first spots, [] resets, capture drops it);
+    `tools/test-server.mjs` (Ben can't arrange Ann's world, broken layouts refused). Checked in a
+    headless browser on `dist/galaxy.html` (drag, overlap turns red and Save refuses, save stores
+    `P.layout`, phone layout). Replay sent: 21 arranged defences (a crescent of walls, bastions behind,
+    pickets on the flanks) vs 120 attackers.
 - **Aegis fortresses** (owner, 12 Nov 2026: a friend said you couldn't build giant fortresses):
   four ready-made defences in the **Defence Designer's Start from menu** (group "Aegis fortresses",
   `addFortressTemplates()` in `designer/app.js`, defence mode only), each exactly 750,000 cr of blocks

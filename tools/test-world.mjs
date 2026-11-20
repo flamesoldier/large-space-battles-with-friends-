@@ -8,7 +8,7 @@ import {
   createWorld as createAutoWorld, advanceTo, runWorld, buildShipyard, sellShipyard, quoteShipyard, sendFleet, previewFleet,
   shipsAt, incomeOf, allied, YARD_MS, HOLD_MS, designOf, upgradeWorld,
   proposeAlliance, acceptAlliance, breakAlliance, proposalsFor, dueEvent, siegeAt, renameDesign, renamePlanet,
-  buildDefense, planEvent, applyEvent, registerDesign, cancelSale, jobsAt, payBounties, giveCredits, worthOf, fleetValue, stopFleet, setRally, rallyAll,
+  buildDefense, setLayout, planEvent, applyEvent, registerDesign, cancelSale, jobsAt, payBounties, giveCredits, worthOf, fleetValue, stopFleet, setRally, rallyAll,
   checkWin, nextHop, pinned, dispatchAll, holdReason, addShips, setDestination, destinationAll, countShips, makeBot, fleetSpeed, retreatPlan,
 } from '../src/world/world.js';
 import { writeFileSync } from 'node:fs';
@@ -750,6 +750,51 @@ const resolve = (scen) => {
     const survivors = e.battle.players.find((q) => q.id === A).survived;
     ok(!survivors || /defences? destroyed/.test(e.text), 'the log says any surviving defences were destroyed');
   }
+}
+
+// ---- arranged defences (owner, 20 Nov 2026): players place and turn each defence; battles use it
+{
+  const w = createWorld({ players: [{ name: 'A' }, { name: 'B' }], seed: 12 });
+  const A = 0, B = 1, aHome = w.planets[w.players[A].home], bHome = w.planets[w.players[B].home];
+  const noThrust = (d) => ({ ...d, cells: d.cells.map((t) => (t === BT.THRUSTER ? BT.ARMOR : t)) });
+  const fort = { ...noThrust(makeDesign('cruiser', 21)), name: 'Wall' };
+  w.players[A].credits = 1e7;
+  const r = buildDefense(w, A, aHome.id, fort, 6);
+  runWorld(w, r.done, resolve);
+  const D = w.designs[r.design].data, wd = decodeDesign(D);
+  // Three walls side by side, touching, turned to face up; a fourth spot left empty for refills.
+  const spots = [0, 1, 2, 3].map((k) => ({ d: r.design, x: -200 + k * wd.h, y: 50, a: -Math.PI / 2 }));
+  ok(setLayout(w, A, aHome.id, spots).ok, 'touching defences can be arranged');
+  ok(aHome.layout.spots.length === 4 && aHome.layout.owner === A, 'stored on the world');
+  ok(!setLayout(w, A, aHome.id, [spots[0], { ...spots[1], x: spots[0].x + 2 }]).ok, 'overlapping defences are refused');
+  ok(!setLayout(w, A, aHome.id, [{ ...spots[0], x: 5000 }]).ok, 'too far from the world is refused');
+  ok(!setLayout(w, B, aHome.id, spots).ok, 'only the world\'s owner can arrange it');
+  ok(!setLayout(w, A, aHome.id, [{ ...spots[0], d: 'nope' }]).ok, 'only your own defence designs');
+  ok(aHome.layout.spots.length === 4, 'refused layouts change nothing');
+  w.players[B].credits = 1e7;
+  const atk = buildShipyard(w, B, bHome.id, { ...makeDesign('destroyer', 22), name: 'Raider' }).yard.design;
+  bHome.garrison = [{ owner: B, design: atk, n: 30 }]; aHome.garrison = aHome.garrison.filter((g) => g.design === r.design);
+  const f = sendFleet(w, B, bHome.id, aHome.id, { [atk]: 30 }, { avoid: true, lanes: false });
+  runWorld(w, f.fleet.arrive, resolve);
+  const sg = siegeAt(w, aHome.id)[0];
+  const plan = planEvent(w, { kind: 'siege', siege: sg });
+  const fx = plan.battle.ships.filter((x) => x.fixed);
+  const at = (sp) => fx.filter((x) => Math.abs(x.x - sp.x) < 0.11 && Math.abs(x.y - sp.y) < 0.11 && Math.abs(x.a - aHome.layout.spots[0].a) < 0.01).length;
+  ok(fx.length === 6 && spots.every((sp) => at(sp) === 1), 'the first 4 of 6 walls stand exactly where they were put, turned as set');
+  const extra = fx.filter((x) => !spots.some((sp) => Math.abs(x.x - sp.x) < 0.11 && Math.abs(x.y - sp.y) < 0.11));
+  ok(extra.length === 2 && extra.every((x) => x.x < -200 - wd.w), 'the 2 extra walls stand in rows beyond the arranged ones, toward the attacker (left)');
+  ok(plan.battle.ships.filter((x) => !x.fixed).every((x) => x.x < Math.min(...fx.map((d) => d.x)) - 20), 'attackers start clear of every defence');
+  // Refill: with 2 walls left, the first 2 spots are used; the others stay empty for new ones.
+  aHome.garrison.find((g) => g.design === r.design).n = 2;
+  const fx2 = planEvent(w, { kind: 'siege', siege: sg }).battle.ships.filter((x) => x.fixed);
+  ok(fx2.length === 2 && at.call(null, spots[0]) >= 0 && fx2.every((x, k) => Math.abs(x.x - spots[k].x) < 0.11), 'survivors take the first spots; empty ones wait to be refilled');
+  ok(setLayout(w, A, aHome.id, []).ok && !aHome.layout, 'an empty layout goes back to automatic rows');
+  setLayout(w, A, aHome.id, spots);
+  w.players[A].credits = 0;
+  // A world that changes hands drops its owner's arrangement.
+  aHome.garrison = [];
+  runWorld(w, sg.startsAt + 1, resolve);
+  ok(aHome.owner === B && !aHome.layout, 'the arrangement goes with the world');
 }
 
 // ---- a world that falls takes its surviving defences with it (its side routed with defences standing)

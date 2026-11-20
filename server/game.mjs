@@ -17,7 +17,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSy
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import {
-  advanceTo, dueEvent, planEvent, applyEvent, upgradeWorld, sendFleet, stopFleet, setRally, rallyAll, setDestination, destinationAll, dispatchAll, buildShipyard, sellShipyard, cancelSale, renameDesign, renamePlanet, buildDefense, giveCredits,
+  advanceTo, dueEvent, planEvent, applyEvent, upgradeWorld, sendFleet, stopFleet, setRally, rallyAll, setDestination, destinationAll, dispatchAll, buildShipyard, sellShipyard, cancelSale, renameDesign, renamePlanet, setLayout, buildDefense, giveCredits,
   proposeAlliance, acceptAlliance, declineAlliance, breakAlliance, playerName, claimPlayer,
 } from '../src/world/world.js';
 import { decodeDesign } from '../src/shared/shipStats.js';
@@ -336,6 +336,11 @@ export class Game {
       case 'rename': {
         if (typeof a.design !== 'string' || !Object.hasOwn(W.designs, a.design)) return { ok: false, error: 'No such ship design.' };
         return renameDesign(W, pid, a.design, typeof a.name === 'string' ? a.name.slice(0, 100) : '');
+      }
+      case 'layout': { // arrange defences at a world you hold (owner, 20 Nov 2026)
+        const planet = index(a.planet, nP);
+        if (planet === null) return { ok: false, error: 'No such world.' };
+        return setLayout(W, pid, planet, a.spots);
       }
       case 'renamePlanet': {
         const planet = index(a.planet, nP);

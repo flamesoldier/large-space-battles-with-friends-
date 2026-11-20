@@ -11,6 +11,7 @@
 // damage carried between battles yet.
 
 import { mulberry32 } from '../shared/rng.js';
+import { assignSpots } from './defenceLayout.js';
 
 /**
  * groups: [{ side: 0 | 1, team?, owner, design (world design id), n }]
@@ -23,13 +24,18 @@ import { mulberry32 } from '../shared/rng.js';
 export function makeBattleScenario(groups, designOf, seed, opts = null) {
   const r = mulberry32(seed * 7703 + 11);
   const designs = [], index = new Map();
-  const out = [], ships = [];
+  const out = [], ships = [], fixedInfo = new Map(); // fixed ship → { wid, owner }, for arranged defences
   for (const g of groups) {
     if (g.n <= 0) continue;
     if (!index.has(g.design)) { index.set(g.design, designs.length); designs.push(designOf(g.design)); }
     const team = g.team ?? g.side;
     out.push({ ...g, team, start: ships.length });
-    for (let k = 0; k < g.n; k++) ships.push(g.fixed ? { design: index.get(g.design), team, fixed: true } : { design: index.get(g.design), team });
+    for (let k = 0; k < g.n; k++) {
+      if (!g.fixed) { ships.push({ design: index.get(g.design), team }); continue; }
+      const sh = { design: index.get(g.design), team, fixed: true };
+      fixedInfo.set(sh, { wid: g.design, owner: g.owner });
+      ships.push(sh);
+    }
   }
   // Camps: where each team starts. Two sides: attackers (camp 1) on the left, defenders (camp 0)
   // on the right. More: the attacking camps spread evenly round the world, at the same distance.
@@ -44,7 +50,10 @@ export function makeBattleScenario(groups, designOf, seed, opts = null) {
   for (let c = 1; c < nCamps; c++) attackAngles.push((2 * Math.PI * c) / nCamps);
   if (!attackAngles.length) attackAngles.push(Math.PI);
   const fixedShips = ships.filter((s) => s.fixed);
-  layoutDefences(fixedShips, designs, attackAngles, nCamps);
+  // Defences the world's owner has arranged (opts.layout = P.layout, owner, 20 Nov 2026) stand where
+  // they were put; the rest go in the usual rows, outside the arranged ones.
+  const { placed, loose } = assignSpots(fixedShips, (sh) => fixedInfo.get(sh), opts?.layout);
+  layoutDefences(loose, designs, attackAngles, nCamps, placed);
   const order = [];
   for (let c = 1; c < nCamps; c++) order.push(c);
   order.push(0); // same draw order as before for two sides: attackers first
@@ -180,7 +189,7 @@ export function defenceReach(fixed, designs, phi) {
   return out;
 }
 
-export function layoutDefences(fixed, designs, attackAngles, nCamps = attackAngles.length + 1) {
+export function layoutDefences(fixed, designs, attackAngles, nCamps = attackAngles.length + 1, around = []) {
   let ringOut = 0;
   if (fixed.length) {
     const D = (s) => designs[s.design];
@@ -217,7 +226,8 @@ export function layoutDefences(fixed, designs, attackAngles, nCamps = attackAngl
       const cT = -(half(wM) + (wT ? wingGap + wT / 2 : 0)), cB = half(wM) + (wB ? wingGap + wB / 2 : 0);
       // With several blocks, each sits out from the world far enough to clear its neighbours.
       const reach = Math.max(half(wM), wT ? -cT + wT / 2 : 0, wB ? cB + wB / 2 : 0);
-      const along0 = blocks.length > 1 ? reach / Math.tan(Math.PI / nCamps) + 15 : 0;
+      // Arranged defences (around) already stand at the world: these rows start beyond them in this direction.
+      const along0 = (blocks.length > 1 ? reach / Math.tan(Math.PI / nCamps) + 15 : 0) + (around.length ? Math.max(0, defenceReach(around, designs, ph)) + 40 : 0);
       const lay = (group, width, centre) => {
         let along = along0;
         for (let k = 0, r = 0; k < group.length; r++) {

@@ -26,6 +26,7 @@ import {
 import { generateGalaxy, linkHomesInward } from './galaxyGen.js';
 import { planRoute, travelSpeed, laneMap, laneSpeed } from './routes.js';
 import { makeBattleScenario } from './battleSetup.js';
+import { cleanLayout, shapeOf } from './defenceLayout.js';
 import { botsDue, runBots } from './bots.js';
 import { backfillStats, finalize, noteIncome, noteBuilt, noteCapture, noteBattle, playerStats } from './stats.js';
 import { HOUR_MS, MIN_FLEET_SPEED, NEUTRAL_COLOR, PLAYER_COLORS, CHOOSABLE_COLORS, MIN_PLAYERS, MAX_PLAYERS, BATTLE_MAX_TIME, BATTLE_HOLD_MIN, SPACE_VS_LANE } from './rules.js';
@@ -308,6 +309,27 @@ export function buildDefense(world, pid, planetId, design, count = 1) {
   world.jobs.push({ id: newId(world), kind: 'defence', planet: p.id, owner: pid, design: id, count, price, done });
   log(world, 'yard', `${pl.name} started building ${count === 1 ? 'a' : count.toLocaleString()} ${world.designs[id].name} defence${count > 1 ? 's' : ''} at ${p.name} (${price.toLocaleString()} cr, ready in ${fmtHours(DEFENSE_BUILD_HOURS)}).`, { planet: p.id, players: [pid] });
   return { ok: true, design: id, count, price, done };
+}
+
+/**
+ * Arrange your defences at a world you hold (owner, 20 Nov 2026): spots [{ d, x, y, a }] (see
+ * defenceLayout.js). Only your own defence designs; within LAYOUT_RADIUS of the world; touching
+ * but not overlapping. An empty list goes back to the automatic rows. Spots may outnumber the
+ * defences there now: the empty ones are refilled by defences of that design built later.
+ */
+export function setLayout(world, pid, planetId, spots) {
+  const P = world.planets[planetId];
+  if (!P) return { ok: false, error: 'No such world.' };
+  if (P.owner !== pid) return { ok: false, error: `You don't hold ${P.name}.` };
+  const shapeFor = (d) => {
+    const D = Object.hasOwn(world.designs, d) ? world.designs[d] : null;
+    return D && D.fixed && D.owner === pid ? shapeOf(designOf(world, d)) : null;
+  };
+  const r = cleanLayout(spots, shapeFor);
+  if (!r.ok) return r;
+  if (r.spots.length) P.layout = { owner: pid, spots: r.spots };
+  else delete P.layout;
+  return { ok: true, spots: r.spots.length };
 }
 
 /**
@@ -1117,7 +1139,7 @@ export function planEvent(world, ev) {
     camps[c].push(t); campOf[t] = c;
   });
   const battle = makeBattleScenario(groups, (id) => designOf(world, id), (world.seed * 1000003 + s.id * 131) >>> 0,
-    { teams: fighters.length, campOf, camps: camps.length });
+    { teams: fighters.length, campOf, camps: camps.length, layout: P.layout && P.layout.owner === P.owner ? P.layout : null });
   const attackers = owners.filter((o) => !defends(o));
   Object.assign(battle, {
     maxTime: BATTLE_MAX_TIME, planet: P.id, attacker: s.leader, defender: P.owner, attackers, owners, camps: camps.length,
@@ -1338,6 +1360,7 @@ function capture(world, P, owner, ships, battleInfo) {
   P.yards = [];
   delete P.rally; // the old owner's rally point goes with the world
   delete P.dest; // and so does its 2.0 destination
+  delete P.layout; // and the old owner's arrangement of defences
   // Turn-taking locks to or from this world end with it (owner: conquering a world "refreshes" it).
   if (world.locks?.length) world.locks = world.locks.filter((l) => l.from !== P.id && l.to !== P.id);
   // Unfinished jobs here are lost with the world: shipyards being sold (destroyed above, no
