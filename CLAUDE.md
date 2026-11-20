@@ -550,6 +550,14 @@ Weapons (numbers in `blocks.js`):
     no explosion is recorded per bullet: the viewer's `drawTracers()` draws yellow tracers and a spark where
     each ends. Idle auto guns shoot fighters like cannons. Shader type 15 (twin barrels, ammo drum),
     designer key **U** (WASD pans), `autoUnit()`, tooltip, weapon table, "must be whole 2×2 units" error.
+  - **Second round (owner, 20 Nov 2026: "the fire rate was not as fast as I expected")**: **500 cr** a unit
+    (125 a block), **every 0.1 s** (one bullet a tick; auto guns reload with no jitter, `w.cd = max(0, cd) +
+    cooldown`, else a 0.1 s gun skipped ticks), **bullets live 10 s**. Where this disagrees with the line
+    above, this wins. Measured: ~8–10 bullets a gun a second; same harness (now 1,863 cr vs 1,317 cr boats,
+    60k a side, 4 seeds): charge vs cannon line −0.08, line vs line −0.13, line vs standoff −0.27; 54 auto vs
+    46 cannon boats starting 600 / 120 apart: auto keeps 37 / 42 of 54, cannons 2 / 3 of 46 (90% of bullets
+    hit). Load: 500 auto boats (1,500 guns) vs 707 cannon boats: 80 s battle, 3.6 s compute (4.5 ms a tick),
+    343k bullets, peak 3,022 projectiles, 3.2 MB gzip replay, 64 MB heap. Bench (no auto guns) unchanged.
   - Measured (16×10 hull, 3 auto gun units 1,113 cr vs 8 cannons 1,317 cr, 60k cr a side, 4 seeds; score =
     enemy ships lost share − own): auto charge vs cannon line −0.06, line vs line −0.03, line vs cannon
     standoff −0.16; starting at 120 apart auto guns win (27/54 left vs 9/46). A third of bullets hit allied

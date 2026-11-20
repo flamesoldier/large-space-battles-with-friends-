@@ -47,7 +47,7 @@ export const BLOCKS = {
   [BT.GUIDED]: { name: 'Guided missile launcher', hp: 300, mass: 5, cost: 135 }, // owner, Nov 2026: the missile launcher's stats, steering missiles, dearer
   [BT.BAY]: { name: 'Fighter bay', hp: 150, mass: 3, cost: 6.25 }, // owner, Nov 2026: 225 cr a 6x6 unit (asked for 200-250)
   [BT.LANCE]: { name: 'Plasma cannon', hp: 750, mass: 4, cost: 15 },
-  [BT.AUTO]: { name: 'Auto gun', hp: 300, mass: 2, cost: 62.5 }, // owner, 20 Nov 2026: 250 cr a 2x2 unit, 300 hp a block
+  [BT.AUTO]: { name: 'Auto gun', hp: 300, mass: 2, cost: 125 }, // owner, 20 Nov 2026: 500 cr a 2x2 unit (first 250), 300 hp a block
   [BT.SHIELD]: { name: 'Shield generator', hp: 45, mass: 4, cost: 15 }, // owner, 15 Nov 2026: plasma's price, extremely weak blocks
   [BT.FLAK]: { name: 'Flak cannon', hp: 200, mass: 4, cost: 15 }, // owner, 14 Nov 2026: plasma's size and price, 1,500 a 10x10 unit; it doesn't explode when destroyed, so 200 hp (owner, 15 Nov: plasma's 750 makes up for its chain explosion) // hp was 120 (owner, Nov 2026: plasma ships lost their guns at once); 1,500 a 10x10 unit (was 3,500): an anti-capital weapon, see CLAUDE.md
 };
@@ -92,7 +92,7 @@ export const WEAPON = {
   // Auto gun (owner, 20 Nov 2026): a 2x2 unit spraying fast, fairly inaccurate bullets at close
   // range, 55 damage each to the block it hits, every 0.3 s. Bullets fly `life` s (not 30 like
   // cannon shells: at 3+ shots a second a long life would fill battles with spent bullets).
-  [BT.AUTO]: { kind: 'shell', auto: true, range: 150, damage: 55, cooldown: 0.3, speed: 150, life: 3, spread: 0.07 }, // each bullet damages only the block it hits
+  [BT.AUTO]: { kind: 'shell', auto: true, range: 150, damage: 55, cooldown: 0.1, speed: 150, life: 10, spread: 0.07 }, // each bullet damages only the block it hits
   // Heavy missile: unguided, crawls across the map in a straight line, flies over friendly
   // ships, devastating blast. Has hit points, so point defence can shoot it down on the way in.
   // Blast damage falls off with distance: peak * (1 - d / splash)^2, applied to every ship

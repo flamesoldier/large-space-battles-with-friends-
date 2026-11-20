@@ -1162,7 +1162,8 @@ export class Battle {
       // A big hull doesn't shoot through itself (see ownHullInWay). Missiles fly over ships.
       if (W.kind === 'laser' && this.ownHullInWay(e, w, wx, wy, Math.atan2(ay - wy, ax - wx), W.range)) { w.cd = 0.3; continue; }
       // Launchers keep in step (no jitter) so a ship's missiles always leave as one volley.
-      w.cd = W.kind === 'missile' ? W.cooldown : W.cooldown * (0.85 + 0.3 * this.rng());
+      // Auto guns fire on a steady beat (0.1 s = every tick): no reload jitter, which would skip ticks.
+      w.cd = W.auto ? Math.max(0, w.cd) + W.cooldown : W.kind === 'missile' ? W.cooldown : W.cooldown * (0.85 + 0.3 * this.rng());
       if (W.kind === 'laser') { if (!this.fireLaser(e, wx, wy, ax, ay, W)) w.cd = 0.3; continue; }
       // Shells and missiles are unguided: aimed with lead at launch, then fly dead straight.
       // Lead is capped: a heavy missile can take 30 s to arrive, and leading a manoeuvring ship
@@ -1927,7 +1928,7 @@ export class Battle {
       this.addProjectile(K, w.type, wx, wy, Math.cos(ang) * W.speed, Math.sin(ang) * W.speed,
         Math.round(W.life / DT), e.id, e.team, -1, W.damage, 0, rec);
     }
-    w.cd = W.cooldown * (0.85 + 0.3 * this.rng());
+    w.cd = W.auto ? Math.max(0, w.cd) + W.cooldown : W.cooldown * (0.85 + 0.3 * this.rng());
     return true;
   }
 
