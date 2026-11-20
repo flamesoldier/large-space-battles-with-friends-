@@ -413,6 +413,56 @@ class Batch {
   }
 }
 
+/**
+ * Far-zoom shape of a ship or wreck (21 Nov 2026): its blocks merged into cells of k × k blocks.
+ * Each cell sits at the mean of its blocks (so edge cells don't stick out), lives until its last
+ * block dies, and remembers which blocks it holds so its colour can be worked out per palette.
+ * Built once per entity and k (k = 1, 2, 4 … as the camera zooms out), so drawing stays a pure
+ * function of time.
+ */
+function lodCells(e, k) {
+  const cache = e.lodC || (e.lodC = new Map());
+  let L = cache.get(k);
+  if (L) return L;
+  const lx = e.lx, ly = e.ly, de = e.death, n = lx.length, ox = e.w / 2, oy = e.h / 2;
+  const gw = Math.ceil(e.w / k) + 1, idx = new Map();
+  const cell = new Int32Array(n);
+  let m = 0;
+  for (let i = 0; i < n; i++) {
+    const key = Math.floor((ly[i] + oy) / k) * gw + Math.floor((lx[i] + ox) / k);
+    let c = idx.get(key);
+    if (c === undefined) { c = m++; idx.set(key, c); }
+    cell[i] = c;
+  }
+  const x = new Float32Array(m), y = new Float32Array(m), cnt = new Float32Array(m), death = new Float32Array(m);
+  for (let i = 0; i < n; i++) {
+    const c = cell[i];
+    x[c] += lx[i]; y[c] += ly[i]; cnt[c]++;
+    if (de[i] > death[c]) death[c] = de[i];
+  }
+  for (let c = 0; c < m; c++) { x[c] /= cnt[c]; y[c] /= cnt[c]; }
+  L = { n: m, x, y, death, cell, col: new Uint32Array(m), pal: null };
+  cache.set(k, L);
+  return L;
+}
+
+/** Each cell's colour: the average of its blocks' colours, a little toward the side's colour so
+ *  fleets stay easy to tell apart from far away (accent 0 = none, for wrecks). */
+function lodColours(e, L, pal, accent) {
+  const n = L.n, r = new Float32Array(n), g = new Float32Array(n), b = new Float32Array(n), w = new Float32Array(n);
+  const ty = e.type, cell = L.cell;
+  for (let i = 0; i < cell.length; i++) {
+    const v = pal[ty[i]] >>> 0, c = cell[i];
+    r[c] += v & 255; g[c] += (v >>> 8) & 255; b[c] += (v >>> 16) & 255; w[c]++;
+  }
+  const ar = accent & 255, ag = (accent >>> 8) & 255, ab = (accent >>> 16) & 255, mix = accent ? 0.45 : 0;
+  for (let c = 0; c < n; c++) {
+    const R = (r[c] / w[c]) * (1 - mix) + ar * mix, G = (g[c] / w[c]) * (1 - mix) + ag * mix, B = (b[c] / w[c]) * (1 - mix) + ab * mix;
+    L.col[c] = (255 << 24) | (Math.min(255, B) << 16) | (Math.min(255, G) << 8) | Math.min(255, R);
+  }
+  L.pal = pal;
+}
+
 // little-endian RGBA packed into a u32 (bytes in memory: r, g, b, a)
 const rgba = (hex, a = 255) => {
   const v = parseInt(hex.slice(1), 16);
@@ -599,16 +649,21 @@ export class Renderer {
       if (!vis(tr.x, tr.y, e.radius)) continue;
       const dead = e.kind === 1;
       if (!dead) ships++;
-      // Far zoom: one quad per ship, unless the ship is still big on screen (15 Nov 2026: an Aegis
-      // fortress was drawn as one plain box; past ~60 px across, draw its blocks, each at least ~1 px).
-      const bigOnScreen = Math.max(e.w, e.h) * z > 60;
-      if (lod && !bigOnScreen) {
-        // one quad per ship, debris as faint specks
-        if (dead) { if (e.size > 2) solid.push(tr.x, tr.y, tr.a, Math.max(e.w * 0.35, px), Math.max(e.h * 0.35, px), 3, C.lodDead); }
-        else {
-          solid.push(tr.x, tr.y, tr.a, Math.max(e.w * 0.45, px * 1.2), Math.max(e.h * 0.32, px * 1.2), 3, e.look ? e.look.lod : C.lod[e.team]);
-          if (e.shN) this.drawShield(model, e, t, tr, px);
+      // Far zoom (owner, 21 Nov 2026: ships turned into coloured squares, "ugly"): the ship's own
+      // shape shrunk down. Its blocks are merged into square cells of k × k blocks (k a power of 2,
+      // so a cell is about a screen pixel), each drawn in the average colour of its blocks and shown
+      // while any of them is alive. A pure function of time like the rest; cells cached per k.
+      if (lod) {
+        const k = 2 ** Math.max(0, Math.floor(Math.log2(px))); // cells under ~1 px, drawn at least ~1.2 px so they join up
+        const L = lodCells(e, k), pal = e.look ? e.look.pal[dead ? 1 : 0] : PAL[dead ? 1 : 0][e.team];
+        if (L.pal !== pal) lodColours(e, L, pal, dead ? 0 : (e.look ? e.look.lod : C.lod[e.team]));
+        const c = Math.cos(tr.a), s = Math.sin(tr.a), hs = Math.max(k * 0.5, px * 0.6);
+        for (let i = 0; i < L.n; i++) {
+          if (L.death[i] <= t) continue;
+          solid.push(tr.x + L.x[i] * c - L.y[i] * s, tr.y + L.x[i] * s + L.y[i] * c, tr.a, hs, hs, 3, L.col[i]);
+          blocks++;
         }
+        if (!dead && e.shN) this.drawShield(model, e, t, tr, px);
         continue;
       }
       const c = Math.cos(tr.a), s = Math.sin(tr.a), pal = e.look ? e.look.pal[dead ? 1 : 0] : PAL[dead ? 1 : 0][e.team];

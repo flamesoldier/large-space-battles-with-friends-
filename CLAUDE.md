@@ -533,7 +533,14 @@ Weapons (numbers in `blocks.js`):
     20 pieces × 30 vs 7 × 90: 12.1 → 11.4 s compute (−6%), 5.6 → 4.8 MB replay, peak projectiles 9.4k →
     5.1k; 300 v 300: no measurable compute change. Owner told it isn't worth the gameplay change.
   - **Fleet view draws big ships' blocks**: past ~60 px across on screen a ship isn't drawn as one quad
-    (Aegis was a plain box); blocks at least ~1 px (`bs`).
+    (Aegis was a plain box); blocks at least ~1 px (`bs`). **Replaced 21 Nov 2026** (owner: "when I zoom
+    out the ships are replaced with coloured squares, this looks ugly"; on `v2-dev`, not live): in fleet
+    view (zoom < 0.9 px a block) every ship and wreck is its own shape shrunk down. `lodCells(e, k)` in
+    `renderer.js` merges its blocks into k × k cells (k = 2^floor(log2(px per block)), so a cell is under
+    ~1 px, drawn at least 1.2 px so they join up), each at the mean of its blocks and alive until its last
+    block dies (pure function of time; cached per entity and k); `lodColours()` = average of the blocks'
+    palette colours mixed 45% toward the side's colour (wrecks: none). Quads drawn ≈ screen pixels the
+    ships cover, whatever the battle size. No sim, replay or server change.
 - **Cannon rework and auto gun (owner, 20 Nov 2026: "more like a cannon and less like a machine gun")**. Where
   the numbers above disagree, these win:
   - **Cannon**: one explosive shell every **10 s** doing **500** (was 100 every 2 s; same damage per second).
