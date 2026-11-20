@@ -875,7 +875,7 @@ All money numbers are in `src/shared/economy.js` (placeholders until balanced in
     move (snaps blocks to whole-block lines when turned a multiple of 90°), round handle to turn
     (Shift snaps 15°; on touch it snaps near each 15° step), ⟲/⟳ 15° (Q/E, turns a group round its
     centre), Shift+click / Shift+drag box to select several, Select all (A), Remove empty spots
-    (Delete), Re-lay automatically, Fit (F), Save; wheel / pinch zoom, drag empty space to pan; Esc
+    (Delete), Re-lay automatically, Fit (F), Save (the canvas size is re-read on every draw and pointer event, `syncSize()` + a ResizeObserver: owner, 20 Nov 2026, clicks often missed because the hint line wrapping after opening changed the canvas height and stretched the picture away from the hit test; hit margin 6 px, 12 on touch); wheel / pinch zoom, drag empty space to pan; Esc
     deselects then leaves (asks if unsaved). Unplaced defences start where one-attacker rows would put
     them (amber dashed outline) and are saved where shown; empty spots (lost defences) are faint and
     saved after the filled ones so new defences refill them; overlaps and out-of-range pieces turn
