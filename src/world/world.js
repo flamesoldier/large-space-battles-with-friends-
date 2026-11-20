@@ -321,15 +321,62 @@ export function setLayout(world, pid, planetId, spots) {
   const P = world.planets[planetId];
   if (!P) return { ok: false, error: 'No such world.' };
   if (P.owner !== pid) return { ok: false, error: `You don't hold ${P.name}.` };
-  const shapeFor = (d) => {
+  const r = cleanLayout(spots, ownDefenceShape(world, pid));
+  if (!r.ok) return r;
+  // Kept at the top level, not on the planet, so it isn't re-sent to every player each time something
+  // at the world changes (server/worldSync.mjs sends each top-level entry only when it changes).
+  world.layouts ||= {};
+  if (r.spots.length) world.layouts[P.id] = { owner: pid, spots: r.spots };
+  else delete world.layouts[P.id];
+  return { ok: true, spots: r.spots.length };
+}
+
+/** The arrangement of defences at a world, if its current owner made one. */
+export function layoutAt(world, planetId) {
+  const L = world.layouts?.[planetId], P = world.planets[planetId];
+  return L && P && L.owner === P.owner ? L : null;
+}
+
+/** The defence designs of a player's that can be arranged (shape lookup for cleanLayout). */
+function ownDefenceShape(world, pid) {
+  return (d) => {
     const D = Object.hasOwn(world.designs, d) ? world.designs[d] : null;
     return D && D.fixed && D.owner === pid ? shapeOf(designOf(world, d)) : null;
   };
-  const r = cleanLayout(spots, shapeFor);
+}
+
+export const MAX_BLUEPRINTS = 20;
+/**
+ * Defence blueprints (owner, 20 Nov 2026: "a way to save designs to quickly remake them at other
+ * worlds"): a named arrangement kept per player in world.blueprints[pid] = [{ id, name, spots }],
+ * loaded into the arranger at any of their worlds. Spots whose defence isn't there show as empty
+ * spots, which "Build missing" orders and new defences fill.
+ */
+export function saveBlueprint(world, pid, name, spots) {
+  const pl = world.players[pid];
+  if (!pl) return { ok: false, error: 'No such player.' };
+  const clean = String(name ?? '').replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim().slice(0, 40);
+  if (!clean) return { ok: false, error: 'Give the blueprint a name.' };
+  const r = cleanLayout(spots, ownDefenceShape(world, pid));
   if (!r.ok) return r;
-  if (r.spots.length) P.layout = { owner: pid, spots: r.spots };
-  else delete P.layout;
-  return { ok: true, spots: r.spots.length };
+  if (!r.spots.length) return { ok: false, error: 'There are no defences to save.' };
+  world.blueprints ||= {};
+  const list = (world.blueprints[pid] ||= []);
+  const same = list.find((b) => b.name.toLowerCase() === clean.toLowerCase());
+  if (same) { same.spots = r.spots; same.name = clean; return { ok: true, id: same.id, replaced: true }; }
+  if (list.length >= MAX_BLUEPRINTS) return { ok: false, error: `You can keep up to ${MAX_BLUEPRINTS} blueprints. Delete one first.` };
+  const id = newId(world);
+  list.push({ id, name: clean, spots: r.spots });
+  return { ok: true, id };
+}
+
+export function deleteBlueprint(world, pid, id) {
+  const list = world.blueprints?.[pid];
+  const k = list ? list.findIndex((b) => b.id === id) : -1;
+  if (k < 0) return { ok: false, error: 'No such blueprint.' };
+  list.splice(k, 1);
+  if (!list.length) delete world.blueprints[pid];
+  return { ok: true };
 }
 
 /**
@@ -1139,7 +1186,7 @@ export function planEvent(world, ev) {
     camps[c].push(t); campOf[t] = c;
   });
   const battle = makeBattleScenario(groups, (id) => designOf(world, id), (world.seed * 1000003 + s.id * 131) >>> 0,
-    { teams: fighters.length, campOf, camps: camps.length, layout: P.layout && P.layout.owner === P.owner ? P.layout : null });
+    { teams: fighters.length, campOf, camps: camps.length, layout: layoutAt(world, P.id) });
   const attackers = owners.filter((o) => !defends(o));
   Object.assign(battle, {
     maxTime: BATTLE_MAX_TIME, planet: P.id, attacker: s.leader, defender: P.owner, attackers, owners, camps: camps.length,
@@ -1360,7 +1407,7 @@ function capture(world, P, owner, ships, battleInfo) {
   P.yards = [];
   delete P.rally; // the old owner's rally point goes with the world
   delete P.dest; // and so does its 2.0 destination
-  delete P.layout; // and the old owner's arrangement of defences
+  if (world.layouts) delete world.layouts[P.id]; // and the old owner's arrangement of defences
   // Turn-taking locks to or from this world end with it (owner: conquering a world "refreshes" it).
   if (world.locks?.length) world.locks = world.locks.filter((l) => l.from !== P.id && l.to !== P.id);
   // Unfinished jobs here are lost with the world: shipyards being sold (destroyed above, no

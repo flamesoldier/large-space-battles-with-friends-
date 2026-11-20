@@ -311,6 +311,8 @@ try {
   ok((await ann.act({ type: 'layout', planet: annHome, spots: [] })).body.ok, 'Ann can clear her own arrangement');
   ok(!(await ann.act({ type: 'layout', planet: annHome, spots: [{ d: 'nope', x: 0, y: 0, a: 0 }] })).body.ok, 'only real defence designs of hers');
   ok(!(await ann.act({ type: 'layout', planet: annHome, spots: 'x' })).body.ok, 'a broken layout is refused');
+  ok(!(await ann.act({ type: 'blueprint', name: 'Empty', spots: [] })).body.ok, 'an empty blueprint is refused');
+  ok(!(await ben.act({ type: 'unblueprint', id: 123456 })).body.ok, 'no such blueprint to delete');
   let battle = null;
   for (let k = 0; k < 600 && !battle; k++) {
     await sleep(250);

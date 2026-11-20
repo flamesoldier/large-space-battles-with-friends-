@@ -2,7 +2,7 @@
 // defence/fortress by moving all the defences they have on a planet into an arrangement").
 //
 // A world's owner can place each of their defences there and turn it to any angle. The layout is
-// stored on the world as P.layout = { owner, spots: [{ d, x, y, a }] }: d is the world design id,
+// stored as world.layouts[planetId] = { owner, spots: [{ d, x, y, a }] }: d is the world design id,
 // (x, y) the centre of the design's grid in battle blocks with the world at (0, 0), a the way its
 // nose points (radians, battle frame: x right, y down). Attackers keep today's rule (owner's
 // choice): one attacker comes in from the left (angle π); several spread evenly round the world.
@@ -16,7 +16,7 @@
 //
 // Pure functions shared by the world rules (server validation, battles) and the page's editor.
 
-export const LAYOUT_RADIUS = 1000; // every block of an arranged defence stays within this of the world
+export const LAYOUT_RADIUS = 3000; // every block of an arranged defence stays within this of the world (owner: 1,000 barely fits one Aegis IV)
 export const MAX_SPOTS = 2000;
 const OVERLAP = 0.9;
 

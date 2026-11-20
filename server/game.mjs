@@ -17,7 +17,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSy
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import {
-  advanceTo, dueEvent, planEvent, applyEvent, upgradeWorld, sendFleet, stopFleet, setRally, rallyAll, setDestination, destinationAll, dispatchAll, buildShipyard, sellShipyard, cancelSale, renameDesign, renamePlanet, setLayout, buildDefense, giveCredits,
+  advanceTo, dueEvent, planEvent, applyEvent, upgradeWorld, sendFleet, stopFleet, setRally, rallyAll, setDestination, destinationAll, dispatchAll, buildShipyard, sellShipyard, cancelSale, renameDesign, renamePlanet, setLayout, saveBlueprint, deleteBlueprint, buildDefense, giveCredits,
   proposeAlliance, acceptAlliance, declineAlliance, breakAlliance, playerName, claimPlayer,
 } from '../src/world/world.js';
 import { decodeDesign } from '../src/shared/shipStats.js';
@@ -342,6 +342,8 @@ export class Game {
         if (planet === null) return { ok: false, error: 'No such world.' };
         return setLayout(W, pid, planet, a.spots);
       }
+      case 'blueprint': return saveBlueprint(W, pid, typeof a.name === 'string' ? a.name.slice(0, 100) : '', a.spots);
+      case 'unblueprint': return typeof a.id === 'number' ? deleteBlueprint(W, pid, a.id) : { ok: false, error: 'No such blueprint.' };
       case 'renamePlanet': {
         const planet = index(a.planet, nP);
         if (planet === null) return { ok: false, error: 'No such world.' };

@@ -50,7 +50,7 @@ export function makeBattleScenario(groups, designOf, seed, opts = null) {
   for (let c = 1; c < nCamps; c++) attackAngles.push((2 * Math.PI * c) / nCamps);
   if (!attackAngles.length) attackAngles.push(Math.PI);
   const fixedShips = ships.filter((s) => s.fixed);
-  // Defences the world's owner has arranged (opts.layout = P.layout, owner, 20 Nov 2026) stand where
+  // Defences the world's owner has arranged (opts.layout = layoutAt(world, P), owner, 20 Nov 2026) stand where
   // they were put; the rest go in the usual rows, outside the arranged ones.
   const { placed, loose } = assignSpots(fixedShips, (sh) => fixedInfo.get(sh), opts?.layout);
   layoutDefences(loose, designs, attackAngles, nCamps, placed);

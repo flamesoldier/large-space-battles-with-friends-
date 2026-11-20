@@ -6,9 +6,12 @@
 // stand each defence exactly as shown. The battle frame is used throughout: x right, y down, the
 // world at (0, 0), one attacker coming in from the left (several spread evenly round the world).
 //
-// openArrange(opts) with opts = { title, designs: { id: { name, design } }, counts: { id: n },
-//   layout: spots | null, colors: { [blockType]: css }, touch: bool,
-//   save: async (spots) => { ok, error }, toast(msg, bad) }
+// openArrange(opts) with opts = { title, designs: { id: { name, design } } (every defence design of
+//   the player's), counts: { id: n } (defences at this world), layout: spots | null,
+//   colors: { [blockType]: css }, touch: bool, toast(msg, bad),
+//   save: async (spots) => { ok, error },
+//   blueprints: () => [{ id, name, spots }], saveBlueprint: async (name, spots), deleteBlueprint: async (id),
+//   price: (id) => credits for one defence, credits: () => credits now, buildMissing: async ([{ id, count }]) }
 
 import { shapeOf, piecesOverlap, pieceReach, LAYOUT_RADIUS, MAX_SPOTS } from '../world/defenceLayout.js';
 import { layoutDefences } from '../world/battleSetup.js';
@@ -23,6 +26,14 @@ const CSS = `
 #arrange .ar-foot { flex: none; padding: 7px 12px; padding-bottom: max(7px, env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--line); background: var(--panel); color: var(--dim); font-size: 12.5px; line-height: 1.45; }
 #arrange .ar-foot .bad { color: var(--bad); font-weight: 600; }
 #arrange .ar-foot .ok { color: var(--azure); }
+#arrange { position: fixed; }
+#arrange .ar-bp { position: absolute; right: 12px; top: 64px; z-index: 2; width: min(340px, calc(100% - 24px)); max-height: 60%; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px; box-shadow: 0 8px 30px rgba(0,0,0,0.6); font-size: 13px; }
+#arrange .ar-bp h3 { margin: 0 0 6px; font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); }
+#arrange .ar-bp .r { display: flex; gap: 6px; align-items: center; margin: 4px 0; }
+#arrange .ar-bp .r span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#arrange .ar-bp input { flex: 1; min-width: 0; font: inherit; padding: 6px 8px; background: #0b111c; color: var(--ink); border: 1px solid var(--line); border-radius: 4px; }
+#arrange .ar-bp button { font-size: 12px; padding: 5px 9px; }
+#arrange .ar-bp p { color: var(--dim); margin: 6px 0 0; line-height: 1.4; }
 @media (max-width: 640px), (pointer: coarse) and (max-height: 500px) {
   #arrange .ar-bar { flex-wrap: nowrap; overflow-x: auto; gap: 6px; padding: 6px 8px; }
   #arrange .ar-bar b { display: none; }
@@ -35,24 +46,43 @@ let root = null, S = null; // S: the open editor's state
 
 export function openArrange(opts) {
   if (!root) build();
-  const pieces = [];
-  const ids = Object.keys(opts.counts).filter((id) => opts.counts[id] > 0 || opts.layout?.some((s) => s.d === id));
-  const byDesign = new Map(ids.map((id) => [id, []]));
-  for (const sp of opts.layout || []) if (byDesign.has(sp.d)) byDesign.get(sp.d).push(sp);
-  for (const id of ids) {
-    const D = opts.designs[id], shape = shapeOf(D.design), n = opts.counts[id] || 0, sps = byDesign.get(id);
-    sps.forEach((sp, k) => pieces.push({ id, shape, x: sp.x, y: sp.y, a: sp.a, ghost: k >= n, auto: false }));
-    for (let k = sps.length; k < n; k++) pieces.push({ id, shape, x: 0, y: 0, a: Math.PI, ghost: false, auto: true });
-  }
-  S = { opts, pieces, sel: new Set(), cam: { x: 0, y: 0, z: 1 }, drag: null, pointers: new Map(), bad: new Set(), dirty: false, sprites: new Map() };
-  autoPlace(pieces.filter((p) => p.auto), pieces.filter((p) => !p.auto));
+  S = { opts, pieces: [], sel: new Set(), cam: { x: 0, y: 0, z: 1 }, drag: null, pointers: new Map(), bad: new Set(), dirty: false, sprites: new Map() };
+  S.pieces = piecesFrom(opts.layout);
   checkAll();
   root.querySelector('.ar-title').textContent = opts.title;
+  root.querySelector('.ar-bp').hidden = true;
   root.hidden = false;
   resize();
   fit();
   hint();
   draw();
+}
+
+/**
+ * Pieces for an arrangement (spots, or null for none): the defences here fill the spots of their
+ * design in order; spots left over are empty (ghosts); defences beyond the spots start where
+ * one-attacker rows would put them.
+ */
+function piecesFrom(spots) {
+  const { designs, counts } = S.opts, pieces = [];
+  const ids = [...new Set([...Object.keys(counts).filter((id) => counts[id] > 0), ...(spots || []).map((s) => s.d)])].filter((id) => designs[id]);
+  const byDesign = new Map(ids.map((id) => [id, []]));
+  for (const sp of spots || []) if (byDesign.has(sp.d)) byDesign.get(sp.d).push(sp);
+  for (const id of ids) {
+    const shape = shapeOf(designs[id].design), n = counts[id] || 0, sps = byDesign.get(id);
+    sps.forEach((sp, k) => pieces.push({ id, shape, x: sp.x, y: sp.y, a: sp.a, ghost: k >= n, auto: false }));
+    for (let k = sps.length; k < n; k++) pieces.push({ id, shape, x: 0, y: 0, a: Math.PI, ghost: false, auto: true });
+  }
+  autoPlace(pieces.filter((p) => p.auto), pieces.filter((p) => !p.auto));
+  return pieces;
+}
+
+/** Empty spots per design: [{ id, count }] and what building them would cost. */
+function missing() {
+  const m = new Map();
+  for (const p of S.pieces) if (p.ghost) m.set(p.id, (m.get(p.id) || 0) + 1);
+  const list = [...m].map(([id, count]) => ({ id, count }));
+  return { list, n: list.reduce((t, x) => t + x.count, 0), cost: list.reduce((t, x) => t + x.count * S.opts.price(x.id), 0) };
 }
 
 export const arrangeOpen = () => !!root && !root.hidden;
@@ -129,8 +159,11 @@ function build() {
       <button data-a="remove" title="Remove the selected empty spots (Delete)">Remove empty spots</button>
       <button data-a="auto" title="Put every defence back in automatic rows (nothing is saved until you press Save)">Re-lay automatically</button>
       <button data-a="fit" title="See everything (F)">Fit</button>
+      <button data-a="bp" title="Save this arrangement to reuse at your other worlds, or load one you saved">Blueprints…</button>
+      <button data-a="missing" class="go" hidden title="Order defences for every empty spot (they take the usual build time, then fill their spots)"></button>
       <button data-a="save" class="go">Save</button>
     </div>
+    <div class="ar-bp" hidden></div>
     <canvas></canvas>
     <div class="ar-foot"></div>`;
   document.body.appendChild(root);
@@ -139,6 +172,11 @@ function build() {
     const b = e.target.closest('[data-a]');
     if (b && S) command(b.dataset.a);
   });
+  root.querySelector('.ar-bp').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-b]');
+    if (b && S) blueprintCmd(b.dataset.b, b.dataset.id);
+  });
+  root.querySelector('.ar-bp').addEventListener('keydown', (e) => { if (e.key === 'Enter' && S) blueprintCmd('save'); e.stopPropagation(); });
   cv.addEventListener('pointerdown', down);
   cv.addEventListener('pointermove', move);
   cv.addEventListener('pointerup', up);
@@ -174,7 +212,61 @@ function command(a) {
     autoPlace(S.pieces, []);
     S.sel.clear(); S.dirty = true; checkAll(); fit();
   } else if (a === 'save') return save();
+  else if (a === 'bp') { const el = root.querySelector('.ar-bp'); el.hidden = !el.hidden; if (!el.hidden) renderBlueprints(); return; }
+  else if (a === 'missing') return buildMissing();
   hint(); draw();
+}
+
+// ------------------------------------------------------------------ blueprints
+function renderBlueprints() {
+  const el = root.querySelector('.ar-bp'), list = S.opts.blueprints();
+  const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  el.innerHTML = `<h3>Blueprints</h3>
+    <div class="r"><input data-k="name" maxlength="40" placeholder="Name for this arrangement"><button data-b="save" class="go">Save as blueprint</button></div>
+    ${list.length ? list.map((b) => `<div class="r"><span title="${esc(b.name)}">${esc(b.name)} <em style="color:var(--dim)">· ${b.spots.length}</em></span><button data-b="load" data-id="${b.id}">Load</button><button data-b="del" data-id="${b.id}" class="danger">Delete</button></div>`).join('') : ''}
+    <p>${list.length ? 'Loading one lays it out here: your defences fill its spots, and any it has that aren\'t here yet show as empty spots, ready for <b>Build missing</b>. Saving under an existing name replaces it.' : 'Save this arrangement to reuse it at your other worlds. Blueprints are kept with your account.'}</p>`;
+}
+
+async function blueprintCmd(b, idStr) {
+  const id = Number(idStr), list = S.opts.blueprints();
+  if (b === 'save') {
+    const name = root.querySelector('.ar-bp [data-k=name]').value.trim();
+    if (!name) { S.opts.toast('Give the blueprint a name.', true); return; }
+    if (S.bad.size) { S.opts.toast('Fix the overlapping (red) defences first.', true); return; }
+    const r = await S.opts.saveBlueprint(name, spotsOut());
+    if (!r?.ok) { S.opts.toast(r?.error || 'Could not save the blueprint.', true); return; }
+    S.opts.toast(r.replaced ? `Blueprint "${name}" updated.` : `Saved as blueprint "${name}".`);
+    renderBlueprints();
+  } else if (b === 'load') {
+    const bp = list.find((x) => x.id === id);
+    if (!bp) return;
+    if (S.dirty && !confirm(`Replace what you've arranged here with "${bp.name}"?`)) return;
+    S.pieces = piecesFrom(bp.spots);
+    S.sel.clear(); S.dirty = true; checkAll(); fit(); hint(); draw();
+    root.querySelector('.ar-bp').hidden = true;
+    const m = missing();
+    S.opts.toast(m.n ? `Loaded "${bp.name}": ${m.n} empty spot${m.n === 1 ? '' : 's'} to fill. Use Build missing, then Save.` : `Loaded "${bp.name}". Save to use it here.`);
+  } else if (b === 'del') {
+    const bp = list.find((x) => x.id === id);
+    if (!bp || !confirm(`Delete the blueprint "${bp.name}"?`)) return;
+    const r = await S.opts.deleteBlueprint(id);
+    if (!r?.ok) S.opts.toast(r?.error || 'Could not delete it.', true);
+    renderBlueprints();
+  }
+}
+
+async function buildMissing() {
+  const m = missing();
+  if (!m.n) return;
+  if (S.bad.size) { S.opts.toast('Fix the overlapping (red) defences first.', true); return; }
+  if (m.cost > S.opts.credits() + 1e-6) { S.opts.toast(`Building the ${m.n} missing defences costs ${Math.round(m.cost).toLocaleString()} cr; you have ${Math.floor(S.opts.credits()).toLocaleString()}.`, true); return; }
+  if (!confirm(`Save this arrangement and order ${m.n} defence${m.n === 1 ? '' : 's'} for its empty spots, for ${Math.round(m.cost).toLocaleString()} cr? They fill their spots when they're built.`)) return;
+  const r = await S.opts.save(spotsOut());
+  if (!r?.ok) { S.opts.toast(r?.error || 'Could not save.', true); return; }
+  const b = await S.opts.buildMissing(m.list);
+  if (!b?.ok) { S.opts.toast(b?.error || 'Could not order them.', true); return; }
+  S.opts.toast(`Arrangement saved; ${m.n} defence${m.n === 1 ? '' : 's'} ordered for the empty spots.`);
+  close();
 }
 
 async function save() {
@@ -211,6 +303,9 @@ function rotateSel(da, snap) {
 }
 
 function hint() {
+  const mb = root.querySelector('[data-a=missing]'), m = missing();
+  mb.hidden = !m.n;
+  if (m.n) mb.textContent = `Build missing (${m.n} · ${Math.round(m.cost).toLocaleString()} cr)`;
   const { pieces, sel, bad } = S, n = pieces.filter((p) => !p.ghost).length, ghosts = pieces.length - n, auto = pieces.filter((p) => p.auto).length;
   const t = S.opts.touch;
   let h = `<b>${n}</b> defence${n === 1 ? '' : 's'} here${ghosts ? `, <b>${ghosts}</b> empty spot${ghosts === 1 ? '' : 's'} (faint) waiting for new ones of that design` : ''}. `;

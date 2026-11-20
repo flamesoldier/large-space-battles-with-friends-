@@ -22,7 +22,7 @@ import {
   sendFleet, stopFleet, setRally, rallyAll, setDestination, destinationAll, nextHop, pinned, holdReason, previewFleet, shipsAt, incomeOf, allied, playerName, designOf, fleetValue, worthOf, countShips, fmtHours,
   sellValue, yardListValue, YARD_MS, HOLD_MS, upgradeWorld,
   proposeAlliance, acceptAlliance, declineAlliance, breakAlliance, proposalsFor, hasProposed, giveCredits,
-  isOpenSeat, freeColors, renameDesign, renamePlanet, setLayout, buildDefense, defenseProblem, cancelSale, jobsAt,
+  isOpenSeat, freeColors, renameDesign, renamePlanet, setLayout, layoutAt, saveBlueprint, deleteBlueprint, buildDefense, defenseProblem, cancelSale, jobsAt,
 } from '../world/world.js';
 import { readBattle, shipColors, battleOptions } from '../world/battleSetup.js';
 import { fleetPosition } from '../world/routes.js';
@@ -711,11 +711,12 @@ function planetPanel(P) {
     for (const j of jobsAt(world, P.id, 'defence')) {
       html += `<div class="yard building"><b>${fmt(j.count)} × ${esc(world.designs[j.design].name)}</b><span>under construction · ready in <span data-arrive="${j.done}"></span></span></div>`;
     }
-    const lay = P.layout && P.layout.owner === ui.me ? P.layout : null;
-    if (n || lay) {
+    const lay = P.owner === ui.me ? layoutAt(world, P.id) : null;
+    const bps = world.blueprints?.[ui.me]?.length || 0;
+    if (n || lay || bps) {
       const placed = lay ? Math.min(n, lay.spots.length) : 0;
-      html += `<div class="row"><button class="small go" data-act="arrange" ${busy ? 'disabled' : ''} title="Place and turn each defence here, to build your own fortress">Arrange defences…</button></div>`;
-      html += `<p class="hint">${lay ? `<b>Arranged by you:</b> ${fmt(placed)} of ${fmt(n)} stand where you put them${n > placed ? `; ${fmt(n - placed)} more stand in rows facing the attackers` : ''}${lay.spots.length > n ? `; ${fmt(lay.spots.length - n)} empty spot${lay.spots.length - n === 1 ? '' : 's'} wait for new defences of their design` : ''}.` : 'Laid out automatically in rows facing each attacker. Arrange them to build your own fortress.'}</p>`;
+      html += `<div class="row"><button class="small go" data-act="arrange" ${busy ? 'disabled' : ''} title="Place and turn each defence here, to build your own fortress, or load one of your blueprints">Arrange defences…</button></div>`;
+      html += `<p class="hint">${lay ? `<b>Arranged by you:</b> ${fmt(placed)} of ${fmt(n)} stand where you put them${n > placed ? `; ${fmt(n - placed)} more stand in rows facing the attackers` : ''}${lay.spots.length > n ? `; ${fmt(lay.spots.length - n)} empty spot${lay.spots.length - n === 1 ? '' : 's'} wait for new defences of their design` : ''}.` : n ? 'Laid out automatically in rows facing each attacker. Arrange them to build your own fortress.' : 'No defences here yet. Load one of your blueprints to lay one out and build what it needs.'}</p>`;
     }
     html += `<p class="hint">${n ? 'Listed with the ships above. ' : ''}Defences cost ${Math.round(DEFENSE_PRICE_SHARE * 100)}% of their blocks' price and take <b>${fmtHours(DEFENSE_BUILD_HOURS)}</b> to build, quick enough to build when an attack is coming. They never move and fight for this world. When one is destroyed it's gone, and they're all lost (finished or not) if the world falls.</p>`;
   }
@@ -993,19 +994,30 @@ function openArranger(planetId) {
   if (!P || P.owner !== ui.me) return;
   const counts = {}, designs = {};
   for (const g of P.garrison) if (g.owner === ui.me && g.n > 0 && world.designs[g.design]?.fixed) counts[g.design] = (counts[g.design] || 0) + g.n;
-  const layout = P.layout && P.layout.owner === ui.me ? P.layout.spots : null;
-  for (const id of new Set([...Object.keys(counts), ...(layout || []).map((s) => s.d)])) {
-    const D = world.designs[id];
-    if (D?.fixed && D.owner === ui.me) designs[id] = { name: D.name, design: designOf(world, id) };
-  }
-  for (const id of Object.keys(counts)) if (!designs[id]) delete counts[id];
+  // Every defence design of yours, so blueprints made elsewhere can show their missing pieces.
+  for (const [id, D] of Object.entries(world.designs)) if (D.fixed && D.owner === ui.me) designs[id] = { name: D.name, design: designOf(world, id) };
+  const lay = layoutAt(world, planetId);
   openArrange({
-    title: `Arrange defences at ${P.name}`, designs, counts, layout: layout && layout.filter((s) => designs[s.d]),
+    title: `Arrange defences at ${P.name}`, designs, counts, layout: lay ? lay.spots.filter((s) => designs[s.d]) : null,
     colors: BLOCK_COLOR, touch: TOUCH, toast,
     save: async (spots) => {
       const r = await perform({ type: 'layout', planet: planetId, spots }, () => setLayout(world, ui.me, planetId, spots));
       if (r.ok) { save(); renderPanel(true); }
       return r;
+    },
+    blueprints: () => world.blueprints?.[ui.me] || [],
+    saveBlueprint: async (name, spots) => { const r = await perform({ type: 'blueprint', name, spots }, () => saveBlueprint(world, ui.me, name, spots)); if (r.ok) save(); return r; },
+    deleteBlueprint: async (id) => { const r = await perform({ type: 'unblueprint', id }, () => deleteBlueprint(world, ui.me, id)); if (r.ok) save(); return r; },
+    price: (id) => defensePrice(designOf(world, id)),
+    credits: () => me().credits,
+    buildMissing: async (list) => {
+      for (const { id, count } of list) {
+        const d = designOf(world, id);
+        const r = await perform({ type: 'defend', planet: planetId, design: encodeDesign(d), count }, () => buildDefense(world, ui.me, planetId, d, count));
+        if (!r.ok) return r;
+      }
+      save(); renderPanel(true); renderEvents();
+      return { ok: true };
     },
   });
 }

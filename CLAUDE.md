@@ -836,16 +836,33 @@ All money numbers are in `src/shared/economy.js` (placeholders until balanced in
   **today's rule** (one attacker from the left, several spread evenly round the world: camps at
   2πc/n); **any angle, 15° snaps**; **new defences refill placed spots of their design first**, extras
   go in the usual rows; **touching allowed, not overlapping**.
-  - `src/world/defenceLayout.js` (pure, shared): `P.layout = { owner, spots: [{ d, x, y, a }] }` (world
+  - **Stored at the top level**, `world.layouts[planetId] = { owner, spots }` (not on the planet: worldSync
+    re-sends a planet whenever anything there changes, and a big layout is ~80 KB); `layoutAt(world, id)`
+    returns it only while its owner holds the world. **`LAYOUT_RADIUS` 3,000** (owner asked whether
+    1,000 was enough: an Aegis IV alone reaches ~590 from its centre, so two side by side didn't fit).
+  - **Blueprints** (owner, same evening: "a way to save designs to quickly remake them at other
+    worlds"): `world.blueprints[pid] = [{ id, name, spots }]` (top level for the same reason; ≤
+    `MAX_BLUEPRINTS` 20, names 1–40 chars, saving under an existing name, any case, replaces it; spots
+    checked by `cleanLayout` against the player's own defence designs). `saveBlueprint` /
+    `deleteBlueprint` in `world.js`, server actions `blueprint { name, spots }` / `unblueprint { id }`.
+    Arranger: **Blueprints…** panel (name + Save as blueprint; Load / Delete per blueprint). Loading lays
+    the blueprint out with this world's defences filling its spots and the rest as empty spots; the
+    arranger gets every defence design of the player's (`openArranger`), so missing ones can be drawn.
+    **Build missing (N · cost)** appears whenever there are empty spots: saves the arrangement, then
+    orders `buildDefense` for each design's empty spots (usual price and build time; they fill their
+    spots when done). The world panel shows **Arrange defences…** at worlds with no defences too when
+    the player has a blueprint. Tests: blueprint save / replace / not your design / no name / delete in
+    `tools/test-world.mjs`, refusals in `tools/test-server.mjs`; browser-checked (save at home, load at a
+    second world with no defences, Build missing ordered all 21 and saved the layout).
+  - `src/world/defenceLayout.js` (pure, shared): layout `{ owner, spots: [{ d, x, y, a }] }` (world
     design id, grid centre in battle blocks with the world at 0,0, nose angle; battle frame x right, y
     down). `shapeOf`, `piecesOverlap` (box SAT prefilter, then block-exact: two blocks overlap when
     their centres are < 0.9 apart, so side-by-side blocks touch at any angle), `overlapping`,
-    `pieceReach`, `cleanLayout` (validates and rounds: own fixed designs only, within `LAYOUT_RADIUS`
-    1,000 blocks, ≤ `MAX_SPOTS` 2,000, no overlaps), `assignSpots` (the k-th defence of a design takes
+    `pieceReach`, `cleanLayout` (validates and rounds: own fixed designs only, within `LAYOUT_RADIUS`, ≤ `MAX_SPOTS` 2,000, no overlaps), `assignSpots` (the k-th defence of a design takes
     the k-th spot of that design; owner must be the layout's owner).
   - World: `setLayout(world, pid, planet, spots)` (owner of the world only; [] = back to automatic rows;
-    no log entry), server action `{ type: 'layout', planet, spots }`; `capture()` deletes `P.layout`;
-    `planEvent` passes `layout` (only if `P.layout.owner === P.owner`) to `makeBattleScenario`, which
+    no log entry), server action `{ type: 'layout', planet, spots }`; `capture()` deletes the world's layout;
+    `planEvent` passes `layoutAt(world, P.id)` to `makeBattleScenario`, which
     keeps a fixed ship → `{ wid, owner }` map, places arranged ones with `assignSpots`, and lays the
     rest with `layoutDefences(..., around = placed)`: each block of rows starts beyond the arranged
     ones in its direction (`defenceReach(around, phi) + 40`). Fleets already start clear via
