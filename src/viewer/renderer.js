@@ -27,14 +27,15 @@ precision mediump float;
 in vec2 vUV; in vec4 vCol; flat in highp float vShape; flat in float vAng; flat in vec2 vSize; out vec4 o;
 uniform float uDet;   // 0..1: how much fine detail to draw (by on-screen block size)
 uniform float uTime;  // replay time in ticks, for glows that pulse
-// Detailed hull block. Shape code = 10 + type + 16 * open-sides mask + 256 * var + 32768 if
+// Detailed hull block. Shape code = 10 + type + 16 * open-sides mask + 256 * var + 2^20 (DEAD_BIT) if
 // it's debris; var is 0..7 for variety, or for plasma cannon blocks u * 10 + v, the block's
 // place in its 10x10 unit (the whole unit is drawn as one machine). Edges facing open space get a bevel lit from the upper left of the
 // world and a dark outline, so a hull reads as solid plating instead of a grid of tiles; each
 // block type has its own surface (plates, rivets, truss, nozzle, lens, turret, tubes, coils).
+vec2 rotd(vec2 v, float a) { float c = cos(a), s = sin(a); return vec2(v.x * c + v.y * s, -v.x * s + v.y * c); } // into a gun's own frame (barrels along +x)
 vec3 hullBlock(int code, vec2 p) {
-  int type = code & 15, mask = (code >> 4) & 15, var = (code >> 8) & 127, hv = var & 7;
-  bool dead = code >= 32768;
+  int type = code & 15, mask = (code >> 4) & 15, var = (code >> 8) & 4095, hv = var & 7;
+  bool dead = code >= 1048576;
   float c = cos(vAng), s = sin(vAng);
   vec2 Lw = vec2(-0.6, -0.8);
   vec2 L = vec2(Lw.x * c + Lw.y * s, -Lw.x * s + Lw.y * c); // light in block space
@@ -68,32 +69,94 @@ vec3 hullBlock(int code, vec2 p) {
     float ring = smoothstep(0.42, 0.5, r) * (1.0 - smoothstep(0.62, 0.7, r));
     lit *= mix(1.0, 0.55 + ring * 0.7 - sh * 0.1, d);
     if (!dead) glow = vec3(1.0, 0.55, 0.2) * (1.0 - smoothstep(0.0, 0.42, r)) * 0.9 * d;
-  } else if (type == 6) { // laser: fixed emitter, a faceted crystal in a dark square mount
-    float dm = abs(p.x) + abs(p.y);
-    float cry = 1.0 - smoothstep(0.5, 0.58, dm);
-    float facet = 0.8 + 0.25 * sign(p.x * L.x + p.y * L.y + 0.001) * step(0.08, abs(p.x) + abs(p.y));
-    lit *= mix(1.0, mix(0.42, 1.0, cry), d);
-    glow = mix(col, vec3(1.0), 0.55) * cry * facet * (dead ? 0.15 : 0.85) * d
-         + vec3(1.0) * (1.0 - smoothstep(0.0, 0.14, dm)) * (dead ? 0.0 : 0.6) * d;
-  } else if (type == 7) { // cannon: fixed armoured gun port, a big dark bore with a bright rim
-    float rim = smoothstep(0.36, 0.42, r) * (1.0 - smoothstep(0.54, 0.6, r));
-    float bore = 1.0 - smoothstep(0.36, 0.42, r);
-    float bolt = 1.0 - smoothstep(0.05, 0.1, length(abs(p) - 0.74));
-    lit *= mix(1.0, 0.8 + rim * (0.55 - sh * 0.5) - bore * 0.72 + bolt * 0.3, d);
-    if (!dead) glow = vec3(1.0, 0.45, 0.15) * (1.0 - smoothstep(0.0, 0.25, r)) * 0.35 * d;
-  } else if (type == 8 || type == 11) { // missile launcher: four tubes, hazard stripes round the hatch (guided: green seeker eye)
-    float tube = 1.0 - smoothstep(0.17, 0.23, length(abs(p) - 0.36));
-    float band = smoothstep(0.74, 0.8, max(abs(p.x), abs(p.y)));
-    float stripe = step(0.5, fract((p.x + p.y) * 2.5));
-    lit *= mix(1.0, (1.0 - tube * 0.7) * mix(1.0, 0.45 + 0.55 * stripe, band), d);
-    if (type == 11) { lit *= mix(1.0, smoothstep(0.1, 0.16, r), d); if (!dead) glow = vec3(0.35, 1.0, 0.6) * (1.0 - smoothstep(0.03, 0.1, r)) * 0.9 * d; }
-  } else if (type == 9) { // point defence: fixed sensor dish, rings and a crosshair, red eye
-    float ring = (1.0 - smoothstep(0.03, 0.07, abs(r - 0.62))) + (1.0 - smoothstep(0.03, 0.07, abs(r - 0.38)));
-    float cross = (1.0 - smoothstep(0.03, 0.06, min(abs(p.x), abs(p.y)))) * step(r, 0.62);
-    lit *= mix(1.0, 0.62 + 0.35 * min(ring + cross, 1.0) - sh * 0.1, d);
-    if (!dead) glow = vec3(1.0, 0.25, 0.2) * (1.0 - smoothstep(0.08, 0.17, r)) * 0.9 * d;
-  } else if (type == 10) { // plasma cannon: the whole 10x10 unit is one machine
-    vec2 q = (vec2(float(var / 10), float(var - (var / 10) * 10)) + p * 0.5 + 0.5) / 10.0 - 0.5; // -0.5..0.5 across the unit
+  } else if (type == 6) { // laser (20 Nov 2026): a round emitter housing with a crystal core and a tapered focusing barrel pointing out of the hull
+    float ga = float(var & 7) * 0.7853982;
+    vec2 r = rotd(p, ga), rL = rotd(L, ga);
+    float R = length(p);
+    float base = 0.3;
+    float housing = 1.0 - smoothstep(0.56, 0.61, R);
+    base = mix(base, 0.55 - dot(p, L) * 0.45, housing);
+    base = mix(base, 0.3, (1.0 - smoothstep(0.03, 0.06, abs(R - 0.58))) * 0.7);
+    float hw = 0.21 - 0.07 * clamp(r.x, 0.0, 1.0);
+    float tube = step(abs(r.y), hw) * step(0.15, r.x) * step(r.x, 0.98);
+    float cyl = 1.0 - (r.y / hw) * (r.y / hw);
+    base = mix(base, 0.3 + 0.45 * cyl - rL.y * r.y * 1.2, tube);
+    float rings = tube * (step(abs(r.x - 0.56), 0.045) + step(abs(r.x - 0.8), 0.035));
+    base = mix(base, 0.95, rings);
+    float dm = abs(r.x) + abs(r.y) * 1.35;
+    float cry = 1.0 - smoothstep(0.27, 0.33, dm);
+    float lens = tube * step(0.9, r.x);
+    lit *= mix(1.0, mix(base, 1.0, cry), d);
+    float facet = 0.8 + 0.25 * sign(r.x * rL.x + r.y * rL.y + 0.001) * step(0.06, dm);
+    glow = (mix(col, vec3(1.0), 0.55) * cry * facet * (dead ? 0.15 : 0.85)
+         + vec3(1.0) * (1.0 - smoothstep(0.0, 0.1, dm)) * (dead ? 0.0 : 0.6)
+         + mix(col, vec3(1.0), 0.6) * lens * (dead ? 0.0 : 0.75)) * d;
+  } else if (type == 7) { // cannon (20 Nov 2026): an armoured turret with one thick barrel and a muzzle brake, pointing out of the hull
+    float ga = float(var & 7) * 0.7853982;
+    vec2 r = rotd(p, ga), rL = rotd(L, ga);
+    float R = length(p);
+    float base = 0.42 + 0.05 * step(0.5, fract((p.x - p.y) * 3.0));
+    float bolt = 1.0 - smoothstep(0.05, 0.1, length(abs(p) - 0.78));
+    base += bolt * 0.35;
+    float turret = 1.0 - smoothstep(0.46, 0.51, R);
+    float ring = (1.0 - smoothstep(0.51, 0.56, R)) * smoothstep(0.44, 0.48, R);
+    base = mix(base, 0.98 - dot(p, L) * 0.9, turret);
+    base = mix(base, 0.3, ring);
+    float hw = 0.21;
+    float brl = step(abs(r.y), hw) * step(0.22, r.x);
+    float brake = step(abs(r.y), 0.27) * step(abs(r.x - 0.83), 0.1);
+    float cyl = 1.0 - (r.y / hw) * (r.y / hw);
+    base = mix(base, 0.6 + 0.75 * cyl, brl);
+    base = mix(base, 1.05 - rL.y * r.y * 1.5, brake);
+    base = mix(base, 0.25, step(abs(r.x - 0.83), 0.015) * step(abs(r.y), 0.27)); // slot in the brake
+    float bore = step(0.93, r.x) * step(abs(r.y), 0.1);
+    base = mix(base, 0.08, bore);
+    lit *= mix(1.0, base, d);
+    if (!dead) glow = (vec3(1.0, 0.45, 0.15) * bore * 0.7 + vec3(1.0, 0.65, 0.3) * (1.0 - smoothstep(0.0, 0.1, length(r + vec2(0.18, 0.0)))) * 0.3) * d;
+  } else if (type == 8 || type == 11) { // missile launcher (20 Nov 2026): a pod with two missiles side by side, warheads out of the hull, hazard stripes at the back (guided: green seekers)
+    float ga = float(var & 7) * 0.7853982;
+    vec2 r = rotd(p, ga), rL = rotd(L, ga);
+    vec2 ar = abs(r);
+    float stripe = step(0.5, fract((r.x + r.y) * 2.5));
+    float back = step(r.x, -0.6);
+    float frame = smoothstep(0.8, 0.86, max(ar.x, ar.y));
+    float base = 0.42;
+    base = mix(base, 0.85 - dot(p, L) * 0.5, frame);
+    base = mix(base, 0.3 + 0.65 * stripe, back);
+    float sy = ar.y - 0.36, hw = 0.19;
+    float body = step(abs(sy), hw) * step(-0.52, r.x) * step(r.x, 0.3);
+    float cone = step(abs(sy), hw * clamp((0.86 - r.x) / 0.56, 0.0, 1.0)) * step(0.3, r.x) * step(r.x, 0.86);
+    float cyl = 1.0 - (sy / hw) * (sy / hw);
+    float fins = step(abs(sy), 0.27) * step(-0.56, r.x) * step(r.x, -0.42) * (1.0 - body);
+    base = mix(base, 0.5, fins);
+    base = mix(base, 0.6 + 0.5 * cyl - rL.y * sign(r.y) * sy * 1.2, body);
+    base = mix(base, 0.95 + 0.3 * cyl, cone);
+    base = mix(base, 0.35, body * step(abs(r.x - 0.05), 0.03)); // band round each missile
+    lit *= mix(1.0, base, d);
+    if (!dead) {
+      vec3 tc = type == 11 ? vec3(0.35, 1.0, 0.6) : vec3(1.0, 0.45, 0.2);
+      float tipd = 1.0 - smoothstep(0.03, 0.09, length(vec2(r.x - 0.74, sy)));
+      glow = tc * (cone * 0.25 + tipd * (type == 11 ? 1.0 : 0.6)) * d;
+    }
+  } else if (type == 9) { // point defence (20 Nov 2026): a sensor dish with a red eye and twin rapid-fire barrels pointing out of the hull
+    float ga = float(var & 7) * 0.7853982;
+    vec2 r = rotd(p, ga), rL = rotd(L, ga);
+    float R = length(p);
+    float base = 0.55;
+    float dish = 1.0 - smoothstep(0.5, 0.55, R);
+    float rings = (1.0 - smoothstep(0.03, 0.06, abs(R - 0.5))) + (1.0 - smoothstep(0.03, 0.06, abs(R - 0.3)));
+    base = mix(base, 0.72 - dot(p, L) * 0.5, dish);
+    base += min(rings, 1.0) * 0.3;
+    float by = abs(r.y) - 0.17;
+    float brl = step(abs(by), 0.065) * step(0.22, r.x) * step(r.x, 0.97);
+    base = mix(base, 0.6 + 0.55 * (1.0 - (by / 0.065) * (by / 0.065)), brl);
+    base = mix(base, 0.12, brl * step(0.88, r.x) * step(abs(by), 0.03));
+    lit *= mix(1.0, base, d);
+    if (!dead) glow = vec3(1.0, 0.25, 0.2) * (1.0 - smoothstep(0.08, 0.17, R)) * 0.9 * d;
+  } else if (type == 10) { // plasma cannon: the whole 10x10 unit is one machine; since 20 Nov 2026 a coiled emitter barrel runs from the orb out of the hull
+    int pos = var - (var / 100) * 100;
+    float ga = float(var / 100) * 0.7853982;
+    vec2 q = (vec2(float(pos / 10), float(pos - (pos / 10) * 10)) + p * 0.5 + 0.5) / 10.0 - 0.5; // -0.5..0.5 across the unit
     float R = length(q);
     vec2 aq = abs(q);
     // dark housing with panel lines
@@ -108,6 +171,16 @@ vec3 hullBlock(int code, vec2 p) {
     float pipe = (1.0 - smoothstep(0.022, 0.03, ax)) * step(0.2, R) + (1.0 - smoothstep(0.018, 0.026, dg)) * step(0.2, R) * step(R, 0.42);
     float pipeCore = (1.0 - smoothstep(0.0, 0.01, ax)) * step(0.2, R) + (1.0 - smoothstep(0.0, 0.008, dg)) * step(0.2, R) * step(R, 0.42);
     base = mix(base, 0.95 - dot(q, L) * 0.6, min(pipe, 1.0));
+    // the emitter barrel: a wide tube from the orb to the hull edge, wound with coils, a heavy muzzle ring
+    vec2 rq = rotd(q, ga), rL = rotd(L, ga);
+    float bw = 0.085;
+    float barrel = step(abs(rq.y), bw) * step(0.17, rq.x) * step(rq.x, 0.49);
+    float cylb = 1.0 - (rq.y / bw) * (rq.y / bw);
+    float coils = barrel * step(0.55, fract(rq.x * 30.0)) * step(0.24, rq.x) * step(rq.x, 0.41);
+    float muzzle = step(abs(rq.y), 0.115) * step(abs(rq.x - 0.45), 0.035);
+    base = mix(base, 0.45 + 0.6 * cylb + coils * 0.3, barrel);
+    base = mix(base, 1.0 - rL.y * rq.y * 5.0, muzzle);
+    pipeCore *= 1.0 - barrel;
     // collar round the orb
     float collar = (1.0 - smoothstep(0.012, 0.022, abs(R - 0.215)));
     base = mix(base, 1.1, collar);
@@ -116,58 +189,82 @@ vec3 hullBlock(int code, vec2 p) {
     if (!dead) {
       float flow = 0.5 + 0.5 * sin(R * 60.0 + uTime * 0.6); // energy running inward along the pipes
       float pulse = 0.8 + 0.2 * sin(uTime * 0.4);
+      float beam = barrel * (1.0 - smoothstep(0.0, 0.035, abs(rq.y))) * (0.45 + 0.55 * sin(rq.x * 45.0 - uTime * 1.5));
       glow = (vec3(0.25, 0.55, 1.0) * min(pipeCore, 1.0) * (0.4 + 0.6 * flow)
+           + vec3(0.3, 0.65, 1.0) * (beam + coils * 0.35) * (1.0 - muzzle)
+           + vec3(0.5, 0.8, 1.0) * muzzle * step(abs(rq.y), 0.05) * 0.8
            + orb * mix(vec3(0.2, 0.5, 1.0), vec3(0.9, 0.97, 1.0), 1.0 - smoothstep(0.0, 0.13, R)) * pulse
            + vec3(0.15, 0.35, 0.9) * (1.0 - smoothstep(0.15, 0.3, R)) * 0.4) * d;
       lit *= 1.0 - orb * d * 0.8;
     } else lit *= 1.0 - orb * d * 0.3;
-  } else if (type == 12) { // fighter bay: the 6x6 unit is one hangar, a dark deck in a hazard-striped frame
-    vec2 q = (vec2(float(var / 6), float(var - (var / 6) * 6)) + p * 0.5 + 0.5) / 6.0 - 0.5; // -0.5..0.5 across the unit
-    vec2 aq = abs(q);
+  } else if (type == 12) { // fighter bay: the 6x6 unit is one hangar, a dark deck in a hazard-striped frame; the parked fighter and launch chevrons face the way fighters leave
+    int pos = var - (var / 36) * 36;
+    float ga = float(var / 36) * 0.7853982;
+    vec2 q = (vec2(float(pos / 6), float(pos - (pos / 6) * 6)) + p * 0.5 + 0.5) / 6.0 - 0.5; // -0.5..0.5 across the unit
+    vec2 aq = abs(q), rq = rotd(q, ga), rL = rotd(L, ga);
     float m = max(aq.x, aq.y), R = length(q);
     float frame = smoothstep(0.42, 0.435, m);
     float stripe = step(0.5, fract((q.x + q.y) * 8.0));
-    float rows = 1.0 - smoothstep(0.003, 0.007, abs(fract(q.y * 6.0 + 0.5) - 0.5) / 6.0);
-    float deck = 0.28 + rows * 0.1 * (1.0 - frame);
-    // a small fighter parked in the middle, nose forward (+x)
-    float body = step(abs(q.y), 0.05 + (0.16 - q.x) * 0.45) * step(-0.14, q.x) * step(q.x, 0.18);
+    float rows = 1.0 - smoothstep(0.003, 0.007, abs(fract(rq.y * 6.0 + 0.5) - 0.5) / 6.0);
+    float deck = 0.26 + rows * 0.08 * (1.0 - frame) + step(abs(rq.y), 0.2) * step(-0.38, rq.x) * 0.05;
+    // the fighter on its pad: swept wings, a cockpit, nose toward the way out
+    float wing = step(abs(rq.y), 0.04 + (0.1 - rq.x) * 0.75) * step(-0.17, rq.x) * step(rq.x, 0.04);
+    float hull = step(abs(rq.y), 0.035) * step(-0.2, rq.x) * step(rq.x, 0.2);
+    float body = max(wing, hull);
+    float cockpit = 1.0 - smoothstep(0.012, 0.022, length(vec2(rq.x - 0.1, rq.y * 1.6)));
     float base = mix(deck, 0.35 + 0.75 * stripe, frame);
-    base = mix(base, 1.05 - dot(q, L) * 0.3, body * (1.0 - frame));
+    base = mix(base, 1.05 - dot(rq, rL) * 0.6, body * (1.0 - frame));
+    base = mix(base, 0.3, cockpit);
+    // launch chevrons painted ahead of the fighter
+    float chev = step(0.5, fract((rq.x - abs(rq.y) * 0.8) * 9.0)) * step(abs(rq.y), 0.14) * step(0.24, rq.x) * step(rq.x, 0.4);
     lit *= mix(1.0, base, d);
     if (!dead) {
       float lights = 1.0 - smoothstep(0.012, 0.025, length(aq - 0.33));
-      glow = vec3(1.0, 0.7, 0.3) * lights * (0.6 + 0.4 * sin(uTime * 0.5 + q.x * 9.0)) * d;
+      float run = 0.5 + 0.5 * sin(uTime * 0.9 - rq.x * 30.0);
+      glow = (vec3(1.0, 0.7, 0.3) * lights * (0.6 + 0.4 * sin(uTime * 0.5 + q.x * 9.0))
+            + vec3(1.0, 0.75, 0.3) * chev * run * 0.7
+            + vec3(0.5, 0.85, 1.0) * cockpit * 0.6
+            + vec3(1.0, 0.55, 0.2) * hull * step(rq.x, -0.17) * 0.8) * d;
     }
   }
-  else if (type == 13) { // flak cannon: the 10x10 unit is one gun battery, four big barrels in an armoured ring
-    vec2 q = (vec2(float(var / 10), float(var - (var / 10) * 10)) + p * 0.5 + 0.5) / 10.0 - 0.5; // -0.5..0.5 across the unit
-    vec2 aq = abs(q);
+  else if (type == 13) { // flak cannon: the 10x10 unit is one gun battery; since 20 Nov 2026 four long barrels on a heavy turret point out of the hull
+    int pos = var - (var / 100) * 100;
+    float ga = float(var / 100) * 0.7853982;
+    vec2 q = (vec2(float(pos / 10), float(pos - (pos / 10) * 10)) + p * 0.5 + 0.5) / 10.0 - 0.5; // -0.5..0.5 across the unit
+    vec2 aq = abs(q), rq = rotd(q, ga), rL = rotd(L, ga);
     float R = length(q), m = max(aq.x, aq.y);
     // gunmetal deck with diagonal tread plate, a raised armoured rim round the unit
     float tread = 0.5 + 0.5 * step(0.5, fract((q.x - q.y) * 14.0));
     float base = 0.55 + tread * 0.06;
     float rim = smoothstep(0.43, 0.45, m);
     base = mix(base, 0.8 - dot(q, L) * 0.5, rim);
-    // the turret ring and its collar
-    float ring = 1.0 - smoothstep(0.31, 0.33, R);
-    float collar = 1.0 - smoothstep(0.012, 0.024, abs(R - 0.32));
-    base = mix(base, 0.78 - dot(q, L) * 0.7, ring);
-    base = mix(base, 1.15, collar);
-    // four barrels: dark bores with bright rims, in a square, pointing out of the screen
-    vec2 bq = aq - vec2(0.12);
-    float br = length(bq);
-    float bore = 1.0 - smoothstep(0.055, 0.065, br);
-    float bRim = (1.0 - smoothstep(0.075, 0.09, br)) * (1.0 - bore);
-    base = mix(base, 1.05 - dot(q, L) * 0.6, bRim);
-    base = mix(base, 0.12, bore);
     // ammunition feeds from the corners to the ring
     float feed = (1.0 - smoothstep(0.02, 0.03, abs(aq.x - aq.y) * 0.7071)) * step(0.33, R) * step(m, 0.43);
     base = mix(base, 0.4, feed * (1.0 - rim));
+    // the turret ring and its collar
+    float ring = 1.0 - smoothstep(0.31, 0.33, R);
+    float collar = 1.0 - smoothstep(0.012, 0.024, abs(R - 0.32));
+    base = mix(base, 0.72 - dot(q, L) * 0.7, ring);
+    base = mix(base, 1.15, collar);
+    // four barrels side by side, each with a muzzle brake and a dark bore
+    float by = rq.y - (floor(rq.y / 0.09) + 0.5) * 0.09;
+    float inB = step(abs(rq.y), 0.18);
+    float bw = 0.028;
+    float brl = inB * step(abs(by), bw) * step(0.12, rq.x) * step(rq.x, 0.485);
+    float brake = inB * step(abs(by), bw * 1.45) * step(abs(rq.x - 0.44), 0.03);
+    float cylf = 1.0 - (by / bw) * (by / bw);
+    base = mix(base, 0.45 + 0.65 * cylf, brl);
+    base = mix(base, 1.0 - rL.y * by * 8.0, brake);
+    float bore = brl * step(0.47, rq.x) * step(abs(by), bw * 0.45);
+    base = mix(base, 0.1, bore);
+    // the mantlet the barrels come out of
+    float mant = step(abs(rq.y), 0.2) * step(-0.17, rq.x) * step(rq.x, 0.15) * (1.0 - smoothstep(0.17, 0.2, length(rq * vec2(0.8, 1.0))));
+    base = mix(base, 1.0 - dot(rq, rL) * 1.2, mant);
     lit *= mix(1.0, base, d);
     if (!dead) {
       float lights = 1.0 - smoothstep(0.01, 0.022, length(aq - vec2(0.39)));
-      float hot = (1.0 - smoothstep(0.0, 0.05, br)) * 0.35;
-      glow = (vec3(1.0, 0.62, 0.2) * lights * (0.65 + 0.35 * sin(uTime * 0.7 + q.x * 7.0)) + vec3(1.0, 0.45, 0.15) * hot) * d;
+      glow = (vec3(1.0, 0.62, 0.2) * lights * (0.65 + 0.35 * sin(uTime * 0.7 + q.x * 7.0)) + vec3(1.0, 0.45, 0.15) * bore * 0.8
+            + vec3(1.0, 0.6, 0.25) * (1.0 - smoothstep(0.0, 0.025, length(rq + vec2(0.1, 0.0)))) * 0.6) * d;
     }
   }
   else if (type == 15) { // auto gun (20 Nov 2026): the 2x2 unit is one rotary cannon on an armoured mount; its barrels point out of the hull (dir, 45° steps)
@@ -256,6 +353,7 @@ void main(){
   }
 }`;
 
+const DEAD_BIT = 1048576; // debris flag in a detailed block's shape code (var takes bits 8-19: a 10x10 unit's place + 100 × direction)
 const STRIDE = 7; // x, y, angle, sx, sy, shape, rgba(u32)
 
 // Shield bubbles (15 Nov 2026): one quad per shielded ship over its distance map (model.shieldMap), so
@@ -510,13 +608,13 @@ export class Renderer {
       } else {
         // Detailed blocks: which sides are open (for bevels and outlines). Guns are drawn as fixed
         // mounts (owner: static turrets looked cheap). Pure function of time, like the rest.
-        const nb = e.nb, un = e.unit, deadBit = dead ? 32768 : 0;
+        const nb = e.nb, un = e.unit, deadBit = dead ? DEAD_BIT : 0;
         for (let i = 0; i < lx.length; i++) {
           if (de[i] <= t) continue;
           const o = i * 4, a0 = nb[o], a1 = nb[o + 1], a2 = nb[o + 2], a3 = nb[o + 3];
           const mask = (a0 >= 0 && de[a0] > t ? 1 : 0) | (a1 >= 0 && de[a1] > t ? 2 : 0) | (a2 >= 0 && de[a2] > t ? 4 : 0) | (a3 >= 0 && de[a3] > t ? 8 : 0);
           const type = ty[i], x = tr.x + lx[i] * c - ly[i] * s, y = tr.y + lx[i] * s + ly[i] * c;
-          const v = (type === BT.LANCE || type === BT.BAY || type === BT.FLAK || type === BT.SHIELD || type === BT.AUTO) && un[i] ? un[i] - 1 : (i * 2654435761) >>> 29;
+          const v = un[i] ? un[i] - 1 : (i * 2654435761) >>> 29; // weapons: the way they point (+ place in a unit); else variety
           solid.push(x, y, tr.a, 0.5, 0.5, 10 + type + 16 * mask + 256 * v + deadBit, pal[type]);
           blocks++;
         }

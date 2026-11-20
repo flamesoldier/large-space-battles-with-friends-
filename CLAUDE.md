@@ -584,6 +584,24 @@ Weapons (numbers in `blocks.js`):
       60k a side, 4 seeds; live → now): line vs line −0.01 → −0.21, auto guns on the hull side +0.13 → +0.20,
       charge vs line −0.12 → −0.15, line vs cannon standoff −0.27 → −0.18. Damage 110 (same dps as live) was
       tried: −0.15 / +0.09 / −0.16 / −0.15, not clearly better; left at 55 pending the owner.
+    - **Every weapon block redrawn the same way (owner, 20 Nov 2026, after seeing the auto gun: "do the same
+      with the other weapons, the blocks not the projectiles")**. This reverses the older "guns are fixed mounts,
+      barrels were tried and removed" look below: barrels now point **out of the hull**, which the owner asked for.
+      `src/shared/weaponLook.js` (viewer and designer): single-block weapons point away from their open
+      neighbours (`openDir`, the 8 cells round it, outside the grid counts as open; buried or evenly open: the
+      nose); multi-block units along the middle of their widest open arc (`unitDir`; a tunnelled fighter bay down
+      its tunnel's first stretch; shields don't point). 45° steps. Looks: **laser** round housing, crystal core,
+      tapered focusing barrel with rings and a glowing lens; **cannon** armoured turret, one thick barrel with a
+      slotted muzzle brake, ember bore; **point defence** the red dish and eye plus twin barrels; **missile /
+      guided** a pod of two missiles, warheads out (orange / green seekers), hazard stripes at the back;
+      **plasma** the old machine plus a coiled emitter barrel from the orb to the hull edge with blue energy
+      running along it; **flak** four long barrels with muzzle brakes out of a mantlet; **fighter bay** the
+      parked fighter (wings, cockpit, engine glow) and running launch chevrons face the way fighters leave.
+      Shader: `unitPos()` in `model.js` now also codes single weapons (1 + dir) and unit direction (1 + place +
+      n² × dir), `e.unit` is Uint16; the shape code's var field is 12 bits (`(code >> 8) & 4095`) and the
+      debris flag moved to 2^20 (`DEAD_BIT`); helper `rotd()`. Designer: `gunGlyph()`, and `plasmaUnit` /
+      `flakUnit` / `bayUnit` take the weapon. Old replays get the new look too (it's worked out from the
+      designs). No sim, replay or server change.
   - Measured (16×10 hull, 3 auto gun units 1,113 cr vs 8 cannons 1,317 cr, 60k cr a side, 4 seeds; score =
     enemy ships lost share − own): auto charge vs cannon line −0.06, line vs line −0.03, line vs cannon
     standoff −0.16; starting at 120 apart auto guns win (27/54 left vs 9/46). A third of bullets hit allied

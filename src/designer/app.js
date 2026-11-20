@@ -4,6 +4,7 @@
 
 import { BT, BLOCKS, WEAPON, MULTIBLOCK, HULL_CLASSES, COOKOFF, SHIELD, FLAK_POP, shieldRegen } from '../shared/blocks.js';
 import { ARC_BINS, binAngle, binOpen, arcCentre } from '../shared/arcs.js';
+import { openDir, unitDir, lookAngle } from '../shared/weaponLook.js';
 import { routeLength } from '../shared/bayRoute.js';
 import { analyzeDesign, encodeDesign, decodeDesign, designCost, STANCE_INFO, PLACE_INFO } from '../shared/shipStats.js';
 import { shipyardPrice, shipyardPriceAt, crowdingSurcharge, SHIPYARD_INTERVAL_MIN, SHIPS_PER_BUILD, SHIPYARD_PRICE_MULT, defensePrice, DEFENSE_PRICE_SHARE, DEFENSE_BUILD_HOURS } from '../shared/economy.js';
@@ -352,7 +353,7 @@ function draw() {
     for (const t in COLOR) { g.fillStyle = COLOR[t]; g.fill(paths[t]); }
     if (z >= 7)
       for (let y = vy0; y <= vy1; y++)
-        for (let x = vx0, i = y * ed.w + vx0; x <= vx1; x++, i++) if (cells[i] && !MULTIBLOCK[cells[i]]) glyph(cells[i], sx(x), sy(y), z);
+        for (let x = vx0, i = y * ed.w + vx0; x <= vx1; x++, i++) if (cells[i] && !MULTIBLOCK[cells[i]]) glyph(cells[i], sx(x), sy(y), z, i);
   }
   // Plasma cannons and fighter bays: one machine per unit (from the last analysis).
   if (info) {
@@ -448,7 +449,7 @@ function previewRect(x, y, w, h, t, faint) {
 }
 
 // Block details, drawn to match the replay viewer's look (fixed gun mounts, see renderer.js).
-function glyph(t, x, y, z) {
+function glyph(t, x, y, z, i) {
   const c = z / 2, cx = x + c, cy = y + c;
   const circle = (r, fill) => { g.fillStyle = fill; g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fill(); };
   const ring = (r, w, stroke) => { g.strokeStyle = stroke; g.lineWidth = w; g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.stroke(); };
@@ -463,28 +464,54 @@ function glyph(t, x, y, z) {
     g.strokeStyle = 'rgba(0,0,0,0.22)'; g.lineWidth = Math.max(1, z * 0.08);
     g.beginPath(); g.moveTo(x + z * 0.1, y + z * 0.1); g.lineTo(x + z * 0.9, y + z * 0.9); g.moveTo(x + z * 0.9, y + z * 0.1); g.lineTo(x + z * 0.1, y + z * 0.9); g.stroke();
   } else if (t === BT.THRUSTER) { ring(z * 0.3, Math.max(1, z * 0.1), 'rgba(200,210,225,0.55)'); circle(z * 0.2, '#ff8c3a'); circle(z * 0.09, '#ffe2b0'); }
-  else if (t === BT.LASER) { // faceted crystal in a dark mount
-    g.fillStyle = 'rgba(5,7,12,0.55)'; g.fillRect(x + z * 0.1, y + z * 0.1, z * 0.8, z * 0.8);
-    g.fillStyle = '#e6f7ff'; g.beginPath(); g.moveTo(cx, y + z * 0.16); g.lineTo(x + z * 0.84, cy); g.lineTo(cx, y + z * 0.84); g.lineTo(x + z * 0.16, cy); g.fill();
-    g.fillStyle = 'rgba(120,200,255,0.55)'; g.beginPath(); g.moveTo(cx, cy); g.lineTo(x + z * 0.84, cy); g.lineTo(cx, y + z * 0.84); g.fill();
-  } else if (t === BT.CANNON) { ring(z * 0.36, Math.max(1, z * 0.12), 'rgba(235,240,248,0.75)'); circle(z * 0.3, '#07090d'); circle(z * 0.1, 'rgba(255,120,40,0.45)'); }
-  else if (t === BT.PD) { // sensor dish: rings, crosshair, red eye
-    ring(z * 0.31, Math.max(1, z * 0.06), 'rgba(255,220,220,0.6)'); ring(z * 0.19, Math.max(1, z * 0.06), 'rgba(255,220,220,0.6)');
-    g.strokeStyle = 'rgba(255,220,220,0.45)'; g.beginPath(); g.moveTo(cx - z * 0.31, cy); g.lineTo(cx + z * 0.31, cy); g.moveTo(cx, cy - z * 0.31); g.lineTo(cx, cy + z * 0.31); g.stroke();
-    circle(z * 0.08, '#ff3b30');
-  } else if (t === BT.MISSILE || t === BT.GUIDED) { // four tubes inside hazard stripes (guided: a green seeker eye in the middle)
-    g.save(); g.beginPath(); g.rect(x, y, z, z); g.rect(x + z * 0.16, y + z * 0.16, z * 0.68, z * 0.68); g.clip('evenodd');
+  else if (t === BT.LASER || t === BT.CANNON || t === BT.PD || t === BT.MISSILE || t === BT.GUIDED) gunGlyph(t, cx, cy, z, i);
+}
+
+/**
+ * Single-block weapons (second look, 20 Nov 2026, like the replay viewer): each points away from its
+ * open neighbours (openDir in weaponLook.js), so a gun on the top edge points up. Drawn in the gun's
+ * own frame: centre at the origin, barrel along +x, the block from -h to +h.
+ */
+function gunGlyph(t, cx, cy, z, i) {
+  const h = z / 2, dir = i === undefined ? 0 : openDir(ed.cells, ed.w, ed.h, i);
+  const disc = (x, y, r, fill) => { g.fillStyle = fill; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); };
+  g.save(); g.translate(cx, cy); g.rotate(lookAngle(dir));
+  if (t === BT.LASER) { // emitter housing, crystal core, tapered focusing barrel with two rings
+    g.fillStyle = 'rgba(5,7,12,0.5)'; g.fillRect(-h * 0.9, -h * 0.9, h * 1.8, h * 1.8);
+    disc(0, 0, h * 0.6, '#6f7f8c');
+    g.fillStyle = '#9fb0bd'; g.beginPath(); g.moveTo(h * 0.15, -h * 0.2); g.lineTo(h * 0.98, -h * 0.14); g.lineTo(h * 0.98, h * 0.14); g.lineTo(h * 0.15, h * 0.2); g.fill();
+    g.fillStyle = '#e6f7ff'; g.fillRect(h * 0.52, -h * 0.2, h * 0.09, h * 0.4); g.fillRect(h * 0.77, -h * 0.17, h * 0.07, h * 0.34); g.fillRect(h * 0.9, -h * 0.14, h * 0.08, h * 0.28);
+    g.fillStyle = '#e6f7ff'; g.beginPath(); g.moveTo(h * 0.3, 0); g.lineTo(0, -h * 0.22); g.lineTo(-h * 0.3, 0); g.lineTo(0, h * 0.22); g.fill();
+  } else if (t === BT.CANNON) { // armoured turret, one thick barrel with a muzzle brake
+    g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(-h, -h, z, z);
+    disc(0, 0, h * 0.53, '#2b2f36');
+    disc(0, 0, h * 0.46, '#c9ced6');
+    g.fillStyle = '#e3e7ee'; g.fillRect(h * 0.22, -h * 0.21, h * 0.78, h * 0.42);
+    g.fillStyle = '#f4f6f9'; g.fillRect(h * 0.73, -h * 0.27, h * 0.2, h * 0.54);
+    g.fillStyle = '#07090d'; g.fillRect(h * 0.93, -h * 0.1, h * 0.07, h * 0.2);
+  } else if (t === BT.PD) { // sensor dish with rings and a red eye, twin barrels
+    g.strokeStyle = 'rgba(255,220,220,0.6)'; g.lineWidth = Math.max(1, z * 0.05);
+    g.beginPath(); g.arc(0, 0, h * 0.5, 0, Math.PI * 2); g.stroke(); g.beginPath(); g.arc(0, 0, h * 0.3, 0, Math.PI * 2); g.stroke();
+    g.fillStyle = 'rgba(255,225,225,0.85)';
+    for (const by of [-0.17, 0.17]) g.fillRect(h * 0.22, (by - 0.065) * h, h * 0.75, h * 0.13);
+    disc(0, 0, h * 0.16, '#ff3b30');
+  } else { // missile pod: two missiles, warheads out, hazard stripes at the back (guided: green seekers)
+    g.fillStyle = 'rgba(5,7,12,0.45)'; g.fillRect(-h * 0.85, -h * 0.85, h * 1.7, h * 1.7);
+    g.save(); g.beginPath(); g.rect(-h, -h, h * 0.4, z); g.clip();
     g.strokeStyle = 'rgba(10,10,10,0.6)'; g.lineWidth = Math.max(1, z * 0.1);
-    for (let k = -1; k <= 3; k++) { g.beginPath(); g.moveTo(x + k * z * 0.3, y + z); g.lineTo(x + k * z * 0.3 + z, y); g.stroke(); }
+    for (let k = -3; k <= 3; k++) { g.beginPath(); g.moveTo(-h + k * z * 0.3, h); g.lineTo(-h + k * z * 0.3 + z, -h); g.stroke(); }
     g.restore();
-    g.fillStyle = 'rgba(5,7,12,0.75)';
-    for (const [dx, dy] of [[0.33, 0.33], [0.67, 0.33], [0.33, 0.67], [0.67, 0.67]]) { g.beginPath(); g.arc(x + z * dx, y + z * dy, z * 0.12, 0, Math.PI * 2); g.fill(); }
-    if (t === BT.GUIDED) { circle(z * 0.11, 'rgba(5,7,12,0.85)'); circle(z * 0.07, '#5dff9a'); }
+    for (const sy of [-0.36, 0.36]) {
+      g.fillStyle = '#d9d2a6'; g.fillRect(-h * 0.52, (sy - 0.19) * h, h * 0.82, h * 0.38);
+      g.fillStyle = t === BT.GUIDED ? '#7dffb0' : '#ff8a4a';
+      g.beginPath(); g.moveTo(h * 0.3, (sy - 0.19) * h); g.lineTo(h * 0.86, sy * h); g.lineTo(h * 0.3, (sy + 0.19) * h); g.fill();
+    }
   }
+  g.restore();
 }
 
 /** A fighter bay: a dark hangar deck in a hazard-striped frame, a small fighter on its pad, landing lights. */
-function bayUnit(x, y, ww, hh, z) {
+function bayUnit(x, y, ww, hh, z, wp) {
   const cx = x + ww / 2, cy = y + hh / 2, R = Math.min(ww, hh), f = R * 0.12;
   g.fillStyle = '#d2a93a'; g.fillRect(x, y, ww, hh);
   g.save(); g.beginPath(); g.rect(x, y, ww, hh); g.clip();
@@ -494,9 +521,13 @@ function bayUnit(x, y, ww, hh, z) {
   g.fillStyle = '#23272e'; g.fillRect(x + f, y + f, ww - 2 * f, hh - 2 * f);
   g.strokeStyle = 'rgba(255,255,255,0.08)'; g.lineWidth = 1;
   for (let k = 1; k < 3; k++) { g.beginPath(); g.moveTo(x + f, y + (hh * k) / 3); g.lineTo(x + ww - f, y + (hh * k) / 3); g.stroke(); }
-  // the fighter on its pad, nose forward (+x)
+  // the fighter on its pad and launch chevrons, facing the way fighters leave (20 Nov 2026)
+  g.save(); g.translate(cx, cy); g.rotate(lookAngle(unitDir(wp || {})));
   g.fillStyle = '#c9d2de';
-  g.beginPath(); g.moveTo(cx + R * 0.2, cy); g.lineTo(cx - R * 0.14, cy - R * 0.15); g.lineTo(cx - R * 0.07, cy); g.lineTo(cx - R * 0.14, cy + R * 0.15); g.closePath(); g.fill();
+  g.beginPath(); g.moveTo(R * 0.2, 0); g.lineTo(-R * 0.14, -R * 0.15); g.lineTo(-R * 0.07, 0); g.lineTo(-R * 0.14, R * 0.15); g.closePath(); g.fill();
+  g.strokeStyle = '#ffb347'; g.lineWidth = R * 0.025;
+  for (const k of [0.27, 0.34]) { g.beginPath(); g.moveTo(R * k, -R * 0.1); g.lineTo(R * (k + 0.06), 0); g.lineTo(R * k, R * 0.1); g.stroke(); }
+  g.restore();
   g.fillStyle = '#ffb347';
   for (const [dx, dy] of [[0.25, 0.25], [0.75, 0.25], [0.25, 0.75], [0.75, 0.75]]) { g.beginPath(); g.arc(x + ww * dx, y + hh * dy, R * 0.035, 0, Math.PI * 2); g.fill(); }
 }
@@ -534,7 +565,7 @@ function autoUnit(x, y, ww, hh, z, wp) {
 }
 
 /** A flak cannon unit: gunmetal deck in an armoured rim, a turret ring with four big barrels, ammunition feeds, amber lights. */
-function flakUnit(x, y, ww, hh, z) {
+function flakUnit(x, y, ww, hh, z, wp) {
   const cx = x + ww / 2, cy = y + hh / 2, R = Math.min(ww, hh);
   g.fillStyle = '#4a463d'; g.fillRect(x, y, ww, hh);
   g.fillStyle = '#5d584c'; g.fillRect(x + R * 0.06, y + R * 0.06, ww - R * 0.12, hh - R * 0.12);
@@ -543,11 +574,15 @@ function flakUnit(x, y, ww, hh, z) {
   g.lineCap = 'butt';
   g.fillStyle = '#7a7466'; g.beginPath(); g.arc(cx, cy, R * 0.32, 0, Math.PI * 2); g.fill();
   g.strokeStyle = '#b8b09c'; g.lineWidth = R * 0.025; g.beginPath(); g.arc(cx, cy, R * 0.32, 0, Math.PI * 2); g.stroke();
-  for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
-    const bx = cx + dx * R * 0.12, by = cy + dy * R * 0.12;
-    g.fillStyle = '#c9c1ab'; g.beginPath(); g.arc(bx, by, R * 0.085, 0, Math.PI * 2); g.fill();
-    g.fillStyle = '#17181b'; g.beginPath(); g.arc(bx, by, R * 0.06, 0, Math.PI * 2); g.fill();
+  // four long barrels out of a mantlet, pointing out of the hull (20 Nov 2026)
+  g.save(); g.translate(cx, cy); g.rotate(lookAngle(unitDir(wp || {})));
+  for (const by of [-0.135, -0.045, 0.045, 0.135]) {
+    g.fillStyle = '#c9c1ab'; g.fillRect(R * 0.12, (by - 0.028) * R, R * 0.365, R * 0.056);
+    g.fillStyle = '#e2dac4'; g.fillRect(R * 0.41, (by - 0.04) * R, R * 0.06, R * 0.08);
+    g.fillStyle = '#17181b'; g.fillRect(R * 0.47, (by - 0.013) * R, R * 0.015, R * 0.026);
   }
+  g.fillStyle = '#9a937f'; g.beginPath(); g.ellipse(0, 0, R * 0.2, R * 0.2, 0, -Math.PI / 2, Math.PI / 2); g.lineTo(-R * 0.17, R * 0.2); g.lineTo(-R * 0.17, -R * 0.2); g.fill();
+  g.restore();
   g.fillStyle = '#ffa646';
   for (const [dx, dy] of [[0.11, 0.11], [0.89, 0.11], [0.11, 0.89], [0.89, 0.89]]) { g.beginPath(); g.arc(x + ww * dx, y + hh * dy, R * 0.025, 0, Math.PI * 2); g.fill(); }
 }
@@ -566,7 +601,7 @@ function shieldUnit(x, y, ww, hh, z) {
 }
 
 /** A plasma cannon unit, drawn as one machine: housing, corner machinery, pipes into a blue orb. */
-function plasmaUnit(x, y, ww, hh, z) {
+function plasmaUnit(x, y, ww, hh, z, wp) {
   const cx = x + ww / 2, cy = y + hh / 2, R = Math.min(ww, hh);
   g.fillStyle = '#23283f'; g.fillRect(x, y, ww, hh);
   g.strokeStyle = 'rgba(255,255,255,0.05)'; g.lineWidth = 1;
@@ -581,6 +616,13 @@ function plasmaUnit(x, y, ww, hh, z) {
     g.beginPath(); g.moveTo(x + ww * ex, y + hh * ey); g.lineTo(cx, cy); g.stroke();
   }
   g.lineCap = 'butt';
+  // the emitter barrel from the orb out of the hull, wound with glowing coils (20 Nov 2026)
+  g.save(); g.translate(cx, cy); g.rotate(lookAngle(unitDir(wp || {})));
+  g.fillStyle = '#5d6684'; g.fillRect(R * 0.17, -R * 0.085, R * 0.32, R * 0.17);
+  g.fillStyle = '#4f9dff'; for (let k = 0; k < 5; k++) g.fillRect(R * (0.245 + k * 0.034), -R * 0.085, R * 0.014, R * 0.17);
+  g.fillStyle = '#9fd0ff'; g.fillRect(R * 0.17, -R * 0.012, R * 0.3, R * 0.024);
+  g.fillStyle = '#c3cbe6'; g.fillRect(R * 0.415, -R * 0.115, R * 0.07, R * 0.23);
+  g.restore();
   g.strokeStyle = '#a9b2d0'; g.lineWidth = R * 0.03; g.beginPath(); g.arc(cx, cy, R * 0.215, 0, Math.PI * 2); g.stroke();
   const grad = g.createRadialGradient(cx, cy, 0, cx, cy, R * 0.17);
   grad.addColorStop(0, '#f4fbff'); grad.addColorStop(0.45, '#7fc8ff'); grad.addColorStop(1, '#2a5fd8');

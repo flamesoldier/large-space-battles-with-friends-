@@ -6,7 +6,9 @@
 
 import { unpackReplay } from '../shared/replayFormat.js';
 import { MULTIBLOCK, BT } from '../shared/blocks.js';
-import { lineOfFire, arcCentre } from '../shared/arcs.js';
+import { lineOfFire } from '../shared/arcs.js';
+import { bayRoute } from '../shared/bayRoute.js';
+import { openDir, unitDir } from '../shared/weaponLook.js';
 
 export function lowerBound(arr, v, n = arr.length) {
   let lo = 0, hi = n;
@@ -71,7 +73,7 @@ export class ReplayModel {
 
   finishEnt(e) {
     const n = e.tmp.length / 4;
-    e.lx = new Float32Array(n); e.ly = new Float32Array(n); e.type = new Uint8Array(n); e.unit = new Uint8Array(n);
+    e.lx = new Float32Array(n); e.ly = new Float32Array(n); e.type = new Uint8Array(n); e.unit = new Uint16Array(n);
     e.death = new Float32Array(n).fill(Infinity);
     for (let i = 0; i < n; i++) { const o = i * 4; e.lx[i] = e.tmp[o]; e.ly[i] = e.tmp[o + 1]; e.type[i] = e.tmp[o + 2]; e.unit[i] = e.tmp[o + 3]; }
     e.tmp = null;
@@ -437,14 +439,18 @@ function neighbours(e) {
 }
 /**
  * For each cell of a design: 1 + its position (u * n + v) inside its multi-block unit (plasma
- * cannon 10x10, fighter bay 3x3), or 0. Units never touch (the designer refuses that), so each
- * connected group of one type is one unit and its bounding box gives the position. Cached on the design.
+ * cannon / flak / shield 10x10, fighter bay 6x6, auto gun 2x2), plus n² × the way the unit's guns
+ * point (0..7, see weaponLook.js; shields always 0); for a single-block weapon 1 + the way it
+ * points; else 0. Units never touch (the designer refuses that), so each connected group of one
+ * type is one unit and its bounding box gives the position. Cached on the design.
  */
+const SINGLE_GUN = new Set([BT.LASER, BT.CANNON, BT.MISSILE, BT.PD, BT.GUIDED]);
 function unitPos(d) {
   if (d._unit) return d._unit;
-  const { w, h, cells } = d, out = new Uint8Array(w * h), seen = new Uint8Array(w * h), stack = [];
+  const { w, h, cells } = d, out = new Uint16Array(w * h), seen = new Uint8Array(w * h), stack = [];
   for (let s = 0; s < cells.length; s++) {
     const T = cells[s];
+    if (SINGLE_GUN.has(T)) { out[s] = 1 + openDir(cells, w, h, s); continue; }
     if (!MULTIBLOCK[T] || seen[s]) continue;
     const N = MULTIBLOCK[T].size;
     const group = [];
@@ -456,12 +462,10 @@ function unitPos(d) {
       for (const n of [x > 0 ? c - 1 : -1, x < w - 1 ? c + 1 : -1, y > 0 ? c - w : -1, y < h - 1 ? c + w : -1])
         if (n >= 0 && !seen[n] && cells[n] === T) { seen[n] = 1; stack.push(n); }
     }
-    // Auto guns also carry which way their barrels point (dir 0..7, 45° steps from the nose): the
-    // middle of their open line of fire, so a gun on the back or side points out of the hull.
     let dir = 0;
-    if (T === BT.AUTO) {
+    if (T !== BT.SHIELD) {
       const lf = lineOfFire(cells, null, w, h, group[0], {}, group);
-      dir = ((Math.round(arcCentre(lf.m0, lf.m1) / (Math.PI / 4)) % 8) + 8) % 8;
+      dir = unitDir({ m0: lf.m0, m1: lf.m1, route: lf.buried && T === BT.BAY ? bayRoute(cells, null, w, h, group) : null });
     }
     for (const c of group) out[c] = 1 + Math.min(N - 1, (c % w) - x0) * N + Math.min(N - 1, ((c / w) | 0) - y0) + dir * N * N;
   }
