@@ -534,7 +534,7 @@ Weapons (numbers in `blocks.js`):
     5.1k; 300 v 300: no measurable compute change. Owner told it isn't worth the gameplay change.
   - **Fleet view draws big ships' blocks**: past ~60 px across on screen a ship isn't drawn as one quad
     (Aegis was a plain box); blocks at least ~1 px (`bs`). **Replaced 21 Nov 2026** (owner: "when I zoom
-    out the ships are replaced with coloured squares, this looks ugly"; on `v2-dev`, not live): in fleet
+    out the ships are replaced with coloured squares, this looks ugly"; **live 21 Nov 2026**, no patch notes): in fleet
     view (zoom < 0.9 px a block) every ship and wreck is its own shape shrunk down. `lodCells(e, k)` in
     `renderer.js` merges its blocks into k × k cells (k = 2^floor(log2(px per block)), so a cell is under
     ~1 px, drawn at least 1.2 px so they join up), each at the mean of its blocks and alive until its last
@@ -878,7 +878,7 @@ All money numbers are in `src/shared/economy.js` (placeholders until balanced in
     the world panel's Defences section (`openArranger()` in `galaxy/app.js`), with a line saying how
     many stand where the player put them, how many are in rows, and empty spots. Full-screen canvas:
     defences drawn from their blocks (`BLOCK_COLOR` sprites), the world, the 1,000-block limit ring,
-    a red **ATTACKERS** arrow and dashed arrows for two attackers; **the view is the battle frame turned half round** (owner, 21 Nov 2026: the designer says enemies come from the right, the arranger said left): `toScreen`/`toWorld` negate, `S.cam` is in view coordinates, sprites drawn at `p.a + π`, so attackers come from the right and noses face right as in the Defence Designer; stored spots and battles unchanged (replays still show one attacker coming from the left); drag to
+    a red **ATTACKERS** arrow and dashed arrows for two attackers; **the view is the battle frame turned half round** (owner, 21 Nov 2026: the designer says enemies come from the right, the arranger said left): `toScreen`/`toWorld` negate, `S.cam` is in view coordinates, sprites drawn at `p.a + π`, so attackers come from the right and noses face right as in the Defence Designer; stored spots and battles unchanged (replays still show one attacker coming from the left); **live 21 Nov 2026** with the zoomed-out ships change; drag to
     move (snaps blocks to whole-block lines when turned a multiple of 90°), round handle to turn
     (Shift snaps 15°; on touch it snaps near each 15° step), ⟲/⟳ 15° (Q/E, turns a group round its
     centre), Shift+click / Shift+drag box to select several, Select all (A), Remove empty spots
