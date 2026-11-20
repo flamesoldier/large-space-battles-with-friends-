@@ -69,50 +69,57 @@ vec3 hullBlock(int code, vec2 p) {
     float ring = smoothstep(0.42, 0.5, r) * (1.0 - smoothstep(0.62, 0.7, r));
     lit *= mix(1.0, 0.55 + ring * 0.7 - sh * 0.1, d);
     if (!dead) glow = vec3(1.0, 0.55, 0.2) * (1.0 - smoothstep(0.0, 0.42, r)) * 0.9 * d;
-  } else if (type == 6) { // laser (20 Nov 2026): a round emitter housing with a crystal core and a tapered focusing barrel pointing out of the hull
+  } else if (type == 6) { // laser (20 Nov 2026, second look): a glowing crystal between two slim emitter rails, energy running along them to a bright tip; no round turret, so it never reads as a cannon
     float ga = float(var & 7) * 0.7853982;
     vec2 r = rotd(p, ga), rL = rotd(L, ga);
-    float R = length(p);
-    float base = 0.3;
-    float housing = 1.0 - smoothstep(0.56, 0.61, R);
-    base = mix(base, 0.55 - dot(p, L) * 0.45, housing);
-    base = mix(base, 0.3, (1.0 - smoothstep(0.03, 0.06, abs(R - 0.58))) * 0.7);
-    float hw = 0.21 - 0.07 * clamp(r.x, 0.0, 1.0);
-    float tube = step(abs(r.y), hw) * step(0.15, r.x) * step(r.x, 0.98);
-    float cyl = 1.0 - (r.y / hw) * (r.y / hw);
-    base = mix(base, 0.3 + 0.45 * cyl - rL.y * r.y * 1.2, tube);
-    float rings = tube * (step(abs(r.x - 0.56), 0.045) + step(abs(r.x - 0.8), 0.035));
-    base = mix(base, 0.95, rings);
-    float dm = abs(r.x) + abs(r.y) * 1.35;
-    float cry = 1.0 - smoothstep(0.27, 0.33, dm);
-    float lens = tube * step(0.9, r.x);
+    float base = 0.32 + 0.04 * step(0.5, fract((p.x + p.y) * 2.5));
+    // dark faceted cradle round the crystal
+    float cradle = 1.0 - smoothstep(0.62, 0.68, abs(r.x + 0.2) * 0.75 + abs(r.y) * 1.1);
+    base = mix(base, 0.5 - dot(r, rL) * 0.5, cradle);
+    // two slim rails out to the hull edge
+    float ry = abs(r.y) - 0.22;
+    float rail = step(abs(ry), 0.06) * step(-0.1, r.x) * step(r.x, 0.97);
+    base = mix(base, 0.55 + 0.5 * (1.0 - (ry / 0.06) * (ry / 0.06)) - rL.y * sign(r.y) * 0.25, rail);
+    // the crystal: a long faceted diamond
+    float dm = abs(r.x + 0.22) * 0.85 + abs(r.y) * 1.5;
+    float cry = 1.0 - smoothstep(0.42, 0.48, dm);
+    float facet = 0.75 + 0.3 * sign((r.x + 0.22) * rL.x + r.y * rL.y + 0.001) * step(0.06, dm);
     lit *= mix(1.0, mix(base, 1.0, cry), d);
-    float facet = 0.8 + 0.25 * sign(r.x * rL.x + r.y * rL.y + 0.001) * step(0.06, dm);
-    glow = (mix(col, vec3(1.0), 0.55) * cry * facet * (dead ? 0.15 : 0.85)
-         + vec3(1.0) * (1.0 - smoothstep(0.0, 0.1, dm)) * (dead ? 0.0 : 0.6)
-         + mix(col, vec3(1.0), 0.6) * lens * (dead ? 0.0 : 0.75)) * d;
-  } else if (type == 7) { // cannon (20 Nov 2026): an armoured turret with one thick barrel and a muzzle brake, pointing out of the hull
+    float energy = step(abs(r.y), 0.045) * step(0.15, r.x) * step(r.x, 0.9);
+    float tipd = 1.0 - smoothstep(0.05, 0.13, length(r - vec2(0.88, 0.0)));
+    float flow = 0.6 + 0.4 * sin(r.x * 18.0 - uTime * 2.5);
+    vec3 beam = mix(col, vec3(1.0), 0.45);
+    glow = (beam * cry * facet * (dead ? 0.15 : 0.95)
+         + vec3(1.0) * (1.0 - smoothstep(0.0, 0.12, dm)) * (dead ? 0.0 : 0.7)
+         + beam * energy * flow * (dead ? 0.0 : 0.9)
+         + vec3(1.0) * tipd * (dead ? 0.0 : 0.9)
+         + beam * rail * step(0.8, r.x) * (dead ? 0.0 : 0.35)) * d;
+  } else if (type == 7) { // cannon (20 Nov 2026, second look): a squat octagonal gunmetal turret, one short fat barrel and a big vented muzzle brake; dark, no glow but the ember in the bore
     float ga = float(var & 7) * 0.7853982;
     vec2 r = rotd(p, ga), rL = rotd(L, ga);
-    float R = length(p);
-    float base = 0.42 + 0.05 * step(0.5, fract((p.x - p.y) * 3.0));
-    float bolt = 1.0 - smoothstep(0.05, 0.1, length(abs(p) - 0.78));
-    base += bolt * 0.35;
-    float turret = 1.0 - smoothstep(0.46, 0.51, R);
-    float ring = (1.0 - smoothstep(0.51, 0.56, R)) * smoothstep(0.44, 0.48, R);
-    base = mix(base, 0.98 - dot(p, L) * 0.9, turret);
-    base = mix(base, 0.3, ring);
-    float hw = 0.21;
-    float brl = step(abs(r.y), hw) * step(0.22, r.x);
-    float brake = step(abs(r.y), 0.27) * step(abs(r.x - 0.83), 0.1);
+    vec2 ar = abs(p);
+    col *= 0.78;
+    float base = 0.42;
+    float bolt = 1.0 - smoothstep(0.05, 0.1, length(ar - 0.8));
+    base += bolt * 0.4;
+    float oct = max(max(ar.x, ar.y), (ar.x + ar.y) * 0.7071);
+    float turret = 1.0 - smoothstep(0.56, 0.6, oct);
+    float bevel = turret * smoothstep(0.44, 0.52, oct);
+    base = mix(base, 0.85 - dot(p, L) * 0.5, turret);
+    base = mix(base, 1.05 - dot(normalize(p + 0.0001), L) * 0.6, bevel);
+    base = mix(base, 0.18, (1.0 - smoothstep(0.56, 0.6, oct)) * smoothstep(0.58, 0.6, oct) + (1.0 - turret) * (1.0 - smoothstep(0.6, 0.66, oct)) * 0.6);
+    float hw = 0.25;
+    float brl = step(abs(r.y), hw) * step(0.3, r.x);
+    float brake = step(abs(r.y), 0.36) * step(0.66, r.x) * step(r.x, 0.97);
     float cyl = 1.0 - (r.y / hw) * (r.y / hw);
-    base = mix(base, 0.6 + 0.75 * cyl, brl);
-    base = mix(base, 1.05 - rL.y * r.y * 1.5, brake);
-    base = mix(base, 0.25, step(abs(r.x - 0.83), 0.015) * step(abs(r.y), 0.27)); // slot in the brake
-    float bore = step(0.93, r.x) * step(abs(r.y), 0.1);
-    base = mix(base, 0.08, bore);
+    base = mix(base, 0.45 + 0.7 * cyl, brl);
+    base = mix(base, 0.95 - rL.y * r.y * 1.4, brake);
+    float vents = brake * step(abs(abs(r.x - 0.815) - 0.075), 0.022) * step(0.27, abs(r.y));
+    base = mix(base, 0.12, vents);
+    float bore = step(0.9, r.x) * step(abs(r.y), 0.15);
+    base = mix(base, 0.05, bore);
     lit *= mix(1.0, base, d);
-    if (!dead) glow = (vec3(1.0, 0.45, 0.15) * bore * 0.7 + vec3(1.0, 0.65, 0.3) * (1.0 - smoothstep(0.0, 0.1, length(r + vec2(0.18, 0.0)))) * 0.3) * d;
+    if (!dead) glow = vec3(1.0, 0.42, 0.12) * bore * 0.7 * d;
   } else if (type == 8 || type == 11) { // missile launcher (20 Nov 2026): a pod with two missiles side by side, warheads out of the hull, hazard stripes at the back (guided: green seekers)
     float ga = float(var & 7) * 0.7853982;
     vec2 r = rotd(p, ga), rL = rotd(L, ga);
@@ -197,34 +204,42 @@ vec3 hullBlock(int code, vec2 p) {
            + vec3(0.15, 0.35, 0.9) * (1.0 - smoothstep(0.15, 0.3, R)) * 0.4) * d;
       lit *= 1.0 - orb * d * 0.8;
     } else lit *= 1.0 - orb * d * 0.3;
-  } else if (type == 12) { // fighter bay: the 6x6 unit is one hangar, a dark deck in a hazard-striped frame; the parked fighter and launch chevrons face the way fighters leave
+  } else if (type == 12) { // fighter bay (20 Nov 2026, second look): a dark steel hangar in a thin hazard rim, a lit runway to open doors on the side the fighters leave from, a small grey fighter waiting on it
     int pos = var - (var / 36) * 36;
     float ga = float(var / 36) * 0.7853982;
     vec2 q = (vec2(float(pos / 6), float(pos - (pos / 6) * 6)) + p * 0.5 + 0.5) / 6.0 - 0.5; // -0.5..0.5 across the unit
     vec2 aq = abs(q), rq = rotd(q, ga), rL = rotd(L, ga);
-    float m = max(aq.x, aq.y), R = length(q);
-    float frame = smoothstep(0.42, 0.435, m);
-    float stripe = step(0.5, fract((q.x + q.y) * 8.0));
-    float rows = 1.0 - smoothstep(0.003, 0.007, abs(fract(rq.y * 6.0 + 0.5) - 0.5) / 6.0);
-    float deck = 0.26 + rows * 0.08 * (1.0 - frame) + step(abs(rq.y), 0.2) * step(-0.38, rq.x) * 0.05;
-    // the fighter on its pad: swept wings, a cockpit, nose toward the way out
-    float wing = step(abs(rq.y), 0.04 + (0.1 - rq.x) * 0.75) * step(-0.17, rq.x) * step(rq.x, 0.04);
-    float hull = step(abs(rq.y), 0.035) * step(-0.2, rq.x) * step(rq.x, 0.2);
-    float body = max(wing, hull);
-    float cockpit = 1.0 - smoothstep(0.012, 0.022, length(vec2(rq.x - 0.1, rq.y * 1.6)));
-    float base = mix(deck, 0.35 + 0.75 * stripe, frame);
-    base = mix(base, 1.05 - dot(rq, rL) * 0.6, body * (1.0 - frame));
-    base = mix(base, 0.3, cockpit);
-    // launch chevrons painted ahead of the fighter
-    float chev = step(0.5, fract((rq.x - abs(rq.y) * 0.8) * 9.0)) * step(abs(rq.y), 0.14) * step(0.24, rq.x) * step(rq.x, 0.4);
+    float m = max(aq.x, aq.y);
+    float frame = smoothstep(0.445, 0.455, m);
+    float stripe = step(0.5, fract((q.x + q.y) * 10.0));
+    // steel deck with panel seams, a runway down the middle toward the doors
+    float seam = 1.0 - smoothstep(0.002, 0.005, min(abs(fract(rq.x * 5.0 + 0.5) - 0.5), abs(fract(rq.y * 5.0 + 0.5) - 0.5)) / 5.0);
+    float runway = step(abs(rq.y), 0.11) * step(-0.36, rq.x) * step(rq.x, 0.38);
+    float edge = runway * step(0.085, abs(rq.y));
+    float doors = step(abs(rq.y), 0.16) * step(0.38, rq.x) * step(rq.x, 0.445);
+    float doorEdge = doors * step(0.135, abs(rq.y));
+    // the fighter: hull, swept wings, tail fins, nose toward the doors
+    vec2 f = rq - vec2(-0.08, 0.0);
+    float wing = step(abs(f.y), 0.03 + (0.06 - f.x) * 0.9) * step(-0.09, f.x) * step(f.x, 0.04);
+    float fus = step(abs(f.y), 0.022 - max(0.0, f.x - 0.08) * 0.25) * step(-0.13, f.x) * step(f.x, 0.16);
+    float fin = step(abs(abs(f.y) - 0.05), 0.012) * step(-0.13, f.x) * step(f.x, -0.08);
+    float body = max(max(wing, fus), fin) * (1.0 - frame);
+    float cockpit = 1.0 - smoothstep(0.008, 0.016, length(vec2(f.x - 0.08, f.y * 1.8)));
+    col = mix(col, vec3(0.27, 0.29, 0.33), 1.0 - frame);
+    col = mix(col, vec3(0.78, 0.81, 0.86), body);
+    float base = 0.8 - seam * 0.25 + runway * 0.12 + edge * 0.35;
+    base = mix(base, 0.25, doors);
+    base = mix(base, 1.1, doorEdge);
+    base = mix(base, 0.3 + 0.85 * stripe, frame);
+    base = mix(base, 0.82 - dot(f, rL) * 1.5, body);
+    base = mix(base, 0.4, cockpit);
     lit *= mix(1.0, base, d);
     if (!dead) {
-      float lights = 1.0 - smoothstep(0.012, 0.025, length(aq - 0.33));
-      float run = 0.5 + 0.5 * sin(uTime * 0.9 - rq.x * 30.0);
-      glow = (vec3(1.0, 0.7, 0.3) * lights * (0.6 + 0.4 * sin(uTime * 0.5 + q.x * 9.0))
-            + vec3(1.0, 0.75, 0.3) * chev * run * 0.7
-            + vec3(0.5, 0.85, 1.0) * cockpit * 0.6
-            + vec3(1.0, 0.55, 0.2) * hull * step(rq.x, -0.17) * 0.8) * d;
+      float lamps = edge * step(0.6, fract(rq.x * 14.0)) * (0.5 + 0.5 * sin(uTime * 1.2 - rq.x * 25.0));
+      float corner = 1.0 - smoothstep(0.012, 0.022, length(aq - 0.405));
+      glow = (vec3(1.0, 0.7, 0.3) * lamps * 0.9 + vec3(1.0, 0.65, 0.25) * corner * 0.8
+            + vec3(0.45, 0.8, 1.0) * cockpit * 0.7 + vec3(1.0, 0.55, 0.2) * fus * step(f.x, -0.11) * 0.9
+            + vec3(0.3, 0.5, 0.7) * doors * (1.0 - doorEdge) * 0.15) * d;
     }
   }
   else if (type == 13) { // flak cannon: the 10x10 unit is one gun battery; since 20 Nov 2026 four long barrels on a heavy turret point out of the hull

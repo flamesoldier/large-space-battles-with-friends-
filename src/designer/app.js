@@ -476,19 +476,22 @@ function gunGlyph(t, cx, cy, z, i) {
   const h = z / 2, dir = i === undefined ? 0 : openDir(ed.cells, ed.w, ed.h, i);
   const disc = (x, y, r, fill) => { g.fillStyle = fill; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); };
   g.save(); g.translate(cx, cy); g.rotate(lookAngle(dir));
-  if (t === BT.LASER) { // emitter housing, crystal core, tapered focusing barrel with two rings
-    g.fillStyle = 'rgba(5,7,12,0.5)'; g.fillRect(-h * 0.9, -h * 0.9, h * 1.8, h * 1.8);
-    disc(0, 0, h * 0.6, '#6f7f8c');
-    g.fillStyle = '#9fb0bd'; g.beginPath(); g.moveTo(h * 0.15, -h * 0.2); g.lineTo(h * 0.98, -h * 0.14); g.lineTo(h * 0.98, h * 0.14); g.lineTo(h * 0.15, h * 0.2); g.fill();
-    g.fillStyle = '#e6f7ff'; g.fillRect(h * 0.52, -h * 0.2, h * 0.09, h * 0.4); g.fillRect(h * 0.77, -h * 0.17, h * 0.07, h * 0.34); g.fillRect(h * 0.9, -h * 0.14, h * 0.08, h * 0.28);
-    g.fillStyle = '#e6f7ff'; g.beginPath(); g.moveTo(h * 0.3, 0); g.lineTo(0, -h * 0.22); g.lineTo(-h * 0.3, 0); g.lineTo(0, h * 0.22); g.fill();
-  } else if (t === BT.CANNON) { // armoured turret, one thick barrel with a muzzle brake
-    g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(-h, -h, z, z);
-    disc(0, 0, h * 0.53, '#2b2f36');
-    disc(0, 0, h * 0.46, '#c9ced6');
-    g.fillStyle = '#e3e7ee'; g.fillRect(h * 0.22, -h * 0.21, h * 0.78, h * 0.42);
-    g.fillStyle = '#f4f6f9'; g.fillRect(h * 0.73, -h * 0.27, h * 0.2, h * 0.54);
-    g.fillStyle = '#07090d'; g.fillRect(h * 0.93, -h * 0.1, h * 0.07, h * 0.2);
+  if (t === BT.LASER) { // a glowing crystal between two slim rails, energy line to a bright tip
+    g.fillStyle = 'rgba(5,7,12,0.55)'; g.fillRect(-h * 0.9, -h * 0.9, h * 1.8, h * 1.8);
+    g.fillStyle = '#c8d3dc'; for (const ry of [-0.22, 0.22]) g.fillRect(-h * 0.1, (ry - 0.06) * h, h * 1.07, h * 0.12);
+    g.fillStyle = 'rgba(150,225,255,0.9)'; g.fillRect(h * 0.15, -h * 0.045, h * 0.75, h * 0.09);
+    disc(h * 0.88, 0, h * 0.12, '#ffffff');
+    g.fillStyle = '#e6f7ff'; g.beginPath(); g.moveTo(h * 0.33, 0); g.lineTo(-h * 0.22, -h * 0.31); g.lineTo(-h * 0.77, 0); g.lineTo(-h * 0.22, h * 0.31); g.fill();
+    g.fillStyle = 'rgba(120,200,255,0.55)'; g.beginPath(); g.moveTo(h * 0.33, 0); g.lineTo(-h * 0.22, h * 0.31); g.lineTo(-h * 0.77, 0); g.fill();
+  } else if (t === BT.CANNON) { // squat octagonal gunmetal turret, short fat barrel, vented muzzle brake
+    g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(-h, -h, z, z);
+    g.fillStyle = '#5b6068'; g.beginPath();
+    for (let k = 0; k < 8; k++) { const a = (k + 0.5) * Math.PI / 4, rr = h * 0.6 / Math.cos(Math.PI / 8); g.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
+    g.fill();
+    g.fillStyle = '#8a9099'; g.fillRect(h * 0.3, -h * 0.25, h * 0.7, h * 0.5);
+    g.fillStyle = '#a7adb5'; g.fillRect(h * 0.66, -h * 0.36, h * 0.31, h * 0.72);
+    g.fillStyle = '#1b1d21'; for (const vx of [0.72, 0.87]) { g.fillRect(h * vx, -h * 0.36, h * 0.045, h * 0.09); g.fillRect(h * vx, h * 0.27, h * 0.045, h * 0.09); }
+    g.fillStyle = '#07090d'; g.fillRect(h * 0.9, -h * 0.15, h * 0.1, h * 0.3);
   } else if (t === BT.PD) { // sensor dish with rings and a red eye, twin barrels
     g.strokeStyle = 'rgba(255,220,220,0.6)'; g.lineWidth = Math.max(1, z * 0.05);
     g.beginPath(); g.arc(0, 0, h * 0.5, 0, Math.PI * 2); g.stroke(); g.beginPath(); g.arc(0, 0, h * 0.3, 0, Math.PI * 2); g.stroke();
@@ -511,25 +514,26 @@ function gunGlyph(t, cx, cy, z, i) {
 }
 
 /** A fighter bay: a dark hangar deck in a hazard-striped frame, a small fighter on its pad, landing lights. */
-function bayUnit(x, y, ww, hh, z, wp) {
-  const cx = x + ww / 2, cy = y + hh / 2, R = Math.min(ww, hh), f = R * 0.12;
+function bayUnit(x, y, ww, hh, z, wp) { // second look (20 Nov 2026): steel hangar, thin hazard rim, lit runway to open doors, small grey fighter
+  const cx = x + ww / 2, cy = y + hh / 2, R = Math.min(ww, hh), f = R * 0.05;
   g.fillStyle = '#d2a93a'; g.fillRect(x, y, ww, hh);
   g.save(); g.beginPath(); g.rect(x, y, ww, hh); g.clip();
-  g.strokeStyle = '#1d2026'; g.lineWidth = R * 0.07;
-  for (let k = -3; k <= 3; k++) { g.beginPath(); g.moveTo(x + ww * (k / 3), y + hh); g.lineTo(x + ww * (k / 3 + 1), y); g.stroke(); }
+  g.strokeStyle = '#1d2026'; g.lineWidth = R * 0.035;
+  for (let k = -5; k <= 5; k++) { g.beginPath(); g.moveTo(x + ww * (k / 5), y + hh); g.lineTo(x + ww * (k / 5 + 1), y); g.stroke(); }
   g.restore();
-  g.fillStyle = '#23272e'; g.fillRect(x + f, y + f, ww - 2 * f, hh - 2 * f);
-  g.strokeStyle = 'rgba(255,255,255,0.08)'; g.lineWidth = 1;
-  for (let k = 1; k < 3; k++) { g.beginPath(); g.moveTo(x + f, y + (hh * k) / 3); g.lineTo(x + ww - f, y + (hh * k) / 3); g.stroke(); }
-  // the fighter on its pad and launch chevrons, facing the way fighters leave (20 Nov 2026)
+  g.fillStyle = '#3f444c'; g.fillRect(x + f, y + f, ww - 2 * f, hh - 2 * f);
+  g.strokeStyle = 'rgba(0,0,0,0.25)'; g.lineWidth = 1;
+  for (let k = 1; k < 5; k++) { g.beginPath(); g.moveTo(x + f, y + (hh * k) / 5); g.lineTo(x + ww - f, y + (hh * k) / 5); g.moveTo(x + (ww * k) / 5, y + f); g.lineTo(x + (ww * k) / 5, y + hh - f); g.stroke(); }
   g.save(); g.translate(cx, cy); g.rotate(lookAngle(unitDir(wp || {})));
-  g.fillStyle = '#c9d2de';
-  g.beginPath(); g.moveTo(R * 0.2, 0); g.lineTo(-R * 0.14, -R * 0.15); g.lineTo(-R * 0.07, 0); g.lineTo(-R * 0.14, R * 0.15); g.closePath(); g.fill();
-  g.strokeStyle = '#ffb347'; g.lineWidth = R * 0.025;
-  for (const k of [0.27, 0.34]) { g.beginPath(); g.moveTo(R * k, -R * 0.1); g.lineTo(R * (k + 0.06), 0); g.lineTo(R * k, R * 0.1); g.stroke(); }
+  g.fillStyle = '#4b5159'; g.fillRect(-R * 0.36, -R * 0.11, R * 0.74, R * 0.22);
+  g.fillStyle = '#ffb347'; for (let k = 0; k < 9; k++) for (const ey of [-0.095, 0.095]) g.fillRect(R * (-0.34 + k * 0.08), R * (ey - 0.008), R * 0.025, R * 0.016);
+  g.fillStyle = '#16181c'; g.fillRect(R * 0.38, -R * 0.16, R * 0.065, R * 0.32);
+  g.fillStyle = '#cfd5dd';
+  g.beginPath(); g.moveTo(R * 0.08, 0); g.lineTo(R * -0.04, -R * 0.02); g.lineTo(R * -0.17, -R * 0.15); g.lineTo(R * -0.21, -R * 0.05); g.lineTo(R * -0.21, R * 0.05); g.lineTo(R * -0.17, R * 0.15); g.lineTo(R * -0.04, R * 0.02); g.closePath(); g.fill();
+  g.fillStyle = '#7fd0ff'; g.beginPath(); g.ellipse(R * 0.0, 0, R * 0.02, R * 0.01, 0, 0, Math.PI * 2); g.fill();
   g.restore();
   g.fillStyle = '#ffb347';
-  for (const [dx, dy] of [[0.25, 0.25], [0.75, 0.25], [0.25, 0.75], [0.75, 0.75]]) { g.beginPath(); g.arc(x + ww * dx, y + hh * dy, R * 0.035, 0, Math.PI * 2); g.fill(); }
+  for (const [dx, dy] of [[0.09, 0.09], [0.91, 0.09], [0.09, 0.91], [0.91, 0.91]]) { g.beginPath(); g.arc(x + ww * dx, y + hh * dy, R * 0.02, 0, Math.PI * 2); g.fill(); }
 }
 
 /**

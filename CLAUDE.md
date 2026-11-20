@@ -602,6 +602,14 @@ Weapons (numbers in `blocks.js`):
       debris flag moved to 2^20 (`DEAD_BIT`); helper `rotd()`. Designer: `gunGlyph()`, and `plasmaUnit` /
       `flakUnit` / `bayUnit` take the weapon. Old replays get the new look too (it's worked out from the
       designs). No sim, replay or server change.
+      **Second pass (owner, same evening: "make laser and cannons look more different", and he didn't like the
+      bay; he confirmed barrels on guns are wanted now despite the earlier no):** **laser** = a long glowing
+      faceted crystal between two slim rails, a pulsing energy line to a bright tip, no round turret (so it
+      never reads as a cannon); **cannon** = a squat dark octagonal gunmetal turret (`col *= 0.78`), short fat
+      barrel, big vented muzzle brake, ember in the bore, no other glow; **fighter bay** = dark steel hangar
+      deck with panel seams (colour overridden from the bay's gold, which made the old deck and fighter look
+      yellow), thin hazard rim, a runway with running amber lamps to dark open doors on the exit side, a small
+      grey fighter (fins, cockpit, engine glow) nose to the doors. Designer `gunGlyph` / `bayUnit` match.
   - Measured (16×10 hull, 3 auto gun units 1,113 cr vs 8 cannons 1,317 cr, 60k cr a side, 4 seeds; score =
     enemy ships lost share − own): auto charge vs cannon line −0.06, line vs line −0.03, line vs cannon
     standoff −0.16; starting at 120 apart auto guns win (27/54 left vs 9/46). A third of bullets hit allied
