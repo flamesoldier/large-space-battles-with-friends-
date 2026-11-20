@@ -183,6 +183,7 @@ function build() {
   cv.addEventListener('pointercancel', up);
   cv.addEventListener('wheel', (e) => { e.preventDefault(); zoomAt(e.offsetX, e.offsetY, Math.exp(-e.deltaY * 0.0015)); }, { passive: false });
   addEventListener('resize', () => { if (S) { resize(); draw(); } });
+  if (typeof ResizeObserver === 'function') new ResizeObserver(() => { if (S) draw(); }).observe(cv);
   // Captured before the galaxy page's own keys, so Esc etc. act here while the editor is open.
   addEventListener('keydown', (e) => {
     if (!S || root.hidden || e.target.closest?.('input, textarea, select')) return;
@@ -323,14 +324,22 @@ function resize() {
   W = cv.clientWidth; H = cv.clientHeight;
   cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
 }
+// The canvas changes size after opening (the hint line below it wraps, bar buttons appear):
+// every draw and every pointer event uses its real size, or clicks miss what is drawn.
+function syncSize() {
+  const cv = root.querySelector('canvas');
+  if (cv.clientWidth !== W || cv.clientHeight !== H || Math.min(2, devicePixelRatio || 1) !== dpr) resize();
+}
 const toScreen = (x, y) => [(x - S.cam.x) * S.cam.z + W / 2, (y - S.cam.y) * S.cam.z + H / 2];
 const toWorld = (sx, sy) => [(sx - W / 2) / S.cam.z + S.cam.x, (sy - H / 2) / S.cam.z + S.cam.y];
 function fit() {
+  syncSize();
   let r = 120;
   for (const p of S.pieces) r = Math.max(r, Math.hypot(p.x, p.y) + p.shape.r + 20);
   S.cam = { x: 0, y: 0, z: Math.min(W, H) / (2 * r) };
 }
 function zoomAt(sx, sy, k) {
+  syncSize();
   const [wx, wy] = toWorld(sx, sy);
   S.cam.z = Math.max(0.05, Math.min(40, S.cam.z * k));
   S.cam.x = wx - (sx - W / 2) / S.cam.z; S.cam.y = wy - (sy - H / 2) / S.cam.z;
@@ -360,6 +369,7 @@ const handleOf = (p) => [p.x + Math.cos(p.a) * (p.shape.w / 2 + Math.max(4, 14 /
 
 function draw() {
   if (!S) return;
+  syncSize();
   const g = root.querySelector('canvas').getContext('2d');
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   g.fillStyle = '#04060b'; g.fillRect(0, 0, W, H);
@@ -434,7 +444,7 @@ function draw() {
 function pieceAt(wx, wy) {
   for (let i = S.pieces.length - 1; i >= 0; i--) {
     const p = S.pieces[i], dx = wx - p.x, dy = wy - p.y, c = Math.cos(p.a), s = Math.sin(p.a);
-    const lx = dx * c + dy * s, ly = -dx * s + dy * c, pad = Math.max(0.5, 4 / S.cam.z);
+    const lx = dx * c + dy * s, ly = -dx * s + dy * c, pad = Math.max(0.5, (S.opts.touch ? 12 : 6) / S.cam.z);
     if (Math.abs(lx) <= p.shape.w / 2 + pad && Math.abs(ly) <= p.shape.h / 2 + pad) return i;
   }
   return -1;
@@ -442,6 +452,7 @@ function pieceAt(wx, wy) {
 
 function down(e) {
   const cv = e.currentTarget;
+  syncSize();
   cv.setPointerCapture(e.pointerId);
   S.pointers.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
   if (S.pointers.size === 2) { // pinch: zoom + pan with two fingers
