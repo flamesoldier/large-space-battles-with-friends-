@@ -501,6 +501,40 @@ for (let k = 0; k < FORTRESSES.length; k++) {
   assert.equal(bt.ownHullInWay(e, e.weapons[0] || { cell: 0, cells: null }, e.x, e.y, 0, 300), false);
 }
 
+// Cannon explosion (owner, 20 Nov 2026): 500 damage into the blocks nearest the impact: 2 heavy
+// armour or 11 frame. And the auto gun: a whole 2x2 unit fires bullets; touching units are refused.
+{
+  const slab = (t) => {
+    const w = 30, h = 30, cells = new Uint8Array(w * h).fill(t);
+    cells[15 * w + 2] = BT.HUB;
+    return { name: 'Slab', cls: 'cruiser', w, h, cells, hub: 15 * w + 2, stance: 'line' };
+  };
+  for (const [t, want] of [[BT.HEAVY, 2], [BT.FRAME, 11]]) {
+    const b = new Battle({ designs: [slab(t), slab(t)], ships: [{ design: 0, team: 0, x: 0, y: 0, a: 0 }, { design: 1, team: 1, x: 500, y: 0, a: 0 }], seed: 1 });
+    const e = b.ents[0], before = e.hp.filter((v, i) => e.types[i] && v > 0).length;
+    b.budgetBlast(e, e.x + 5.3, e.y + 0.4, WEAPON[BT.CANNON].splash, WEAPON[BT.CANNON].damage);
+    const after = e.hp.filter((v, i) => e.types[i] && v > 0).length;
+    assert.equal(before - after, want, `one cannon shell destroys ${want} ${t === BT.HEAVY ? 'heavy armour' : 'frame'} blocks`);
+  }
+  const boat = (units) => {
+    const w = 12, h = 8, cells = new Uint8Array(w * h);
+    for (let j = 1; j < 7; j++) for (let i = 0; i < 10; i++) cells[j * w + i] = j === 1 || j === 6 ? BT.ARMOR : BT.FRAME;
+    for (let j = 1; j < 7; j++) cells[j * w] = BT.THRUSTER;
+    for (const r of units) cells[r * w + 10] = cells[r * w + 11] = cells[(r + 1) * w + 10] = cells[(r + 1) * w + 11] = BT.AUTO;
+    cells[4 * w + 5] = BT.HUB;
+    return { name: 'Gunboat', cls: 'frigate', w, h, cells, hub: 4 * w + 5, stance: 'charge' };
+  };
+  const ok = analyzeDesign(boat([1, 5])), bad = analyzeDesign(boat([2, 4]));
+  assert.ok(!ok.errors.length && ok.weapons.filter((x) => x.type === BT.AUTO).length === 2 && ok.cost >= 500, 'two separate auto gun units are two guns');
+  assert.ok(bad.errors.some((x) => x.includes('Auto guns')), 'touching auto gun units are refused');
+  const ships = [];
+  for (let k = 0; k < 6; k++) { ships.push({ design: 0, team: 0, x: -60, y: (k - 3) * 25, a: 0 }); ships.push({ design: 1, team: 1, x: 60, y: (k - 3) * 25, a: Math.PI }); }
+  const b = new Battle({ designs: [boat([1, 5]), slab(BT.ARMOR)], ships, seed: 2, maxTime: 60 });
+  b.run();
+  const K = b.R.shotKind, kinds = K.a.slice(0, K.n ?? K.length);
+  assert.ok(Array.from(kinds).filter((k) => k === 7).length > 50, 'auto guns fire bullets (replay shot kind 7)');
+}
+
 // Fleets that start far apart fight it out (owner, 19 Nov 2026: a battle "ended" at 34 s with no
 // damage because the 20 s with no damage were counted before the fleets had even met).
 {

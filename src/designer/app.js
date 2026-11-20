@@ -21,14 +21,14 @@ const fmt = (n) => Math.round(n).toLocaleString();
 // Same colours as the replay viewer's Azure side, so a design looks like it will in battle.
 const COLOR = {
   [BT.HUB]: '#86e8ff', [BT.ARMOR]: '#5c7ea3', [BT.HEAVY]: '#41597a', [BT.FRAME]: '#90a6c0', [BT.THRUSTER]: '#3d434f',
-  [BT.LASER]: '#d8f4ff', [BT.CANNON]: '#9aa1ab', [BT.MISSILE]: '#b9b16c', [BT.PD]: '#c2413f', [BT.LANCE]: '#2c3150', [BT.GUIDED]: '#8fb79e', [BT.BAY]: '#c9a23c', [BT.FLAK]: '#5d574b', [BT.SHIELD]: '#2b6f7a',
+  [BT.LASER]: '#d8f4ff', [BT.CANNON]: '#9aa1ab', [BT.MISSILE]: '#b9b16c', [BT.PD]: '#c2413f', [BT.LANCE]: '#2c3150', [BT.GUIDED]: '#8fb79e', [BT.BAY]: '#c9a23c', [BT.FLAK]: '#5d574b', [BT.SHIELD]: '#2b6f7a', [BT.AUTO]: '#a7a08e',
 };
 // Palette order and number keys.
 const PALETTE = [
   [BT.FRAME, '1'], [BT.ARMOR, '2'], [BT.HEAVY, '3'], [BT.THRUSTER, '4'], [BT.LASER, '5'],
-  [BT.CANNON, '6'], [BT.PD, '7'], [BT.MISSILE, '8'], [BT.GUIDED, 'g'], [BT.BAY, 'c'], [BT.LANCE, '9'], [BT.FLAK, 'k'], [BT.SHIELD, 'e'], [BT.HUB, '0'], [0, 'x'],
+  [BT.CANNON, '6'], [BT.AUTO, 'u'], [BT.PD, '7'], [BT.MISSILE, '8'], [BT.GUIDED, 'g'], [BT.BAY, 'c'], [BT.LANCE, '9'], [BT.FLAK, 'k'], [BT.SHIELD, 'e'], [BT.HUB, '0'], [0, 'x'],
 ];
-const WEAPON_ORDER = [BT.LASER, BT.CANNON, BT.PD, BT.MISSILE, BT.GUIDED, BT.BAY, BT.LANCE, BT.FLAK];
+const WEAPON_ORDER = [BT.LASER, BT.CANNON, BT.AUTO, BT.PD, BT.MISSILE, BT.GUIDED, BT.BAY, BT.LANCE, BT.FLAK];
 
 const ed = new ShipEditor();
 // block: the selected palette block (0 = eraser), or null when nothing is selected (Esc).
@@ -55,6 +55,8 @@ const BLOCK_HINT = {
   [BT.PD]: `SHOOTS DOWN ENEMY MISSILES (normal and guided) within ${WEAPON[BT.PD].range} blocks: a missile has ${WEAPON[BT.MISSILE].hp} hp and each burst does ${WEAPON[BT.PD].missileDamage}, so a few of these protect a ship. Then ENEMY FIGHTERS within ${WEAPON[BT.PD].range} (${WEAPON[BT.PD].damage} a burst). When neither is near, it shoots any enemy ship within ${WEAPON[BT.PD].range}.`,
   // Owner, Nov 2026: players didn't know thrusters also set galaxy map speed.
   [BT.THRUSTER]: 'Moves the ship. More thrust for the ship\'s mass means a higher top speed and faster turning in battle.\n\nIT ALSO SETS SPEED ON THE GALAXY MAP: a fleet crosses the map at the top speed of its SLOWEST ship, so one under-powered ship slows the whole fleet down. Top speed (in the stats panel) is the same number in battle and on the map; a ship with almost no thrust can\'t leave its world.',
+  [BT.CANNON]: `A SLOW, HEAVY EXPLOSIVE GUN: one big shell every ${WEAPON[BT.CANNON].cooldown} s, aimed ahead of its target. Where it hits it blows ${WEAPON[BT.CANNON].damage} damage into the blocks nearest the impact, so one shell destroys about ${Math.floor(WEAPON[BT.CANNON].damage / BLOCKS[BT.HEAVY].hp)} heavy armour or ${Math.floor(WEAPON[BT.CANNON].damage / BLOCKS[BT.FRAME].hp)} frame. Range ${WEAPON[BT.CANNON].range}.`,
+  [BT.AUTO]: `A RAPID-FIRE CLOSE-RANGE GUN: a 2×2 unit spraying fast bullets every ${WEAPON[BT.AUTO].cooldown} s, ${WEAPON[BT.AUTO].damage} damage each, out to ${WEAPON[BT.AUTO].range} blocks. Fairly inaccurate, so it's best close in. It also shoots enemy fighters when no ship is in reach. Keeps firing while 2 of its 4 blocks survive.`,
   [BT.MISSILE]: 'A huge, slow, unguided missile: flies straight where it was aimed, over your own ships, and its blast wrecks everything within 9 blocks. Point defence can shoot it down.',
   [BT.GUIDED]: 'The same huge missile, but it steers after its target in flight (and finds a new one nearby if its target dies), so it hits ships that dodge. Point defence can still shoot it down.',
   [BT.BAY]: `LAUNCHES FIGHTERS: ${WEAPON[BT.BAY].waves[0]} as the battle opens, then one every minute for as long as it lasts, at any range. Fighters need a way out: put the bay on the hull edge, or leave a tunnel of empty cells from it to space; the tunnel can turn corners (hover the bay to see its way out). A fighter circles the nearest enemy ship shooting it (${WEAPON[BT.BAY].fighter.damage} damage every ${WEAPON[BT.BAY].fighter.cooldown} s, range ${WEAPON[BT.BAY].fighter.range}), dogfights enemy fighters, and flies until it's shot down (${WEAPON[BT.BAY].fighter.hp} hp). Early on they soak up enemy fire; late in a battle they hunt down the long-range ships left at the back. Lasers hit them ${Math.round(WEAPON[BT.LASER].fighterHit * 100)}% of the time; point defence goes for them first. They shine in long, drawn-out fights.`,
@@ -75,6 +77,7 @@ function blockTitle(t) {
   if (t === BT.BAY) { const n = MULTIBLOCK[t].size; s = `${B.name}: one ${n}×${n} unit, ${B.cost * n * n} cr, ${B.hp} hp per block, keeps launching while half its blocks survive`; }
   if (t === BT.SHIELD) s = `${B.name}: one 10×10 unit, ${B.cost * 100} cr, ${B.hp} hp per block, +${SHIELD.capacity.toLocaleString('en')} shield, refills ${SHIELD.regen}/s (less for each extra generator, at most ${Math.round(SHIELD.regen / (1 - SHIELD.stack))}/s a ship). If any block dies the whole unit explodes`;
   if (t === BT.FLAK) s = `${B.name}: one 10×10 unit, ${B.cost * 100} cr, ${B.hp} hp per block. Lose ${FLAK_POP.after} of its 100 blocks and the whole unit blows up (small blast, little harm to the ship)`;
+  if (t === BT.AUTO) s = `${B.name}: one 2×2 unit, ${B.cost * 4} cr, ${B.hp} hp per block, keeps firing while 2 of its 4 blocks survive`;
   if (t === BT.THRUSTER) s += `, thrust ${B.thrust}`;
   if (W && t === BT.FLAK) s += `. Range ${W.range}, a salvo of ${W.salvo} shells every ${W.cooldown} s, each bursting beside its target into ${W.fragments} pieces of shrapnel, ${W.damage} damage each`;
   else if (W && t !== BT.BAY) s += `. Range ${W.range}, ${W.damage} damage every ${W.cooldown} s`;
@@ -254,7 +257,8 @@ function saveCurrent() {
 // What each weapon does, shown when hovering its row in the weapon table.
 const SHOT_HINT = {
   [BT.LASER]: 'Always hits. The beam burns through blocks until its damage is spent, often into a second ship.',
-  [BT.CANNON]: 'A slow shell aimed ahead of the target; damage splashes onto the blocks around the hit.',
+  [BT.CANNON]: `A slow explosive shell aimed ahead of the target: ${WEAPON[BT.CANNON].damage} damage blown into the blocks nearest the hit.`,
+  [BT.AUTO]: `Fast, fairly inaccurate bullets at close range, ${WEAPON[BT.AUTO].damage} damage to the block each one hits. Shoots fighters when no ship is in reach.`,
   [BT.MISSILE]: 'Huge slow missile, flies over your own ships. Blast 9 blocks wide, strongest in the middle. Point defence can shoot it down.',
   [BT.GUIDED]: 'Like the missile launcher, but the missile steers after its target in flight. Point defence can shoot it down.',
   [BT.PD]: `Anti-missile: shoots down enemy missiles within ${WEAPON[BT.PD].range} blocks first (${WEAPON[BT.PD].missileDamage} a burst, a missile has ${WEAPON[BT.MISSILE].hp} hp), then enemy fighters (the best answer to carriers), then enemy hulls, ${WEAPON[BT.PD].damage} a burst, all within ${WEAPON[BT.PD].range}.`,
@@ -359,7 +363,7 @@ function draw() {
       const gr = w.group;
       if (!visible(gr.x0, gr.y0, gr.x1, gr.y1)) continue;
       const x = sx(gr.x0 + ox), y = sy(gr.y0 + oy), ww = (gr.x1 - gr.x0 + 1) * z, hh = (gr.y1 - gr.y0 + 1) * z;
-      if (gr.ok && ww > 12) (gr.type === BT.BAY ? bayUnit : gr.type === BT.FLAK ? flakUnit : gr.type === BT.SHIELD ? shieldUnit : plasmaUnit)(x, y, ww, hh, z);
+      if (gr.ok && ww > 12) (gr.type === BT.BAY ? bayUnit : gr.type === BT.AUTO ? autoUnit : gr.type === BT.FLAK ? flakUnit : gr.type === BT.SHIELD ? shieldUnit : plasmaUnit)(x, y, ww, hh, z);
       g.strokeStyle = gr.ok ? 'rgba(200,205,255,0.4)' : '#ff6b6b'; g.lineWidth = Math.max(1, dpr());
       g.strokeRect(x + 0.5, y + 0.5, ww - 1, hh - 1);
     }
@@ -495,6 +499,18 @@ function bayUnit(x, y, ww, hh, z) {
   g.beginPath(); g.moveTo(cx + R * 0.2, cy); g.lineTo(cx - R * 0.14, cy - R * 0.15); g.lineTo(cx - R * 0.07, cy); g.lineTo(cx - R * 0.14, cy + R * 0.15); g.closePath(); g.fill();
   g.fillStyle = '#ffb347';
   for (const [dx, dy] of [[0.25, 0.25], [0.75, 0.25], [0.25, 0.75], [0.75, 0.75]]) { g.beginPath(); g.arc(x + ww * dx, y + hh * dy, R * 0.035, 0, Math.PI * 2); g.fill(); }
+}
+
+/** An auto gun unit (20 Nov 2026): a gunmetal mount, an ammunition drum at the back, two barrels to the nose (+x). */
+function autoUnit(x, y, ww, hh, z) {
+  const R = Math.min(ww, hh), cy = y + hh / 2;
+  g.fillStyle = '#6f6a5d'; g.fillRect(x, y, ww, hh);
+  g.fillStyle = '#8c8676'; g.fillRect(x + R * 0.07, y + R * 0.07, ww - R * 0.14, hh - R * 0.14);
+  g.fillStyle = '#4b473e'; g.beginPath(); g.arc(x + ww * 0.38, cy, R * 0.22, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#d6cfba';
+  for (const dy of [-0.13, 0.13]) g.fillRect(x + ww * 0.45, cy + dy * hh - R * 0.05, ww * 0.55, R * 0.1);
+  g.fillStyle = '#17181b';
+  for (const dy of [-0.13, 0.13]) g.fillRect(x + ww * 0.9, cy + dy * hh - R * 0.025, ww * 0.1, R * 0.05);
 }
 
 /** A flak cannon unit: gunmetal deck in an armoured rim, a turret ring with four big barrels, ammunition feeds, amber lights. */
@@ -712,7 +728,7 @@ canvas.addEventListener('pointerdown', (e) => {
   last = null;
   if (tool === 'pencil' || MULTIBLOCK[type] || type === BT.HUB) {
     ed.checkpoint(); drag.started = true;
-    if (MULTIBLOCK[type]) { if (!ed.stamp(x, y, type)) toast(type === BT.BAY ? `A fighter bay needs a clear ${MULTIBLOCK[type].size}×${MULTIBLOCK[type].size} space inside the grid, away from the hub.` : `A ${type === BT.FLAK ? 'flak cannon' : type === BT.SHIELD ? 'shield generator' : 'plasma cannon'} needs a clear 10×10 space inside the grid, away from the hub.`); drag.once = true; }
+    if (MULTIBLOCK[type]) { if (!ed.stamp(x, y, type)) toast(type === BT.BAY ? `A fighter bay needs a clear ${MULTIBLOCK[type].size}×${MULTIBLOCK[type].size} space inside the grid, away from the hub.` : `A ${type === BT.AUTO ? 'auto gun' : type === BT.FLAK ? 'flak cannon' : type === BT.SHIELD ? 'shield generator' : 'plasma cannon'} needs a clear 10×10 space inside the grid, away from the hub.`); drag.once = true; }
     else if (type === BT.HUB) { ed.setCell(x, y, BT.HUB); drag.once = true; }
     else strokeTo(x, y, type);
   } else if (tool === 'fill') {

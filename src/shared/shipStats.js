@@ -167,6 +167,7 @@ export function analyzeDesign(d) {
   if (badGroups.some((g) => g.type === BT.LANCE)) errors.push('Plasma cannons must be whole 10×10 units, not touching each other.');
   if (badGroups.some((g) => g.type === BT.FLAK)) errors.push('Flak cannons must be whole 10×10 units, not touching each other.');
   if (badGroups.some((g) => g.type === BT.SHIELD)) errors.push('Shield generators must be whole 10×10 units, not touching each other.');
+  if (badGroups.some((g) => g.type === BT.AUTO)) errors.push('Auto guns must be whole 2×2 units, not touching each other.');
   if (badGroups.some((g) => g.type === BT.BAY)) errors.push(`Fighter bays must be whole ${MULTIBLOCK[BT.BAY].size}×${MULTIBLOCK[BT.BAY].size} units, not touching each other.`);
 
   if (!weapons.length) warnings.push('No weapons: the ship counts as a disarmed hulk in battle.');

@@ -170,6 +170,22 @@ vec3 hullBlock(int code, vec2 p) {
       glow = (vec3(1.0, 0.62, 0.2) * lights * (0.65 + 0.35 * sin(uTime * 0.7 + q.x * 7.0)) + vec3(1.0, 0.45, 0.15) * hot) * d;
     }
   }
+  else if (type == 15) { // auto gun (20 Nov 2026): the 2x2 unit is one twin-barrelled gun, barrels to the nose (+x)
+    vec2 q = (vec2(float(var / 2), float(var - (var / 2) * 2)) + p * 0.5 + 0.5) / 2.0 - 0.5; // -0.5..0.5 across the unit
+    vec2 aq = abs(q);
+    float m = max(aq.x, aq.y), R = length(q - vec2(-0.12, 0.0));
+    float base = 0.62 - dot(q, L) * 0.25;
+    float rim = smoothstep(0.42, 0.46, m);
+    base = mix(base, 0.85 - dot(q, L) * 0.4, rim);
+    float drum = 1.0 - smoothstep(0.2, 0.23, R); // ammunition drum at the back
+    base = mix(base, 0.4 + 0.25 * step(0.5, fract(atan(q.y, q.x + 0.12) * 1.6)), drum);
+    float barrel = step(abs(abs(q.y) - 0.13), 0.05) * step(-0.05, q.x); // two barrels
+    base = mix(base, 0.95 - dot(q, L) * 0.5, barrel);
+    float bore = barrel * step(0.4, q.x) * step(abs(abs(q.y) - 0.13), 0.025);
+    base = mix(base, 0.15, bore);
+    lit *= mix(1.0, base, d);
+    if (!dead) glow = vec3(1.0, 0.85, 0.4) * bore * (0.5 + 0.5 * sin(uTime * 3.0 + q.y * 9.0)) * d;
+  }
   else if (type == 14) { // shield generator: the 10x10 unit is one emitter, a glowing dish inside a ring of coils
     vec2 q = (vec2(float(var / 10), float(var - (var / 10) * 10)) + p * 0.5 + 0.5) / 10.0 - 0.5;
     vec2 aq = abs(q);
@@ -281,7 +297,7 @@ function blockPalette(team, dead) {
   const T = TEAM[team], k = dead ? 0.7 : 1; // wrecks stay readable, just burnt
   const p = [];
   p[BT.HUB] = T.hub; p[BT.ARMOR] = T.armor; p[BT.HEAVY] = T.heavy; p[BT.FRAME] = T.frame;
-  p[BT.THRUSTER] = '#3d434f'; p[BT.LASER] = team ? '#ffd9c9' : '#d8f4ff'; p[BT.CANNON] = '#9aa1ab'; p[BT.MISSILE] = '#b9b16c'; p[BT.PD] = PD_COLOR; p[BT.LANCE] = team ? '#8a4f63' : '#5b5f9c'; p[BT.GUIDED] = '#8fb79e'; p[BT.BAY] = '#c9a23c'; p[BT.FLAK] = '#6e6656'; p[BT.SHIELD] = '#2b6f7a';
+  p[BT.THRUSTER] = '#3d434f'; p[BT.LASER] = team ? '#ffd9c9' : '#d8f4ff'; p[BT.CANNON] = '#9aa1ab'; p[BT.MISSILE] = '#b9b16c'; p[BT.PD] = PD_COLOR; p[BT.LANCE] = team ? '#8a4f63' : '#5b5f9c'; p[BT.GUIDED] = '#8fb79e'; p[BT.BAY] = '#c9a23c'; p[BT.FLAK] = '#6e6656'; p[BT.AUTO] = '#a7a08e'; p[BT.SHIELD] = '#2b6f7a';
   return p.map((c) => (c ? rgba(dead ? shade(c, k) : c) : 0));
 }
 const PAL = [[blockPalette(0, false), blockPalette(1, false)], [blockPalette(0, true), blockPalette(1, true)]];
@@ -305,7 +321,7 @@ function lookFor(hex) {
     const p = [];
     p[BT.HUB] = T.hub; p[BT.ARMOR] = T.armor; p[BT.HEAVY] = T.heavy; p[BT.FRAME] = T.frame;
     p[BT.THRUSTER] = '#3d434f'; p[BT.LASER] = mixHex(hex, '#ffffff', 0.75); p[BT.CANNON] = '#9aa1ab'; p[BT.MISSILE] = '#b9b16c';
-    p[BT.PD] = PD_COLOR; p[BT.LANCE] = shade(mixHex(hex, '#40404a', 0.5), 0.9); p[BT.GUIDED] = '#8fb79e'; p[BT.BAY] = '#c9a23c'; p[BT.FLAK] = shade(mixHex(hex, '#6e6656', 0.7), 0.95); p[BT.SHIELD] = shade(mixHex(hex, '#2b6f7a', 0.75), 0.95);
+    p[BT.PD] = PD_COLOR; p[BT.LANCE] = shade(mixHex(hex, '#40404a', 0.5), 0.9); p[BT.GUIDED] = '#8fb79e'; p[BT.BAY] = '#c9a23c'; p[BT.FLAK] = shade(mixHex(hex, '#6e6656', 0.7), 0.95); p[BT.SHIELD] = shade(mixHex(hex, '#2b6f7a', 0.75), 0.95); p[BT.AUTO] = shade(mixHex(hex, '#a7a08e', 0.75), 1);
     return p.map((c) => (c ? rgba(dead ? shade(c, 0.7) : c) : 0));
   };
   L = { pal: [make(false), make(true)], lod: rgba(hex), engine: rgba(hex, 150), accent: hex };
@@ -364,7 +380,7 @@ const C = {
   // Flak (14 Nov 2026): hot amber shells, a white flash and a spray of orange shrapnel streaks.
   flShell: rgba('#fff0c2', 255), flTrail: rgba('#ffb347', 210), flFlash: rgba('#fff8e8', 255), flGlow: rgba('#ff9a3c', 255),
   shield: rgba('#6fe8ff', 255),
-  flShrap: rgba('#ffc070', 255), flSmoke: rgba('#8c8278', 255),
+  flShrap: rgba('#ffc070', 255), tracer: rgba('#ffe58a', 255), tracerHot: rgba('#fffbe8', 255), flSmoke: rgba('#8c8278', 255),
 };
 
 export class Renderer {
@@ -474,7 +490,7 @@ export class Renderer {
           const o = i * 4, a0 = nb[o], a1 = nb[o + 1], a2 = nb[o + 2], a3 = nb[o + 3];
           const mask = (a0 >= 0 && de[a0] > t ? 1 : 0) | (a1 >= 0 && de[a1] > t ? 2 : 0) | (a2 >= 0 && de[a2] > t ? 4 : 0) | (a3 >= 0 && de[a3] > t ? 8 : 0);
           const type = ty[i], x = tr.x + lx[i] * c - ly[i] * s, y = tr.y + lx[i] * s + ly[i] * c;
-          const v = (type === BT.LANCE || type === BT.BAY || type === BT.FLAK || type === BT.SHIELD) && un[i] ? un[i] - 1 : (i * 2654435761) >>> 29;
+          const v = (type === BT.LANCE || type === BT.BAY || type === BT.FLAK || type === BT.SHIELD || type === BT.AUTO) && un[i] ? un[i] - 1 : (i * 2654435761) >>> 29;
           solid.push(x, y, tr.a, 0.5, 0.5, 10 + type + 16 * mask + 256 * v + deadBit, pal[type]);
           blocks++;
         }
@@ -611,11 +627,12 @@ export class Renderer {
     if (m.plasma) this.drawPlasma(m.plasma, t, vis, minW);
     if (m.flak) this.drawFlak(m.flak, t, vis, minW);
     if (m.frag) this.drawShrapnel(m.frag, t, vis, minW);
+    if (m.auto) this.drawTracers(m.auto, t, vis, minW);
     if (m.fighter) this.drawFighters(m.fighter, t, vis, minW);
     // Detonations: 0 = missile shot down, 1 = cannon shell, 2 = heavy missile, 3 = heavy-laser block cooking off,
     // 4 = plasma bolt bursting into a hull, 5 = plasma bolt's final blast (both blue)
     const E = m.expl;
-    const LIFE = [6, 8, 24, 22, 12, 24, 0, 22], BASE = [1, 1.5, 5, 3, 3, 6, 0, 6], GROW = [2.5, 5, 15, 16, 9, 20, 0, 24]; // 7: shield generator exploding
+    const LIFE = [6, 8, 24, 22, 12, 24, 0, 22, 16], BASE = [1, 1.5, 5, 3, 3, 6, 0, 6, 2.5], GROW = [2.5, 5, 15, 16, 9, 20, 0, 24, 8]; // 7: shield generator exploding, 8: explosive cannon shell (20 Nov 2026)
     for (let i = lowerBound(E.t, t - 24); i < E.n && E.t[i] <= t; i++) {
       if (E.s[i] === 6) { this._hasFrag = !!m.frag; this.drawFlakBurst(E, i, t, vis, minW); continue; }
       const sz = E.s[i], life = LIFE[sz] ?? 8, age = t - E.t[i];
@@ -810,6 +827,27 @@ export class Renderer {
    * Flak shrapnel: each piece a small hot streak flying straight from the burst until it hits
    * something (a tiny flash there) or burns out (fades over its last second).
    */
+  /** Auto gun bullets (shot kind 7, 20 Nov 2026): short bright yellow tracers, a spark where they hit. */
+  drawTracers(S, t, vis, minW) {
+    const g = this.glow;
+    for (let i = lowerBound(S.t0, t - S.maxFlight - 3); i < S.n && S.t0[i] <= t; i++) {
+      const age = t - S.t0[i];
+      if (t > S.t1[i]) {
+        if (S.hit[i] && t - S.t1[i] < 3) {
+          const f = S.t1[i] - S.t0[i], x = S.x[i] + S.vx[i] * f, y = S.y[i] + S.vy[i] * f, k = 1 - (t - S.t1[i]) / 3;
+          if (vis(x, y, 4)) g.push(x, y, 0, Math.max(0.9, minW * 1.6), Math.max(0.9, minW * 1.6), 1, alpha2(C.tracerHot, k));
+        }
+        continue;
+      }
+      const vx = S.vx[i], vy = S.vy[i], x = S.x[i] + vx * age, y = S.y[i] + vy * age;
+      if (!vis(x, y, 8)) continue;
+      const fade = S.hit[i] ? 1 : Math.min(1, (S.t1[i] - t) / 6);
+      const a = Math.atan2(vy, vx), c = Math.cos(a), s = Math.sin(a), len = Math.min(2.6, age * Math.hypot(vx, vy) * 0.5 + 0.4);
+      g.push(x - c * len, y - s * len, a, len, Math.max(0.2, minW * 0.7), 4, alpha2(C.tracer, 0.9 * fade));
+      g.push(x, y, 0, Math.max(0.3, minW * 0.9), Math.max(0.3, minW * 0.9), 1, alpha2(C.tracerHot, fade));
+    }
+  }
+
   drawShrapnel(S, t, vis, minW) {
     const g = this.glow;
     for (let i = lowerBound(S.t0, t - S.maxFlight - 3); i < S.n && S.t0[i] <= t; i++) {

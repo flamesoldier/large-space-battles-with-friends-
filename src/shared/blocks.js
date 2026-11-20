@@ -17,6 +17,7 @@ export const BT = {
   BAY: 12, // fighter bay (owner, Nov 2026): a 6x6 unit that launches a fighter every 30 s
   FLAK: 13, // flak cannon (owner, 14 Nov 2026): a 10x10 unit, long range, shells burst beside lightly armoured ships in a spray of shrapnel
   SHIELD: 14, // shield generator (owner, 15 Nov 2026): a 10x10 unit that gives its ship a regenerating shield pool
+  AUTO: 15, // auto gun (owner, 20 Nov 2026): a 2x2 unit, short range, fires fast inaccurate bullets every 0.3 s. Type 15 is the last the viewer's shape code can hold (10 + type + 16 × sides)
 };
 
 // Multi-block weapons: footprint in blocks, and the fraction of those blocks that must
@@ -25,6 +26,7 @@ export const MULTIBLOCK = {
   [BT.LANCE]: { size: 10, minIntact: 0.5 },
   [BT.BAY]: { size: 6, minIntact: 0.5 },
   [BT.SHIELD]: { size: 10, minIntact: 1 }, // shield generator: the whole unit goes up when any block dies
+  [BT.AUTO]: { size: 2, minIntact: 0.5 }, // auto gun: keeps firing while 2 of its 4 blocks survive
   [BT.FLAK]: { size: 10, minIntact: 0.5 }, // flak cannon: same footprint as the plasma cannon // fighter bay (owner: big, it takes up space inside ships): keeps launching while 18 of its 36 blocks survive
 };
 
@@ -45,6 +47,7 @@ export const BLOCKS = {
   [BT.GUIDED]: { name: 'Guided missile launcher', hp: 300, mass: 5, cost: 135 }, // owner, Nov 2026: the missile launcher's stats, steering missiles, dearer
   [BT.BAY]: { name: 'Fighter bay', hp: 150, mass: 3, cost: 6.25 }, // owner, Nov 2026: 225 cr a 6x6 unit (asked for 200-250)
   [BT.LANCE]: { name: 'Plasma cannon', hp: 750, mass: 4, cost: 15 },
+  [BT.AUTO]: { name: 'Auto gun', hp: 300, mass: 2, cost: 62.5 }, // owner, 20 Nov 2026: 250 cr a 2x2 unit, 300 hp a block
   [BT.SHIELD]: { name: 'Shield generator', hp: 45, mass: 4, cost: 15 }, // owner, 15 Nov 2026: plasma's price, extremely weak blocks
   [BT.FLAK]: { name: 'Flak cannon', hp: 200, mass: 4, cost: 15 }, // owner, 14 Nov 2026: plasma's size and price, 1,500 a 10x10 unit; it doesn't explode when destroyed, so 200 hp (owner, 15 Nov: plasma's 750 makes up for its chain explosion) // hp was 120 (owner, Nov 2026: plasma ships lost their guns at once); 1,500 a 10x10 unit (was 3,500): an anti-capital weapon, see CLAUDE.md
 };
@@ -81,7 +84,15 @@ export const WEAPON = {
   // Slow shell that flies dead straight (aimed with lead at firing), small blast on impact.
   // life: owner (Nov 2026) doesn't want misses to vanish mid-battle, so a shell flies on for 30 s
   // (1,350 blocks, well past the fight) and can still hit something far behind its target.
-  [BT.CANNON]: { kind: 'shell', range: 340, damage: 100, cooldown: 2.0, speed: 45, life: 30, splash: 1.6, spread: 0.05 },
+  // Cannon (owner, 20 Nov 2026: "more like a cannon and less like a machine gun"): one big explosive
+  // shell every 10 s (was 100 damage every 2 s). On impact the explosion spends `damage` on the hit
+  // ship's blocks nearest the impact first (`budget`, out to `splash` blocks), so one shell kills
+  // 2 heavy armour (240 hp) or 11 frame (45 hp). Same damage per second as before.
+  [BT.CANNON]: { kind: 'shell', range: 340, damage: 500, cooldown: 10, speed: 45, life: 30, splash: 8, budget: true, spread: 0.05 },
+  // Auto gun (owner, 20 Nov 2026): a 2x2 unit spraying fast, fairly inaccurate bullets at close
+  // range, 55 damage each to the block it hits, every 0.3 s. Bullets fly `life` s (not 30 like
+  // cannon shells: at 3+ shots a second a long life would fill battles with spent bullets).
+  [BT.AUTO]: { kind: 'shell', auto: true, range: 150, damage: 55, cooldown: 0.3, speed: 150, life: 3, spread: 0.07 }, // each bullet damages only the block it hits
   // Heavy missile: unguided, crawls across the map in a straight line, flies over friendly
   // ships, devastating blast. Has hit points, so point defence can shoot it down on the way in.
   // Blast damage falls off with distance: peak * (1 - d / splash)^2, applied to every ship
@@ -151,7 +162,7 @@ export const WEAPON = {
 // Firing arcs: every weapon can fire in any direction where its shot wouldn't pass through its
 // own ship (see arcs.js). The heavy laser looks out from the centre of its 10x10 unit.
 
-export const isWeapon = (t) => t >= BT.LASER && t <= BT.FLAK;
+export const isWeapon = (t) => (t >= BT.LASER && t <= BT.FLAK) || t === BT.AUTO;
 
 // Hull classes come from block count (the ship designer shows which one a design falls in).
 // Ships can be absurdly big: a 350,000-block worldbreaker duel resolves in about 2 s.

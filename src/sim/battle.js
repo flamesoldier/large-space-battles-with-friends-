@@ -38,7 +38,7 @@ export const MAX_TEAMS = 16; // sides in one battle (players plus militia); fr[]
 // Debris stays hittable and solid for the whole battle (owner: debris is part of the fight).
 // The retire mechanism is kept as a cap that can be set if very long battles ever get slow.
 const CHUNK_RETIRE_TICKS = Infinity;
-const K_KINETIC = 0, K_SHELL = 1, K_MISSILE = 2, K_PLASMA = 3, K_FIGHTER = 4, K_FLAK = 5, K_FRAG = 6;
+const K_KINETIC = 0, K_SHELL = 1, K_MISSILE = 2, K_PLASMA = 3, K_FIGHTER = 4, K_FLAK = 5, K_FRAG = 6, K_AUTO = 7; // K_AUTO: auto gun bullets (20 Nov 2026), handled like shells
 // Fighters (owner, Nov 2026): launched by fighter bays, kept in their own list (this.Fi), not P.
 const FIGHTER = WEAPON[BT.BAY].fighter;
 const FIGHTER_R = 2; // how close a shot must pass to hit one (blocks)
@@ -205,7 +205,7 @@ export class Battle {
       }
       // Fighter bays launch their opening wave early; plasma cannons charge for 4-10 s.
       const cd0 = this.rng();
-      const wpn = { cell: group[0], cells: group, type: t, lx: sx / group.length, ly: sy / group.length, cd: t === BT.BAY ? 1 + cd0 * 2 : 4 + cd0 * 6, ...arcFields() };
+      const wpn = { cell: group[0], cells: group, type: t, lx: sx / group.length, ly: sy / group.length, cd: t === BT.BAY ? 1 + cd0 * 2 : t === BT.AUTO ? cd0 * 0.6 : 4 + cd0 * 6, ...arcFields() };
       if (t === BT.BAY) wpn.sq = WEAPON[BT.BAY].waves[0]; // fighters still to launch in this wave (wave index w.wv)
       e.weapons.push(wpn);
     }
@@ -1169,8 +1169,8 @@ export class Battle {
       // that far ahead sent volleys sideways or even backwards. Past maxLead, aim where it is.
       const t = Math.min(Math.hypot(ax - wx, ay - wy) / W.speed, W.maxLead ?? Infinity);
       const ang = Math.atan2(ay + tg.vy * t - wy, ax + tg.vx * t - wx) + (this.rng() - 0.5) * 2 * W.spread;
-      const kind = W.kind === 'shell' ? K_SHELL : K_MISSILE;
-      if (kind === K_SHELL && this.ownHullInWay(e, w, wx, wy, ang, W.range)) { w.cd = 0.3; continue; }
+      const kind = W.kind === 'shell' ? (W.auto ? K_AUTO : K_SHELL) : K_MISSILE;
+      if (kind !== K_MISSILE && this.ownHullInWay(e, w, wx, wy, ang, W.range)) { w.cd = W.auto ? W.cooldown : 0.3; continue; }
       const rec = this.shotStart(kind, e.team, wx, wy, ang, !!W.guided);
       this.addProjectile(kind, w.type, wx, wy, Math.cos(ang) * W.speed, Math.sin(ang) * W.speed,
         Math.round(W.life / DT), e.id, e.team, tg.id, W.damage, W.hp || 0, rec);
@@ -1514,13 +1514,13 @@ export class Battle {
       // Heavy missiles fly over their own side's ships; everything else stops on whatever it meets.
       const hit = this.sweep(x0, y0, x1, y1, P.owner[i], kind === K_MISSILE ? P.team[i] : -1);
       // A cannon shell stops on an enemy fighter if it meets one before any hull.
-      if (kind === K_SHELL && this.fFoe[P.team[i]]) {
+      if ((kind === K_SHELL || kind === K_AUTO) && this.fFoe[P.team[i]]) {
         const j = this.fighterOnSegment(x0, y0, x1, y1, P.team[i], hit ? this.hitT : 1);
         if (j >= 0) {
           const t = this._ft, hx = x0 + (x1 - x0) * t, hy = y0 + (y1 - y0) * t;
           this.Fi.hp[j] -= P.dmg[i];
           this.shotEnd(rec, this.now - 1 + t, 1);
-          this.recExplosion(hx, hy, 1);
+          if (kind === K_SHELL) this.recExplosion(hx, hy, WEAPON[P.wtype[i]].budget ? 8 : 1);
           this.removeProjectile(i--);
           continue;
         }
@@ -1528,11 +1528,15 @@ export class Battle {
       if (hit) {
         const t = this.hitT, hx = x0 + (x1 - x0) * t, hy = y0 + (y1 - y0) * t;
         const ok = this.canDamage(this.hitE, P.team[i]);
-        if (kind === K_MISSILE) this.blast(hx, hy, WEAPON[P.wtype[i]].splash, P.dmg[i], P.team[i]);
-        else if (ok) this.splash(this.hitE, hx, hy, WEAPON[P.wtype[i]].splash, P.dmg[i]);
+        const W = WEAPON[P.wtype[i]];
+        if (kind === K_MISSILE) this.blast(hx, hy, W.splash, P.dmg[i], P.team[i]);
+        else if (ok && W.budget) this.budgetBlast(this.hitE, hx, hy, W.splash, P.dmg[i]);
+        else if (ok && W.auto) this.damageCell(this.hitE, this.hitCell, P.dmg[i]); // a bullet hurts just the block it hits
+        else if (ok) this.splash(this.hitE, hx, hy, W.splash, P.dmg[i]);
         this.guidedPoint(i, hx, hy, this.now - 1 + t);
         this.shotEnd(rec, this.now - 1 + t, 1);
-        this.recExplosion(hx, hy, kind === K_MISSILE ? 2 : 1);
+        // Auto gun bullets record no explosion: the viewer draws a spark where each one ends.
+        if (kind !== K_AUTO) this.recExplosion(hx, hy, kind === K_MISSILE ? 2 : W.budget ? 8 : 1);
         this.removeProjectile(i--);
         continue;
       }
@@ -1918,8 +1922,9 @@ export class Battle {
       const t = Math.hypot(fx - wx, fy - wy) / W.speed;
       const ang = Math.atan2(fy + Fi.vy[j] * t - wy, fx + Fi.vx[j] * t - wx) + (this.rng() - 0.5) * 2 * W.spread;
       if (this.ownHullInWay(e, w, wx, wy, ang, W.range)) return false;
-      const rec = this.shotStart(K_SHELL, e.team, wx, wy, ang);
-      this.addProjectile(K_SHELL, w.type, wx, wy, Math.cos(ang) * W.speed, Math.sin(ang) * W.speed,
+      const K = W.auto ? K_AUTO : K_SHELL;
+      const rec = this.shotStart(K, e.team, wx, wy, ang);
+      this.addProjectile(K, w.type, wx, wy, Math.cos(ang) * W.speed, Math.sin(ang) * W.speed,
         Math.round(W.life / DT), e.id, e.team, -1, W.damage, 0, rec);
     }
     w.cd = W.cooldown * (0.85 + 0.3 * this.rng());
@@ -1976,7 +1981,7 @@ export class Battle {
     const rec = R.shotT0.push(this.now);
     R.shotSpd.push(spd); // speed × 200 / the kind's shotSpeed, 0 = exactly shotSpeed (only shrapnel varies)
     R.shotFlight.push(0); R.shotX.push(q16(x)); R.shotY.push(q16(y)); R.shotAng.push(qAng(ang));
-    R.shotHit.push(0); R.shotTeam.push(team); R.shotKind.push(kind === K_FRAG ? 6 : kind === K_FLAK ? 5 : kind === K_FIGHTER ? 4 : guided ? 3 : kind === K_MISSILE ? 1 : kind === K_PLASMA ? 2 : 0);
+    R.shotHit.push(0); R.shotTeam.push(team); R.shotKind.push(kind === K_AUTO ? 7 : kind === K_FRAG ? 6 : kind === K_FLAK ? 5 : kind === K_FIGHTER ? 4 : guided ? 3 : kind === K_MISSILE ? 1 : kind === K_PLASMA ? 2 : 0);
     return rec;
   }
   /** hit: 0 expired, 1 hit something, 2 shot down by point defence. */
@@ -2385,6 +2390,32 @@ export class Battle {
     }
   }
 
+  /**
+   * Cannon explosion (owner, 20 Nov 2026): spend `budget` damage on e's live blocks nearest the
+   * impact first, out to `radius` blocks: each block takes what it has left until the budget runs
+   * out (500 kills 2 heavy armour or 11 frame). A shield soaks it like any other hit.
+   */
+  budgetBlast(e, x, y, radius, budget) {
+    const dx = x - e.x, dy = y - e.y;
+    const gx = dx * e.c + dy * e.s + e.w * 0.5, gy = -dx * e.s + dy * e.c + e.h * 0.5;
+    const r = Math.ceil(radius), cells = this._bb || (this._bb = []);
+    cells.length = 0;
+    for (let j = Math.max(0, Math.floor(gy) - r); j <= Math.min(e.h - 1, Math.floor(gy) + r); j++)
+      for (let i = Math.max(0, Math.floor(gx) - r); i <= Math.min(e.w - 1, Math.floor(gx) + r); i++) {
+        const c = j * e.w + i;
+        if (!e.types[c] || e.hp[c] <= 0) continue;
+        const d2 = (i + 0.5 - gx) ** 2 + (j + 0.5 - gy) ** 2;
+        if (d2 <= radius * radius) cells.push(Math.floor(d2 * 1000) * 1e7 + c); // distance (0.001 steps), then cell, packed for a numeric sort
+      }
+    cells.sort((a, b) => a - b);
+    for (let k = 0; k < cells.length && budget > 0; k++) {
+      const c = cells[k] % 1e7, hit = Math.min(budget, e.hp[c]);
+      if (hit <= 0) continue;
+      this.damageCell(e, c, hit);
+      budget -= hit;
+    }
+  }
+
   splash(e, x, y, radius, dmg) {
     const dx = x - e.x, dy = y - e.y;
     const gx = dx * e.c + dy * e.s + e.w * 0.5, gy = -dx * e.s + dy * e.c + e.h * 0.5;
@@ -2575,7 +2606,7 @@ export class Battle {
     const meta = {
       version: 1, friendlyFire: this.friendlyFire, trackTotal: total, evQ: EV_Q, dt: DT, trackEvery: TRACK_EVERY, shoveEvery: SHOVE_EVERY, velQ: VEL_Q, missileEvery: MISSILE_EVERY, posQ: POS_Q, angQ: ANG_Q,
       ticks: this.tick, shipCount: S, chunkCount: this.byId.length - S,
-      shotSpeed: [WEAPON[BT.CANNON].speed, WEAPON[BT.MISSILE].speed, WEAPON[BT.LANCE].speed, WEAPON[BT.GUIDED].speed, FIGHTER.speed, WEAPON[BT.FLAK].speed, WEAPON[BT.FLAK].fragSpeed], fighterSpeed: FIGHTER.speed,
+      shotSpeed: [WEAPON[BT.CANNON].speed, WEAPON[BT.MISSILE].speed, WEAPON[BT.LANCE].speed, WEAPON[BT.GUIDED].speed, FIGHTER.speed, WEAPON[BT.FLAK].speed, WEAPON[BT.FLAK].fragSpeed, WEAPON[BT.AUTO].speed], fighterSpeed: FIGHTER.speed,
       designs: this.designs.map((d) => ({ name: d.name, cls: d.cls, stance: d.stance, w: d.w, h: d.h, hub: d.hub, cells: Array.from(d.cells) })),
       survivors: [...this.teamAlive], teams: this.nT,
     };

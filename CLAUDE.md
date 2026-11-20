@@ -534,6 +534,28 @@ Weapons (numbers in `blocks.js`):
     5.1k; 300 v 300: no measurable compute change. Owner told it isn't worth the gameplay change.
   - **Fleet view draws big ships' blocks**: past ~60 px across on screen a ship isn't drawn as one quad
     (Aegis was a plain box); blocks at least ~1 px (`bs`).
+- **Cannon rework and auto gun (owner, 20 Nov 2026: "more like a cannon and less like a machine gun")**. Where
+  the numbers above disagree, these win:
+  - **Cannon**: one explosive shell every **10 s** doing **500** (was 100 every 2 s; same damage per second).
+    `budget: true` on `WEAPON[BT.CANNON]`: `budgetBlast()` in `battle.js` spends the 500 on the hit ship's
+    live blocks nearest the impact first (out to `splash` 8 blocks), each taking what it has left: 2 heavy
+    armour (240) or 11 frame (45), as the owner put it. Shields soak it like any hit. Explosion size **8**
+    (viewer `LIFE/BASE/GROW[8]`, between a shell hit and a missile blast). Price unchanged (120).
+  - **Auto gun** (`BT.AUTO` = 15, the last type the viewer's shape code can hold): a **2×2 unit**, **250 cr**
+    (62.5 a block), **300 hp a block**, keeps firing while 2 of 4 survive (`MULTIBLOCK`), range **150**,
+    **55** damage every **0.3 s**, bullets at **150 blocks/s**, `spread` 0.07 rad, **life 3 s** (not 30: at
+    3+ shots a second long-lived misses would swamp battles). `kind: 'shell', auto: true` → projectile kind
+    `K_AUTO` (7), replay shot kind **7** (`meta.shotSpeed[7]`); a bullet damages only the block it hits
+    (`damageCell(hitE, hitCell)`; a 0.6 splash radius missed the block on ~70% of hits, found by measuring);
+    no explosion is recorded per bullet: the viewer's `drawTracers()` draws yellow tracers and a spark where
+    each ends. Idle auto guns shoot fighters like cannons. Shader type 15 (twin barrels, ammo drum),
+    designer key **U** (WASD pans), `autoUnit()`, tooltip, weapon table, "must be whole 2×2 units" error.
+  - Measured (16×10 hull, 3 auto gun units 1,113 cr vs 8 cannons 1,317 cr, 60k cr a side, 4 seeds; score =
+    enemy ships lost share − own): auto charge vs cannon line −0.06, line vs line −0.03, line vs cannon
+    standoff −0.16; starting at 120 apart auto guns win (27/54 left vs 9/46). A third of bullets hit allied
+    hulls in a crowd (allied hulls block shots, owner's rule). Bench 1,000 vs 1,000: 11.6 → 11.8 s compute,
+    cannon shells 95k → 26k, replay 3.42 → 2.69 MB gzip, survivors 200:75 → 206:79. Tests in
+    `tools/test-designer.mjs` (2 heavy / 11 frame, whole units, bullets fired).
 - Future weapons the owner wants: bigger cannons, a medium laser.
 
 Combat rules:
