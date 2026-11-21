@@ -426,15 +426,15 @@ export class ReplayModel {
   }
 
   /**
-   * Where turret g of ship e points at time t (ship-local radians) and how many ticks since it last
-   * fired (out.a, out.since). A pure function of t, like everything else here: the turret turns to
+   * Where turret g of ship e points at time t (ship-local radians), how many ticks since it last
+   * fired and until it next fires (out.a, out.since, out.next). A pure function of t, like everything else here: the turret turns to
    * its next target in the moment before it fires (at most AIM_RATE, or faster if the shots come
    * quicker), holds there, and after AIM_IDLE ticks without firing swings back to rest (the way
    * the unit is drawn pointing in the designer: the middle of its open arc).
    */
   aimAt(e, g, t, out) {
     const G = this.designs[e.design]._guns[g], rest = G.rest;
-    out.a = rest; out.since = 1e9;
+    out.a = rest; out.since = 1e9; out.next = 1e9;
     const A = e.aims && e.aims[g];
     if (!A) return out;
     const T = A.t, n = T.length;
@@ -447,6 +447,7 @@ export class ReplayModel {
       return A.a[k] + angDiff(A.a[k], rest) * u * u * (3 - 2 * u);
     };
     if (k >= 0) out.since = t - T[k];
+    if (k + 1 < n) out.next = T[k + 1] - t;
     if (k + 1 < n) {
       const tn = T[k + 1], an = A.a[k + 1];
       const from = k >= 0 ? A.a[k] : rest;

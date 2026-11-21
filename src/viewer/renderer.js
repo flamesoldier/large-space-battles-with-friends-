@@ -191,14 +191,43 @@ vec3 hullBlock(int code, vec2 p) {
     float kick = vSize.y < 8.0 ? 0.045 * (1.0 - vSize.y / 8.0) * (1.0 - vSize.y / 8.0) : 0.0;
     vec2 rq = rotd(q, ga), rL = rotd(L, ga);
     rq.x += kick * step(0.16, rq.x);
-    float bw = 0.085;
-    float barrel = step(abs(rq.y), bw) * step(0.17, rq.x) * step(rq.x, 0.49);
-    float cylb = 1.0 - (rq.y / bw) * (rq.y / bw);
-    float coils = barrel * step(0.55, fract(rq.x * 30.0)) * step(0.24, rq.x) * step(rq.x, 0.41);
-    float muzzle = step(abs(rq.y), 0.115) * step(abs(rq.x - 0.45), 0.035);
-    base = mix(base, 0.45 + 0.6 * cylb + coils * 0.3, barrel);
-    base = mix(base, 1.0 - rL.y * rq.y * 5.0, muzzle);
-    pipeCore *= 1.0 - barrel;
+    // The barrel (owner, 22 Nov 2026: "make the plasma barrel look a bit more professional"): an
+    // armoured breech block at the orb's collar, a tapering accelerator of two shaded rails wound with
+    // coil bands round an open glowing channel, a muzzle collar and two focusing prongs at the tip.
+    // vSize.y < 0 = ticks until it fires (the channel charges up), >= 0 = ticks since it fired.
+    float charge = vSize.y < 0.0 ? clamp(1.0 + vSize.y / 6.0, 0.0, 1.0) : 0.0;
+    float fired = vSize.y >= 0.0 && vSize.y < 12.0 ? 1.0 - vSize.y / 12.0 : 0.0;
+    float bx = rq.x, ay = abs(rq.y), sy = sign(rq.y);
+    float bu = bx - 0.21;
+    float breech = step(abs(bu), 0.04) * step(ay, 0.115) * step(abs(bu) + ay, 0.14);
+    float hw = mix(0.08, 0.064, clamp((bx - 0.25) / 0.18, 0.0, 1.0));
+    float body = step(0.25, bx) * step(bx, 0.43) * step(ay, hw);
+    float chan = body * step(ay, 0.026);
+    float rail = body - chan;
+    float ringx = fract((bx - 0.25) / 0.034);
+    float ring = rail * step(ringx, 0.24) * step(0.27, bx) * step(bx, 0.415);
+    float seam = rail * step(0.24, ringx) * step(ringx, 0.34) * step(0.27, bx) * step(bx, 0.415);
+    float mcol = step(abs(bx - 0.437), 0.011) * step(ay, 0.088);
+    float pin = clamp((bx - 0.448) / 0.042, 0.0, 1.0);
+    float prong = step(0.448, bx) * step(bx, 0.49) * step(0.022, ay) * step(ay, 0.072 - 0.032 * pin) * (1.0 - mcol);
+    float gap = step(0.448, bx) * step(bx, 0.49) * step(ay, 0.022);
+    float part = min(breech + body + mcol + prong, 1.0);
+    // shading: rails and prongs as half-cylinders lit from the light's side, bands raised and bright,
+    // the channel a dark slot, the breech a bevelled plate with a seam and two status lights
+    float rc = (0.026 + hw) * 0.5, rw = (hw - 0.026) * 0.5, rt = (ay - rc) / rw;
+    float railS = 0.3 + 0.38 * (1.0 - rt * rt) - rL.y * sy * 0.22 - smoothstep(hw - 0.007, hw, ay) * 0.25;
+    float m = 0.5;
+    m = mix(m, 0.42 - dot(rq - vec2(0.21, 0.0), rL) * 3.0 - (1.0 - smoothstep(0.0, 0.006, 0.14 - abs(bu) - ay)) * 0.25
+             - (1.0 - smoothstep(0.0, 0.004, abs(bu))) * 0.25, breech);
+    m = mix(m, railS, rail);
+    m = mix(m, 0.55 + 0.35 * (1.0 - rt * rt) - rL.y * sy * 0.2, ring);
+    m = mix(m, 0.06, chan);
+    m = mix(m, 0.6 - rL.x * 0.2 - smoothstep(0.08, 0.088, ay) * 0.3, mcol);
+    float pt = (ay - (0.047 - 0.016 * pin)) / (0.025 - 0.016 * pin);
+    m = mix(m, 0.38 + 0.42 * (1.0 - pt * pt) - rL.y * sy * 0.25, prong);
+    base = mix(base, m, part);
+    col = mix(col, vec3(0.55, 0.6, 0.7), part * d); // gunmetal, whatever the side's colour
+    pipeCore *= 1.0 - part;
     // collar round the orb
     float collar = (1.0 - smoothstep(0.012, 0.022, abs(R - 0.215)));
     base = mix(base, 1.1, collar);
@@ -207,10 +236,13 @@ vec3 hullBlock(int code, vec2 p) {
     if (!dead) {
       float flow = 0.5 + 0.5 * sin(R * 60.0 + uTime * 0.6); // energy running inward along the pipes
       float pulse = 0.8 + 0.2 * sin(uTime * 0.4);
-      float beam = barrel * (1.0 - smoothstep(0.0, 0.035, abs(rq.y))) * (0.45 + 0.55 * sin(rq.x * 45.0 - uTime * 1.5));
+      float en = 1.0 + 2.5 * charge + 2.0 * fired;
+      float beam = chan * (0.5 + 0.5 * (1.0 - smoothstep(0.0, 0.026, ay))) * (0.55 + 0.25 * smoothstep(0.3, 1.0, sin(bx * 40.0 - uTime * 1.6))) * en
+                 + gap * (0.6 + 0.4 * (1.0 - smoothstep(0.0, 0.022, ay))) * en;
+      float lamps = breech * (1.0 - smoothstep(0.006, 0.012, length(vec2(bu - 0.018, ay - 0.075))));
       glow = (vec3(0.25, 0.55, 1.0) * min(pipeCore, 1.0) * (0.4 + 0.6 * flow)
-           + vec3(0.3, 0.65, 1.0) * (beam + coils * 0.35) * (1.0 - muzzle)
-           + vec3(0.5, 0.8, 1.0) * muzzle * step(abs(rq.y), 0.05) * 0.8
+           + vec3(0.3, 0.65, 1.0) * beam + vec3(0.25, 0.55, 1.0) * seam * 0.3 * (1.0 + 2.0 * charge)
+           + vec3(0.45, 0.85, 1.0) * lamps * (0.6 + 0.4 * sin(uTime * 0.5))
            + orb * mix(vec3(0.2, 0.5, 1.0), vec3(0.9, 0.97, 1.0), 1.0 - smoothstep(0.0, 0.13, R)) * pulse
            + vec3(0.15, 0.35, 0.9) * (1.0 - smoothstep(0.15, 0.3, R)) * 0.4) * d;
       lit *= 1.0 - orb * d * 0.8;
@@ -393,7 +425,7 @@ void main(){
   }
 }`;
 
-const AIM_OUT = { a: 0, since: 0 };
+const AIM_OUT = { a: 0, since: 0, next: 0 };
 const FLAK_RIPPLE = [1.4, 0, 2.1, 0.7]; // ticks after the shot that each flak barrel fires (the shader's recoil uses the same)
 const DEAD_BIT = 1048576; // debris flag in a detailed block's shape code (var takes bits 8-19: a 10x10 unit's place + 100 × direction)
 const STRIDE = 7; // x, y, angle, sx, sy, shape, rgba(u32)
@@ -727,6 +759,8 @@ export class Renderer {
           for (let k = 0; k < G.length; k++) {
             model.aimAt(src, k, at, AIM_OUT);
             aimA[k] = AIM_OUT.a; aimS[k] = e.kind === 0 ? Math.min(AIM_OUT.since, 99) : 99;
+            // a plasma barrel charging up (the 0.6 s before it fires) gets minus the ticks left
+            if (e.kind === 0 && G[k].type === BT.LANCE && AIM_OUT.next < 6 && AIM_OUT.since >= 12) aimS[k] = -Math.max(AIM_OUT.next, 0.01);
           }
         }
         for (let i = 0; i < lx.length; i++) {

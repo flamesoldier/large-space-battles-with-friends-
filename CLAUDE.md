@@ -676,6 +676,14 @@ Weapons (numbers in `blocks.js`):
     would decode as garbage. Not seen on a computer; a possible cause of "jumbled" big weapons on a phone.
   - Test in `tools/test-designer.mjs` (every flak and plasma shot traced to its turret, the turret points along each
     shot as it fires and rests before the first). Replay sent: "Turning turrets".
+  - **Plasma barrel redrawn (owner, same day: "make the plasma barrel look a bit more professional, currently it's just
+    a few white blocks")**: gunmetal whatever the side's colour (`col` mixed to grey on the barrel parts): a bevelled
+    breech block at the orb's collar with a seam and two blue status lamps, a tapering accelerator of two shaded
+    half-cylinder rails wound with raised coil bands (blue seams between them) round an open dark channel with blue
+    energy pulsing out along it, a muzzle collar and two tapering focusing prongs with the glow between them. It
+    **charges up**: for the 0.6 s before a shot `vSize.y` is minus the ticks left (`aimAt` now also gives `out.next`;
+    plasma only, so flak's ripple is untouched) and the channel brightens, and it stays bright ~1 s after firing.
+    Replay sent: "Plasma barrel".
 - **Cannon rework and auto gun (owner, 20 Nov 2026: "more like a cannon and less like a machine gun")**. Where
   the numbers above disagree, these win:
   - **Cannon**: one explosive shell every **10 s** doing **500** (was 100 every 2 s; same damage per second).
