@@ -514,6 +514,27 @@ Weapons (numbers in `blocks.js`):
   hull lost, still routs them. III with 40: old 12–29% hull lost, new 39–57%; III with 20: old 31–98%, new
   34–100%; II with 20 is destroyed either way (as with none). Tried too: n^0.75 (80 gens: 10–30% lost) and 90%
   per generator (cap 1,000/s; 48–98%). Ships with 2 generators: 200 → 180/s.
+- **Shield pool and refill both taper, 21 Nov 2026 (owner: "balance recharge rates of shields to be cost effective and
+  balanced from 1 to 100+ shields on one ship"; chose option B: "start with a bigger shield amount and recharge and each
+  additional shield adds less")**, on `v2-dev`, not live. Where the shield lines above disagree, this wins:
+  `shieldCap(n)` = `SHIELD.capacity` 7,500 × n^`capExp` 0.65 and `shieldRegen(n)` = `SHIELD.regen` 150 × n^`regenExp`
+  0.6 (both rounded; `SHIELD.stack` is gone): pool 7,500 / 11,769 / 33,501 (10) / 149,645 (100) / ~235k (200), refill
+  150 / 227 / 597 / 2,377 / 3,603 a second. The sim counts working generators (`shieldLost()` in `battle.js`, used by
+  `refit` and `popShield`) instead of dividing the pool by 5,000. Finding first shown to the owner: under the old rule
+  (5,000 each in full, refill capped at 500/s) **big stacks were the best value, not the worst**: the full-stacking pool
+  made a leviathan with 25, a colossus with 60–100 or an Aegis with 200 lose nothing to an equal-value fleet, whatever
+  the refill, while 1–2 generators on a battleship/titan barely helped (focus fire drains 5,000 in ~15 s). Measured
+  (`/tmp`-style `sh.mjs`: n generators buried in generated battleship/titan/dreadnought/leviathan/colossus (`makeDesign(cls,
+  11)`, 6/4/3/2/1 copies) and Aegis I (as a defence), ≥ 14 apart, vs `makeTestScenario`'s equal-value mixed fleet, 15-min
+  limit, 4 seeds; score gain over the same ship with no generators, enemy paid for them): old → new: battleship 1 gen +0.12
+  → +0.51, titan 2 −0.06 → −0.04, dreadnought 4 +0.27 → +0.36, dreadnought 7 +0.38 → +0.58, leviathan 10 +0.52 → +0.35,
+  leviathan 18 +0.55 → +0.55, leviathan 25 +1.27 (untouchable) → +1.12 (12% lost), colossus 30 +0.68 → +0.94, colossus 60
+  +0.94 (untouchable) → +0.65, colossus 100 +0.93 (untouchable) → +0.40, Aegis 100 +1.03 → +0.18, Aegis 200 +1.62
+  (untouchable) → +0.65. Also tried (pool, refill): linear refill and n^0.85/0.75/0.65/0.5 refill alone (stronger big
+  stacks), both n^0.7 or n^0.75, 5,000·n^0.8 + 100·n^0.65, 7,500·n^0.7 + 150·n^0.6 (colossus 60/100 still untouchable),
+  10,000·n^0.65 + 200·n^0.55 (battleship +0.90, too strong), 7,500·n^0.6 + 150·n^0.55. Single battles swing a lot
+  (outcomes are near all-or-nothing), so ±0.3 is noise. Bench 1,000 vs 1,000 identical (no shields). Designer tooltip
+  lists 1/2/10/100. Tests in `tools/test-designer.mjs`. Replay sent: "New shields: colossus with 60 generators".
 - **Shield bubbles hug the hull; shrapnel drawn right; big ships keep their shape zoomed out (15 Nov 2026,
   owner)**:
   - **Bubble = distance map** (replaces the rounded box below): `ReplayModel.shieldMap(e, t)` builds a grid

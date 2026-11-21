@@ -11,7 +11,7 @@
 //    their position at any time with a formula and nothing has to be recorded.
 //  * Everything is recorded as events + low-rate transform samples (see toReplay()).
 
-import { BT, BLOCKS, WEAPON, MULTIBLOCK, COOKOFF, FLAK_POP, SHIELD, shieldRegen, isWeapon, flakBurstValue } from '../shared/blocks.js';
+import { BT, BLOCKS, WEAPON, MULTIBLOCK, COOKOFF, FLAK_POP, SHIELD, shieldRegen, shieldCap, isWeapon, flakBurstValue } from '../shared/blocks.js';
 import { lineOfFire, updateLineOfFire, binOf, binOpen, binAngle, ARC_BINS } from '../shared/arcs.js';
 import { bayRoute } from '../shared/bayRoute.js';
 import { mulberry32 } from '../shared/rng.js';
@@ -227,7 +227,7 @@ export class Battle {
     }
     for (const w of e.weapons) this.facing(e, w);
     if (e.gens) {
-      e.shieldMax = e.gens.length * SHIELD.capacity; e.shield = e.shieldMax; e.shieldRegen = shieldRegen(e.gens.length);
+      e.shieldMax = shieldCap(e.gens.length); e.shield = e.shieldMax; e.shieldRegen = shieldRegen(e.gens.length);
       this.recShield(e);
     }
     e.track = [];
@@ -347,7 +347,7 @@ export class Battle {
       if (g.popped) continue;
       for (const c of g.cells) if (e.hp[c] <= 0) {
         g.popped = true;
-        e.shieldMax = Math.max(0, e.shieldMax - SHIELD.capacity); e.shieldRegen = shieldRegen(Math.round(e.shieldMax / SHIELD.capacity));
+        this.shieldLost(e);
         if (e.shield > e.shieldMax) e.shield = e.shieldMax;
         this.recShield(e, true); // the replay must hear of it (with no generators left nothing else records the shield, so its bubble stayed up)
         break;
@@ -2212,6 +2212,13 @@ export class Battle {
     e.shield = Math.min(s, e.shieldMax);
   }
 
+  /** One of e's generators has just been marked popped: the pool and refill drop to the working ones' values. */
+  shieldLost(e) {
+    let k = 0;
+    for (const o of e.gens) if (!o.popped) k++;
+    e.shieldMax = shieldCap(k); e.shieldRegen = shieldRegen(k);
+  }
+
   /** A shield generator lost a block: the whole unit explodes and its share of the shield is gone. */
   popShield(e, i) {
     if (!e.gens) return;
@@ -2219,7 +2226,7 @@ export class Battle {
     for (const o of e.gens) if (!o.popped && o.cells.includes(i)) { g = o; break; }
     if (!g) return;
     g.popped = true;
-    e.shieldMax = Math.max(0, e.shieldMax - SHIELD.capacity); e.shieldRegen = shieldRegen(Math.round(e.shieldMax / SHIELD.capacity));
+    this.shieldLost(e);
     if (e.shield > e.shieldMax) e.shield = e.shieldMax;
     this.recShield(e, true);
     this.killCells(e, g.cells);

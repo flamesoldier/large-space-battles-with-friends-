@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { makeDesign, CLASSES } from '../src/shared/designs.js';
 import { Battle } from '../src/sim/battle.js';
-import { BT, MULTIBLOCK, SHIELD, WEAPON, shieldRegen } from '../src/shared/blocks.js';
+import { BT, MULTIBLOCK, SHIELD, WEAPON, shieldRegen, shieldCap } from '../src/shared/blocks.js';
 import { analyzeDesign, cropDesign, encodeDesign, decodeDesign, weaponFacing } from '../src/shared/shipStats.js';
 import { binOf, binOpen, lineOfFire } from '../src/shared/arcs.js';
 import { shipyardPrice } from '../src/shared/economy.js';
@@ -409,25 +409,29 @@ assert.ok(Math.abs(sc.enemyCost - sc.budget) / sc.budget < 0.1, `budgets ${sc.en
     assert.equal(e5.shieldMax, 0, 'a cut-off generator takes its shield with it');
     assert.equal(b5.R.shV.a[n - 1], 0, 'and the replay records the shield gone');
   }
-  // Refilling adds up less with each generator (owner, 15 Nov 2026): 100, 180, 244, ..., never past 500/s,
-  // and the designer and the sim agree; losing a generator drops to the rate for the ones left.
+  // Pool and refill both add up less with each generator, but never stop growing (owner, 21 Nov 2026):
+  // the designer and the sim agree; losing a generator drops to the values for the ones left.
   {
-    assert.deepEqual([1, 2, 3].map((n) => Math.round(shieldRegen(n))), [100, 180, 244], 'refill rates for 1, 2, 3 generators');
-    assert.ok(shieldRegen(1000) <= 500 + 1e-9, 'refilling never passes 500/s');
+    assert.deepEqual([1, 2, 3, 10, 100].map(shieldCap), [7500, 11769, 15318, 33501, 149645], 'shield pool for 1, 2, 3, 10, 100 generators');
+    assert.deepEqual([1, 2, 3, 10, 100].map(shieldRegen), [150, 227, 290, 597, 2377], 'refill rates for 1, 2, 3, 10, 100 generators');
+    for (let n = 1; n < 300; n++) {
+      assert.ok(shieldCap(n + 1) > shieldCap(n) && shieldRegen(n + 1) > shieldRegen(n), `generator ${n + 1} still adds something`);
+      if (n > 1) assert.ok(shieldCap(n + 1) - shieldCap(n) <= shieldCap(n) - shieldCap(n - 1) + 1, `generator ${n + 1} adds no more pool than the one before`);
+    }
     const W = 50, H = 14, c3 = new Uint8Array(W * H).fill(BT.ARMOR);
     for (const gx of [2, 20, 38]) for (let y = 2; y < 12; y++) for (let x = gx; x < gx + 10; x++) c3[y * W + x] = BT.SHIELD;
     for (let y = 0; y < H; y++) c3[y * W + W - 1] = BT.CANNON;
     const d3 = { name: 'Three', cls: 'cruiser', w: W, h: H, cells: c3, hub: 7 * W + 15, stance: 'line' }; c3[d3.hub] = BT.HUB;
     const a3 = analyzeDesign(d3);
-    assert.equal(a3.shield, 3 * SHIELD.capacity, 'shield capacity adds up in full');
+    assert.equal(a3.shield, shieldCap(3), 'three generators give the three-generator pool');
     const b6 = new Battle({ designs: [d3], ships: [{ design: 0, team: 0, x: 0, y: 0, a: 0, fixed: true }], seed: 1, maxTime: 60 });
     const e6 = b6.ents[0];
     assert.ok(Math.abs(a3.shieldRegen - e6.shieldRegen) < 1e-9 && Math.abs(e6.shieldRegen - shieldRegen(3)) < 1e-9, `designer and sim agree on the refill rate (${a3.shieldRegen} / ${e6.shieldRegen})`);
     for (let y = 2; y < 12; y++) for (let x = 38; x < 48; x++) e6.hp[y * W + x] = 0; // cut one off
     b6.refit(e6);
-    assert.ok(Math.abs(e6.shieldRegen - shieldRegen(2)) < 1e-9, 'losing a generator drops to the two-generator rate');
+    assert.ok(Math.abs(e6.shieldRegen - shieldRegen(2)) < 1e-9 && e6.shieldMax === shieldCap(2), 'losing a generator drops to the two-generator pool and rate');
   }
-  console.log(`shields: ${SHIELD.capacity} a generator, refills ${[1, 2, 3].map((n) => Math.round(shieldRegen(n))).join('/')}/s for 1/2/3 (max ${Math.round(SHIELD.regen / (1 - SHIELD.stack))}), blocks protected, generator explodes whole`);
+  console.log(`shields: ${[1, 2, 10, 100].map(shieldCap).join('/')} pool, ${[1, 2, 10, 100].map(shieldRegen).join('/')}/s refill for 1/2/10/100 generators, blocks protected, generator explodes whole`);
 }
 
 // The ready-made Aegis fortresses in the defence designer's Start from menu: valid 150,000 cr
