@@ -555,6 +555,7 @@ export function applyColors(model, sideColors) {
   }
   return out;
 }
+const AUTO_GHOST = 2; // ticks: the drawn second tracer of each auto-gun bullet
 const FLAK_LIFE = 40; // ticks a flak burst is drawn for (its smoke lingers)
 const LANCE_CHARGE = 6, LANCE_LIFE = 16; // heavy laser: charge-up and beam life, in ticks
 const FIGHTER_DEATH = 12; // a shot-down fighter tumbles and burns out over this many ticks (1.2 s)
@@ -1054,40 +1055,45 @@ export class Renderer {
    * flash plus a few sparks kicked back off the hull. All pure functions of time (ticks).
    */
   drawTracers(S, t, vis, minW) {
+    // Each recorded bullet is drawn twice, the second AUTO_GHOST ticks behind on the same line (owner,
+    // 21 Nov 2026: half the fire rate, double the damage, but it should still look like a fast stream).
     const g = this.glow, FLASH = 1.5, HIT = 5;
     const [la, lb] = S.live(t);
     for (let q = la; q < lb; q++) {
       const i = S.liveIdx[q];
-      if (S.t0[i] > t) continue;
-      const age = t - S.t0[i], vx = S.vx[i], vy = S.vy[i];
-      const a = Math.atan2(vy, vx), c = Math.cos(a), s = Math.sin(a), sp = Math.hypot(vx, vy);
-      if (age < FLASH && vis(S.x[i], S.y[i], 6)) { // muzzle flash: a burst and a short tongue of flame forward
-        const k = 1 - age / FLASH, r = Math.max(0.7 + 1.6 * k, minW * 2);
-        g.push(S.x[i], S.y[i], 0, r, r, 1, alpha2(C.autoFlash, 0.9 * k));
-        g.push(S.x[i] + c * 1.4, S.y[i] + s * 1.4, a, 1.8 * k + 0.4, Math.max(0.55 * k, minW), 2, alpha2(C.tracerHot, k));
-      }
-      if (t > S.t1[i]) {
-        const since = t - S.t1[i];
-        if (S.hit[i] && since < HIT) {
-          const f = S.t1[i] - S.t0[i], x = S.x[i] + vx * f, y = S.y[i] + vy * f, k = 1 - since / HIT;
-          if (!vis(x, y, 8)) continue;
-          const r = Math.max(1.0 + 2.6 * (1 - k * k), minW * 2);
-          g.push(x, y, 0, r, r, 1, alpha2(C.autoHalo, 0.8 * k));
-          if (since < 1.5) g.push(x, y, 0, Math.max(1.5, minW * 2.5), Math.max(1.5, minW * 2.5), 1, alpha2(C.tracerHot, 1 - since / 1.5));
-          for (let j = 0; j < 5; j++) { // sparks thrown back off the hull, fanned out
-            const sa = a + Math.PI + (hash01(i, j) - 0.5) * 2.4, v = 0.5 + hash01(i, j + 9) * 0.9, d = v * since;
-            g.push(x + Math.cos(sa) * d, y + Math.sin(sa) * d, sa, 0.7 + v * 0.7, Math.max(0.16, minW * 0.7), 2, alpha2(C.autoSpark, k));
-          }
+      for (let k = 0; k < 2; k++) {
+        const off = k * AUTO_GHOST, t0 = S.t0[i] + off, t1 = S.t1[i] + off, hs = k * 50;
+        if (t0 > t) continue;
+        const age = t - t0, vx = S.vx[i], vy = S.vy[i];
+        const a = Math.atan2(vy, vx), c = Math.cos(a), s = Math.sin(a), sp = Math.hypot(vx, vy);
+        if (age < FLASH && vis(S.x[i], S.y[i], 6)) { // muzzle flash: a burst and a short tongue of flame forward
+          const kk = 1 - age / FLASH, r = Math.max(0.7 + 1.6 * kk, minW * 2);
+          g.push(S.x[i], S.y[i], 0, r, r, 1, alpha2(C.autoFlash, 0.9 * kk));
+          g.push(S.x[i] + c * 1.4, S.y[i] + s * 1.4, a, 1.8 * kk + 0.4, Math.max(0.55 * kk, minW), 2, alpha2(C.tracerHot, kk));
         }
-        continue;
+        if (t > t1) {
+          const since = t - t1;
+          if (S.hit[i] && since < HIT) {
+            const f = t1 - t0, x = S.x[i] + vx * f, y = S.y[i] + vy * f, kk = 1 - since / HIT;
+            if (!vis(x, y, 8)) continue;
+            const r = Math.max(1.0 + 2.6 * (1 - kk * kk), minW * 2);
+            g.push(x, y, 0, r, r, 1, alpha2(C.autoHalo, 0.8 * kk));
+            if (since < 1.5) g.push(x, y, 0, Math.max(1.5, minW * 2.5), Math.max(1.5, minW * 2.5), 1, alpha2(C.tracerHot, 1 - since / 1.5));
+            for (let j = 0; j < 5; j++) { // sparks thrown back off the hull, fanned out
+              const sa = a + Math.PI + (hash01(i, j + hs) - 0.5) * 2.4, v = 0.5 + hash01(i, j + 9 + hs) * 0.9, d = v * since;
+              g.push(x + Math.cos(sa) * d, y + Math.sin(sa) * d, sa, 0.7 + v * 0.7, Math.max(0.16, minW * 0.7), 2, alpha2(C.autoSpark, kk));
+            }
+          }
+          continue;
+        }
+        const x = S.x[i] + vx * age, y = S.y[i] + vy * age;
+        if (!vis(x, y, 10)) continue;
+        const fade = S.hit[i] ? 1 : Math.min(1, (t1 - t) / 6);
+        const len = Math.min(4.5, age * sp * 0.5 + 0.4), core = Math.min(3.2, age * sp * 0.4 + 0.3);
+        g.push(x - c * len, y - s * len, a, len, Math.max(0.6, minW * 1.6), 4, alpha2(C.autoHalo, 0.35 * fade));
+        g.push(x - c * core, y - s * core, a, core, Math.max(0.24, minW * 0.8), 4, alpha2(C.tracer, fade));
+        g.push(x, y, 0, Math.max(0.5, minW * 1.1), Math.max(0.5, minW * 1.1), 1, alpha2(C.tracerHot, fade));
       }
-      const x = S.x[i] + vx * age, y = S.y[i] + vy * age;
-      if (!vis(x, y, 10)) continue;
-      const fade = S.hit[i] ? 1 : Math.min(1, (S.t1[i] - t) / 6);
-      const len = Math.min(4.5, age * sp * 0.5 + 0.4), core = Math.min(3.2, age * sp * 0.4 + 0.3);
-      g.push(x - c * len, y - s * len, a, len, Math.max(0.6, minW * 1.6), 4, alpha2(C.autoHalo, 0.35 * fade));
-      g.push(x - c * core, y - s * core, a, core, Math.max(0.24, minW * 0.8), 4, alpha2(C.tracer, fade));
-      g.push(x, y, 0, Math.max(0.5, minW * 1.1), Math.max(0.5, minW * 1.1), 1, alpha2(C.tracerHot, fade));
     }
   }
 

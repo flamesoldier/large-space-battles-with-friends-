@@ -686,6 +686,15 @@ Weapons (numbers in `blocks.js`):
       yellow), thin hazard rim, a runway with running amber lamps to dark open doors on the exit side, a small
       grey fighter (fins, cockpit, engine glow) nose to the doors. Designer `gunGlyph` / `bayUnit` match.
     - **Third round and the new weapon looks live 20 Nov 2026** (owner: "make it live"; no patch notes, as asked).
+  - **Fourth round (owner, 21 Nov 2026: "half the fire rate double the damage but make the bullets look like
+    they're firing faster")**, on `v2-dev`, not live: **every 0.4 s, 110 damage** (same damage per second). The
+    viewer draws every recorded bullet twice, the second `AUTO_GHOST` (2) ticks behind on the same line with its
+    own muzzle flash and hit sparks (`drawTracers`), so it still looks like a bullet every 0.2 s; `LIVE_POST`
+    6 → 10 in `model.js` so the late copy's sparks aren't cut off. Measured (`/tmp`-style duel: the auto-gun
+    brawler vs the generated mixed fleet, 60k cr, 4 seeds): bullets halved (≈ 8–13k → 4–6k a battle), the brawlers
+    a little weaker (5/6/4/6 of 18 left vs 7/7/8/5; 110 overkills 45-hp frame); 712-ship mixed battle replay 8 →
+    7 MB raw. Side-gun test now uses a heavy-armour target (a small armour one died in ~10 s) and checks bullets
+    per second. Bench unchanged. Replay sent: "Auto gun: every 0.4 s, 110 damage, drawn as two tracers".
   - Measured (16×10 hull, 3 auto gun units 1,113 cr vs 8 cannons 1,317 cr, 60k cr a side, 4 seeds; score =
     enemy ships lost share − own): auto charge vs cannon line −0.06, line vs line −0.03, line vs cannon
     standoff −0.16; starting at 120 apart auto guns win (27/54 left vs 9/46). A third of bullets hit allied

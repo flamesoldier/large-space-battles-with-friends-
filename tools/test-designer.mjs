@@ -526,12 +526,14 @@ for (let k = 0; k < FORTRESSES.length; k++) {
     const [gx, gy] = side === 'back' ? [0, 6] : side === 'top' ? [6, 0] : [6, 12];
     cells[gy * w + gx] = cells[gy * w + gx + 1] = cells[(gy + 1) * w + gx] = cells[(gy + 1) * w + gx + 1] = BT.AUTO;
     const gun = { name: 'Side gun', cls: 'cruiser', w, h, cells, hub: 7 * w + 7, stance: 'line' };
-    const dm = new Uint8Array(36).fill(BT.ARMOR); dm[14] = BT.HUB; dm[20] = BT.CANNON;
-    const dummy = { name: 'Dummy', cls: 'frigate', w: 6, h: 6, cells: dm, hub: 14, stance: 'line' };
+    // A heavy-armour target that lasts the whole 20 s (a 110-damage bullet killed a small armour one in ~10 s).
+    const dm = new Uint8Array(100).fill(BT.HEAVY); dm[55] = BT.HUB; dm[59] = BT.CANNON;
+    const dummy = { name: 'Dummy', cls: 'destroyer', w: 10, h: 10, cells: dm, hub: 55, stance: 'line' };
     const b = new Battle({ designs: [gun, dummy], ships: [{ design: 0, team: 0, x: 0, y: 0, a: 0 }, { design: 1, team: 1, x: 100, y: 0, a: 0, fixed: true }], seed: 3, maxTime: 20 });
     b.run();
     const n = Array.from(b.R.shotKind.a.slice(0, b.R.shotKind.n)).filter((k) => k === 7).length;
-    assert.ok(n > 40, `an auto gun on the ${side} of a ship fires (${n} bullets in 20 s)`);
+    const secs = b.now / 10; // the dummy may die before 20 s now a bullet does 110
+    assert.ok(n > 1.5 * secs, `an auto gun on the ${side} of a ship fires (${n} bullets in ${secs} s)`);
   }
 }
 
