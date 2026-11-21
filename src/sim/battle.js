@@ -50,6 +50,7 @@ export const MAX_TEAMS = 16; // sides in one battle (players plus militia); fr[]
 // Debris stays hittable and solid for the whole battle (owner: debris is part of the fight).
 // The retire mechanism is kept as a cap that can be set if very long battles ever get slow.
 const CHUNK_RETIRE_TICKS = Infinity;
+const FLAK_STAND = [2, 6]; // a burst goes off this many blocks short of the hull it was walked to (fireFlak)
 const FLAK_PICKS = 16, FLAK_RECENT = 30, FLAK_CROWD_R = 40, FLAK_CROWD_EVERY = 10; // flak: ships looked at per burst, ticks a target counts as just hit, crowd radius beyond its hull, crowd recount (ticks)
 const K_KINETIC = 0, K_SHELL = 1, K_MISSILE = 2, K_PLASMA = 3, K_FIGHTER = 4, K_FLAK = 5, K_FRAG = 6, K_AUTO = 7; // K_AUTO: auto gun bullets (20 Nov 2026), handled like shells
 // Fighters (owner, Nov 2026): launched by fighter bays, kept in their own list (this.Fi), not P.
@@ -1250,17 +1251,32 @@ export class Battle {
       tg = o; bs = sc; ax = px; ay = py;
     }
     if (tg) {
+      // Where to burst. Start from a spot between it and its nearest neighbour (or, alone, a spot
+      // toward the gun from the point aimed at), then walk from there toward one of its real blocks
+      // and burst just short of the first hull met (owner, 22 Nov 2026: bursts placed by the
+      // target's size often went off in empty space next to big or long ships, 37% of them
+      // against titans; now they land FLAK_STAND blocks off a hull).
       const nb = tg.crowdN >= 0 ? this.byId[tg.crowdN] : null;
+      let sx, sy;
       if (nb && !nb.dead) {
         const u = 0.3 + 0.4 * this.rng();
-        ax = tg.x + (nb.x - tg.x) * u; ay = tg.y + (nb.y - tg.y) * u;
+        sx = tg.x + (nb.x - tg.x) * u; sy = tg.y + (nb.y - tg.y) * u;
       } else {
-        // Alone: just off its hull on the gun's side.
-        const d = Math.hypot(ax - wx, ay - wy) || 1, off = Math.min(tg.radius * 0.8 + W.fuse, d * 0.5);
-        ax -= (ax - wx) / d * off; ay -= (ay - wy) / d * off;
+        const d = Math.hypot(ax - wx, ay - wy) || 1, off = Math.min(tg.radius + W.fuse, d * 0.5);
+        sx = ax - (ax - wx) / d * off; sy = ay - (ay - wy) / d * off;
       }
       const sc = W.scatter || 0;
-      ax += (this.rng() * 2 - 1) * sc; ay += (this.rng() * 2 - 1) * sc;
+      sx += (this.rng() * 2 - 1) * sc; sy += (this.rng() * 2 - 1) * sc;
+      const [bx, by] = this.aimPoint(tg);
+      const L = Math.hypot(bx - sx, by - sy), stand = FLAK_STAND[0] + (FLAK_STAND[1] - FLAK_STAND[0]) * this.rng();
+      ax = sx; ay = sy;
+      if (L > 0.5 && !this.blockAt(sx, sy)) {
+        const ux = (bx - sx) / L, uy = (by - sy) / L;
+        let d = Math.max(0, L - 400); // a giant: start no more than 400 blocks out
+        for (; d < L; d += 1) if (this.blockAt(sx + ux * d, sy + uy * d)) break;
+        const back = Math.max(0, d - stand);
+        ax = sx + ux * back; ay = sy + uy * back;
+      }
       tg.flakIn = this.now;
     } else {
       if (!this.fFoe[e.team]) return false;

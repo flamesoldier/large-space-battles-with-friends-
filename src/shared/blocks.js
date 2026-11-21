@@ -163,7 +163,7 @@ export const WEAPON = {
   // (see fireFlak), within `scatter` of the spot picked. The burst does `damage` to every enemy block
   // within `radius` that it can see: the first block on each line from it, no drop-off (see flakBurst).
   // Old replays still have flak shells (shot kind 5) and shrapnel shots (kind 6).
-  [BT.FLAK]: { kind: 'flak', range: 700, damage: 40, radius: 16, fragSpeed: 90, scatter: 4, cooldown: 1, fuse: 6, speed: 75, life: 14, maxLead: 4, spread: 0,
+  [BT.FLAK]: { kind: 'flak', range: 700, damage: 40, radius: 20, fragSpeed: 90, scatter: 4, cooldown: 1, fuse: 6, speed: 75, life: 14, maxLead: 4, spread: 0,
     vs: { [4]: 1, [2]: 1, [3]: 1 }, shieldMult: 0.1 }, // shields take 10% (owner, 21 Nov 2026: was 30%); damage share against frame (4), armour (2), heavy armour (3); owner, 15 Nov 2026
 };
 

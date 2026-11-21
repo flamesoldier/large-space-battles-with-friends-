@@ -652,7 +652,7 @@ Weapons (numbers in `blocks.js`):
     plasma bolt (shot kind 2) starts at its gun's centre and a flak muzzle record (explosion 10) is at its gun's centre
     with its burst (6) in the same tick, so each is matched to the turret whose centre is there then (per 20-tick window
     every turret goes into a 24-block grid as a circle covering its path; tolerance 2.5 + 2% of its distance from the
-    ship's centre). `unitPos()` also fills `d._guns` (`{ type, lx, ly, rest }`, rest = the old out-of-the-hull direction)
+    ship's centre). **Live 22 Nov 2026** (owner: "make it all live"; no patch notes). `unitPos()` also fills `d._guns` (`{ type, lx, ly, rest }`, rest = the old out-of-the-hull direction)
     and `d._gunOf`; entities get `e.gun` (turret per block) and `e.aims[g] = { t, a }` (ship-local). `aimAt(e, g, t)`:
     pure function of time; turns onto the next shot just before it (`AIM_RATE` 0.25 rad/tick, or faster if shots come
     quicker), holds, back to rest after `AIM_IDLE` 40 ticks (`AIM_RETURN` 15). Wrecks keep the aim they had when they
@@ -684,6 +684,20 @@ Weapons (numbers in `blocks.js`):
     **charges up**: for the 0.6 s before a shot `vSize.y` is minus the ticks left (`aimAt` now also gives `out.next`;
     plasma only, so flak's ripple is untouched) and the channel brightens, and it stays bright ~1 s after firing.
     Replay sent: "Plasma barrel".
+- **Flak bursts walk to the hull, radius 20 (owner, 22 Nov 2026: "flak shots doing nothing… the ships were out of the
+  range of the flak explosions… increase the damage range… really big ships might break flak?")**, **live 22 Nov 2026**
+  with the turning turrets and plasma barrel (owner: "make it all live"; no patch notes). Where the flak lines above
+  disagree, this wins. He was right: the burst was put a share of the target's size from its centre (alone: `radius ×
+  0.8 + fuse` toward the gun; crowded: 30–70% between two ships' centres), so next to big, long or far-apart ships it
+  went off in empty space. Measured (8 gunships with 2 flak + 2 plasma vs equal-value fleets, 2 seeds; bursts that hurt
+  nothing): mixed 3%, battleships 17%, titans 37%, frigates 2%. Now `fireFlak()` takes that spot only as a start,
+  walks from it a block at a time toward a random live block of the target (`aimPoint`; from at most 400 blocks out) and
+  bursts `FLAK_STAND` 2–6 blocks short of the first hull it meets (any hull; inside-a-hull handling unchanged). Empty
+  bursts → 0% for all four, 1% (10 of 854) against a generated colossus; fireFlak ~0.3 ms a burst there. **`radius` 16 →
+  20**: damage per burst 435 / 437 / 430 / 444 (old) → 480 / 638 / 551 / 418 (mixed / battleships / titans / frigates).
+  At radius 16 with the walk small-ship damage fell to ~370 (crowd bursts used to land between two small ships).
+  Designer tooltip: "a few blocks off an enemy hull". Test in `tools/test-designer.mjs` (flak vs titans and
+  dreadnoughts: < 5% empty; old code 15 of 59). Bench identical. Replay sent: "Flak bursts next to the hull".
 - **Cannon rework and auto gun (owner, 20 Nov 2026: "more like a cannon and less like a machine gun")**. Where
   the numbers above disagree, these win:
   - **Cannon**: one explosive shell every **10 s** doing **500** (was 100 every 2 s; same damage per second).

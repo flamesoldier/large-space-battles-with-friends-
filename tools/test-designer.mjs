@@ -689,5 +689,28 @@ for (let k = 0; k < FORTRESSES.length; k++) {
   }
   console.log(`  turrets: ${shots} flak and plasma shots, each fired with the turret pointing along it`);
 }
+// Flak bursts land next to a hull, whatever the target's size (owner, 22 Nov 2026: bursts placed by the
+// target's size went off in empty space beside big ships, 37% of them against titans).
+{
+  const w = 40, h = 32, cells = new Uint8Array(w * h);
+  for (let y = 4; y < h - 4; y++) for (let x = 2; x < w - 2; x++) cells[y * w + x] = BT.ARMOR;
+  for (let y = 0; y < 10; y++) for (let x = 14; x < 24; x++) { cells[y * w + x] = BT.FLAK; cells[(h - 1 - y) * w + x] = BT.FLAK; }
+  for (let y = 6; y < h - 6; y += 2) cells[y * w + 2] = BT.THRUSTER;
+  cells[16 * w + 6] = BT.HUB;
+  const d = { name: 'flakker', cls: 'battleship', w, h, cells, hub: 16 * w + 6, stance: 'line' };
+  const P = Battle.prototype, ob = P.flakBurst, od = P.damageCell;
+  let inB = false, hit = false, bursts = 0, empty = 0;
+  P.damageCell = function (...a) { if (inB) hit = true; return od.apply(this, a); };
+  P.flakBurst = function (...a) { inB = true; hit = false; const r = ob.apply(this, a); inB = false; bursts++; if (!hit) empty++; return r; };
+  try {
+    for (const cls of ['titan', 'dreadnought']) {
+      const b = new Battle({ ...makeTestScenario(d, 6, makeDesign(cls, 11), 3), seed: 3, maxTime: 120 });
+      b.run();
+    }
+  } finally { P.flakBurst = ob; P.damageCell = od; }
+  assert.ok(bursts > 20, `flak fired at the big ships (${bursts} bursts)`);
+  assert.ok(empty / bursts < 0.05, `flak bursts against titans and dreadnoughts hurt something (${empty} of ${bursts} hit nothing)`);
+  console.log(`  flak vs big ships: ${bursts - empty} of ${bursts} bursts hurt something`);
+}
 console.log(`designer stats match the sim for ${checked} generated designs; validation ok`);
 console.log(`${FORTRESSES.length} Aegis fortresses are valid 150,000 cr defences`);
