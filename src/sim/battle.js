@@ -253,6 +253,7 @@ export class Battle {
       goal: null, runPhase: 0, runA: 0, runT: 0, // flank / raid steering
       closeIn: false, sepX: 0, sepY: 0, // spacing push away from nearby ships (see `spacing`)
       fixed: false, // a defence: never moves or turns, and nothing can shove it
+      org: -1, oi: 0, oj: 0, ow: 0, // debris: the ship it first broke off and where its grid sits in that ship's grid
       still: false, // can't move under its own power: a defence, or a ship with every thruster gone (see refit)
       // Collision box: centre (local) and half size, shrunk to the live blocks as they are lost.
       bcx: 0, bcy: 0, bhw: w / 2, bhh: h / 2,
@@ -2468,7 +2469,7 @@ export class Battle {
       const e = this.ents[k];
       if (!e.dirty || e.dead) continue;
       e.dirty = false;
-      if (e.kind === CHUNK) { if (e.alive <= 0) e.dead = true; else this.fitChunkBox(e); continue; }
+      if (e.kind === CHUNK) { if (e.alive <= 0) e.dead = true; else { this.splitChunk(e); this.fitChunkBox(e); } continue; }
       if (e.hubDead || e.alive <= 0) { this.destroyShip(e); continue; }
       // Anything no longer connected to the hub breaks off as a debris chunk.
       const seen = this.flood(e, e.hub);
@@ -2493,6 +2494,32 @@ export class Battle {
     return wantList ? Array.from(q.subarray(0, tail)) : gen;
   }
 
+  /**
+   * A wreck shot through falls apart (owner, 21 Nov 2026: "some debris acted like it was together
+   * when no blocks connected it"; only ships were checked for loose pieces). The biggest connected
+   * piece stays this wreck; every other piece drifts off as a wreck of its own.
+   */
+  splitChunk(e) {
+    const n = e.types.length;
+    let first = -1;
+    for (let i = 0; i < n; i++) if (e.types[i] && e.hp[i] > 0) { first = i; break; }
+    if (first < 0) return;
+    const pieces = [this.flood(e, first, true)];
+    let have = pieces[0].length;
+    if (have === e.alive) return; // still one piece (the usual case)
+    const seen = new Uint8Array(n);
+    for (const i of pieces[0]) seen[i] = 1;
+    for (let i = first + 1; i < n && have < e.alive; i++)
+      if (e.types[i] && e.hp[i] > 0 && !seen[i]) {
+        const cells = this.flood(e, i, true);
+        for (const j of cells) seen[j] = 1;
+        pieces.push(cells); have += cells.length;
+      }
+    let keep = 0;
+    for (let k = 1; k < pieces.length; k++) if (pieces[k].length > pieces[keep].length) keep = k;
+    for (let k = 0; k < pieces.length; k++) if (k !== keep) this.makeChunk(e, pieces[k], 0.5);
+  }
+
   destroyShip(e) {
     e.dead = true;
     if (e.ward) e.ward.escortCount--;
@@ -2513,6 +2540,10 @@ export class Battle {
     const lcx = (minI + maxI + 1) / 2 - pw / 2, lcy = (minJ + maxJ + 1) / 2 - p.h / 2;
     const e = this.makeEntity(CHUNK, p.team, cw, ch, new Uint8Array(cw * ch));
     e.parent = p.id;
+    // Replays describe every wreck in the grid of the ship it first broke off (the viewer looks its
+    // blocks up there), so a piece of a wreck is recorded against that ship too.
+    const sub = p.kind === CHUNK, org = sub ? p.org : p.id, oi = sub ? p.oi : 0, oj = sub ? p.oj : 0, ow = sub ? p.ow : pw;
+    e.org = org; e.oi = oi + minI; e.oj = oj + minJ; e.ow = ow;
     let mass = 0;
     for (const idx of cells) {
       const ci = (((idx / pw) | 0) - minJ) * cw + ((idx % pw) - minI);
@@ -2521,6 +2552,7 @@ export class Battle {
       e.hp[ci] = p.hp[idx];
       e.alive++;
       p.types[idx] = 0; p.hp[idx] = 0; p.alive--;
+      if (sub) p.mass -= BLOCKS[e.types[ci]].mass;
       this.recBlockDeath(p.id, idx, 1);
     }
     e.mass = Math.max(1, mass);
@@ -2534,11 +2566,12 @@ export class Battle {
     e.vy = p.vy + (oy / od) * kick + (this.rng() - 0.5) * violence;
     e.va = ((this.rng() - 0.5) * 1.6 * violence) / Math.sqrt(cells.length);
     const R = this.R;
-    R.chParent.push(p.id); R.chT0.push(this.now);
+    if (sub) p.mass = Math.max(1, p.mass);
+    R.chParent.push(org); R.chT0.push(this.now);
     R.chX.push(e.x); R.chY.push(e.y); R.chA.push(e.a); R.chVx.push(e.vx); R.chVy.push(e.vy); R.chVa.push(e.va);
-    R.chMinI.push(minI); R.chMinJ.push(minJ); R.chW.push(cw); R.chH.push(ch);
+    R.chMinI.push(oi + minI); R.chMinJ.push(oj + minJ); R.chW.push(cw); R.chH.push(ch);
     R.chC0.push(R.chCells.n); R.chN.push(cells.length);
-    for (const idx of cells) R.chCells.push(idx);
+    for (const idx of cells) R.chCells.push(sub ? (oj + ((idx / pw) | 0)) * ow + oi + (idx % pw) : idx);
   }
 
   // ---------------------------------------------------------------- recording

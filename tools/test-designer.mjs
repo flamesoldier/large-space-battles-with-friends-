@@ -603,5 +603,33 @@ for (let k = 0; k < FORTRESSES.length; k++) {
   }
   assert.ok(compared > 1000, `live shot lists checked (${compared})`);
 }
+// A wreck shot through the middle falls apart (owner, 21 Nov 2026: debris "acted like it was together
+// when no blocks connected it"), and the replay rebuilds the new piece from the right blocks.
+{
+  const w = 15, h = 5, cells = new Uint8Array(w * h).fill(BT.ARMOR);
+  for (let j = 0; j < h; j++) { cells[j * w] = BT.THRUSTER; cells[j * w + 1] = BT.HEAVY; }
+  cells[2 * w + 14] = BT.CANNON; cells[2 * w + 7] = BT.HUB;
+  const designs = [{ name: 'bar', cls: 'destroyer', w, h, cells, hub: 2 * w + 7, stance: 'line' }, makeDesign('destroyer', 1)];
+  const b = new Battle({ designs, ships: [{ design: 0, team: 0, x: 0, y: 0, a: 0 }, { design: 1, team: 1, x: 3000, y: 0, a: Math.PI }], seed: 1, maxTime: 30 });
+  b.step();
+  const ship = b.ents[0];
+  b.damageCell(ship, ship.hub, 1e9); b.resolveDamage(); // hub gone: one wreck (every block still joined)
+  const wreck = b.ents.filter((e) => e.kind !== ship.kind);
+  assert.equal(wreck.length, 1, 'the bar breaks into one wreck');
+  const wr = wreck[0];
+  for (let j = 0; j < wr.h; j++) b.damageCell(wr, j * wr.w + 4, 1e9); // cut a column through it
+  b.resolveDamage();
+  const pieces = b.ents.filter((e) => e.kind !== ship.kind && !e.dead);
+  assert.equal(pieces.length, 2, 'the wreck cut through falls apart into two');
+  const small = pieces.find((e) => e !== wr);
+  assert.ok(small.alive < wr.alive && small.org === ship.id, 'the smaller piece breaks away, still known as part of the ship');
+  for (let k = 0; k < 20; k++) b.step();
+  const { meta, cols } = b.toReplay();
+  const m = new ReplayModel(unpackReplay(packReplay(meta, cols)));
+  const v = m.ents[small.id];
+  const want = [];
+  for (let i = 0; i < small.types.length; i++) if (small.types[i]) want.push(small.types[i]);
+  assert.deepEqual([...v.type].sort(), want.sort(), 'the replay rebuilds the new piece from the same blocks');
+}
 console.log(`designer stats match the sim for ${checked} generated designs; validation ok`);
 console.log(`${FORTRESSES.length} Aegis fortresses are valid 150,000 cr defences`);

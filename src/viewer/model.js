@@ -275,20 +275,24 @@ export class ReplayModel {
     const q = meta.evQ, dt = meta.dt, sp = meta.kineticSpeed;
     // Shells (kind 0) and heavy missiles (kind 1) fly straight from launch: every position
     // is launch point + velocity * age. Split by kind so each has a tight time window.
+    // Shots counted by kind first and listed in typed arrays (21 Nov 2026: a 20,000-ship battle with
+    // flak and auto guns has ~15 million shots; plain lists of them spent most of the load in GC).
+    const nShot = c.shotT0.length, perKind = new Int32Array(256);
+    for (let i = 0; i < nShot; i++) perKind[c.shotKind[i]]++;
     const straight = (kind) => {
-      const idx = [];
-      for (let i = 0; i < c.shotT0.length; i++) if (c.shotKind[i] === kind) idx.push(i);
+      const idx = new Int32Array(perKind[kind]);
+      for (let i = 0, k = 0; i < nShot; i++) if (c.shotKind[i] === kind) idx[k++] = i;
       const n = idx.length, spd = meta.shotSpeed[kind] * dt;
       const S = { n, t0: new Float32Array(n), t1: new Float32Array(n), x: new Float32Array(n), y: new Float32Array(n),
         vx: new Float32Array(n), vy: new Float32Array(n), hit: new Uint8Array(n), team: new Uint8Array(n), a0: new Float32Array(n), maxFlight: 0 };
-      idx.forEach((i, k) => {
-        const f = c.shotFlight[i] / 10, a = (c.shotAng[i] / 65536) * Math.PI * 2;
+      for (let k = 0; k < n; k++) {
+        const i = idx[k], f = c.shotFlight[i] / 10, a = (c.shotAng[i] / 65536) * Math.PI * 2;
         S.t0[k] = c.shotT0[i]; S.t1[k] = c.shotT0[i] + f; S.x[k] = c.shotX[i] / q; S.y[k] = c.shotY[i] / q;
         const v = c.shotSpd && c.shotSpd[i] ? (spd * c.shotSpd[i]) / 200 : spd; // shrapnel speeds vary (shotSpd, 15 Nov 2026)
         S.vx[k] = Math.cos(a) * v; S.vy[k] = Math.sin(a) * v; // units per tick
         S.hit[k] = c.shotHit[i]; S.team[k] = c.shotTeam[i];
         if (f > S.maxFlight) S.maxFlight = f;
-      });
+      }
       return S;
     };
     this.shell = liveIndex(straight(0));

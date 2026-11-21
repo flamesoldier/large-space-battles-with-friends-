@@ -797,6 +797,30 @@ Battle end:
   - Viewer debug hook: `window.battleViewer.renderer` and `.drawMs` (time to prepare the last frame).
   - Not fixed: the hot-seat page's `ReplayStore.put` reads every stored replay (`getAll`) to prune to
     80; with giant replays that's GBs (online play fetches replays from the server, so unaffected).
+  - **With the newer blocks (owner, 21 Nov 2026: "the new blocks weren't in the test"; `makeDesign` uses
+    none of flak, shields, auto guns or bays)**: `/tmp`-style `newdesigns.mjs` hand-builds an auto-gun
+    brawler (20×11, 5 auto units, charge), a carrier (30×22, 4 bays on the hull edges, cannons, standoff)
+    and a flak battleship (44×31, 2 flak, 1 shield, auto guns, lasers, line), all valid with no
+    warnings; `giant2.mjs` makes 40% of each army those (50/30/20). **4 × 5,000: 11 min compute, 3.3 GB
+    peak, full 15 min, 508 MB raw / 175 MB gzip replay** (shots 15.6M: 8.3M shrapnel pieces = 35 MB gzip,
+    6.6M auto bullets = 42 MB; block deaths 7.5M; 291k wrecks). ReplayModel builds it in Node in ~31 s at
+    ~3.4 GB rss (12 s of it GC). 4 × 2,500: 4.4 min, 1.7 GB, 82 MB gzip, opens in headless Chrome in 37 s;
+    4 × 1,000: 26 MB, 12 s, frames 150–300 ms on software GL zoomed out (auto tracers ~32 ms of it). The
+    20,000 one couldn't be checked as a 232 MB replay page. Ideas offered, not done: shrapnel as one record
+    per burst (20 pieces share t0/x/y/team), compact auto bullets, leaner viewer memory (drop raw columns
+    after decoding, per-block arrays for 291k wrecks). `straight()` in `model.js` now lists shots in typed
+    arrays (no measurable change). 6 of 43M event coords clamped in the 15-minute 20,000-ship battle
+    (stragglers far out; `EV_SPARE` could grow).
+- **Wrecks fall apart when shot through (owner, 21 Nov 2026: "some debris acted like it was together
+  when no blocks connected it")**: `resolveDamage` only looked for loose pieces on ships; a wreck that
+  lost blocks just refit its box. `splitChunk(e)` floods it; the biggest connected piece stays the wreck,
+  every other one leaves through `makeChunk(e, cells, 0.5)`. Replays describe every wreck in the grid of
+  the ship it first broke off (the viewer looks blocks up in `parent.design`), so a piece of a wreck is
+  recorded against that ship: entity fields `org` (ship id), `oi`/`oj` (its grid's place in the ship's
+  grid), `ow` (ship grid width); `chParent` = `org`, `chMinI/J` and `chCells` converted to ship-grid
+  terms. No viewer or format change, old replays unchanged. Bench 1,000 vs 1,000: battle 183 → 244 s
+  (wreck pieces spread and block more shots), survivors 211:83 → 162:61, debris pieces 6.5k → 11.9k,
+  6.8 ms a tick (was 7.4), replay 2.66 → 3.28 MB gzip. Test in `tools/test-designer.mjs` (fails with it off).
 - The demo page re-runs the sim in the browser, so results differ slightly from Node
   (`Math.sin`/`cos` aren't identical across engines). The real game records replays on the
   server, so that's fine.
