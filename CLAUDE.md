@@ -811,7 +811,7 @@ Battle end:
     after decoding, per-block arrays for 291k wrecks). `straight()` in `model.js` now lists shots in typed
     arrays (no measurable change). 6 of 43M event coords clamped in the 15-minute 20,000-ship battle
     (stragglers far out; `EV_SPARE` could grow).
-- **Wrecks fall apart when shot through (owner, 21 Nov 2026: "some debris acted like it was together
+- **Wrecks fall apart when shot through (live 21 Nov 2026, no patch notes; owner, 21 Nov 2026: "some debris acted like it was together
   when no blocks connected it")**: `resolveDamage` only looked for loose pieces on ships; a wreck that
   lost blocks just refit its box. `splitChunk(e)` floods it; the biggest connected piece stays the wreck,
   every other one leaves through `makeChunk(e, cells, 0.5)`. Replays describe every wreck in the grid of
