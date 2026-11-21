@@ -767,7 +767,7 @@ Battle end:
   replay" for everyone (11 Nov 2026; fixed in the viewer, so old replays open too). Collect big
   results in typed arrays sized up front (sparks are now one `Float32Array`), and the viewer now
   shows "This replay couldn't be opened" with the error instead of hanging.
-- **Giant battles (owner, 21 Nov 2026: "the most epic and massive battles imaginable"; memory is no
+- **Giant battles (owner, 21 Nov 2026: "the most epic and massive battles imaginable"; **live 21 Nov 2026**, no patch notes; memory is no
   worry, Railway allows 8 GB and the biggest battle so far used ~800 MB).** Stress tests (`/tmp`-style
   `giant.mjs`: generated fleets through `makeBattleScenario` with camps round the world, all at war,
   like the worker): 4,000 ships 14 s compute / 330 MB; **20,000 ships (4 × 5,000) 187 s / 1.6 GB peak,
