@@ -545,6 +545,11 @@ Weapons (numbers in `blocks.js`):
   all 4 again: it sits on the edge, earlier runs were split), Aegis 100 +0.18 → +0.11, Aegis 200 +0.65 → +0.26. Designer
   tooltip says it. Test in `tools/test-designer.mjs`. **Live 21 Nov 2026 together with the taper below** (owner: "if your
   happy with it make it live"; no patch notes).
+- **No bubble while a shield is down (owner, 22 Nov 2026: "make it so the shield disappears when it's not active")**:
+  `shieldAt()` in `model.js` smoothed between records, so from the 0 record to the 25% one it drew the bubble
+  growing back in while the shield was really off. It no longer interpolates up from 0 (popping ring, then
+  nothing, then the bubble at 25%). Viewer only, so old replays get it too. Test in `tools/test-designer.mjs`
+  (fails with the old line). **Live 22 Nov 2026**, no patch notes.
 - **Shield bubbles hug the hull; shrapnel drawn right; big ships keep their shape zoomed out (15 Nov 2026,
   owner)**:
   - **Bubble = distance map** (replaces the rounded box below): `ReplayModel.shieldMap(e, t)` builds a grid

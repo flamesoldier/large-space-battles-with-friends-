@@ -134,7 +134,8 @@ export class ReplayModel {
     const k = lo - 1;
     if (k < a) return out;
     let v = V[k];
-    if (lo < b && V[lo] > v && T[lo] > T[k]) v += ((V[lo] - v) * (t - T[k])) / (T[lo] - T[k]); // refilling: smooth
+    // Refilling: smooth. Not up from 0: a knocked-down shield is off until it comes back at 25% (owner, 22 Nov 2026).
+    if (v > 0 && lo < b && V[lo] > v && T[lo] > T[k]) v += ((V[lo] - v) * (t - T[k])) / (T[lo] - T[k]);
     out.v = v;
     for (let j = k; j > a && T[j] >= t - 5; j--) if (V[j - 1] > V[j]) out.hit += V[j - 1] - V[j];
     if (V[k] === 0 && k > a && V[k - 1] > 0) out.down = t - T[k];

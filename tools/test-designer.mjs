@@ -448,6 +448,10 @@ assert.ok(Math.abs(sc.enemyCost - sc.budget) / sc.budget < 0.1, `budgets ${sc.en
     assert.equal(e.hp[7 * W + 24], hp - 30, 'hits go straight to the blocks while it is off');
     for (let k = 0; k < 4; k++) b.step();
     assert.ok(!e.shDown && e.shield >= SHIELD.restart * e.shieldMax - 1e-6 && e.shield < SHIELD.restart * e.shieldMax + e.shieldRegen, `it comes back at ${Math.round(SHIELD.restart * 100)}% (${Math.round(e.shield)} of ${e.shieldMax})`);
+    // The replay viewer shows no bubble while it's off (it used to fade it in from 0), and a 25% bubble after.
+    const back = b.now, mv = new ReplayModel(unpackReplay(packReplay(b.toReplay().meta, b.toReplay().cols))), out = { v: 0, hit: 0, down: -1 };
+    for (const t of [30, Math.round(back / 2), back - 3]) assert.equal(mv.shieldAt(mv.ents[0], t, out).v, 0, `no shield drawn while it is down (tick ${t})`);
+    assert.ok(mv.shieldAt(mv.ents[0], back + 1, out).v > 0.2, 'the bubble is back once the shield is');
   }
   console.log(`shields: ${[1, 2, 10, 100].map(shieldCap).join('/')} pool, ${[1, 2, 10, 100].map(shieldRegen).join('/')}/s refill for 1/2/10/100 generators, blocks protected, generator explodes whole`);
 }
