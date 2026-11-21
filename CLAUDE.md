@@ -589,6 +589,19 @@ Weapons (numbers in `blocks.js`):
   and half exposed guns/thrusters/plasma, so a skin can't cover those. 4 × 1,000 mixed, 5 min: 49 s compute (live 71),
   50 MB raw / 17 MB gzip. Test in `tools/test-designer.mjs` (heavy skin takes the burst, nothing inside touched; bursts
   about every second). Replay sent: "Flak every second".
+- **Flak, third round (owner, 21 Nov 2026: "explosions then shrapnel that we cant see hits ships… does 40 damage to the
+  first block in its explosion radius so all blocks block all damage but no damage drop-off… less damage to shields
+  but if a shielded ship is hit heaps of times… may have to reduce it to 10%")**, on `v2-dev`, not live. Where the
+  flak lines above disagree, these win: `flakBurst` gives **a flat `damage` (40) to every enemy block within `radius`
+  (16) that the burst can see**: `flakHidden(e, gx, gy, i, j, d)` (half-block steps from the block back to the burst)
+  skips any block with **any** live block of that ship between it and the burst; no drop-off; fighters in the radius
+  take 40 flat. `FLAK_SHADE`/`flakReach` are gone. **`shieldMult` 0.1** (was 0.3). `flakBurstValue` = damage × radius
+  × 0.5 (≈ measured 320 a burst). Measured: backline test ~173 of 222 boats killed (half gone at ~56 s), flak side
+  keeps 6/6 battleships; vs 19 generated battleships 2–3 left; repeated bursts 4 blocks off one side of a 24×12 hull,
+  first damage inside after 2 bursts (frame skin), 3 (armour, 110 hp), 10 (heavy armour, 240 hp); shield drain per
+  burst on a one-generator ship (5,000, refills 100/s) 121 at 30% → **40 at 10%**: at 30% 4 flak guns broke it in 13 s,
+  at 10% 1–3 guns never do, 4 take 82 s, 10 take 16 s. Bench identical. Tests unchanged (the heavy-skin test still
+  holds: skin takes the burst, nothing inside touched). Replay sent: "Flak: 40 to every block it can see".
 - **Cannon rework and auto gun (owner, 20 Nov 2026: "more like a cannon and less like a machine gun")**. Where
   the numbers above disagree, these win:
   - **Cannon**: one explosive shell every **10 s** doing **500** (was 100 every 2 s; same damage per second).

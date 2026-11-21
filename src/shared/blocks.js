@@ -35,11 +35,11 @@ export const MULTIBLOCK = {
 // blocks on armour and frame and a fair share of its credits on the few guns that do the work.
 // These are the only place prices live; the designer, shipyards and fleets all read them.
 /**
- * Rough damage one flak burst does among small ships (measured 21 Nov 2026: ~460 a burst at peak 40,
- * radius 16, against a swarm of small boats), for firepower figures: the designer's damage/s and the
- * way ships turn to bring their guns to bear.
+ * Rough damage one flak burst does among small ships (measured 21 Nov 2026: ~320 a burst at 40 a
+ * block, radius 16, against a swarm of small boats), for firepower figures: the designer's damage/s
+ * and the way ships turn to bring their guns to bear.
  */
-export const flakBurstValue = (W) => W.damage * W.radius * 0.7;
+export const flakBurstValue = (W) => W.damage * W.radius * 0.5;
 
 export const BLOCKS = {
   [BT.HUB]: { name: 'Hub', hp: 60, mass: 4, cost: 40 }, // fragile on purpose (owner): a hit hub and the ship falls apart
@@ -152,11 +152,11 @@ export const WEAPON = {
   // ships with no primary projectile… take out large quantities of weak back line ships"). A 10x10 gun
   // with long range. Every second (`cooldown` ±20%; owner, 21 Nov 2026, was 2-3 s) a burst goes off at once, no shell, anywhere within
   // `range` it can bear on: in open space between lightly armoured enemy ships packed close together
-  // (see fireFlak), within `scatter` of the spot picked. The burst hurts every enemy block within
-  // `radius`: `damage` at the centre, falling off in a straight line to 0 at the edge (see flakBurst).
+  // (see fireFlak), within `scatter` of the spot picked. The burst does `damage` to every enemy block
+  // within `radius` that it can see: the first block on each line from it, no drop-off (see flakBurst).
   // Old replays still have flak shells (shot kind 5) and shrapnel shots (kind 6).
   [BT.FLAK]: { kind: 'flak', range: 700, damage: 40, radius: 16, fragSpeed: 90, scatter: 4, cooldown: 1, fuse: 6, speed: 75, life: 14, maxLead: 4, spread: 0,
-    vs: { [4]: 1, [2]: 1, [3]: 1 }, shieldMult: 0.3 }, // damage 30 a piece (owner, 15 Nov 2026: was 60); shrapnel damage share against frame (4), armour (2), heavy armour (3); owner, 15 Nov 2026
+    vs: { [4]: 1, [2]: 1, [3]: 1 }, shieldMult: 0.1 }, // shields take 10% (owner, 21 Nov 2026: was 30%); damage share against frame (4), armour (2), heavy armour (3); owner, 15 Nov 2026
 };
 
 // Firing arcs: every weapon can fire in any direction where its shot wouldn't pass through its
