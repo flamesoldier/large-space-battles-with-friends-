@@ -265,7 +265,7 @@ export class Battle {
       face: null, faceMax: 0, faceIn: null, faceInMax: 0, // faceIn: face with the arc edges trimmed (holdFacing); firepower that bears on a target at each of the 64 directions round the ship (see refit / holdFacing)
       worth: 0, // credit value of the ship's design (rout check)
       light: 0, flakIn: -999, crowd: 0, crowdT: -999, crowdN: -1, // flak: how lightly armoured it is for its guns (see refit), tick a flak burst last went for it, enemy ships packed round it (counted at crowdT) and its nearest neighbour's id
-      gens: null, shield: 0, shieldMax: 0, shieldRegen: 0, shQ: -1, shT: -1000, // shield generators and the ship's shield pool (see SHIELD)
+      gens: null, shield: 0, shieldMax: 0, shieldRegen: 0, shDown: false, shCharge: 0, shQ: -1, shT: -1000, // shield generators and the ship's shield pool (see SHIELD)
     };
     this.byId.push(e);
     this.ents.push(e);
@@ -461,7 +461,13 @@ export class Battle {
       if (e.dead) continue;
       if (e.kind === SHIP) {
         this.think(e); this.move(e);
-        if (e.shieldMax > 0) { if (e.shield < e.shieldMax) e.shield = Math.min(e.shieldMax, e.shield + e.shieldRegen * DT); this.recShield(e); }
+        if (e.shieldMax > 0) {
+          if (e.shDown) { // knocked down: refills out of sight until it has SHIELD.restart of the pool, then comes back
+            e.shCharge += e.shieldRegen * DT;
+            if (e.shCharge >= SHIELD.restart * e.shieldMax) { e.shield = Math.min(e.shieldMax, e.shCharge); e.shDown = false; e.shCharge = 0; }
+          } else if (e.shield < e.shieldMax) e.shield = Math.min(e.shieldMax, e.shield + e.shieldRegen * DT);
+          this.recShield(e);
+        }
       }
       else {
         e.x += e.vx * DT; e.y += e.vy * DT; e.a += e.va * DT;
@@ -2181,6 +2187,7 @@ export class Battle {
     if (s < e.shield) { e.shield -= s; return 0; }
     const left = dmg - e.shield / m;
     e.shield = 0;
+    e.shDown = true; e.shCharge = 0; // stays off until it has refilled SHIELD.restart of its pool
     return left;
   }
 

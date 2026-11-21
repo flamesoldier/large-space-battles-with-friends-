@@ -431,6 +431,24 @@ assert.ok(Math.abs(sc.enemyCost - sc.budget) / sc.budget < 0.1, `budgets ${sc.en
     b6.refit(e6);
     assert.ok(Math.abs(e6.shieldRegen - shieldRegen(2)) < 1e-9 && e6.shieldMax === shieldCap(2), 'losing a generator drops to the two-generator pool and rate');
   }
+  // A shield knocked down stays off until it has refilled SHIELD.restart (25%) of its pool (owner, 21 Nov 2026).
+  {
+    const W = 30, H = 14, c = new Uint8Array(W * H).fill(BT.ARMOR);
+    for (let y = 2; y < 12; y++) for (let x = 2; x < 12; x++) c[y * W + x] = BT.SHIELD;
+    for (let y = 0; y < H; y++) c[y * W + W - 1] = BT.CANNON;
+    const d = { name: 'Restart', cls: 'cruiser', w: W, h: H, cells: c, hub: 7 * W + 20, stance: 'line' }; c[d.hub] = BT.HUB;
+    const b = new Battle({ designs: [d], ships: [{ design: 0, team: 0, x: 0, y: 0, a: 0, fixed: true }, { design: 0, team: 1, x: 3000, y: 0, a: Math.PI, fixed: true }], seed: 1, maxTime: 60 });
+    const e = b.ents[0], cell = 7 * W + 25;
+    b.damageCell(e, cell, e.shieldMax + 50);
+    assert.ok(e.shield === 0 && e.shDown && e.hp[cell] < 110, 'a hit bigger than the shield knocks it down and the rest goes through');
+    const need = Math.ceil((SHIELD.restart * e.shieldMax) / (e.shieldRegen * 0.1));
+    for (let k = 0; k < need - 2; k++) b.step();
+    assert.equal(e.shield, 0, 'it stays off while it refills');
+    const hp = e.hp[7 * W + 24]; b.damageCell(e, 7 * W + 24, 30);
+    assert.equal(e.hp[7 * W + 24], hp - 30, 'hits go straight to the blocks while it is off');
+    for (let k = 0; k < 4; k++) b.step();
+    assert.ok(!e.shDown && e.shield >= SHIELD.restart * e.shieldMax - 1e-6 && e.shield < SHIELD.restart * e.shieldMax + e.shieldRegen, `it comes back at ${Math.round(SHIELD.restart * 100)}% (${Math.round(e.shield)} of ${e.shieldMax})`);
+  }
   console.log(`shields: ${[1, 2, 10, 100].map(shieldCap).join('/')} pool, ${[1, 2, 10, 100].map(shieldRegen).join('/')}/s refill for 1/2/10/100 generators, blocks protected, generator explodes whole`);
 }
 

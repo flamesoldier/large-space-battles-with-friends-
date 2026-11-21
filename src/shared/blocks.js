@@ -75,7 +75,10 @@ export const FLAK_POP = { after: 25, radius: 8, damage: 30 };
 // absorbed goes through. Flak shrapnel drains it at WEAPON[BT.FLAK].shieldMult. If any block of a
 // generator dies the whole unit explodes (a blast of `radius` / peak `damage` from its centre, hurting
 // anyone, own ship included: less than a plasma cook-off, but enough to set off a generator close by).
-export const SHIELD = { capacity: 7500, capExp: 0.65, regen: 150, regenExp: 0.6, radius: 20, damage: 200 };
+export const SHIELD = { capacity: 7500, capExp: 0.65, regen: 150, regenExp: 0.6, restart: 0.25, radius: 20, damage: 200 };
+// restart (owner, 21 Nov 2026: "it looks a little weird with the shield continually popping on and off"): a shield
+// knocked down to 0 stays off, refilling out of sight, until it has `restart` (25%) of its full pool, then comes
+// back with that much.
 // Shield pool and refill of a ship with n working generators (owner, 21 Nov 2026: "start with a bigger shield
 // amount and recharge and each additional shield adds less"). Both grow as a power of n, so every extra
 // generator still adds something but less than the one before, and neither ever stops growing:

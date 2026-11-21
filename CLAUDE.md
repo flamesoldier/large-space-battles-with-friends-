@@ -516,7 +516,7 @@ Weapons (numbers in `blocks.js`):
   per generator (cap 1,000/s; 48–98%). Ships with 2 generators: 200 → 180/s.
 - **Shield pool and refill both taper, 21 Nov 2026 (owner: "balance recharge rates of shields to be cost effective and
   balanced from 1 to 100+ shields on one ship"; chose option B: "start with a bigger shield amount and recharge and each
-  additional shield adds less")**, on `v2-dev`, not live. Where the shield lines above disagree, this wins:
+  additional shield adds less")**, live 21 Nov 2026. Where the shield lines above disagree, this wins:
   `shieldCap(n)` = `SHIELD.capacity` 7,500 × n^`capExp` 0.65 and `shieldRegen(n)` = `SHIELD.regen` 150 × n^`regenExp`
   0.6 (both rounded; `SHIELD.stack` is gone): pool 7,500 / 11,769 / 33,501 (10) / 149,645 (100) / ~235k (200), refill
   150 / 227 / 597 / 2,377 / 3,603 a second. The sim counts working generators (`shieldLost()` in `battle.js`, used by
@@ -534,7 +534,17 @@ Weapons (numbers in `blocks.js`):
   stacks), both n^0.7 or n^0.75, 5,000·n^0.8 + 100·n^0.65, 7,500·n^0.7 + 150·n^0.6 (colossus 60/100 still untouchable),
   10,000·n^0.65 + 200·n^0.55 (battleship +0.90, too strong), 7,500·n^0.6 + 150·n^0.55. Single battles swing a lot
   (outcomes are near all-or-nothing), so ±0.3 is noise. Bench 1,000 vs 1,000 identical (no shields). Designer tooltip
-  lists 1/2/10/100. Tests in `tools/test-designer.mjs`. Replay sent: "New shields: colossus with 60 generators".
+  lists 1/2/10/100. Tests in `tools/test-designer.mjs`. Replay sent: "New shields: colossus with 60 generators". **Live 21 Nov 2026.**
+- **Shields restart at 25%, 21 Nov 2026 (owner: "it looks a little weird with the shield continually popping on and
+  off what if it needs to regen 25% of the shield pool before it reactivates")**: a hit that empties the pool sets
+  `e.shDown` (`shieldAbsorb`); while down the refill goes into `e.shCharge` and the shield stays 0 (absorbs nothing, the
+  replay keeps the bubble off), until `SHIELD.restart` (0.25) × `shieldMax`, then it comes back with that much. Entity
+  fields declared in `makeEntity`. Same colossus-60 battle: shield off/on 306 → 3 times. Measured (same harness, 4 seeds,
+  gain vs no generators, before → after): battleship 1 +0.51 → +0.46, titan 2 −0.04 → +0.11, dreadnought 7 +0.58 → +0.26,
+  leviathan 10 +0.35 → +0.38, leviathan 25 +1.12 → +1.13, colossus 60 +0.65 → +0.95 and 100 +0.40 → +0.94 (untouchable in
+  all 4 again: it sits on the edge, earlier runs were split), Aegis 100 +0.18 → +0.11, Aegis 200 +0.65 → +0.26. Designer
+  tooltip says it. Test in `tools/test-designer.mjs`. **Live 21 Nov 2026 together with the taper below** (owner: "if your
+  happy with it make it live"; no patch notes).
 - **Shield bubbles hug the hull; shrapnel drawn right; big ships keep their shape zoomed out (15 Nov 2026,
   owner)**:
   - **Bubble = distance map** (replaces the rounded box below): `ReplayModel.shieldMap(e, t)` builds a grid
