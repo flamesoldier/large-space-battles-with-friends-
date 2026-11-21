@@ -556,7 +556,7 @@ function fighters(c, q) {
  * [from, to) range in S.liveIdx. Each shot is listed from LIVE_PRE ticks before it fires (plasma's
  * charge-up glow) to LIVE_POST after it ends (impact sparks), in firing order within a slice.
  */
-export const LIVE_SLICE = 16, LIVE_PRE = 16, LIVE_POST = 10; // POST covers hit sparks (5 ticks) plus the auto gun's drawn second tracer (2)
+export const LIVE_SLICE = 16, LIVE_PRE = 16, LIVE_POST = 6;
 function liveIndex(S) {
   const n = S.n, a = new Int32Array(n), b = new Int32Array(n);
   let last = 0;
