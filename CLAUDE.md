@@ -541,7 +541,7 @@ Weapons (numbers in `blocks.js`):
     block dies (pure function of time; cached per entity and k); `lodColours()` = average of the blocks'
     palette colours mixed 45% toward the side's colour (wrecks: none). Quads drawn ≈ screen pixels the
     ships cover, whatever the battle size. No sim, replay or server change.
-- **Flak rework: bursts, no shell, no shrapnel (owner, 21 Nov 2026: "fire once every 2-3 seconds and at random
+- **Flak rework: bursts, no shell, no shrapnel (live 21 Nov 2026; owner, 21 Nov 2026: "fire once every 2-3 seconds and at random
   space between heavy concentrations of enemy ships with no primary projectile just fire then flak burst… random
   bursts going throughout the battlefield for looks and for practical purposes its meant to take out large
   quantities of weak back line (thrusters and a weapon) ships that just don't die because other weapons can't reach
@@ -602,6 +602,12 @@ Weapons (numbers in `blocks.js`):
   burst on a one-generator ship (5,000, refills 100/s) 121 at 30% → **40 at 10%**: at 30% 4 flak guns broke it in 13 s,
   at 10% 1–3 guns never do, 4 take 82 s, 10 take 16 s. Bench identical. Tests unchanged (the heavy-skin test still
   holds: skin takes the burst, nothing inside touched). Replay sent: "Flak: 40 to every block it can see".
+- **Flak firing animation, and the whole flak rework live 21 Nov 2026** (owner: "there is no projectile for the flak
+  weapons it doesn't look like they're firing… give them a better firing animation and then make it live"; no patch
+  notes, as asked). Viewer only: `drawFlakFire()` for explosion size 10 (recorded at the gun right before its burst,
+  size 6, same tick; it looks ahead up to 40 records at that tick for the size 6 to aim at): glow at the gun, a
+  white-hot flash 6 blocks out toward the burst (the barrels' end), a cone of 5 fire jets (middle 12 blocks), 8 sparks
+  flung ahead, a smoke puff drifting forward; ~1 s. All three flak rounds above went live with it.
 - **Cannon rework and auto gun (owner, 20 Nov 2026: "more like a cannon and less like a machine gun")**. Where
   the numbers above disagree, these win:
   - **Cannon**: one explosive shell every **10 s** doing **500** (was 100 every 2 s; same damage per second).

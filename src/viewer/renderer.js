@@ -847,14 +847,7 @@ export class Renderer {
     for (let i = lowerBound(E.t, t - FLAK_LIFE); i < E.n && E.t[i] <= t; i++) {
       if (E.s[i] === 6) { this._hasFrag = !!(m.frag && m.frag.n > 0); this.drawFlakBurst(E, i, t, vis, minW); continue; }
       if (E.s[i] === 9) { this.drawFlakHit(E, i, t, vis, minW); continue; }
-      if (E.s[i] === 10) { // flak gun firing (21 Nov 2026: no shell any more, just the flash and the burst)
-        const age = t - E.t[i];
-        if (age > 3 || !vis(E.x[i], E.y[i], 10)) continue;
-        const k = 1 - age / 3, r = 3 + age * 2;
-        g.push(E.x[i], E.y[i], 0, r * 1.6, r * 1.6, 1, alpha2(C.flGlow, 0.6 * k));
-        g.push(E.x[i], E.y[i], 0, Math.max(r * 0.6, minW * 2), Math.max(r * 0.6, minW * 2), 1, alpha2(C.flFlash, k));
-        continue;
-      }
+      if (E.s[i] === 10) { this.drawFlakFire(E, i, t, vis, minW); continue; }
       const sz = E.s[i], life = LIFE[sz] ?? 8, age = t - E.t[i];
       if (age > life || !vis(E.x[i], E.y[i], 20)) continue;
       const u = age / life, base = BASE[sz] ?? 1.5, grow = GROW[sz] ?? 5;
@@ -1179,6 +1172,49 @@ export class Renderer {
         g.push(x + Math.cos(ang) * d, y + Math.sin(ang) * d, 0, r, r, 1, alpha2(k < 0.5 ? C.flShrap : C.flGlow, (1 - k) * fl));
       }
     }
+  }
+
+  /**
+   * A flak gun firing (explosion size 10, recorded at the gun just before its burst, size 6, at the same
+   * tick): there's no shell, so the shot is all muzzle blast (owner, 21 Nov 2026: "it doesn't look like
+   * they're firing"). Aimed at the burst it belongs to: a white-hot flash at the barrels' end, a cone of
+   * fire jets thrown forward, a glow back at the gun, sparks flung out ahead and a smoke puff that drifts
+   * forward and fades, about 0.8 s in all.
+   */
+  drawFlakFire(E, i, t, vis, minW) {
+    const g = this.glow, age = t - E.t[i], gx = E.x[i], gy = E.y[i];
+    if (age > 10 || !vis(gx, gy, 40)) return;
+    let a = hash01(i, 99) * 6.283;
+    for (let k = i + 1; k < E.n && k < i + 40 && E.t[k] === E.t[i]; k++)
+      if (E.s[k] === 6) { a = Math.atan2(E.y[k] - gy, E.x[k] - gx); break; }
+    const c = Math.cos(a), s = Math.sin(a), mx = gx + c * 6, my = gy + s * 6; // the barrels' end
+    // Glow at the gun as it fires.
+    if (age < 4) { const k = 1 - age / 4; g.push(gx, gy, 0, 9, 9, 1, alpha2(C.flGlow, 0.5 * k)); }
+    // Flash at the muzzle.
+    if (age < 3) {
+      const k = 1 - age / 3, r = 5 + age * 2.5;
+      g.push(mx, my, 0, r * 1.8, r * 1.8, 1, alpha2(C.flGlow, 0.7 * k));
+      g.push(mx, my, 0, Math.max(r * 0.7, minW * 2.5), Math.max(r * 0.7, minW * 2.5), 1, alpha2(C.flFlash, k));
+    }
+    // Cone of fire jets thrown forward, the middle one longest.
+    if (age < 3.5) {
+      const k = 1 - age / 3.5;
+      for (let j = -2; j <= 2; j++) {
+        const aj = a + j * 0.16 + (hash01(i, j + 10) - 0.5) * 0.08, len = (j === 0 ? 12 : 7.5 - Math.abs(j) * 1) * (0.6 + 0.4 * k);
+        g.push(mx + Math.cos(aj) * len, my + Math.sin(aj) * len, aj, len, Math.max(0.8 + 0.8 * k, minW * 1.2), 2, alpha2(j === 0 ? C.flFlash : C.flShrap, 0.95 * k));
+      }
+    }
+    // Sparks flung out ahead.
+    if (age < 6) {
+      const k = 1 - age / 6;
+      for (let j = 0; j < 8; j++) {
+        const aj = a + (hash01(i, j + 20) - 0.5) * 0.9, d = 3 + age * (3 + 3.5 * hash01(i, j + 30));
+        const r = Math.max(0.45 * k + 0.15, minW * 0.8);
+        g.push(mx + Math.cos(aj) * d, my + Math.sin(aj) * d, 0, r, r, 1, alpha2(C.flShell, k));
+      }
+    }
+    // Smoke puff drifting forward.
+    { const k = age / 10, d = 3 + age * 1.1, r = 4 + 6 * Math.sqrt(k); g.push(mx + c * d, my + s * d, 0, r, r, 1, alpha2(C.flSmoke, 0.4 * (1 - k))); }
   }
 
   /** Where a piece of flak shrapnel hit something (explosion size 9): a hot spark and a few sparks kicked off. */
