@@ -361,6 +361,10 @@ void main(){
     o = vec4(vCol.rgb * a * vCol.a, 0.0);
   } else if (vShape < 3.5) {     // flat (far-zoom ship silhouette)
     o = vec4(vCol.rgb, 1.0);
+  } else if (vShape > 4.5 && vShape < 5.5) { // ring (flak shockwave): a thin bright band at the edge
+    float d = length(vUV);
+    float a = clamp(1.0 - abs(d - 0.84) / 0.16, 0.0, 1.0); a *= a;
+    o = vec4(vCol.rgb * a * vCol.a, 0.0);
   } else {                       // beam: even along its length
     float ay = 1.0 - abs(vUV.y);
     float a = ay * ay * (1.0 - smoothstep(0.85, 1.0, abs(vUV.x)));
@@ -551,6 +555,7 @@ export function applyColors(model, sideColors) {
   }
   return out;
 }
+const FLAK_LIFE = 40; // ticks a flak burst is drawn for (its smoke lingers)
 const LANCE_CHARGE = 6, LANCE_LIFE = 16; // heavy laser: charge-up and beam life, in ticks
 const FIGHTER_DEATH = 12; // a shot-down fighter tumbles and burns out over this many ticks (1.2 s)
 const alpha2 = (col, k) => (col & 0xffffff) | ((Math.max(0, Math.min(1, k)) * 255) << 24);
@@ -567,7 +572,7 @@ const C = {
   plGlow: rgba('#2f7dff', 255), plBody: rgba('#6fd2ff', 255), plCore: rgba('#f4fcff', 255), plTrail: rgba('#3fa0ff', 220),
   fBody: rgba('#d3d9e3'), fCanopy: rgba('#7fd8ff'), // fighters
   // Flak (14 Nov 2026): hot amber shells, a white flash and a spray of orange shrapnel streaks.
-  flShell: rgba('#fff0c2', 255), flTrail: rgba('#ffb347', 210), flFlash: rgba('#fff8e8', 255), flGlow: rgba('#ff9a3c', 255),
+  flShell: rgba('#fff0c2', 255), flTrail: rgba('#ffb347', 210), flFlash: rgba('#fff8e8', 255), flRing: rgba('#ffe0b0', 255), flCore: rgba('#fff0a0', 255), flGlow: rgba('#ff9a3c', 255),
   shield: rgba('#6fe8ff', 255),
   autoHalo: rgba('#ff8a1e', 255), autoFlash: rgba('#ffd27a', 255), autoSpark: rgba('#ffb347', 255), flShrap: rgba('#ffc070', 255), tracer: rgba('#ffe58a', 255), tracerHot: rgba('#fffbe8', 255), flSmoke: rgba('#8c8278', 255),
 };
@@ -839,8 +844,9 @@ export class Renderer {
     // 4 = plasma bolt bursting into a hull, 5 = plasma bolt's final blast (both blue)
     const E = m.expl;
     const LIFE = [6, 8, 24, 22, 12, 24, 0, 22, 16], BASE = [1, 1.5, 5, 3, 3, 6, 0, 6, 2.5], GROW = [2.5, 5, 15, 16, 9, 20, 0, 24, 8]; // 7: shield generator exploding, 8: explosive cannon shell (20 Nov 2026)
-    for (let i = lowerBound(E.t, t - 24); i < E.n && E.t[i] <= t; i++) {
-      if (E.s[i] === 6) { this._hasFrag = !!m.frag; this.drawFlakBurst(E, i, t, vis, minW); continue; }
+    for (let i = lowerBound(E.t, t - FLAK_LIFE); i < E.n && E.t[i] <= t; i++) {
+      if (E.s[i] === 6) { this._hasFrag = !!(m.frag && m.frag.n > 0); this.drawFlakBurst(E, i, t, vis, minW); continue; }
+      if (E.s[i] === 9) { this.drawFlakHit(E, i, t, vis, minW); continue; }
       const sz = E.s[i], life = LIFE[sz] ?? 8, age = t - E.t[i];
       if (age > life || !vis(E.x[i], E.y[i], 20)) continue;
       const u = age / life, base = BASE[sz] ?? 1.5, grow = GROW[sz] ?? 5;
@@ -1106,24 +1112,85 @@ export class Renderer {
   }
 
   /**
-   * Flak burst (explosion size 6): a white flash, an amber fireball, a puff of smoke, and a spray of
-   * orange shrapnel streaks flying out to about 30 blocks. Directions come from a hash of the
-   * explosion's index, so it's a pure function of time like everything else.
+   * Flak burst (explosion size 6). Since 21 Nov 2026 shrapnel isn't drawn as projectiles: the burst
+   * is the show. A white-hot flash, a shockwave ring racing out, an amber fireball with a hot core,
+   * a spray of fast shrapnel streaks, glowing embers drifting out and burning down, and smoke that
+   * lingers and spreads for 4 s. Everything comes from a hash of the explosion's index, so it's a
+   * pure function of time. Replays from 14-21 Nov 2026 have real shrapnel (shot kind 6): those keep
+   * the old smaller burst so the pieces aren't drawn twice.
    */
   drawFlakBurst(E, i, t, vis, minW) {
-    const g = this.glow, age = t - E.t[i], x = E.x[i], y = E.y[i], LIFE = 16;
-    if (age > LIFE || !vis(x, y, 34)) return;
-    const u = age / LIFE;
-    if (age < 2) g.push(x, y, 0, 5 + age * 3, 5 + age * 3, 1, alpha2(C.flFlash, 1 - age / 2));
-    if (age < 7) g.push(x, y, 0, 2.5 + age * 1.2, 2.5 + age * 1.2, 1, alpha2(C.flGlow, 0.85 * (1 - age / 7)));
-    g.push(x, y, 0, 3 + u * 9, 3 + u * 9, 1, alpha2(C.flSmoke, 0.35 * (1 - u)));
-    // Old replays (before shrapnel became real projectiles) drew streaks here instead.
-    if (age < 7 && !this._hasFrag) {
-      const k = 1 - age / 7, reach = 30 * Math.min(1, age / 4);
-      for (let j = 0; j < 16; j++) {
-        const ang = hash01(i, j) * 6.283, r = reach * (0.55 + 0.45 * hash01(i, j + 31)), len = 2.2;
-        g.push(x + Math.cos(ang) * (r - len), y + Math.sin(ang) * (r - len), ang, len, Math.max(0.3, minW * 0.8), 4, alpha2(C.flShrap, k));
+    const g = this.glow, age = t - E.t[i], x = E.x[i], y = E.y[i];
+    if (this._hasFrag) {
+      const LIFE = 16;
+      if (age > LIFE || !vis(x, y, 34)) return;
+      const u = age / LIFE;
+      if (age < 2) g.push(x, y, 0, 5 + age * 3, 5 + age * 3, 1, alpha2(C.flFlash, 1 - age / 2));
+      if (age < 7) g.push(x, y, 0, 2.5 + age * 1.2, 2.5 + age * 1.2, 1, alpha2(C.flGlow, 0.85 * (1 - age / 7)));
+      g.push(x, y, 0, 3 + u * 9, 3 + u * 9, 1, alpha2(C.flSmoke, 0.35 * (1 - u)));
+      return;
+    }
+    if (age > FLAK_LIFE || !vis(x, y, 40)) return;
+    const h = (j) => hash01(i, j);
+    // Smoke: three puffs, slightly apart, drifting and swelling, fading over the whole life.
+    const us = age / FLAK_LIFE;
+    for (let j = 0; j < 3; j++) {
+      const ang = h(40 + j) * 6.283, off = 1.5 + 3.5 * h(50 + j) + age * 0.06;
+      const r = 3 + 9 * Math.sqrt(us) + 2 * h(60 + j);
+      g.push(x + Math.cos(ang) * off, y + Math.sin(ang) * off, 0, r, r, 1, alpha2(C.flSmoke, 0.32 * (1 - us) * Math.min(1, age / 3)));
+    }
+    // Flash: blinding for a moment.
+    if (age < 2.5) {
+      const k = 1 - age / 2.5, r = 6 + age * 4;
+      g.push(x, y, 0, r, r, 1, alpha2(C.flFlash, k));
+      g.push(x, y, 0, Math.max(2, minW * 3), Math.max(2, minW * 3), 1, alpha2(C.flFlash, k));
+    }
+    // Shockwave ring: out to ~24 blocks in 0.6 s, thinning as it goes.
+    if (age < 6) {
+      const k = age / 6, r = 4 + 20 * Math.sqrt(k);
+      g.push(x, y, 0, r, r, 5, alpha2(C.flRing, 0.8 * (1 - k) * (1 - k)));
+    }
+    // Fireball: swells fast, then burns down from amber to dull red.
+    if (age < 10) {
+      const k = age / 10, r = 3 + 5 * Math.sqrt(k);
+      g.push(x, y, 0, r * 1.5, r * 1.5, 1, alpha2(C.flGlow, 0.55 * (1 - k)));
+      g.push(x, y, 0, r, r, 1, alpha2(k < 0.4 ? C.flCore : C.flGlow, 0.9 * (1 - k)));
+    }
+    // Shrapnel streaks: fast and gone in 0.4 s, the pieces themselves are too quick to follow.
+    if (age < 4) {
+      const k = 1 - age / 4;
+      for (let j = 0; j < 14; j++) {
+        const ang = h(j) * 6.283, r = (6 + 26 * h(j + 31)) * Math.min(1, (age + 0.5) / 3), len = 1.5 + 2.5 * k;
+        g.push(x + Math.cos(ang) * (r - len), y + Math.sin(ang) * (r - len), ang, len, Math.max(0.22, minW * 0.7), 4, alpha2(C.flShrap, k));
       }
+    }
+    // Embers: hot specks thrown out, slowing, flickering and burning down over ~2.5 s.
+    if (age < 25) {
+      for (let j = 0; j < 9; j++) {
+        const life = 12 + 13 * h(j + 70);
+        if (age > life) continue;
+        const k = age / life, ang = h(j + 80) * 6.283, sp = 0.8 + 1.6 * h(j + 90);
+        const d = sp * life * (1 - (1 - k) * (1 - k)) * 0.5 + 2;
+        const fl = 0.75 + 0.25 * Math.sin(age * 1.7 + j * 2.1);
+        const r = Math.max(0.35 * (1 - k) + 0.15, minW * 0.8);
+        g.push(x + Math.cos(ang) * d, y + Math.sin(ang) * d, 0, r, r, 1, alpha2(k < 0.5 ? C.flShrap : C.flGlow, (1 - k) * fl));
+      }
+    }
+  }
+
+  /** Where a piece of flak shrapnel hit something (explosion size 9): a hot spark and a few sparks kicked off. */
+  drawFlakHit(E, i, t, vis, minW) {
+    const g = this.glow, age = t - E.t[i], x = E.x[i], y = E.y[i];
+    if (age > 6 || !vis(x, y, 6)) return;
+    const k = 1 - age / 6;
+    if (age < 2.5) {
+      const r = Math.max(1.4 * (1 - age / 2.5) + 0.5, minW * 1.5);
+      g.push(x, y, 0, r, r, 1, alpha2(C.flShrap, 1 - age / 2.5));
+    }
+    for (let j = 0; j < 3; j++) {
+      const ang = hash01(i, j) * 6.283, d = age * (0.4 + 0.5 * hash01(i, j + 5));
+      const r = Math.max(0.25 * k + 0.1, minW * 0.7);
+      g.push(x + Math.cos(ang) * d, y + Math.sin(ang) * d, 0, r, r, 1, alpha2(C.flShell, k));
     }
   }
 

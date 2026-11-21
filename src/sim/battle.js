@@ -50,6 +50,7 @@ export const MAX_TEAMS = 16; // sides in one battle (players plus militia); fr[]
 // Debris stays hittable and solid for the whole battle (owner: debris is part of the fight).
 // The retire mechanism is kept as a cap that can be set if very long battles ever get slow.
 const CHUNK_RETIRE_TICKS = Infinity;
+const FRAG_STEP = 24; // flak shrapnel lines are checked in pieces this long (a long diagonal's box covers too many grid cells)
 const K_KINETIC = 0, K_SHELL = 1, K_MISSILE = 2, K_PLASMA = 3, K_FIGHTER = 4, K_FLAK = 5, K_FRAG = 6, K_AUTO = 7; // K_AUTO: auto gun bullets (20 Nov 2026), handled like shells
 // Fighters (owner, Nov 2026): launched by fighter bays, kept in their own list (this.Fi), not P.
 const FIGHTER = WEAPON[BT.BAY].fighter;
@@ -1270,26 +1271,43 @@ export class Battle {
     return true;
   }
 
-  /** A flak shell bursts at (x, y): shrapnel in every direction, each piece hits the first enemy block or fighter it meets. */
+  /**
+   * A flak shell bursts at (x, y): `fragments` pieces of shrapnel in random directions, each worked
+   * out at once (owner, 21 Nov 2026: "in real life you can't really see the flak projectiles, only
+   * the explosions"). Each piece runs along its line, as far as it would have flown (fragSpeed ×
+   * 85-115% × fragLife), and stops on the first thing it meets: any ship or wreck (only enemies take
+   * damage, allied hulls shield) or an enemy fighter. Nothing is recorded per piece but a hull spark
+   * (explosion size 9) where one stops on something; the viewer draws the burst itself.
+   * Before this each piece was a projectile and a replay shot of its own (kind 6): 8.3M of them in a
+   * 20,000-ship battle.
+   */
   flakBurst(i, x, y) {
     const P = this.P, W = WEAPON[P.wtype[i]], team = P.team[i], owner = P.owner[i], dmg = P.dmg[i];
-    // `cone` of the pieces carry on forward (the shell's way, toward its target, within ±coneW
-    // rad); the rest spray all round.
-    // Each piece of shrapnel is a projectile of its own (owner, 14 Nov 2026): it flies on until it
-    // meets something (an enemy ship, a wreck, an allied ship, which it doesn't hurt, or an enemy
-    // fighter), for up to `fragLife` s.
     const n = W.fragments, nf = Math.round(n * (W.cone || 0)), fwd = Math.atan2(P.vy[i], P.vx[i]), cw = W.coneW || 0.7;
-    const life = Math.round(W.fragLife / DT);
+    const fight = this.fFoe[team], STEP = FRAG_STEP;
     for (let f = 0; f < n; f++) {
       const a = f < nf ? fwd + (this.rng() * 2 - 1) * cw : this.rng() * 2 * Math.PI;
-      // Speed 85-115% of fragSpeed, in steps of 0.5% so the replay can store it exactly (shotSpd):
-      // replays drew every piece at the same speed, so slow pieces looked as if they flew on through
-      // the ship they had hit (owner, 15 Nov 2026).
-      const q = 170 + Math.floor(this.rng() * 61), sp = (W.fragSpeed * q) / 200;
-      const rec = this.shotStart(K_FRAG, team, x, y, a, false, q);
-      // Not added straight away: this runs inside updateProjectiles, whose loop holds the projectile
-      // arrays, and adding could grow them (replace this.P) under it.
-      this.fragQ.push(P.wtype[i], x, y, Math.cos(a) * sp, Math.sin(a) * sp, life, owner, team, dmg, rec);
+      const q = 170 + Math.floor(this.rng() * 61), reach = (W.fragSpeed * q / 200) * W.fragLife;
+      const c = Math.cos(a), s = Math.sin(a);
+      for (let d0 = 0; d0 < reach; d0 += STEP) {
+        const d1 = Math.min(reach, d0 + STEP), x0 = x + c * d0, y0 = y + s * d0, x1 = x + c * d1, y1 = y + s * d1;
+        const hit = this.sweep(x0, y0, x1, y1, owner, -1);
+        if (fight) {
+          const j = this.fighterOnSegment(x0, y0, x1, y1, team, hit ? this.hitT : 1);
+          if (j >= 0) {
+            this.Fi.hp[j] -= dmg;
+            const t = this._ft;
+            this.recExplosion(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, 9);
+            break;
+          }
+        }
+        if (hit) {
+          const he = this.hitE, hc = this.hitCell, t = this.hitT;
+          if (this.canDamage(he, team)) this.damageCell(he, hc, dmg * (FRAG_VS[he.types[hc]] ?? 1), W.shieldMult);
+          this.recExplosion(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, 9);
+          break;
+        }
+      }
     }
   }
 

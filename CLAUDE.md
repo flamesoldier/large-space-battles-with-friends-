@@ -541,6 +541,19 @@ Weapons (numbers in `blocks.js`):
     block dies (pure function of time; cached per entity and k); `lodColours()` = average of the blocks'
     palette colours mixed 45% toward the side's colour (wrecks: none). Quads drawn ≈ screen pixels the
     ships cover, whatever the battle size. No sim, replay or server change.
+- **Flak shrapnel worked out at the burst (owner, 21 Nov 2026: "in real life you can't really see the flak
+  projectiles only the explosions… really good looking explosions and don't even need to bother with
+  projectiles")**, on `v2-dev`, not live. Where the shrapnel lines above disagree, this wins: `flakBurst()` runs
+  each piece's line at once (same random directions and reach, fragSpeed × 85–115% × fragLife), in `FRAG_STEP`
+  (24) pieces through `sweep` and `fighterOnSegment`; first ship or wreck stops it, only enemies damaged
+  (`FRAG_VS`, `shieldMult` as before), enemy fighters too. No K_FRAG projectiles or replay shots any more; a
+  hit records explosion **size 9** (hull spark, `drawFlakHit`). Viewer `drawFlakBurst` (new replays): flash,
+  shockwave ring (glow shape **5**, ring band), fireball with hot core, 14 shrapnel streaks for 0.4 s, 9 embers,
+  3 smoke puffs for 4 s (`FLAK_LIFE` 40 ticks; the explosion loop looks back that far). Replays with shot kind 6
+  (14–21 Nov) keep the old small burst and drawn shrapnel (`_hasFrag` = `m.frag.n > 0`). Measured, 4 × 1,000
+  generated with 40% new-block ships, 5-min limit: 59 → 57 s compute, raw replay 71 → 65 MB, projectiles in
+  flight ~7,200 → ~3,300, survivors similar. Bench unchanged. Test in `tools/test-designer.mjs` (no kind-6
+  shots, sparks on the hull hit).
 - **Cannon rework and auto gun (owner, 20 Nov 2026: "more like a cannon and less like a machine gun")**. Where
   the numbers above disagree, these win:
   - **Cannon**: one explosive shell every **10 s** doing **500** (was 100 every 2 s; same damage per second).
