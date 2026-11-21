@@ -201,7 +201,7 @@ export function analyzeDesign(d) {
     shield, shieldRegen, gens,
     blocks, cost, mass, hp, thrust, maxSpeed, turn, turnDeg: (turn * 180) / Math.PI,
     hullClass: cls, byType, weapons, fire, dps, alpha,
-    minRange: ranges.length ? Math.min(...ranges) : 0, maxRange: ranges.length ? Math.max(...ranges) : 0,
+    minRange: ranges.length ? ranges.reduce((a, b) => Math.min(a, b)) : 0, maxRange: ranges.length ? ranges.reduce((a, b) => Math.max(a, b)) : 0, // not Math.min(...): a giant ship can have more guns than a call takes arguments
     loose, badGroups, errors, warnings, ok: errors.length === 0,
   };
 }

@@ -76,7 +76,7 @@ export function makeTestScenario(design, copies, opponent = null, seed = 1, fixe
     const mine = rows.map((di) => ({ design: di, team: 0, fixed: true }));
     layoutDefences(mine, designs, [0], 2);
     clear = [defenceReach(mine, designs, Math.PI), defenceReach(mine, designs, 0)]; // your side starts behind (−x), the enemy in front
-    ships.push(...mine);
+    for (const sh of mine) ships.push(sh);
   }
   place(0, flying);
   place(1, enemy);

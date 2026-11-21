@@ -291,12 +291,12 @@ export class ReplayModel {
       });
       return S;
     };
-    this.shell = straight(0);
-    this.missile = withGuided(straight(1), c, q);
-    this.plasma = straight(2); // plasma cannon bolts (none in replays before Nov 2026)
-    this.flak = meta.shotSpeed[5] ? straight(5) : null; // flak shells (14 Nov 2026); older replays have none
-    this.auto = meta.shotSpeed[7] ? straight(7) : null; // auto gun bullets (20 Nov 2026)
-    this.frag = meta.shotSpeed[6] ? straight(6) : null; // flak shrapnel, each piece a projectile (14 Nov 2026)
+    this.shell = liveIndex(straight(0));
+    this.missile = liveIndex(withGuided(straight(1), c, q));
+    this.plasma = liveIndex(straight(2)); // plasma cannon bolts (none in replays before Nov 2026)
+    this.flak = meta.shotSpeed[5] ? liveIndex(straight(5)) : null; // flak shells (14 Nov 2026); older replays have none
+    this.auto = meta.shotSpeed[7] ? liveIndex(straight(7)) : null; // auto gun bullets (20 Nov 2026)
+    this.frag = meta.shotSpeed[6] ? liveIndex(straight(6)) : null; // flak shrapnel, each piece a projectile (14 Nov 2026)
     this.fighter = fighters(c, q); // fighters from fighter bays (shot kind 4, Nov 2026), or null
     const nl = c.lasT.length;
     this.laser = { n: nl, t: c.lasT, x0: new Float32Array(nl), y0: new Float32Array(nl), x1: new Float32Array(nl), y1: new Float32Array(nl), team: c.lasTeam, hit: c.lasHit, kind: c.lasKind,
@@ -350,6 +350,33 @@ export class ReplayModel {
       out.x1 = tr.x + L.dx[i] * c - L.dy[i] * n; out.y1 = tr.y + L.dx[i] * n + L.dy[i] * c;
     }
     return out;
+  }
+
+  /**
+   * How fast each ship or wreck (shoves included) can move, in blocks per tick, by index in
+   * this.ents (Float32Array), with room for the curve between track samples to overshoot. The
+   * renderer uses it to skip anything that can't have reached the screen since it last saw it,
+   * without working out where it is. Per entity, so one wild shove doesn't slow everything down.
+   */
+  speeds() {
+    if (this._speeds) return this._speeds;
+    const out = new Float32Array(this.ents.length), S = this.sv, w = this.shoveEvery;
+    this.ents.forEach((e, i) => {
+      let v = 0;
+      if (e.kind === 1) {
+        // A wreck drifts at its speed; a shoved one also blends into each new record over w ticks
+        // (smoothstep, so at most 1.5x the gap per w ticks) on top of its drift.
+        let x = e.x0, y = e.y0, vx = e.vx, vy = e.vy, tk = e.t0;
+        v = Math.hypot(vx, vy) * this.dt;
+        for (let k = e.sv0; k < e.sv0 + e.svN; k++) {
+          const d = (S.t[k] - tk) * this.dt, gap = Math.hypot(S.x[k] - (x + vx * d), S.y[k] - (y + vy * d));
+          v = Math.max(v, Math.hypot(vx, vy) * this.dt + (gap * 1.5) / w, Math.hypot(S.vx[k], S.vy[k]) * this.dt);
+          x = S.x[k]; y = S.y[k]; vx = S.vx[k]; vy = S.vy[k]; tk = S.t[k];
+        }
+      } else for (let k = e.s0 + 1; k < e.s0 + e.n; k++) v = Math.max(v, Math.hypot(this.tx[k] - this.tx[k - 1], this.ty[k] - this.ty[k - 1]) / this.TE);
+      out[i] = v * 1.5 + 0.05;
+    });
+    return (this._speeds = out);
   }
 
   transform(e, t, out) {
@@ -517,6 +544,33 @@ function fighters(c, q) {
  * a0 = the missile's age at the start of the piece (so its smoke trail keeps growing). Merged into
  * the missile list and sorted by start time. Replays without guided missiles are returned as is.
  */
+/**
+ * Which shots are around in each slice of LIVE_SLICE ticks (21 Nov 2026). Drawing used to look at
+ * every shot fired within the longest flight of its kind (30 s for shells, 90 s for missiles), and
+ * nearly all of those had long since hit: in a 4,000-ship battle 20 shells were looked at for every
+ * one still flying. Now a frame only looks at the shots listed for its slice: S.live(t) gives the
+ * [from, to) range in S.liveIdx. Each shot is listed from LIVE_PRE ticks before it fires (plasma's
+ * charge-up glow) to LIVE_POST after it ends (impact sparks), in firing order within a slice.
+ */
+export const LIVE_SLICE = 16, LIVE_PRE = 16, LIVE_POST = 6;
+function liveIndex(S) {
+  const n = S.n, a = new Int32Array(n), b = new Int32Array(n);
+  let last = 0;
+  for (let i = 0; i < n; i++) {
+    a[i] = Math.max(0, Math.floor((S.t0[i] - LIVE_PRE) / LIVE_SLICE));
+    b[i] = Math.max(a[i], Math.floor((S.t1[i] + LIVE_POST) / LIVE_SLICE));
+    if (b[i] > last) last = b[i];
+  }
+  const start = new Int32Array(last + 2);
+  for (let i = 0; i < n; i++) for (let k = a[i]; k <= b[i]; k++) start[k + 1]++;
+  for (let k = 0; k <= last; k++) start[k + 1] += start[k];
+  const idx = new Int32Array(start[last + 1]), fill = start.slice(0, last + 1);
+  for (let i = 0; i < n; i++) for (let k = a[i]; k <= b[i]; k++) idx[fill[k]++] = i;
+  S.liveStart = start; S.liveIdx = idx;
+  S.live = (t) => { const k = Math.floor(t / LIVE_SLICE); return k < 0 || k > last ? [0, 0] : [start[k], start[k + 1]]; };
+  return S;
+}
+
 function withGuided(S, c, q) {
   if (!c.gmRec || !c.gmRec.length) return S;
   const pts = new Map();

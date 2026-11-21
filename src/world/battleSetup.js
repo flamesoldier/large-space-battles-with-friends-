@@ -113,6 +113,18 @@ const START_GAP = 20, START_ROOM = 1.25; // ROOM: area to spare, so random spots
  * placed moves to the nearest free spot, never more than its own length forward (toward the
  * enemy), so Front ships stay at the front and Back ships at the back.
  */
+// Directions tried on each ring of the free-spot search (cos, sin pairs), worked out once.
+const RING_DIRS = [];
+function ringDirs(ring) {
+  let R = RING_DIRS[ring];
+  if (!R) {
+    const m = Math.max(8, Math.ceil(2 * Math.PI * ring));
+    R = RING_DIRS[ring] = new Float64Array(2 * m);
+    for (let j = 0; j < m; j++) { const ang = (2 * Math.PI * j) / m; R[2 * j] = Math.cos(ang); R[2 * j + 1] = Math.sin(ang); }
+  }
+  return R;
+}
+
 export function fleetSpots(ds, r, top) {
   const n = ds.length;
   let area = 0;
@@ -129,7 +141,31 @@ export function fleetSpots(ds, r, top) {
     for (let cx = Math.floor(x0 / CELL); cx <= Math.floor(x1 / CELL); cx++)
       for (let cy = Math.floor(y0 / CELL); cy <= Math.floor(y1 / CELL); cy++) f(cx * 73856093 ^ cy * 19349663);
   };
+  // Quick "certainly taken" map (21 Nov 2026: placing 50,000 ships took 158 s, since most ships'
+  // first spot is taken and each then tries thousands of candidates). A cell is marked when it
+  // lies wholly inside a placed box grown by the smallest ship's half size and the gap, so any
+  // ship centred there would overlap it. It only skips candidates the full test would reject,
+  // so every ship ends up exactly where it did before.
+  let hwMin = Infinity, hhMin = Infinity, x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const d of ds) { hwMin = Math.min(hwMin, d.w / 2); hhMin = Math.min(hhMin, d.h / 2); }
+  for (const sp of spots) { x0 = Math.min(x0, sp.depth); x1 = Math.max(x1, sp.depth); y0 = Math.min(y0, sp.across); y1 = Math.max(y1, sp.across); }
+  const pad = spread + 200;
+  x0 -= pad; x1 += pad; y0 -= pad; y1 += pad;
+  let G = 2;
+  while (((x1 - x0) / G) * ((y1 - y0) / G) > 3e7) G *= 2;
+  const GW = Math.ceil((x1 - x0) / G) || 1, GH = Math.ceil((y1 - y0) / G) || 1;
+  const taken = n > 200 ? new Uint8Array(GW * GH) : null; // small fleets: not worth it
+  const markTaken = (x, y, hw, hh) => {
+    const ex = hw + hwMin + START_GAP, ey = hh + hhMin + START_GAP;
+    const i0 = Math.max(0, Math.floor((x - ex - x0) / G) + 1), i1 = Math.min(GW - 1, Math.ceil((x + ex - x0) / G) - 2);
+    const j0 = Math.max(0, Math.floor((y - ey - y0) / G) + 1), j1 = Math.min(GH - 1, Math.ceil((y + ey - y0) / G) - 2);
+    for (let j = j0; j <= j1; j++) taken.fill(1, j * GW + i0, j * GW + i1 + 1);
+  };
   const free = (x, y, hw, hh) => {
+    if (taken) {
+      const i = Math.floor((x - x0) / G), j = Math.floor((y - y0) / G);
+      if (i >= 0 && i < GW && j >= 0 && j < GH && taken[j * GW + i]) return false;
+    }
     let ok = true;
     keys(x - hw - START_GAP, y - hh - START_GAP, x + hw + START_GAP, y + hh + START_GAP, (key) => {
       if (!ok) return;
@@ -148,9 +184,9 @@ export function fleetSpots(ds, r, top) {
       // ship's own length. There's room to spare, so this ends quickly.
       const step = Math.max(4, (Math.min(d.w, d.h) + START_GAP) / 2);
       search: for (let ring = 1; ring < 400; ring++) {
-        const m = Math.max(8, Math.ceil(2 * Math.PI * ring));
+        const R = ringDirs(ring), m = R.length >> 1;
         for (let j = 0; j < m; j++) {
-          const ang = (2 * Math.PI * j) / m, cx = sp.depth + Math.cos(ang) * ring * step, cy = sp.across + Math.sin(ang) * ring * step;
+          const cx = sp.depth + R[2 * j] * ring * step, cy = sp.across + R[2 * j + 1] * ring * step;
           if (cx < sp.depth - d.w) continue;
           if (free(cx, cy, hw, hh)) { x = cx; y = cy; break search; }
         }
@@ -159,6 +195,7 @@ export function fleetSpots(ds, r, top) {
     sp.depth = x; sp.across = y;
     const q = placed.length;
     placed.push({ x, y, hw, hh });
+    if (taken) markTaken(x, y, hw, hh);
     keys(x - hw, y - hh, x + hw, y + hh, (key) => { let a = cells.get(key); if (!a) cells.set(key, (a = [])); a.push(q); });
   }
   return spots;
@@ -234,7 +271,7 @@ export function layoutDefences(fixed, designs, attackAngles, nCamps = attackAngl
           const row = [];
           let used = 0;
           while (k < group.length && (!row.length || used + slot(group[k]) <= width)) { used += slot(group[k]); row.push(group[k++]); }
-          const rowDepth = Math.max(...row.map(deep));
+          const rowDepth = row.reduce((m, sh) => Math.max(m, deep(sh)), -Infinity);
           const shift = r % 2 ? (used / row.length) / 2 : 0; // stagger alternate rows
           let across = centre - used / 2 + shift;
           for (const s of row) {

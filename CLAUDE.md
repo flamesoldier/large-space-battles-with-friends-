@@ -767,6 +767,36 @@ Battle end:
   replay" for everyone (11 Nov 2026; fixed in the viewer, so old replays open too). Collect big
   results in typed arrays sized up front (sparks are now one `Float32Array`), and the viewer now
   shows "This replay couldn't be opened" with the error instead of hanging.
+- **Giant battles (owner, 21 Nov 2026: "the most epic and massive battles imaginable"; memory is no
+  worry, Railway allows 8 GB and the biggest battle so far used ~800 MB).** Stress tests (`/tmp`-style
+  `giant.mjs`: generated fleets through `makeBattleScenario` with camps round the world, all at war,
+  like the worker): 4,000 ships 14 s compute / 330 MB; **20,000 ships (4 × 5,000) 187 s / 1.6 GB peak,
+  full 15 min, 130 MB raw / 38 MB gzip replay**, opens in the viewer in ~14 s with ~700 MB heap; 36,000
+  ships (6 camps) start within ±3,000 blocks. No crash anywhere. Fixed on the way:
+  - **Event positions per battle** (`evQFor()` in `battle.js`, `this.evQ` → `meta.evQ`, which the viewer
+    already read): shots, explosions, beams, shoved debris and guided points are Int16, so at the fixed
+    1/4 block anything past ±8,191 was pinned to the edge. Battles whose ships start within ~5,190
+    blocks keep 1/4 (bench identical shot for shot); further out 1/2, 1 or 2 blocks (`EV_SPARE` 3,000 for
+    shots flying on). Only matters past ~150,000 ships. Test in `tools/test-designer.mjs`.
+  - **Start spots 9× faster, identical**: `fleetSpots()` took 23 s for 20,000 ships in one camp and 158 s
+    for 50,000 (most first spots are taken, each ship tried thousands of candidates). A `taken` cell map
+    (cells wholly inside a placed box grown by the smallest ship's half size + gap) rejects candidates
+    the full test would reject, and ring directions are cached (`ringDirs`): 20,000 → 2.5 s, positions
+    checked identical to the old code for 50–20,000 ships.
+  - **Viewer skips what can't be on screen**: the draw loop placed every ship and wreck every frame
+    (~100,000 at 20,000 ships). `renderer.lastPos` keeps each one's last centre and time; with
+    `model.speeds()` (per entity: track steps, wreck drift, shove blends; one wild shove used to make a
+    global limit useless) anything that couldn't have reached the screen is skipped. Pixel-identical
+    screenshots against the old viewer. 20,000-ship replay, frame JS (software GL): zoomed in 25 → 11 ms,
+    mid zoom 31 → 20, whole battle unchanged (everything is on screen then).
+  - **Per-slice shot lists** (`liveIndex()` in `model.js`, `S.live(t)` / `S.liveIdx`, slices of 16 ticks):
+    every frame looked at all shots fired within the longest flight of the kind (shells 30 s, missiles
+    90 s), ~20 for each still flying in a 4,000-ship battle. Test in `tools/test-designer.mjs`.
+  - `Math.min(...ranges)` in `analyzeDesign` (a giant ship with >100k guns), `rowDepth` in
+    `layoutDefences` and `ships.push(...mine)` in the designer test battle no longer spread lists into calls.
+  - Viewer debug hook: `window.battleViewer.renderer` and `.drawMs` (time to prepare the last frame).
+  - Not fixed: the hot-seat page's `ReplayStore.put` reads every stored replay (`getAll`) to prune to
+    80; with giant replays that's GBs (online play fetches replays from the server, so unaffected).
 - The demo page re-runs the sim in the browser, so results differ slightly from Node
   (`Math.sin`/`cos` aren't identical across engines). The real game records replays on the
   server, so that's fine.

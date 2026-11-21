@@ -565,5 +565,43 @@ for (let k = 0; k < FORTRESSES.length; k++) {
   b.run();
   assert.ok(b.endReason !== 'stalled' && b.lastDamage > 0 && b.tick > 600, `far-apart fleets meet and fight (ended ${b.endReason} at ${b.tick / 10} s)`);
 }
+// Giant battles (21 Nov 2026): a fight far from the middle (past the old ±8,191-block limit on event
+// positions) is recorded where it happens, not pinned to the edge; normal battles keep 1/4 block.
+{
+  const designs = [makeDesign('destroyer', 5), makeDesign('destroyer', 6)];
+  const ships = [];
+  for (let k = 0; k < 12; k++) {
+    ships.push({ design: 0, team: 0, x: 11000 - 120, y: (k - 6) * 40, a: 0 });
+    ships.push({ design: 1, team: 1, x: 11000 + 120, y: (k - 6) * 40, a: Math.PI });
+  }
+  const b = new Battle({ designs, ships, seed: 2, maxTime: 40 });
+  b.run();
+  const { meta, cols } = b.toReplay();
+  assert.equal(meta.evQ, 2, 'a battle 11,000 blocks out records events in half blocks');
+  assert.ok(cols.expX.length > 0 && cols.expX.every((v) => v !== 32767 && v !== -32768), 'no explosion pinned to the edge');
+  const m = new ReplayModel(unpackReplay(packReplay(meta, cols)));
+  assert.ok(m.expl.n > 0 && m.expl.x.every((x) => x > 10500 && x < 11500), 'explosions decode where the fight was');
+  assert.equal(new Battle({ designs, ships: ships.map((s) => ({ ...s, x: s.x - 11000 })), seed: 2, maxTime: 1 }).evQ, 4, 'normal battles keep 1/4 block');
+}
+// The viewer's per-slice shot lists (liveIndex) give exactly the shots the old "everything fired within
+// the longest flight" window gave that are still around, for every kind and many moments.
+{
+  const { meta, cols } = new Battle({ ...makeTestScenario(makeDesign('cruiser', 2), 40, null), seed: 4, maxTime: 120 }).run().toReplay();
+  const m = new ReplayModel(unpackReplay(packReplay(meta, cols)));
+  let compared = 0;
+  for (const S of [m.shell, m.missile, m.plasma, m.flak, m.auto, m.frag].filter(Boolean)) {
+    let maxF = 0;
+    for (let i = 0; i < S.n; i++) maxF = Math.max(maxF, S.t1[i] - S.t0[i]);
+    for (let t = 0; t < meta.ticks; t += 7.3) {
+      const want = [], got = new Set();
+      for (let i = 0; i < S.n; i++) if (S.t0[i] >= t - maxF - 6 && S.t0[i] <= t + 15 && t <= S.t1[i] + 5) want.push(i);
+      const [a, b] = S.live(t);
+      for (let q = a; q < b; q++) got.add(S.liveIdx[q]);
+      for (const i of want) assert.ok(got.has(i), `shot ${i} listed at t=${t}`);
+      compared += want.length;
+    }
+  }
+  assert.ok(compared > 1000, `live shot lists checked (${compared})`);
+}
 console.log(`designer stats match the sim for ${checked} generated designs; validation ok`);
 console.log(`${FORTRESSES.length} Aegis fortresses are valid 150,000 cr defences`);

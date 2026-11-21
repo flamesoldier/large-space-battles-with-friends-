@@ -14,7 +14,7 @@ try { renderer = new Renderer(canvas); } catch (err) { $('progress-title').textC
 
 const cam = { x: 0, y: 0, zoom: 1 };
 let model = null, t = 0, playing = true, speed = 1, last = performance.now();
-let fps = 60, frames = 0, fpsT = performance.now();
+let fps = 60, frames = 0, fpsT = performance.now(), drawMs = 0;
 const info = { computeMs: 0, raw: 0, gz: 0, blocks: 0 };
 
 // ------------------------------------------------------------ starfield (static, parallax via CSS)
@@ -113,7 +113,9 @@ function loop(now) {
       t += (dtReal / DT) * speed;
       if (t >= model.ticks) { t = model.ticks; playing = false; setPlayIcon(); }
     }
+    const d0 = performance.now();
     renderer.draw(model, t, cam);
+    drawMs = performance.now() - d0; // time spent preparing the frame (for checking big replays)
     $('scrub').value = t;
     if (frames % 6 === 0) { updateHud(); drawMinimap(); }
   }
@@ -277,4 +279,4 @@ if (host) {
 } else resolve();
 
 // Small hook for debugging and automated screenshots.
-window.battleViewer = { get model() { return model; }, cam, seek: (v) => { t = v; playing = false; setPlayIcon(); } };
+window.battleViewer = { get model() { return model; }, get drawMs() { return drawMs; }, renderer, cam, seek: (v) => { t = v; playing = false; setPlayIcon(); } };

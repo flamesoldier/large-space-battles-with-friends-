@@ -27,10 +27,21 @@ export const MISSILE_EVERY = 3; // missile position sample every 0.3 s
 export const POS_Q = 4; // position quantisation: 1/4 block
 const TWO_PI = Math.PI * 2;
 const ANG_Q = 2048 / Math.PI; // 4096 steps per turn
-export const EV_Q = 4; // event positions stored as Int16 in 1/4 block (±8191 blocks)
+export const EV_Q = 4; // event positions stored as Int16 in 1/4 block (±8191 blocks) in normal-sized battles
+// Giant battles (21 Nov 2026, owner: "the most epic and massive battles imaginable") can spread past
+// ±8191 blocks, where shots, explosions and beams were pinned to the edge. Each battle picks its own
+// step from how far its ships start out (meta.evQ, which the viewer already reads): 1/4 block as
+// always up to EV_REACH, then 1/2, 1 or 2 blocks. EV_SPARE allows for shots and missiles flying on
+// past the fleets and for ships moving out during the battle.
+const EV_SPARE = 3000;
+export function evQFor(reach) {
+  let q = EV_Q;
+  while (q > 0.5 && (reach + EV_SPARE) * q > 32767) q /= 2;
+  return q;
+}
 const VEL_Q = 64; // shoved-debris velocities stored as Int16 in 1/64 block per second
 const qVel = (v) => { const r = Math.round(v * VEL_Q); return r > 32767 ? 32767 : r < -32768 ? -32768 : r; };
-const q16 = (v) => { const r = Math.round(v * EV_Q); return r > 32767 ? 32767 : r < -32768 ? -32768 : r; };
+const q16 = (v, q) => { const r = Math.round(v * q); return r > 32767 ? 32767 : r < -32768 ? -32768 : r; };
 const qAng = (a) => Math.round((wrapAngle(a) / TWO_PI) * 65536) & 0xffff;
 const wrapAngle = (a) => a - TWO_PI * Math.floor((a + Math.PI) / TWO_PI);
 const SHIP = 0, CHUNK = 1;
@@ -159,6 +170,9 @@ export class Battle {
     this.fRoutes = []; // fighter bay routes out of their ships: { e, pts } (see bayExit)
     this.initRecorder();
     this.perf = { ticks: 0, ms: 0, raycasts: 0, peakProjectiles: 0, peakEntities: 0 };
+    let reach = 0; // how far out the ships start: sets the replay's event position step (evQFor)
+    for (const s of ships) reach = Math.max(reach, Math.abs(s.x || 0), Math.abs(s.y || 0));
+    this.evQ = evQFor(reach);
     for (const s of ships) this.spawnShip(s);
     this.grid.build(this.ents);
     this.recordTracks();
@@ -1062,9 +1076,9 @@ export class Battle {
       if (o.dead || o.retired) { o.shoved = false; continue; }
       if (this.now - o.shoveRec < SHOVE_EVERY) { L[k++] = o; continue; }
       R.svT.push(this.now); R.svEnt.push(o.id);
-      R.svX.push(q16(o.x)); R.svY.push(q16(o.y)); R.svVx.push(qVel(o.vx)); R.svVy.push(qVel(o.vy));
+      R.svX.push(q16(o.x, this.evQ)); R.svY.push(q16(o.y, this.evQ)); R.svVx.push(qVel(o.vx)); R.svVy.push(qVel(o.vy));
       // Carry on from the stored (rounded) state, so sim and replay don't drift apart.
-      o.x = R.svX.a[R.svX.n - 1] / EV_Q; o.y = R.svY.a[R.svY.n - 1] / EV_Q;
+      o.x = R.svX.a[R.svX.n - 1] / this.evQ; o.y = R.svY.a[R.svY.n - 1] / this.evQ;
       o.vx = R.svVx.a[R.svVx.n - 1] / VEL_Q; o.vy = R.svVy.a[R.svVy.n - 1] / VEL_Q;
       o.shoveRec = this.now; o.shoved = false;
     }
@@ -1443,15 +1457,15 @@ export class Battle {
   recBeam(x0, y0, x1, y1, team, kind, hit, src = null, dst = null) {
     const R = this.R;
     // World position and angle/length only for ends that aren't attached (zeros compress away).
-    R.lasT.push(this.now); R.lasX.push(src ? 0 : q16(x0)); R.lasY.push(src ? 0 : q16(y0));
+    R.lasT.push(this.now); R.lasX.push(src ? 0 : q16(x0, this.evQ)); R.lasY.push(src ? 0 : q16(y0, this.evQ));
     R.lasAng.push(dst ? 0 : qAng(Math.atan2(y1 - y0, x1 - x0))); R.lasLen.push(dst ? 0 : Math.round(Math.hypot(x1 - x0, y1 - y0)));
     R.lasTeam.push(team); R.lasHit.push(hit); R.lasKind.push(kind);
     R.lasSrc.push(src ? src.id : NONE); R.lasDst.push(dst ? dst.id : NONE);
     // Ends in the local frame of their entity (zero when not attached).
     let dx = src ? x0 - src.x : 0, dy = src ? y0 - src.y : 0;
-    R.lasSX.push(src ? q16(dx * src.c + dy * src.s) : 0); R.lasSY.push(src ? q16(-dx * src.s + dy * src.c) : 0);
+    R.lasSX.push(src ? q16(dx * src.c + dy * src.s, this.evQ) : 0); R.lasSY.push(src ? q16(-dx * src.s + dy * src.c, this.evQ) : 0);
     dx = dst ? x1 - dst.x : 0; dy = dst ? y1 - dst.y : 0;
-    R.lasDX.push(dst ? q16(dx * dst.c + dy * dst.s) : 0); R.lasDY.push(dst ? q16(-dx * dst.s + dy * dst.c) : 0);
+    R.lasDX.push(dst ? q16(dx * dst.c + dy * dst.s, this.evQ) : 0); R.lasDY.push(dst ? q16(-dx * dst.s + dy * dst.c, this.evQ) : 0);
   }
 
   updateProjectiles() {
@@ -1982,7 +1996,7 @@ export class Battle {
   /** Record a point on a fighter's path (t in ticks), like guidedPoint. */
   fighterPoint(i, t) {
     const R = this.R, Fi = this.Fi;
-    R.gmRec.push(Fi.rec[i]); R.gmT.push(Math.round(t * 10)); R.gmX.push(q16(Fi.x[i])); R.gmY.push(q16(Fi.y[i]));
+    R.gmRec.push(Fi.rec[i]); R.gmT.push(Math.round(t * 10)); R.gmX.push(q16(Fi.x[i], this.evQ)); R.gmY.push(q16(Fi.y[i], this.evQ));
   }
 
   /** Record a point on a guided missile's path (t in ticks); the viewer draws straight pieces between them. */
@@ -1990,7 +2004,7 @@ export class Battle {
     const P = this.P;
     if (P.kind[i] !== K_MISSILE || !WEAPON[P.wtype[i]].guided) return;
     const R = this.R;
-    R.gmRec.push(P.rec[i]); R.gmT.push(Math.round(t * 10)); R.gmX.push(q16(x)); R.gmY.push(q16(y));
+    R.gmRec.push(P.rec[i]); R.gmT.push(Math.round(t * 10)); R.gmX.push(q16(x, this.evQ)); R.gmY.push(q16(y, this.evQ));
   }
 
   // Straight projectiles need only launch time, point, angle and flight time: the viewer
@@ -2000,7 +2014,7 @@ export class Battle {
     const R = this.R;
     const rec = R.shotT0.push(this.now);
     R.shotSpd.push(spd); // speed × 200 / the kind's shotSpeed, 0 = exactly shotSpeed (only shrapnel varies)
-    R.shotFlight.push(0); R.shotX.push(q16(x)); R.shotY.push(q16(y)); R.shotAng.push(qAng(ang));
+    R.shotFlight.push(0); R.shotX.push(q16(x, this.evQ)); R.shotY.push(q16(y, this.evQ)); R.shotAng.push(qAng(ang));
     R.shotHit.push(0); R.shotTeam.push(team); R.shotKind.push(kind === K_AUTO ? 7 : kind === K_FRAG ? 6 : kind === K_FLAK ? 5 : kind === K_FIGHTER ? 4 : guided ? 3 : kind === K_MISSILE ? 1 : kind === K_PLASMA ? 2 : 0);
     return rec;
   }
@@ -2012,7 +2026,7 @@ export class Battle {
   }
   recExplosion(x, y, size) {
     const R = this.R;
-    R.expT.push(this.now); R.expX.push(q16(x)); R.expY.push(q16(y)); R.expS.push(size);
+    R.expT.push(this.now); R.expX.push(q16(x, this.evQ)); R.expY.push(q16(y, this.evQ)); R.expS.push(size);
   }
 
   // ---------------------------------------------------------------- hit detection
@@ -2624,7 +2638,7 @@ export class Battle {
     if (this.byId.length < 0xffff)
       for (const k of ['lasSrc', 'lasDst']) cols[k] = Uint16Array.from(cols[k], (v) => (v === NONE ? 0xffff : v));
     const meta = {
-      version: 1, friendlyFire: this.friendlyFire, trackTotal: total, evQ: EV_Q, dt: DT, trackEvery: TRACK_EVERY, shoveEvery: SHOVE_EVERY, velQ: VEL_Q, missileEvery: MISSILE_EVERY, posQ: POS_Q, angQ: ANG_Q,
+      version: 1, friendlyFire: this.friendlyFire, trackTotal: total, evQ: this.evQ, dt: DT, trackEvery: TRACK_EVERY, shoveEvery: SHOVE_EVERY, velQ: VEL_Q, missileEvery: MISSILE_EVERY, posQ: POS_Q, angQ: ANG_Q,
       ticks: this.tick, shipCount: S, chunkCount: this.byId.length - S,
       shotSpeed: [WEAPON[BT.CANNON].speed, WEAPON[BT.MISSILE].speed, WEAPON[BT.LANCE].speed, WEAPON[BT.GUIDED].speed, FIGHTER.speed, WEAPON[BT.FLAK].speed, WEAPON[BT.FLAK].fragSpeed, WEAPON[BT.AUTO].speed], fighterSpeed: FIGHTER.speed,
       designs: this.designs.map((d) => ({ name: d.name, cls: d.cls, stance: d.stance, w: d.w, h: d.h, hub: d.hub, cells: Array.from(d.cells) })),

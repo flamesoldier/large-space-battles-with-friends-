@@ -643,9 +643,21 @@ export class Renderer {
     const dpr = Math.min(2, window.devicePixelRatio || 1), detail = z * dpr >= 2.5; // detailed blocks from 2.5 screen pixels per block
     let blocks = 0, ships = 0;
 
-    for (const e of model.ents) {
+    // Skip anything that can't be on screen without working out where it is (21 Nov 2026: a
+    // 20,000-ship replay has ~100,000 ships and wrecks, and placing every one every frame was most
+    // of the frame). Each one's last known centre and replay time are kept (lastPos); if it couldn't
+    // have moved onto the screen since then at its own top speed (model.speeds), it's skipped. Exactly what
+    // is drawn doesn't change.
+    const ents = model.ents, speed = model.speeds();
+    if (this.lastModel !== model) { this.lastModel = model; this.lastPos = new Float64Array(ents.length * 3).fill(NaN); }
+    const LP = this.lastPos;
+    for (let ei = 0; ei < ents.length; ei++) {
+      const e = ents[ei];
       if (t < e.t0 || t >= e.t1) continue;
+      const o = ei * 3;
+      if (LP[o + 2] === LP[o + 2] && !vis(LP[o], LP[o + 1], e.radius + speed[ei] * Math.abs(t - LP[o + 2]))) continue;
       model.transform(e, t, tr);
+      LP[o] = tr.x; LP[o + 1] = tr.y; LP[o + 2] = t;
       if (!vis(tr.x, tr.y, e.radius)) continue;
       const dead = e.kind === 1;
       if (!dead) ships++;
@@ -908,7 +920,10 @@ export class Renderer {
    */
   drawPlasma(S, t, vis, minW) {
     const g = this.glow, CH = 15; // 1.5 s charge-up: the unit's orb swells and brightens
-    for (let i = lowerBound(S.t0, t - S.maxFlight - 1); i < S.n && S.t0[i] <= t + CH; i++) {
+    const [la, lb] = S.live(t);
+    for (let q = la; q < lb; q++) {
+      const i = S.liveIdx[q];
+      if (S.t0[i] > t + CH) continue;
       const age = t - S.t0[i];
       if (age < 0) { // charging
         const e = (1 + age / CH) ** 2, fl = 0.9 + 0.1 * Math.sin(t * 5 + i);
@@ -1001,7 +1016,10 @@ export class Renderer {
   /** Flak shells: a small hot amber shell with a short bright trail, and a muzzle flash at the battery. */
   drawFlak(S, t, vis, minW) {
     const g = this.glow;
-    for (let i = lowerBound(S.t0, t - S.maxFlight - 1); i < S.n && S.t0[i] <= t; i++) {
+    const [la, lb] = S.live(t);
+    for (let q = la; q < lb; q++) {
+      const i = S.liveIdx[q];
+      if (S.t0[i] > t) continue;
       if (t > S.t1[i]) continue;
       const age = t - S.t0[i], vx = S.vx[i], vy = S.vy[i];
       if (age < 3 && vis(S.x[i], S.y[i], 12)) {
@@ -1028,7 +1046,10 @@ export class Renderer {
    */
   drawTracers(S, t, vis, minW) {
     const g = this.glow, FLASH = 1.5, HIT = 5;
-    for (let i = lowerBound(S.t0, t - S.maxFlight - HIT); i < S.n && S.t0[i] <= t; i++) {
+    const [la, lb] = S.live(t);
+    for (let q = la; q < lb; q++) {
+      const i = S.liveIdx[q];
+      if (S.t0[i] > t) continue;
       const age = t - S.t0[i], vx = S.vx[i], vy = S.vy[i];
       const a = Math.atan2(vy, vx), c = Math.cos(a), s = Math.sin(a), sp = Math.hypot(vx, vy);
       if (age < FLASH && vis(S.x[i], S.y[i], 6)) { // muzzle flash: a burst and a short tongue of flame forward
@@ -1063,7 +1084,10 @@ export class Renderer {
 
   drawShrapnel(S, t, vis, minW) {
     const g = this.glow;
-    for (let i = lowerBound(S.t0, t - S.maxFlight - 3); i < S.n && S.t0[i] <= t; i++) {
+    const [la, lb] = S.live(t);
+    for (let q = la; q < lb; q++) {
+      const i = S.liveIdx[q];
+      if (S.t0[i] > t) continue;
       const age = t - S.t0[i];
       if (t > S.t1[i]) {
         if (S.hit[i] && t - S.t1[i] < 3) { // impact spark
@@ -1105,7 +1129,10 @@ export class Renderer {
 
   drawStraight(S, t, vis, minW, heavy) {
     const g = this.glow, sol = this.solid;
-    for (let i = lowerBound(S.t0, t - S.maxFlight - 1); i < S.n && S.t0[i] <= t; i++) {
+    const [la, lb] = S.live(t);
+    for (let q = la; q < lb; q++) {
+      const i = S.liveIdx[q];
+      if (S.t0[i] > t) continue;
       if (t > S.t1[i]) continue;
       const age = t - S.t0[i], vx = S.vx[i], vy = S.vy[i];
       const x = S.x[i] + vx * age, y = S.y[i] + vy * age;
