@@ -150,12 +150,12 @@ export const WEAPON = {
   // Flak cannon (owner, 14 Nov 2026: big ships needed an answer to swarms of small ships; reworked 21
   // Nov 2026: "fire once every 2-3 seconds and at random space between heavy concentrations of enemy
   // ships with no primary projectile… take out large quantities of weak back line ships"). A 10x10 gun
-  // with long range. Every 2-3 s (`cooldown` ±20%) a burst goes off at once, no shell, anywhere within
+  // with long range. Every second (`cooldown` ±20%; owner, 21 Nov 2026, was 2-3 s) a burst goes off at once, no shell, anywhere within
   // `range` it can bear on: in open space between lightly armoured enemy ships packed close together
   // (see fireFlak), within `scatter` of the spot picked. The burst hurts every enemy block within
   // `radius`: `damage` at the centre, falling off in a straight line to 0 at the edge (see flakBurst).
   // Old replays still have flak shells (shot kind 5) and shrapnel shots (kind 6).
-  [BT.FLAK]: { kind: 'flak', range: 700, damage: 40, radius: 16, fragSpeed: 90, scatter: 4, cooldown: 2.5, fuse: 6, speed: 75, life: 14, maxLead: 4, spread: 0,
+  [BT.FLAK]: { kind: 'flak', range: 700, damage: 40, radius: 16, fragSpeed: 90, scatter: 4, cooldown: 1, fuse: 6, speed: 75, life: 14, maxLead: 4, spread: 0,
     vs: { [4]: 1, [2]: 1, [3]: 1 }, shieldMult: 0.3 }, // damage 30 a piece (owner, 15 Nov 2026: was 60); shrapnel damage share against frame (4), armour (2), heavy armour (3); owner, 15 Nov 2026
 };
 

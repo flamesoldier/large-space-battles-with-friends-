@@ -1153,11 +1153,6 @@ export class Renderer {
       g.push(x, y, 0, r, r, 1, alpha2(C.flFlash, k));
       g.push(x, y, 0, Math.max(2, minW * 3), Math.max(2, minW * 3), 1, alpha2(C.flFlash, k));
     }
-    // Shockwave ring: out to ~24 blocks in 0.6 s, thinning as it goes.
-    if (age < 6) {
-      const k = age / 6, r = 4 + 15 * Math.sqrt(k); // the ring's band ends at about the blast's 16-block reach
-      g.push(x, y, 0, r, r, 5, alpha2(C.flRing, 0.8 * (1 - k) * (1 - k)));
-    }
     // Fireball: swells fast, then burns down from amber to dull red.
     if (age < 10) {
       const k = age / 10, r = 3 + 5 * Math.sqrt(k);

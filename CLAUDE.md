@@ -574,6 +574,21 @@ Weapons (numbers in `blocks.js`):
   Bench 1,000 vs 1,000 identical. Tests in `tools/test-designer.mjs` (lightly armoured target, every 2–3 s, never
   inside a hull, no shot kinds 5/6, a flash per burst, a crowd of four beats a loner and the bursts land among them,
   allies untouched, spread over 4 targets). Replay sent: "Flak vs back-line swarm".
+- **Flak, second round (owner, 21 Nov 2026: "change the flak explosion to not have a shockwave… change the fire rate
+  to be every 1 second… the damage on the enemy ships from each explosion seemed to be a perfect amount… if a ship had
+  an outside layer of heavy armor I would want that to protect the blocks inside… still much less damage to
+  shields")**, on `v2-dev`, not live. Where the flak lines above disagree, these win: `cooldown` **1** (×0.8–1.2); no
+  shockwave ring in `drawFlakBurst` (glow shape 5 is left in the shader, unused); **armour shields what's behind it**:
+  `flakReach(e, gx, gy, i, j, d)` walks the line from the block back to the burst every half block and multiplies
+  by `FLAK_SHADE` for each live block crossed (heavy armour 0, armour 0.5, anything else 1). Hiding behind *any* block
+  was tried first: damage per burst 470 → 147 and back-line boats killed fell to ~60 even at 1 s (frame skins shielded
+  everything). Shields still take 30% (`shieldMult`). Measured: damage per burst ~435 (was 470, the amount the owner
+  liked); backline test ~178 of 222 boats killed, half gone at ~40 s, flak side keeps 6/6 battleships; vs 19 generated
+  battleships 2–9 left; a 24×12 frame-filled hull hit by 300 bursts just off it, damage reaching the inside per burst:
+  frame skin 1,581, armour skin 641, **heavy armour skin 38**. Generated battleships' surfaces are half armour already
+  and half exposed guns/thrusters/plasma, so a skin can't cover those. 4 × 1,000 mixed, 5 min: 49 s compute (live 71),
+  50 MB raw / 17 MB gzip. Test in `tools/test-designer.mjs` (heavy skin takes the burst, nothing inside touched; bursts
+  about every second). Replay sent: "Flak every second".
 - **Cannon rework and auto gun (owner, 20 Nov 2026: "more like a cannon and less like a machine gun")**. Where
   the numbers above disagree, these win:
   - **Cannon**: one explosive shell every **10 s** doing **500** (was 100 every 2 s; same damage per second).

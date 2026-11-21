@@ -50,6 +50,7 @@ export const MAX_TEAMS = 16; // sides in one battle (players plus militia); fr[]
 // Debris stays hittable and solid for the whole battle (owner: debris is part of the fight).
 // The retire mechanism is kept as a cap that can be set if very long battles ever get slow.
 const CHUNK_RETIRE_TICKS = Infinity;
+const FLAK_SHADE = { [BT.HEAVY]: 0, [BT.ARMOR]: 0.5 }; // share of a flak blast a block lets through to blocks behind it (others: all of it)
 const FLAK_PICKS = 16, FLAK_RECENT = 30, FLAK_CROWD_R = 40, FLAK_CROWD_EVERY = 10; // flak: ships looked at per burst, ticks a target counts as just hit, crowd radius beyond its hull, crowd recount (ticks)
 const K_KINETIC = 0, K_SHELL = 1, K_MISSILE = 2, K_PLASMA = 3, K_FIGHTER = 4, K_FLAK = 5, K_FRAG = 6, K_AUTO = 7; // K_AUTO: auto gun bullets (20 Nov 2026), handled like shells
 // Fighters (owner, Nov 2026): launched by fighter bays, kept in their own list (this.Fi), not P.
@@ -1150,7 +1151,7 @@ export class Battle {
         continue;
       }
       if (W.kind === 'flak') {
-        // A burst every 2-3 s (21 Nov 2026), no shell: see fireFlak.
+        // A burst about every second (21 Nov 2026), no shell: see fireFlak.
         w.cd = this.fireFlak(e, w, wx, wy, W) ? W.cooldown * (0.8 + 0.4 * this.rng()) : 0.4;
         continue;
       }
@@ -1282,6 +1283,27 @@ export class Battle {
     return true;
   }
 
+  /**
+   * How much of a flak blast gets from (gx, gy) (the burst, in e's grid) to block (i, j), d blocks
+   * apart: every live block of e on the line in between lets through its FLAK_SHADE share (heavy
+   * armour none, armour half, anything else all of it). Steps back from the block toward the burst
+   * every half block, until it leaves the grid or reaches the burst; each block counts once.
+   */
+  flakReach(e, gx, gy, i, j, d) {
+    const cx = i + 0.5, cy = j + 0.5, n = Math.floor(d * 2), ux = (gx - cx) / d, uy = (gy - cy) / d;
+    const w = e.w, h = e.h, types = e.types, hp = e.hp;
+    let f = 1, last = j * w + i;
+    for (let k = 1; k < n; k++) {
+      const x = cx + ux * k * 0.5, y = cy + uy * k * 0.5;
+      if (x < 0 || y < 0 || x >= w || y >= h) break;
+      const q = (y | 0) * w + (x | 0);
+      if (q === last) continue;
+      last = q;
+      if (types[q] && hp[q] > 0) { f *= FLAK_SHADE[types[q]] ?? 1; if (f <= 0.05) return 0; }
+    }
+    return f;
+  }
+
   /** Enemy ships packed round o (centres within FLAK_CROWD_R of its hull) and the nearest of them. */
   countCrowd(o) {
     const R = o.radius + FLAK_CROWD_R;
@@ -1324,7 +1346,11 @@ export class Battle {
           const d = Math.hypot(i + 0.5 - gx, j + 0.5 - gy);
           if (d >= R) continue;
           const dmg = peak * (1 - d / R) * (FRAG_VS[e.types[c]] ?? 1);
-          if (dmg > 1) this.damageCell(e, c, Math.min(dmg, e.hp[c]), sm);
+          if (dmg <= 1) continue;
+          // Armour in the way shields what's behind it (owner, 21 Nov 2026: "if a ship had an outside
+          // layer of heavy armor I would want that to protect the blocks inside"): see flakReach.
+          const f = d > 1 ? this.flakReach(e, gx, gy, i, j, d) : 1;
+          if (dmg * f > 1) this.damageCell(e, c, Math.min(dmg * f, e.hp[c]), sm);
         }
     }
     if (this.fobjs.length && this.fFoe[team]) {

@@ -273,7 +273,7 @@ assert.ok(Math.abs(sc.enemyCost - sc.budget) / sc.budget < 0.1, `budgets ${sc.en
   ], seed: 2, maxTime: 60 });
   const boatE = fb.ents[1], brickE = fb.ents[2], light0 = [boatE.light, brickE.light];
   assert.ok(boatE.light > brickE.light * 10, `the gunboat counts as lightly armoured (${boatE.light.toFixed(1)} vs ${brickE.light.toFixed(2)})`);
-  // Since 21 Nov 2026 (owner) there's no shell: a burst goes off at once every 2-3 s, in open space
+  // Since 21 Nov 2026 (owner) there's no shell: a burst goes off at once about every second, in open space
   // beside or between lightly armoured enemy ships. Watch where bursts go.
   const nearNow = (bt, x, y) => { let best = null, bd = Infinity; for (const e of bt.ents) { if (e.kind !== 0 || e.team === 0 || e.dead) continue; const d = Math.hypot(e.x - x, e.y - y) - e.radius; if (d < bd) { bd = d; best = e; } } return best; };
   const watch = (bt) => { const L = []; bt.flakBurst = ((f) => (x, y, team, owner, W) => { L.push({ t: bt.tick, x, y, owner, inside: bt.blockAt(x, y), near: nearNow(bt, x, y), armed: bt.foeArmed[0].slice() }); return f(x, y, team, owner, W); })(bt.flakBurst.bind(bt)); return L; };
@@ -286,8 +286,8 @@ assert.ok(Math.abs(sc.enemyCost - sc.budget) / sc.budget < 0.1, `budgets ${sc.en
   { const live = fbL.filter((p) => p.armed.includes(boatE)); assert.ok(live.length >= 2 && live.filter((p) => p.near === boatE).length >= live.length * 0.7, `and most of them while it fights (${live.filter((p) => p.near === boatE).length} of ${live.length})`); }
   assert.ok(boatE.dead || boatE.hubDead || boatE.alive < hp0, 'its shrapnel damages the gunboat');
   assert.ok(fbL.every((p) => !p.inside), 'no burst goes off inside a hull');
-  // Every 2-3 s from one gun.
-  for (let k = 1; k < fbL.length; k++) { const g = fbL[k].t - fbL[k - 1].t; assert.ok(g >= 20 && g <= 30, `one burst every 2-3 s (${g} ticks)`); }
+  // About every second from one gun.
+  for (let k = 1; k < fbL.length; k++) { const g = fbL[k].t - fbL[k - 1].t; assert.ok(g >= 8 && g <= 12, `one burst about every second (${g} ticks)`); }
   // No shells or shrapnel shots in the replay; at most a few hull sparks a burst.
   let shots = 0; for (let k = 0; k < fb.R.shotKind.n; k++) if (fb.R.shotKind.a[k] === 5 || fb.R.shotKind.a[k] === 6) shots++;
   assert.equal(shots, 0, 'no flak shells or shrapnel shots recorded');
@@ -327,6 +327,20 @@ assert.ok(Math.abs(sc.enemyCost - sc.budget) / sc.budget < 0.1, `budgets ${sc.en
   while (sb.tick < 200 && sL.length < 4) sb.step();
   const tg = new Set(sL.slice(0, 4).map((p) => near(sb, p).id));
   assert.ok(tg.size >= 3, `flak spreads its fire: the first 4 bursts went to ${tg.size} different ships`);
+  // A heavy armour skin protects what's inside (owner, 21 Nov 2026): a burst just off the hull only
+  // reaches blocks it can see, so the frame inside the skin is untouched while the skin stands.
+  {
+    const n = 12, cells = new Uint8Array(n * n);
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) cells[y * n + x] = x === 0 || y === 0 || x === n - 1 || y === n - 1 ? BT.HEAVY : BT.FRAME;
+    const box = { name: 'Box', cls: 'cruiser', w: n, h: n, cells, hub: 6 * n + 6, stance: 'line' }; cells[box.hub] = BT.HUB;
+    const hb = new Battle({ designs: [plat, box], ships: [{ design: 0, team: 0, x: -400, y: 0, a: 0, fixed: true }, { design: 1, team: 1, x: 0, y: 0, a: 0, fixed: true }], seed: 1, maxTime: 10 });
+    const e = hb.ents[1], hp0 = Array.from(e.hp);
+    hb.flakBurst(-n / 2 - 3, 0, 0, hb.ents[0].id, WEAPON[BT.FLAK]); // 3 blocks off its left side
+    let skin = 0, inside = 0;
+    for (let k = 0; k < n * n; k++) if (e.hp[k] < hp0[k]) { if (cells[k] === BT.HEAVY) skin++; else inside++; }
+    assert.ok(skin >= 5 && inside === 0, `a heavy armour skin takes the burst and nothing inside is touched (${skin} skin blocks hit, ${inside} inside)`);
+    assert.ok(e.hp.every((v, k) => cells[k] !== BT.HEAVY || v > 0), 'and the skin holds');
+  }
   console.log(`flak: picks the gunboat (light ${light0[0].toFixed(1)}) over the brick (${light0[1].toFixed(2)}), ${bursts} bursts, first bursts of 4 platforms at ${tg.size} different ships`);
 }
 
