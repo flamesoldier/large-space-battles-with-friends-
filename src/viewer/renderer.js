@@ -852,7 +852,9 @@ export class Renderer {
       if (age > life || !vis(E.x[i], E.y[i], 20)) continue;
       const u = age / life, base = BASE[sz] ?? 1.5, grow = GROW[sz] ?? 5;
       const r = base + u * grow;
-      const pl = sz >= 4;
+      // Blue only for the plasma cannon (4, 5) and a shield generator going off (7). Size 8, the cannon's
+      // explosive shell (20 Nov 2026), was caught by an old "4 and up" rule and drawn as a blue plasma flash.
+      const pl = sz === 4 || sz === 5 || sz === 7;
       g.push(E.x[i], E.y[i], 0, r, r, 1, alpha(sz === 0 ? C.pop : pl ? C.plGlow : C.boom, 1 - u));
       if (u < 0.3) g.push(E.x[i], E.y[i], 0, r * 0.5, r * 0.5, 1, alpha(pl ? C.plCore : C.boomCore, 1 - u / 0.3));
     }

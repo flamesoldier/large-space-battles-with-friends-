@@ -632,7 +632,8 @@ Weapons (numbers in `blocks.js`):
     46 cannon boats starting 600 / 120 apart: auto keeps 37 / 42 of 54, cannons 2 / 3 of 46 (90% of bullets
     hit). Load: 500 auto boats (1,500 guns) vs 707 cannon boats: 80 s battle, 3.6 s compute (4.5 ms a tick),
     343k bullets, peak 3,022 projectiles, 3.2 MB gzip replay, 64 MB heap. Bench (no auto guns) unchanged.
-    **Cannon rework and auto gun live 20 Nov 2026.**
+    **Cannon rework and auto gun live 20 Nov 2026.** Fixed 21 Nov 2026 (owner: "random blue and orange glows next to ships"):
+    the viewer drew explosion size 8 blue (an old `sz >= 4` = plasma rule); now only 4, 5 (plasma) and 7 (shield pop) are blue.
   - **Third round (owner, 20 Nov 2026: "make the blocks look better, make sure it works from whatever side
     they are attached, bullets visually more impactful, maybe a 0.2 fire rate and 200 range")**, on `v2-dev`,
     not live. Where this disagrees with the lines above, this wins:
