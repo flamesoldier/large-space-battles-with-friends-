@@ -13,10 +13,12 @@ layout(location=1) in vec3 posA;
 layout(location=2) in vec3 sizeShape;
 layout(location=3) in vec4 color;
 uniform vec2 uCam; uniform vec2 uScale;
-out vec2 vUV; out vec4 vCol; flat out highp float vShape; flat out float vAng; flat out vec2 vSize;
+out vec2 vUV; out vec4 vCol; flat out highp float vShape; flat out float vAng; flat out highp vec2 vSize;
 void main(){
   float c = cos(posA.z), s = sin(posA.z);
-  vec2 l = corner * sizeShape.xy;
+  // Detailed hull blocks (shape > 9.5) are always 0.5 a side, so their size slot carries a turning
+  // turret's aim (ship-local radians) and ticks since it fired instead (flak and plasma, 22 Nov 2026).
+  vec2 l = corner * (sizeShape.z > 9.5 ? vec2(0.5) : sizeShape.xy);
   vec2 w = posA.xy + vec2(l.x*c - l.y*s, l.x*s + l.y*c);
   gl_Position = vec4((w - uCam) * uScale, 0.0, 1.0);
   vUV = corner; vCol = color; vShape = sizeShape.z; vAng = posA.z; vSize = sizeShape.xy;
@@ -24,9 +26,10 @@ void main(){
 
 const FS = `#version 300 es
 precision mediump float;
-in vec2 vUV; in vec4 vCol; flat in highp float vShape; flat in float vAng; flat in vec2 vSize; out vec4 o;
+precision highp int; // shape codes run past 2^15: phones' mediump ints could garble them (22 Nov 2026)
+in vec2 vUV; in vec4 vCol; flat in highp float vShape; flat in float vAng; flat in highp vec2 vSize; out vec4 o;
 uniform float uDet;   // 0..1: how much fine detail to draw (by on-screen block size)
-uniform float uTime;  // replay time in ticks, for glows that pulse
+uniform highp float uTime;  // replay time in ticks, for glows that pulse (minutes of ticks: too big for mediump)
 // Detailed hull block. Shape code = 10 + type + 16 * open-sides mask + 256 * var + 2^20 (DEAD_BIT) if
 // it's debris; var is 0..7 for variety, or for plasma cannon blocks u * 10 + v, the block's
 // place in its 10x10 unit (the whole unit is drawn as one machine). Edges facing open space get a bevel lit from the upper left of the
@@ -116,10 +119,14 @@ vec3 hullBlock(int code, vec2 p) {
     base = mix(base, 0.95 - rL.y * r.y * 1.4, brake);
     float vents = brake * step(abs(abs(r.x - 0.815) - 0.075), 0.022) * step(0.27, abs(r.y));
     base = mix(base, 0.12, vents);
-    float bore = step(0.9, r.x) * step(abs(r.y), 0.15);
+    float bore = step(0.88, r.x) * step(abs(r.y), 0.17);
     base = mix(base, 0.05, bore);
     lit *= mix(1.0, base, d);
-    if (!dead) glow = vec3(1.0, 0.42, 0.12) * bore * 0.7 * d;
+    // red-hot muzzle (owner, 22 Nov 2026: cannons blended into the hull): a glowing bore, a red rim
+    // on the end of the muzzle brake and a soft halo, so every cannon shows red at its barrel's end
+    float rimHot = step(abs(r.y), 0.36) * step(0.92, r.x) * step(r.x, 0.97) * (1.0 - bore);
+    float halo = 1.0 - smoothstep(0.0, 0.32, length((r - vec2(0.93, 0.0)) * vec2(1.6, 1.0)));
+    if (!dead) glow = (vec3(1.0, 0.3, 0.1) * bore * 1.1 + vec3(1.0, 0.18, 0.08) * rimHot * 0.75 + vec3(1.0, 0.25, 0.08) * halo * 0.35) * max(d, 0.6);
   } else if (type == 8 || type == 11) { // missile launcher (20 Nov 2026): a pod with two missiles side by side, warheads out of the hull, hazard stripes at the back (guided: green seekers)
     float ga = float(var & 7) * 0.7853982;
     vec2 r = rotd(p, ga), rL = rotd(L, ga);
@@ -178,8 +185,12 @@ vec3 hullBlock(int code, vec2 p) {
     float pipe = (1.0 - smoothstep(0.022, 0.03, ax)) * step(0.2, R) + (1.0 - smoothstep(0.018, 0.026, dg)) * step(0.2, R) * step(R, 0.42);
     float pipeCore = (1.0 - smoothstep(0.0, 0.01, ax)) * step(0.2, R) + (1.0 - smoothstep(0.0, 0.008, dg)) * step(0.2, R) * step(R, 0.42);
     base = mix(base, 0.95 - dot(q, L) * 0.6, min(pipe, 1.0));
-    // the emitter barrel: a wide tube from the orb to the hull edge, wound with coils, a heavy muzzle ring
+    // the emitter barrel: a wide tube from the orb to the hull edge, wound with coils, a heavy muzzle
+    // ring. Since 22 Nov 2026 it turns to aim (vSize.x, ship-local) and kicks back when it fires.
+    ga = vSize.x;
+    float kick = vSize.y < 8.0 ? 0.045 * (1.0 - vSize.y / 8.0) * (1.0 - vSize.y / 8.0) : 0.0;
     vec2 rq = rotd(q, ga), rL = rotd(L, ga);
+    rq.x += kick * step(0.16, rq.x);
     float bw = 0.085;
     float barrel = step(abs(rq.y), bw) * step(0.17, rq.x) * step(rq.x, 0.49);
     float cylb = 1.0 - (rq.y / bw) * (rq.y / bw);
@@ -246,6 +257,7 @@ vec3 hullBlock(int code, vec2 p) {
     int pos = var - (var / 100) * 100;
     float ga = float(var / 100) * 0.7853982;
     vec2 q = (vec2(float(pos / 10), float(pos - (pos / 10) * 10)) + p * 0.5 + 0.5) / 10.0 - 0.5; // -0.5..0.5 across the unit
+    ga = vSize.x; // since 22 Nov 2026 the turret turns to aim (ship-local), see ReplayModel.aimAt
     vec2 aq = abs(q), rq = rotd(q, ga), rL = rotd(L, ga);
     float R = length(q), m = max(aq.x, aq.y);
     // gunmetal deck with diagonal tread plate, a raised armoured rim round the unit
@@ -261,16 +273,22 @@ vec3 hullBlock(int code, vec2 p) {
     float collar = 1.0 - smoothstep(0.012, 0.024, abs(R - 0.32));
     base = mix(base, 0.72 - dot(q, L) * 0.7, ring);
     base = mix(base, 1.15, collar);
-    // four barrels side by side, each with a muzzle brake and a dark bore
+    // four barrels side by side, each with a muzzle brake and a dark bore; they fire in a quick
+    // ripple (barrel order 1, 3, 0, 2, 0.7 ticks apart) and each kicks back and runs out again
+    float bi = clamp(floor(rq.y / 0.09) + 2.0, 0.0, 3.0);
+    float sinceB = vSize.y - (bi == 1.0 ? 0.0 : bi == 3.0 ? 0.7 : bi == 0.0 ? 1.4 : 2.1);
+    float kick = sinceB >= 0.0 && sinceB < 6.0 ? 0.06 * (1.0 - sinceB / 6.0) * (1.0 - sinceB / 6.0) : 0.0;
+    float hot = sinceB >= 0.0 && sinceB < 10.0 ? 1.0 - sinceB / 10.0 : 0.0;
+    vec2 rb = vec2(rq.x + kick, rq.y); // the barrels, drawn pulled back by the kick
     float by = rq.y - (floor(rq.y / 0.09) + 0.5) * 0.09;
     float inB = step(abs(rq.y), 0.18);
     float bw = 0.028;
-    float brl = inB * step(abs(by), bw) * step(0.12, rq.x) * step(rq.x, 0.485);
-    float brake = inB * step(abs(by), bw * 1.45) * step(abs(rq.x - 0.44), 0.03);
+    float brl = inB * step(abs(by), bw) * step(0.12, rb.x) * step(rb.x, 0.485);
+    float brake = inB * step(abs(by), bw * 1.45) * step(abs(rb.x - 0.44), 0.03);
     float cylf = 1.0 - (by / bw) * (by / bw);
     base = mix(base, 0.45 + 0.65 * cylf, brl);
     base = mix(base, 1.0 - rL.y * by * 8.0, brake);
-    float bore = brl * step(0.47, rq.x) * step(abs(by), bw * 0.45);
+    float bore = brl * step(0.47, rb.x) * step(abs(by), bw * 0.45);
     base = mix(base, 0.1, bore);
     // the mantlet the barrels come out of
     float mant = step(abs(rq.y), 0.2) * step(-0.17, rq.x) * step(rq.x, 0.15) * (1.0 - smoothstep(0.17, 0.2, length(rq * vec2(0.8, 1.0))));
@@ -278,7 +296,8 @@ vec3 hullBlock(int code, vec2 p) {
     lit *= mix(1.0, base, d);
     if (!dead) {
       float lights = 1.0 - smoothstep(0.01, 0.022, length(aq - vec2(0.39)));
-      glow = (vec3(1.0, 0.62, 0.2) * lights * (0.65 + 0.35 * sin(uTime * 0.7 + q.x * 7.0)) + vec3(1.0, 0.45, 0.15) * bore * 0.8
+      glow = (vec3(1.0, 0.62, 0.2) * lights * (0.65 + 0.35 * sin(uTime * 0.7 + q.x * 7.0)) + vec3(1.0, 0.45, 0.15) * bore * (0.8 + 1.5 * hot)
+            + vec3(1.0, 0.35, 0.1) * brl * step(0.36, rb.x) * hot * hot * 0.6
             + vec3(1.0, 0.6, 0.25) * (1.0 - smoothstep(0.0, 0.025, length(rq + vec2(0.1, 0.0)))) * 0.6) * d;
     }
   }
@@ -342,8 +361,10 @@ vec3 hullBlock(int code, vec2 p) {
       glow = (vec3(0.35, 0.9, 1.0) * (1.0 - smoothstep(0.0, 0.22, R)) * pulse + vec3(0.3, 0.85, 1.0) * coil * 0.35 * (0.6 + 0.4 * sin(uTime * 0.9 + ang * 4.0))) * d;
     }
   }
-  col = col * max(lit, 0.0) + glow;
-  return mix(col, col * 0.3, ol * (0.4 + 0.6 * d));
+  col = col * max(lit, 0.0);
+  // Glows go on after the dark outline (22 Nov 2026): guns point out of the hull, so their glowing
+  // muzzles sit right on an open edge, and the outline was painting the cannons' red ember out.
+  return mix(col, col * 0.3, ol * (0.4 + 0.6 * d)) + glow;
 }
 void main(){
   if (vShape > 9.5) {
@@ -372,6 +393,8 @@ void main(){
   }
 }`;
 
+const AIM_OUT = { a: 0, since: 0 };
+const FLAK_RIPPLE = [1.4, 0, 2.1, 0.7]; // ticks after the shot that each flak barrel fires (the shader's recoil uses the same)
 const DEAD_BIT = 1048576; // debris flag in a detailed block's shape code (var takes bits 8-19: a 10x10 unit's place + 100 × direction)
 const STRIDE = 7; // x, y, angle, sx, sy, shape, rgba(u32)
 
@@ -693,16 +716,28 @@ export class Renderer {
           blocks++;
         }
       } else {
-        // Detailed blocks: which sides are open (for bevels and outlines). Guns are drawn as fixed
-        // mounts (owner: static turrets looked cheap). Pure function of time, like the rest.
-        const nb = e.nb, un = e.unit, deadBit = dead ? DEAD_BIT : 0;
+        // Detailed blocks: which sides are open (for bevels and outlines). Small guns are fixed mounts
+        // pointing out of the hull; flak and plasma turrets turn to aim (ReplayModel.aimAt). Pure
+        // function of time, like the rest.
+        const nb = e.nb, un = e.unit, deadBit = dead ? DEAD_BIT : 0, gun = e.gun;
+        let aimA = null, aimS = null;
+        if (gun) { // flak and plasma turrets turn to aim (22 Nov 2026); a wreck's stays where it was when it broke off
+          const src = e.kind === 0 ? e : e.parent, at = e.kind === 0 ? t : e.t0, G = model.designs[src.design]._guns;
+          aimA = e._aimA || (e._aimA = new Float32Array(G.length)); aimS = e._aimS || (e._aimS = new Float32Array(G.length));
+          for (let k = 0; k < G.length; k++) {
+            model.aimAt(src, k, at, AIM_OUT);
+            aimA[k] = AIM_OUT.a; aimS[k] = e.kind === 0 ? Math.min(AIM_OUT.since, 99) : 99;
+          }
+        }
         for (let i = 0; i < lx.length; i++) {
           if (de[i] <= t) continue;
           const o = i * 4, a0 = nb[o], a1 = nb[o + 1], a2 = nb[o + 2], a3 = nb[o + 3];
           const mask = (a0 >= 0 && de[a0] > t ? 1 : 0) | (a1 >= 0 && de[a1] > t ? 2 : 0) | (a2 >= 0 && de[a2] > t ? 4 : 0) | (a3 >= 0 && de[a3] > t ? 8 : 0);
           const type = ty[i], x = tr.x + lx[i] * c - ly[i] * s, y = tr.y + lx[i] * s + ly[i] * c;
           const v = un[i] ? un[i] - 1 : (i * 2654435761) >>> 29; // weapons: the way they point (+ place in a unit); else variety
-          solid.push(x, y, tr.a, 0.5, 0.5, 10 + type + 16 * mask + 256 * v + deadBit, pal[type]);
+          const g = gun ? gun[i] : -1; // a block of a turning turret: its aim and ticks since it fired ride in the size slot
+          if (g >= 0) solid.push(x, y, tr.a, aimA[g], aimS[g], 10 + type + 16 * mask + 256 * v + deadBit, pal[type]);
+          else solid.push(x, y, tr.a, 0.5, 0.5, 10 + type + 16 * mask + 256 * v + deadBit, pal[type]);
           blocks++;
         }
       }
@@ -942,10 +977,10 @@ export class Renderer {
         continue;
       }
       if (t > S.t1[i]) continue;
-      if (age < 5 && vis(S.x[i], S.y[i], 20)) { // muzzle flash
-        const f = 1 - age / 5;
-        g.push(S.x[i], S.y[i], 0, 6 + 6 * f, 6 + 6 * f, 1, alpha2(C.plGlow, 0.7 * f));
-        g.push(S.x[i], S.y[i], 0, 3 * f + 0.5, 3 * f + 0.5, 1, alpha2(C.plCore, f));
+      if (age < 5 && vis(S.x[i], S.y[i], 20)) { // muzzle flash, at the end of the barrel (it turns to aim since 22 Nov 2026)
+        const f = 1 - age / 5, sp = Math.hypot(S.vx[i], S.vy[i]) || 1, mx = S.x[i] + (S.vx[i] / sp) * 4.6, my = S.y[i] + (S.vy[i] / sp) * 4.6;
+        g.push(mx, my, 0, 6 + 6 * f, 6 + 6 * f, 1, alpha2(C.plGlow, 0.7 * f));
+        g.push(mx, my, 0, 3 * f + 0.5, 3 * f + 0.5, 1, alpha2(C.plCore, f));
       }
       const vx = S.vx[i], vy = S.vy[i], x = S.x[i] + vx * age, y = S.y[i] + vy * age;
       if (!vis(x, y, 40)) continue;
@@ -1177,46 +1212,55 @@ export class Renderer {
   }
 
   /**
-   * A flak gun firing (explosion size 10, recorded at the gun just before its burst, size 6, at the same
-   * tick): there's no shell, so the shot is all muzzle blast (owner, 21 Nov 2026: "it doesn't look like
-   * they're firing"). Aimed at the burst it belongs to: a white-hot flash at the barrels' end, a cone of
-   * fire jets thrown forward, a glow back at the gun, sparks flung out ahead and a smoke puff that drifts
-   * forward and fades, about 0.8 s in all.
+   * A flak gun firing (explosion size 10, recorded at the gun's centre in the same tick as its burst,
+   * size 6, which gives the aim). Second look, 22 Nov 2026 (owner: "looks cheap"; it used to be one
+   * big glow over the turret and a fan of five identical jets): the turret has turned to aim
+   * (ReplayModel.aimAt), so each of its four barrels fires in turn from its own muzzle (the same
+   * ripple the shader uses for the recoil): a white-hot flash, a short tongue of flame, two jets out
+   * of the sides of the muzzle brake, a glow, then smoke puffs that drift on; spent casings tumble out
+   * of the sides of the turret. About 2 s in all.
    */
   drawFlakFire(E, i, t, vis, minW) {
     const g = this.glow, age = t - E.t[i], gx = E.x[i], gy = E.y[i];
-    if (age > 10 || !vis(gx, gy, 40)) return;
+    if (age > 20 || age < 0 || !vis(gx, gy, 40)) return;
     let a = hash01(i, 99) * 6.283;
     for (let k = i + 1; k < E.n && k < i + 40 && E.t[k] === E.t[i]; k++)
       if (E.s[k] === 6) { a = Math.atan2(E.y[k] - gy, E.x[k] - gx); break; }
-    const c = Math.cos(a), s = Math.sin(a), mx = gx + c * 6, my = gy + s * 6; // the barrels' end
-    // Glow at the gun as it fires.
-    if (age < 4) { const k = 1 - age / 4; g.push(gx, gy, 0, 9, 9, 1, alpha2(C.flGlow, 0.5 * k)); }
-    // Flash at the muzzle.
-    if (age < 3) {
-      const k = 1 - age / 3, r = 5 + age * 2.5;
-      g.push(mx, my, 0, r * 1.8, r * 1.8, 1, alpha2(C.flGlow, 0.7 * k));
-      g.push(mx, my, 0, Math.max(r * 0.7, minW * 2.5), Math.max(r * 0.7, minW * 2.5), 1, alpha2(C.flFlash, k));
-    }
-    // Cone of fire jets thrown forward, the middle one longest.
-    if (age < 3.5) {
-      const k = 1 - age / 3.5;
-      for (let j = -2; j <= 2; j++) {
-        const aj = a + j * 0.16 + (hash01(i, j + 10) - 0.5) * 0.08, len = (j === 0 ? 12 : 7.5 - Math.abs(j) * 1) * (0.6 + 0.4 * k);
-        g.push(mx + Math.cos(aj) * len, my + Math.sin(aj) * len, aj, len, Math.max(0.8 + 0.8 * k, minW * 1.2), 2, alpha2(j === 0 ? C.flFlash : C.flShrap, 0.95 * k));
+    const c = Math.cos(a), s = Math.sin(a), px = -s, py = c; // forward and across the barrels
+    for (let b = 0; b < 4; b++) {
+      const ab = age - FLAK_RIPPLE[b];
+      if (ab < 0) continue;
+      const off = (b - 1.5) * 0.9, kick = ab < 6 ? 0.6 * (1 - ab / 6) ** 2 : 0, tip = 4.85 - kick;
+      const mx = gx + c * tip + px * off, my = gy + s * tip + py * off;
+      if (ab < 3) { // glow round the muzzle
+        const k = 1 - ab / 3;
+        g.push(mx + c * 1.2, my + s * 1.2, 0, 3.2 + 1.5 * ab, 3.2 + 1.5 * ab, 1, alpha2(C.flGlow, 0.45 * k));
+      }
+      if (ab < 1.6) { // white-hot flash
+        const k = 1 - ab / 1.6, r = Math.max(1.1 + 0.8 * k, minW * 1.5);
+        g.push(mx + c * 0.4, my + s * 0.4, 0, r, r, 1, alpha2(C.flFlash, k));
+      }
+      if (ab < 2.6) { // tongue of flame out of the barrel, and the muzzle brake venting to both sides
+        const k = 1 - ab / 2.6, L = 1.6 + 1.6 * k + hash01(i, b + 40) * 0.6, wd = Math.max(0.35 + 0.35 * k, minW * 1.1);
+        g.push(mx + c * L, my + s * L, a, L, wd, 2, alpha2(C.flCore, 0.95 * k));
+        const V = 0.7 + 0.5 * k, bx = mx - c * 0.4, by = my - s * 0.4, vw = Math.max(0.22 + 0.2 * k, minW);
+        g.push(bx + px * V, by + py * V, a + Math.PI / 2, V, vw, 2, alpha2(C.flShrap, 0.8 * k));
+        g.push(bx - px * V, by - py * V, a - Math.PI / 2, V, vw, 2, alpha2(C.flShrap, 0.8 * k));
+      }
+      for (let p = 0; p < 2; p++) { // smoke puffs drifting on
+        const life = 14 + 6 * hash01(i, b * 2 + p + 50), u = ab / life;
+        if (u >= 1) continue;
+        const d = 1 + p * 1.4 + ab * (0.18 + 0.12 * hash01(i, b * 2 + p + 60)), side = (hash01(i, b * 2 + p + 70) - 0.5) * (0.6 + ab * 0.12);
+        const r = 0.7 + ab * 0.2 + p * 0.3;
+        g.push(mx + c * d + px * side, my + s * d + py * side, 0, r, r, 1, alpha2(C.flSmoke, 0.28 * (1 - u) * Math.min(1, ab / 1.5)));
+      }
+      if (ab < 9) { // a spent casing thrown out of the side of the turret
+        const side = b < 2 ? -1 : 1, sp = 0.6 + 0.35 * hash01(i, b + 80), u = ab / 9;
+        const ex = gx + px * side * (1.8 + ab * sp) - c * (0.5 + ab * 0.15), ey = gy + py * side * (1.8 + ab * sp) - s * (0.5 + ab * 0.15);
+        const r = Math.max(0.26, minW * 0.8);
+        g.push(ex, ey, a + ab * 0.9 * side, r * 1.5, r * 0.6, 1, alpha2(C.flShrap, 0.85 * (1 - u)));
       }
     }
-    // Sparks flung out ahead.
-    if (age < 6) {
-      const k = 1 - age / 6;
-      for (let j = 0; j < 8; j++) {
-        const aj = a + (hash01(i, j + 20) - 0.5) * 0.9, d = 3 + age * (3 + 3.5 * hash01(i, j + 30));
-        const r = Math.max(0.45 * k + 0.15, minW * 0.8);
-        g.push(mx + Math.cos(aj) * d, my + Math.sin(aj) * d, 0, r, r, 1, alpha2(C.flShell, k));
-      }
-    }
-    // Smoke puff drifting forward.
-    { const k = age / 10, d = 3 + age * 1.1, r = 4 + 6 * Math.sqrt(k); g.push(mx + c * d, my + s * d, 0, r, r, 1, alpha2(C.flSmoke, 0.4 * (1 - k))); }
   }
 
   /** Where a piece of flak shrapnel hit something (explosion size 9): a hot spark and a few sparks kicked off. */

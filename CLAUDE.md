@@ -644,6 +644,38 @@ Weapons (numbers in `blocks.js`):
   size 6, same tick; it looks ahead up to 40 records at that tick for the size 6 to aim at): glow at the gun, a
   white-hot flash 6 blocks out toward the burst (the barrels' end), a cone of 5 fire jets (middle 12 blocks), 8 sparks
   flung ahead, a smoke puff drifting forward; ~1 s. All three flak rounds above went live with it.
+- **Turning turrets, a new flak firing look, red cannon muzzles (owner, 22 Nov 2026: "big weapons (flak and plasma)
+  sometimes look all jumbled up… shots come from very different places than the turrets are pointing. The animation when
+  a flak is firing looks cheap. Cannon turrets sometimes don't have red on the end of their barrel and blend into the
+  ship")**, on `v2-dev`, not live. Viewer only (no sim, replay or server change; old replays get it too):
+  - **Flak and plasma turrets turn to aim.** `ReplayModel.matchAims()` (model.js) finds which turret fired each shot: a
+    plasma bolt (shot kind 2) starts at its gun's centre and a flak muzzle record (explosion 10) is at its gun's centre
+    with its burst (6) in the same tick, so each is matched to the turret whose centre is there then (per 20-tick window
+    every turret goes into a 24-block grid as a circle covering its path; tolerance 2.5 + 2% of its distance from the
+    ship's centre). `unitPos()` also fills `d._guns` (`{ type, lx, ly, rest }`, rest = the old out-of-the-hull direction)
+    and `d._gunOf`; entities get `e.gun` (turret per block) and `e.aims[g] = { t, a }` (ship-local). `aimAt(e, g, t)`:
+    pure function of time; turns onto the next shot just before it (`AIM_RATE` 0.25 rad/tick, or faster if shots come
+    quicker), holds, back to rest after `AIM_IDLE` 40 ticks (`AIM_RETURN` 15). Wrecks keep the aim they had when they
+    broke off. Measured: every shot matched (751/751, 10,587/10,587, 30,478/30,478); load +~0.2 s for a 3,200-ship battle
+    with 2,800 turrets (1.0 → 1.2 s in Node), ~1 µs per turret per second of battle, so a 20,000-ship flak-heavy giant
+    would add a few seconds.
+  - Shader: detailed blocks (shape > 9.5) are always 0.5 a side, so the VS uses 0.5 and the size slot carries the
+    turret's aim (`vSize.x`) and ticks since it fired (`vSize.y`), both `highp`. Flak: the barrels and mantlet turn, the
+    four barrels fire in a ripple (barrel order 1, 3, 0, 2, 0.7 ticks apart, `FLAK_RIPPLE` in renderer.js), each kicks
+    back 0.6 blocks and glows hot for 1 s. Plasma: the coiled barrel turns and kicks back; the muzzle flash is at the
+    barrel's end (4.6 blocks out), the charge glow still on the orb.
+  - **Flak firing, second look** (`drawFlakFire`): per barrel, from its own muzzle: white-hot flash, a short tongue of
+    flame, two side jets from the muzzle brake, a glow, two smoke puffs drifting on (~2 s); a spent casing tumbles out
+    of each side. The big glow over the whole turret and the fan of five jets are gone.
+  - **Cannons**: the outline drawn along open edges was painting over glows, and guns point out of the hull, so the
+    cannon's red ember sat right under it and vanished (it only showed on cannons pointing at a neighbour). Glows now go
+    on after the outline (every block type), and the cannon has a bigger red-hot bore, a red rim on the muzzle brake's
+    end and a soft red halo, shown from 60% strength even before full detail zoom.
+  - The fragment shader declares `precision highp int` and `highp uTime`: shape codes reach ~1.25 M, past mediump
+    ints' guaranteed 2^15, and on GPUs that really use 16-bit mediump (some phones) 10×10 units not pointing at the nose
+    would decode as garbage. Not seen on a computer; a possible cause of "jumbled" big weapons on a phone.
+  - Test in `tools/test-designer.mjs` (every flak and plasma shot traced to its turret, the turret points along each
+    shot as it fires and rests before the first). Replay sent: "Turning turrets".
 - **Cannon rework and auto gun (owner, 20 Nov 2026: "more like a cannon and less like a machine gun")**. Where
   the numbers above disagree, these win:
   - **Cannon**: one explosive shell every **10 s** doing **500** (was 100 every 2 s; same damage per second).

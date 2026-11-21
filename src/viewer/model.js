@@ -8,7 +8,7 @@ import { unpackReplay } from '../shared/replayFormat.js';
 import { MULTIBLOCK, BT } from '../shared/blocks.js';
 import { lineOfFire } from '../shared/arcs.js';
 import { bayRoute } from '../shared/bayRoute.js';
-import { openDir, unitDir } from '../shared/weaponLook.js';
+import { openDir, unitDir, lookAngle } from '../shared/weaponLook.js';
 
 export function lowerBound(arr, v, n = arr.length) {
   let lo = 0, hi = n;
@@ -27,6 +27,7 @@ export class ReplayModel {
     this.decodeChunks(meta, cols);
     this.applyBlockDeaths(cols);
     this.decodeEffects(meta, cols);
+    this.matchAims();
     this.computeBounds();
     this.computeStrength();
   }
@@ -53,29 +54,34 @@ export class ReplayModel {
       e.design = c.shipDesign[k];
       e.s0 = s0; e.n = n; e.t0 = 0;
       e.t1 = c.shipT1[k] === 65535 ? Infinity : c.shipT1[k];
-      const up = unitPos(d);
-      for (let i = 0; i < d.cells.length; i++) if (d.cells[i]) this.addCell(e, i, d.cells[i], up[i]);
+      const up = unitPos(d), go = d._gunOf;
+      for (let i = 0; i < d.cells.length; i++) if (d.cells[i]) this.addCell(e, i, d.cells[i], up[i], go[i]);
       this.finishEnt(e);
     }
   }
 
   makeEnt(kind, team, w, h) {
-    const e = { kind, team, w, h, parent: null, look: null, radius: Math.hypot(w, h) / 2, map: new Int32Array(w * h).fill(-1), tmp: [], sv0: 0, svN: 0, sh0: 0, shN: 0, thr: null, thrBehind: null, nb: null, unit: null };
+    const e = { kind, team, w, h, parent: null, look: null, radius: Math.hypot(w, h) / 2, map: new Int32Array(w * h).fill(-1), tmp: [], sv0: 0, svN: 0, sh0: 0, shN: 0, thr: null, thrBehind: null, nb: null, unit: null, gun: null, aims: null };
     this.ents.push(e);
     return e;
   }
 
-  /** unit: for plasma cannon blocks, 1 + position in its 10x10 unit (u * 10 + v); else 0. */
-  addCell(e, gridIndex, type, unit = 0) {
-    e.map[gridIndex] = e.tmp.length / 4;
-    e.tmp.push((gridIndex % e.w) + 0.5 - e.w / 2, ((gridIndex / e.w) | 0) + 0.5 - e.h / 2, type, unit);
+  /**
+   * unit: see unitPos (place in a multi-block unit and the way it points); gun: which of the
+   * design's turning turrets (flak, plasma) the block belongs to, or -1 (unitPos fills d._guns).
+   */
+  addCell(e, gridIndex, type, unit = 0, gun = -1) {
+    e.map[gridIndex] = e.tmp.length / 5;
+    e.tmp.push((gridIndex % e.w) + 0.5 - e.w / 2, ((gridIndex / e.w) | 0) + 0.5 - e.h / 2, type, unit, gun);
   }
 
   finishEnt(e) {
-    const n = e.tmp.length / 4;
+    const n = e.tmp.length / 5;
     e.lx = new Float32Array(n); e.ly = new Float32Array(n); e.type = new Uint8Array(n); e.unit = new Uint16Array(n);
     e.death = new Float32Array(n).fill(Infinity);
-    for (let i = 0; i < n; i++) { const o = i * 4; e.lx[i] = e.tmp[o]; e.ly[i] = e.tmp[o + 1]; e.type[i] = e.tmp[o + 2]; e.unit[i] = e.tmp[o + 3]; }
+    let guns = false;
+    for (let i = 0; i < n; i++) { const o = i * 5; e.lx[i] = e.tmp[o]; e.ly[i] = e.tmp[o + 1]; e.type[i] = e.tmp[o + 2]; e.unit[i] = e.tmp[o + 3]; if (e.tmp[o + 4] >= 0) guns = true; }
+    if (guns) { e.gun = new Int16Array(n); for (let i = 0; i < n; i++) e.gun[i] = e.tmp[i * 5 + 4]; }
     e.tmp = null;
   }
 
@@ -94,7 +100,7 @@ export class ReplayModel {
       for (let m = 0; m < c.chN[k]; m++) {
         const pi = c.chCells[c.chC0[k] + m];
         const ci = (((pi / pd.w) | 0) - minJ) * cw + ((pi % pd.w) - minI);
-        this.addCell(e, ci, pd.cells[pi], unitPos(pd)[pi]);
+        this.addCell(e, ci, pd.cells[pi], unitPos(pd)[pi], pd._gunOf[pi]);
       }
       this.finishEnt(e);
     }
@@ -334,6 +340,128 @@ export class ReplayModel {
     this.death = { n: deaths.length, t: Float32Array.from(deaths, (d) => d[0]), d: deaths };
   }
 
+  /**
+   * Which flak and plasma turret fired each shot (owner, 22 Nov 2026: big guns' barrels pointed one
+   * way and their shots left another). Viewer only: a plasma bolt starts at its gun's centre, a flak
+   * burst's muzzle record (explosion 10) is at its gun's centre with the burst (6) in the same tick,
+   * so each is matched to the turret whose centre is there at that moment. Each ship with turrets
+   * gets e.aims[g] = { t, a }: firing times and aims (ship-local radians) of its g-th turret, for
+   * aimAt(). Ships are bucketed in a coarse grid per 2 s window so huge battles stay quick.
+   */
+  matchAims() {
+    const cand = [];
+    for (const e of this.ents) if (e.kind === 0 && this.designs[e.design]._guns && this.designs[e.design]._guns.length) cand.push(e);
+    this.aimStats = { shots: 0, matched: 0 };
+    if (!cand.length) return;
+    const ev = []; // [t, x, y, world angle]
+    const P = this.plasma;
+    for (let i = 0; i < P.n; i++) ev.push([P.t0[i], P.x[i], P.y[i], Math.atan2(P.vy[i], P.vx[i])]);
+    const E = this.expl;
+    for (let i = 0; i < E.n; i++) {
+      if (E.s[i] !== 10) continue;
+      for (let k = i + 1; k < E.n && k < i + 40 && E.t[k] === E.t[i]; k++)
+        if (E.s[k] === 6) { ev.push([E.t[i], E.x[i], E.y[i], Math.atan2(E.y[k] - E.y[i], E.x[k] - E.x[i])]); break; }
+    }
+    ev.sort((a, b) => a[0] - b[0]);
+    this.aimStats.shots = ev.length;
+    // Per window of WIN ticks every turret goes into a fine grid as a circle covering where its centre
+    // is during the window (ends and middle, plus the match tolerance), so a shot only checks the
+    // one or two turrets near it.
+    const WIN = 20, CELL = 24, A = { x: 0, y: 0, a: 0 }, B = { x: 0, y: 0, a: 0 }, M = { x: 0, y: 0, a: 0 }, tr = { x: 0, y: 0, a: 0 };
+    const lists = cand.map(() => null), tolOf = (G) => 2.5 + 0.02 * Math.hypot(G.lx, G.ly);
+    const gs = [], gg = [], gx0 = [], gy0 = [], gr = [];
+    const place = (T, G, out) => { const c = Math.cos(T.a), s = Math.sin(T.a); out[0] = T.x + G.lx * c - G.ly * s; out[1] = T.y + G.lx * s + G.ly * c; };
+    const pa = [0, 0], pb = [0, 0], pm = [0, 0];
+    let k = 0;
+    while (k < ev.length) {
+      const w0 = ev[k][0];
+      let k1 = k;
+      while (k1 < ev.length && ev[k1][0] < w0 + WIN) k1++;
+      const grid = new Map();
+      gs.length = gg.length = gx0.length = gy0.length = gr.length = 0;
+      cand.forEach((e, ci) => {
+        if (e.t1 < w0) return;
+        this.transform(e, w0, A); this.transform(e, w0 + WIN, B); this.transform(e, w0 + WIN / 2, M);
+        const G = this.designs[e.design]._guns;
+        for (let g = 0; g < G.length; g++) {
+          place(A, G[g], pa); place(B, G[g], pb); place(M, G[g], pm);
+          const r = Math.max(Math.hypot(pa[0] - pm[0], pa[1] - pm[1]), Math.hypot(pb[0] - pm[0], pb[1] - pm[1])) * 1.3 + tolOf(G[g]) + 0.5;
+          const id = gs.length;
+          gs.push(ci); gg.push(g); gx0.push(pm[0]); gy0.push(pm[1]); gr.push(r);
+          for (let cy = Math.floor((pm[1] - r) / CELL); cy <= Math.floor((pm[1] + r) / CELL); cy++)
+            for (let cx = Math.floor((pm[0] - r) / CELL); cx <= Math.floor((pm[0] + r) / CELL); cx++) {
+              const key = cx * 100003 + cy, l = grid.get(key);
+              if (l) l.push(id); else grid.set(key, [id]);
+            }
+        }
+      });
+      for (; k < k1; k++) {
+        const [t, x, y, a] = ev[k];
+        const l = grid.get(Math.floor(x / CELL) * 100003 + Math.floor(y / CELL));
+        if (!l) continue;
+        let best = -1, bg = -1, bd = Infinity, ba = 0, last = -1;
+        for (const id of l) {
+          if ((gx0[id] - x) ** 2 + (gy0[id] - y) ** 2 > gr[id] * gr[id]) continue;
+          const ci = gs[id], e = cand[ci], G = this.designs[e.design]._guns[gg[id]];
+          if (e.t1 < t) continue;
+          if (ci !== last) { this.transform(e, t, tr); last = ci; }
+          place(tr, G, pm);
+          const d = Math.hypot(pm[0] - x, pm[1] - y);
+          if (d < tolOf(G) && d < bd) { bd = d; best = ci; bg = gg[id]; ba = a - tr.a; }
+        }
+        if (best < 0) continue;
+        this.aimStats.matched++;
+        const L = lists[best] || (lists[best] = this.designs[cand[best].design]._guns.map(() => []));
+        L[bg].push(t, ba);
+      }
+    }
+    cand.forEach((e, ci) => {
+      if (!lists[ci]) return;
+      e.aims = lists[ci].map((l) => {
+        const n = l.length / 2, t = new Float32Array(n), a = new Float32Array(n);
+        for (let j = 0; j < n; j++) { t[j] = l[j * 2]; a[j] = l[j * 2 + 1]; }
+        return n ? { t, a } : null;
+      });
+    });
+  }
+
+  /**
+   * Where turret g of ship e points at time t (ship-local radians) and how many ticks since it last
+   * fired (out.a, out.since). A pure function of t, like everything else here: the turret turns to
+   * its next target in the moment before it fires (at most AIM_RATE, or faster if the shots come
+   * quicker), holds there, and after AIM_IDLE ticks without firing swings back to rest (the way
+   * the unit is drawn pointing in the designer: the middle of its open arc).
+   */
+  aimAt(e, g, t, out) {
+    const G = this.designs[e.design]._guns[g], rest = G.rest;
+    out.a = rest; out.since = 1e9;
+    const A = e.aims && e.aims[g];
+    if (!A) return out;
+    const T = A.t, n = T.length;
+    const k = lowerBound(T, t + 1e-6) - 1; // last shot at or before t
+    const hold = (tau) => {
+      if (k < 0) return rest;
+      const idle = tau - T[k];
+      if (idle <= AIM_IDLE) return A.a[k];
+      const u = Math.min(1, (idle - AIM_IDLE) / AIM_RETURN);
+      return A.a[k] + angDiff(A.a[k], rest) * u * u * (3 - 2 * u);
+    };
+    if (k >= 0) out.since = t - T[k];
+    if (k + 1 < n) {
+      const tn = T[k + 1], an = A.a[k + 1];
+      const from = k >= 0 ? A.a[k] : rest;
+      const gap = k >= 0 ? tn - T[k] - 1 : Infinity;
+      const S = Math.max(1, Math.min(gap, Math.max(3, Math.abs(angDiff(from, an)) / AIM_RATE)));
+      if (tn - t < S) {
+        const s0 = hold(tn - S), u = 1 - (tn - t) / S;
+        out.a = s0 + angDiff(s0, an) * u * u * (3 - 2 * u);
+        return out;
+      }
+    }
+    out.a = hold(t);
+    return out;
+  }
+
   /** Interpolated transform. Ships: Catmull-Rom through 0.4 s samples. Chunks: analytic drift. */
   /**
    * Where beam i's ends are at time t: attached ends follow their ship or wreck, so a fading
@@ -453,6 +581,9 @@ export class ReplayModel {
   }
 }
 
+const AIM_RATE = 0.25, AIM_IDLE = 40, AIM_RETURN = 15; // turret turning: radians a tick; ticks before it turns back to rest, and how long that takes
+const angDiff = (a, b) => { let d = (b - a) % (2 * Math.PI); if (d > Math.PI) d -= 2 * Math.PI; if (d < -Math.PI) d += 2 * Math.PI; return d; };
+
 function cr(p0, p1, p2, p3, t) {
   const t2 = t * t, t3 = t2 * t;
   return 0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
@@ -480,6 +611,7 @@ const SINGLE_GUN = new Set([BT.LASER, BT.CANNON, BT.MISSILE, BT.PD, BT.GUIDED]);
 function unitPos(d) {
   if (d._unit) return d._unit;
   const { w, h, cells } = d, out = new Uint16Array(w * h), seen = new Uint8Array(w * h), stack = [];
+  const guns = [], gunOf = new Int16Array(w * h).fill(-1);
   for (let s = 0; s < cells.length; s++) {
     const T = cells[s];
     if (SINGLE_GUN.has(T)) { out[s] = 1 + openDir(cells, w, h, s); continue; }
@@ -500,7 +632,13 @@ function unitPos(d) {
       dir = unitDir({ m0: lf.m0, m1: lf.m1, route: lf.buried && T === BT.BAY ? bayRoute(cells, null, w, h, group) : null });
     }
     for (const c of group) out[c] = 1 + Math.min(N - 1, (c % w) - x0) * N + Math.min(N - 1, ((c / w) | 0) - y0) + dir * N * N;
+    if (T === BT.FLAK || T === BT.LANCE) { // big turrets that turn to aim (see ReplayModel.matchAims)
+      let sx = 0, sy = 0;
+      for (const c of group) { sx += (c % w) + 0.5 - w / 2; sy += ((c / w) | 0) + 0.5 - h / 2; gunOf[c] = guns.length; }
+      guns.push({ type: T, lx: sx / group.length, ly: sy / group.length, rest: lookAngle(dir) });
+    }
   }
+  d._guns = guns; d._gunOf = gunOf;
   return (d._unit = out);
 }
 

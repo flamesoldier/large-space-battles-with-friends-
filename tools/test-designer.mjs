@@ -640,5 +640,54 @@ for (let k = 0; k < FORTRESSES.length; k++) {
   for (let i = 0; i < small.types.length; i++) if (small.types[i]) want.push(small.types[i]);
   assert.deepEqual([...v.type].sort(), want.sort(), 'the replay rebuilds the new piece from the same blocks');
 }
+// Flak and plasma turrets turn to aim (owner, 22 Nov 2026: shots left from very different places than
+// the turrets pointed). The viewer finds which turret fired each shot and points it there as it fires.
+{
+  const w = 40, h = 32, cells = new Uint8Array(w * h);
+  for (let y = 4; y < h - 4; y++) for (let x = 2; x < w - 2; x++) cells[y * w + x] = BT.ARMOR;
+  const unit = (x0, y0, t) => { for (let y = y0; y < y0 + 10; y++) for (let x = x0; x < x0 + 10; x++) cells[y * w + x] = t; };
+  unit(14, 0, BT.FLAK); unit(14, h - 10, BT.FLAK); unit(w - 12, 11, BT.LANCE);
+  for (let y = 6; y < h - 6; y += 2) cells[y * w + 2] = BT.THRUSTER;
+  cells[16 * w + 6] = BT.HUB;
+  const d = { name: 'turrets', cls: 'battleship', w, h, cells, hub: 16 * w + 6, stance: 'line' };
+  const b = new Battle({ ...makeTestScenario(d, 4, null, 2), seed: 2, maxTime: 60 });
+  b.run();
+  const { meta, cols } = b.toReplay();
+  const m = new ReplayModel(unpackReplay(packReplay(meta, cols)));
+  assert.ok(m.aimStats.shots > 20, `flak and plasma fired (${m.aimStats.shots} shots)`);
+  assert.equal(m.aimStats.matched, m.aimStats.shots, 'every flak and plasma shot is traced to the turret that fired it');
+  const out = { a: 0, since: 0 }, tr = { x: 0, y: 0, a: 0 };
+  let shots = 0, kinds = new Set();
+  for (const e of m.ents) {
+    if (e.kind !== 0 || !e.aims) continue;
+    e.aims.forEach((A, g) => {
+      if (!A) return;
+      kinds.add(m.designs[e.design]._guns[g].type);
+      m.aimAt(e, g, A.t[0] - 50, out);
+      assert.ok(Math.abs(out.a - m.designs[e.design]._guns[g].rest) < 1e-6, 'a turret rests pointing out of the hull before it first fires');
+      for (let j = 0; j < A.t.length; j++) {
+        m.aimAt(e, g, A.t[j], out);
+        const dA = Math.abs(Math.atan2(Math.sin(out.a - A.a[j]), Math.cos(out.a - A.a[j])));
+        assert.ok(dA < 1e-4 && out.since === 0, 'at the moment it fires the turret points along its shot');
+        shots++;
+      }
+    });
+  }
+  assert.ok(kinds.has(BT.FLAK) && kinds.has(BT.LANCE), 'flak and plasma turrets both aim');
+  // the flak muzzle record's burst gives the true direction: check one against the recorded aim
+  const E = m.expl;
+  for (let i = 0; i < E.n; i++) if (E.s[i] === 10) {
+    const k = i + 1 + [...E.s.subarray(i + 1, i + 40)].indexOf(6);
+    const ship = m.ents.find((e) => e.kind === 0 && e.aims && e.aims.some((A) => A && A.t.includes(E.t[i])));
+    assert.ok(ship, 'the flak shot belongs to a ship');
+    m.transform(ship, E.t[i], tr);
+    const g = ship.aims.findIndex((A) => A && A.t.includes(E.t[i]));
+    m.aimAt(ship, g, E.t[i], out);
+    const want = Math.atan2(E.y[k] - E.y[i], E.x[k] - E.x[i]) - tr.a;
+    assert.ok(Math.abs(Math.atan2(Math.sin(out.a - want), Math.cos(out.a - want))) < 1e-4, 'the flak turret points at its burst');
+    break;
+  }
+  console.log(`  turrets: ${shots} flak and plasma shots, each fired with the turret pointing along it`);
+}
 console.log(`designer stats match the sim for ${checked} generated designs; validation ok`);
 console.log(`${FORTRESSES.length} Aegis fortresses are valid 150,000 cr defences`);
