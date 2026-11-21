@@ -847,6 +847,14 @@ export class Renderer {
     for (let i = lowerBound(E.t, t - FLAK_LIFE); i < E.n && E.t[i] <= t; i++) {
       if (E.s[i] === 6) { this._hasFrag = !!(m.frag && m.frag.n > 0); this.drawFlakBurst(E, i, t, vis, minW); continue; }
       if (E.s[i] === 9) { this.drawFlakHit(E, i, t, vis, minW); continue; }
+      if (E.s[i] === 10) { // flak gun firing (21 Nov 2026: no shell any more, just the flash and the burst)
+        const age = t - E.t[i];
+        if (age > 3 || !vis(E.x[i], E.y[i], 10)) continue;
+        const k = 1 - age / 3, r = 3 + age * 2;
+        g.push(E.x[i], E.y[i], 0, r * 1.6, r * 1.6, 1, alpha2(C.flGlow, 0.6 * k));
+        g.push(E.x[i], E.y[i], 0, Math.max(r * 0.6, minW * 2), Math.max(r * 0.6, minW * 2), 1, alpha2(C.flFlash, k));
+        continue;
+      }
       const sz = E.s[i], life = LIFE[sz] ?? 8, age = t - E.t[i];
       if (age > life || !vis(E.x[i], E.y[i], 20)) continue;
       const u = age / life, base = BASE[sz] ?? 1.5, grow = GROW[sz] ?? 5;
@@ -1147,7 +1155,7 @@ export class Renderer {
     }
     // Shockwave ring: out to ~24 blocks in 0.6 s, thinning as it goes.
     if (age < 6) {
-      const k = age / 6, r = 4 + 20 * Math.sqrt(k);
+      const k = age / 6, r = 4 + 15 * Math.sqrt(k); // the ring's band ends at about the blast's 16-block reach
       g.push(x, y, 0, r, r, 5, alpha2(C.flRing, 0.8 * (1 - k) * (1 - k)));
     }
     // Fireball: swells fast, then burns down from amber to dull red.

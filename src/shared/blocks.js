@@ -34,6 +34,13 @@ export const MULTIBLOCK = {
 // Structure is cheap and weapons and engines are expensive, so a good design spends most of its
 // blocks on armour and frame and a fair share of its credits on the few guns that do the work.
 // These are the only place prices live; the designer, shipyards and fleets all read them.
+/**
+ * Rough damage one flak burst does among small ships (measured 21 Nov 2026: ~460 a burst at peak 40,
+ * radius 16, against a swarm of small boats), for firepower figures: the designer's damage/s and the
+ * way ships turn to bring their guns to bear.
+ */
+export const flakBurstValue = (W) => W.damage * W.radius * 0.7;
+
 export const BLOCKS = {
   [BT.HUB]: { name: 'Hub', hp: 60, mass: 4, cost: 40 }, // fragile on purpose (owner): a hit hub and the ship falls apart
   [BT.ARMOR]: { name: 'Armor', hp: 110, mass: 2, cost: 3 },
@@ -140,23 +147,15 @@ export const WEAPON = {
   // size of the next waves (after them every wave is 1).
   [BT.BAY]: { kind: 'bay', range: 600, damage: 0, cooldown: 60, waves: [3], squadronGap: 0.4,
     fighter: { hp: 600, speed: 40, turn: 3, range: 60, damage: 45, cooldown: 1, orbit: 14 } }, // owner, Nov 2026 (rework): hp 600, damage 45, speed 40 (was 30)
-  // Flak cannon (owner, 14 Nov 2026: big ships needed an answer to swarms of small ships): a 10x10
-  // gun with long range. Every `cooldown` s it fires a salvo of `salvo` shells, `salvoGap` s apart, all
-  // at one target and landing within `scatter` blocks of one spot (owner: one shell was underwhelming
-  // for the equal most powerful weapon). Each shell flies straight (aimed with lead, up to maxLead s) and bursts
-  // when it comes within `fuse` blocks of its target's hull (or hits anything, or reaches where it
-  // was aimed), spraying `fragments` pieces of shrapnel. Since 14 Nov 2026 (owner) each piece is a
-  // projectile of its own at `fragSpeed`, flying for up to `fragLife` s until it meets something: it
-  // does `damage` to the first enemy block (or fighter) it meets, so it shreds
-  // small, lightly armoured ships and only scratches a big armoured hull. It picks the most lightly
-  // armoured ship in range (weapons for their armour and frame, `e.light`) and spreads its fire:
-  // ships with flak shells already on the way count for less, so hundreds of flak cannons don't all
-  // aim at one ship. The shell flies over allied ships and through wrecks (owner); its shrapnel is
-  // stopped by wrecks and allied ships, but allies take no damage. `cone` of the pieces carry on
-  // forward toward the target (within ±coneW rad), the rest spray all round. Tuned on the
-  // owner's Draisgon Major replay (Nate's 16 dreadnoughts with flak in place of their plasma vs
-  // Cupcake's plasma-destroyer swarm): 1-7 dreadnoughts left -> 11-13 (see CLAUDE.md).
-  [BT.FLAK]: { kind: 'flak', range: 700, damage: 30, fragments: 20, fragSpeed: 90, fragLife: 4, cone: 0, coneW: 0.7, salvo: 5, salvoGap: 0.3, scatter: 6, cooldown: 10, speed: 75, life: 14, fuse: 6, maxLead: 4, spread: 0.01,
+  // Flak cannon (owner, 14 Nov 2026: big ships needed an answer to swarms of small ships; reworked 21
+  // Nov 2026: "fire once every 2-3 seconds and at random space between heavy concentrations of enemy
+  // ships with no primary projectile… take out large quantities of weak back line ships"). A 10x10 gun
+  // with long range. Every 2-3 s (`cooldown` ±20%) a burst goes off at once, no shell, anywhere within
+  // `range` it can bear on: in open space between lightly armoured enemy ships packed close together
+  // (see fireFlak), within `scatter` of the spot picked. The burst hurts every enemy block within
+  // `radius`: `damage` at the centre, falling off in a straight line to 0 at the edge (see flakBurst).
+  // Old replays still have flak shells (shot kind 5) and shrapnel shots (kind 6).
+  [BT.FLAK]: { kind: 'flak', range: 700, damage: 40, radius: 16, fragSpeed: 90, scatter: 4, cooldown: 2.5, fuse: 6, speed: 75, life: 14, maxLead: 4, spread: 0,
     vs: { [4]: 1, [2]: 1, [3]: 1 }, shieldMult: 0.3 }, // damage 30 a piece (owner, 15 Nov 2026: was 60); shrapnel damage share against frame (4), armour (2), heavy armour (3); owner, 15 Nov 2026
 };
 

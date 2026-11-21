@@ -7,7 +7,7 @@
 // the two agree; if you change the formulas in battle.js, change them here too.
 
 import { bayRoute } from './bayRoute.js';
-import { BT, BLOCKS, WEAPON, MULTIBLOCK, HULL_CLASSES, MAX_BLOCKS, MAX_W, MAX_H, COOKOFF, SHIELD, shieldRegen as shieldRegenOf, isWeapon } from './blocks.js';
+import { BT, BLOCKS, WEAPON, MULTIBLOCK, HULL_CLASSES, MAX_BLOCKS, MAX_W, MAX_H, COOKOFF, SHIELD, shieldRegen as shieldRegenOf, isWeapon, flakBurstValue } from './blocks.js';
 import { lineOfFire, openDegrees } from './arcs.js';
 
 // Escort and Brawler were taken out (owner, Nov 2026). A design saved with either loads as Front
@@ -146,7 +146,7 @@ export function analyzeDesign(d) {
     const W = WEAPON[wp.type], f = (fire[wp.type] ||= { count: 0, buried: 0, dps: 0, alpha: 0, range: W.range });
     f.count++;
     if (wp.buried) { f.buried++; continue; }
-    const shot = W.damage * (W.fragments || 1) * (W.salvo || 1); // flak: a whole salvo of shrapnel bursts
+    const shot = W.kind === 'flak' ? flakBurstValue(W) : W.damage; // flak: a whole burst
     f.dps += shot / W.cooldown; f.alpha += shot;
     dps += shot / W.cooldown; alpha += shot; // point defence counts too: it's a real anti-ship gun now (32 every 0.2 s)
   }

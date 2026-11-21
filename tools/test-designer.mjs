@@ -273,43 +273,39 @@ assert.ok(Math.abs(sc.enemyCost - sc.budget) / sc.budget < 0.1, `budgets ${sc.en
   ], seed: 2, maxTime: 60 });
   const boatE = fb.ents[1], brickE = fb.ents[2], light0 = [boatE.light, brickE.light];
   assert.ok(boatE.light > brickE.light * 10, `the gunboat counts as lightly armoured (${boatE.light.toFixed(1)} vs ${brickE.light.toFixed(2)})`);
-  let first = -1, bursts = 0;
-  const hp0 = boatE.alive;
-  while (!fb.done && fb.tick < 400) {
-    fb.step();
-    for (let i = 0; i < fb.P.n; i++) if (fb.P.kind[i] === 5 && first < 0) first = fb.P.target[i];
-  }
-  for (let k = 0; k < fb.R.expS.n; k++) if (fb.R.expS.a[k] === 6) bursts++;
-  assert.equal(first, boatE.id, 'flak goes for the lightly armoured ship first');
-  assert.ok(bursts >= 3, `flak shells burst (${bursts})`);
+  // Since 21 Nov 2026 (owner) there's no shell: a burst goes off at once every 2-3 s, in open space
+  // beside or between lightly armoured enemy ships. Watch where bursts go.
+  const nearNow = (bt, x, y) => { let best = null, bd = Infinity; for (const e of bt.ents) { if (e.kind !== 0 || e.team === 0 || e.dead) continue; const d = Math.hypot(e.x - x, e.y - y) - e.radius; if (d < bd) { bd = d; best = e; } } return best; };
+  const watch = (bt) => { const L = []; bt.flakBurst = ((f) => (x, y, team, owner, W) => { L.push({ t: bt.tick, x, y, owner, inside: bt.blockAt(x, y), near: nearNow(bt, x, y), armed: bt.foeArmed[0].slice() }); return f(x, y, team, owner, W); })(bt.flakBurst.bind(bt)); return L; };
+  const near = (bt, p) => p.near;
+  const hp0 = boatE.alive, fbL = watch(fb);
+  while (!fb.done && fb.tick < 400) fb.step();
+  const bursts = fbL.length;
+  assert.ok(bursts >= 5, `flak bursts (${bursts})`);
+  assert.equal(near(fb, fbL[0]), boatE, 'the first burst goes for the lightly armoured ship');
+  { const live = fbL.filter((p) => p.armed.includes(boatE)); assert.ok(live.length >= 2 && live.filter((p) => p.near === boatE).length >= live.length * 0.7, `and most of them while it fights (${live.filter((p) => p.near === boatE).length} of ${live.length})`); }
   assert.ok(boatE.dead || boatE.hubDead || boatE.alive < hp0, 'its shrapnel damages the gunboat');
-  // Since 21 Nov 2026 shrapnel is worked out at the burst (owner: "you can't really see the flak
-  // projectiles, only the explosions"): no shots of kind 6, a hull spark (explosion 9) where a piece hits.
-  let frags = 0; for (let k = 0; k < fb.R.shotKind.n; k++) if (fb.R.shotKind.a[k] === 6) frags++;
-  assert.equal(frags, 0, 'shrapnel pieces are no longer replay shots');
-  let sparks = 0; for (let k = 0; k < fb.R.expS.n; k++) if (fb.R.expS.a[k] === 9) sparks++;
-  assert.ok(sparks >= bursts, `shrapnel hits leave sparks (${sparks} for ${bursts} bursts)`);
-  // Each spark sits on the hull it hit (the sweep's hit point, within a block of a live or lost block).
+  assert.ok(fbL.every((p) => !p.inside), 'no burst goes off inside a hull');
+  // Every 2-3 s from one gun.
+  for (let k = 1; k < fbL.length; k++) { const g = fbL[k].t - fbL[k - 1].t; assert.ok(g >= 20 && g <= 30, `one burst every 2-3 s (${g} ticks)`); }
+  // No shells or shrapnel shots in the replay; at most a few hull sparks a burst.
+  let shots = 0; for (let k = 0; k < fb.R.shotKind.n; k++) if (fb.R.shotKind.a[k] === 5 || fb.R.shotKind.a[k] === 6) shots++;
+  assert.equal(shots, 0, 'no flak shells or shrapnel shots recorded');
+  let flashes = 0; for (let k = 0; k < fb.R.expS.n; k++) if (fb.R.expS.a[k] === 10) flashes++;
+  assert.equal(flashes, bursts, 'a muzzle flash for every burst');
+  // A crowd beats a loner: one gunboat on its own, four packed together, all the same ship.
   {
-    const fb2 = new Battle({ designs: [plat, boat, brick], ships: [
-      { design: 0, team: 0, x: 0, y: 0, a: 0, fixed: true }, { design: 1, team: 1, x: 300, y: 20, a: Math.PI, fixed: true },
-      { design: 2, team: 1, x: 300, y: -20, a: Math.PI, fixed: true }], seed: 4, maxTime: 40 });
-    fb2.run();
-    const rp = fb2.toReplay(), u = unpackReplay(packReplay(rp.meta, rp.cols)), E = new ReplayModel(u).expl;
-    let n = 0, worst = 0;
-    for (let k = 0; k < E.n; k++) {
-      if (E.s[k] !== 9) continue;
-      n++;
-      let best = Infinity;
-      for (const e of [fb2.ents[1], fb2.ents[2]]) {
-        const dx = E.x[k] - e.x, dy = E.y[k] - e.y, lx = dx * e.c + dy * e.s + e.w / 2, ly = -dx * e.s + dy * e.c + e.h / 2;
-        best = Math.min(best, Math.hypot(Math.max(0, -lx, lx - e.w), Math.max(0, -ly, ly - e.h)));
-      }
-      worst = Math.max(worst, best);
-    }
-    assert.ok(n >= 20 && worst < 1, `shrapnel sparks sit on the hull they hit (${n} sparks, worst ${worst.toFixed(2)} blocks off)`);
+    const ships = [{ design: 0, team: 0, x: 0, y: 0, a: 0, fixed: true }, { design: 1, team: 1, x: 420, y: -150, a: Math.PI, fixed: true }];
+    for (let k = 0; k < 4; k++) ships.push({ design: 1, team: 1, x: 420 + (k % 2) * 16, y: 120 + ((k / 2) | 0) * 16, a: Math.PI, fixed: true });
+    const cb = new Battle({ designs: [plat, boat], ships, seed: 7, maxTime: 60 });
+    const L = watch(cb);
+    while (cb.tick < 300 && L.length < 10) cb.step();
+    const toCrowd = L.filter((p) => p.y > 0).length;
+    assert.ok(toCrowd >= 7, `flak bursts go for the crowd (${toCrowd} of ${L.length})`);
+    // And land between them: within the group's box.
+    assert.ok(L.filter((p) => p.y > 0).every((p) => p.x > 400 && p.x < 456 && p.y > 100 && p.y < 156), 'in among the crowd');
   }
-  // An allied brick right in front of the platform: shells fly over it, shrapnel never hurts it.
+  // An allied brick right in front of the platform: shrapnel never hurts it.
   {
     const ab = new Battle({ designs: [plat, boat, brick], ships: [
       { design: 0, team: 0, x: 0, y: 0, a: 0, fixed: true },
@@ -317,50 +313,21 @@ assert.ok(Math.abs(sc.enemyCost - sc.budget) / sc.budget < 0.1, `budgets ${sc.en
       { design: 1, team: 1, x: 420, y: 0, a: Math.PI, fixed: true },
     ], seed: 6, maxTime: 60 });
     const hpSum = (e) => e.hp.reduce((s, v) => s + Math.max(0, v), 0);
-    const ally = ab.ents[1], foe = ab.ents[2], a0 = ally.alive, f0 = hpSum(foe);
+    const ally = ab.ents[1], foe = ab.ents[2], a0 = ally.alive, f0 = hpSum(foe), L = watch(ab);
     while (!ab.done && ab.tick < 300) ab.step();
-    let b2 = 0; for (let k = 0; k < ab.R.expS.n; k++) if (ab.R.expS.a[k] === 6) b2++;
-    assert.ok(b2 >= 5 && (foe.dead || foe.hubDead || hpSum(foe) < f0), `flak shells fly over an allied ship to the enemy and damage it (${b2} bursts)`);
+    assert.ok(L.length >= 5 && (foe.dead || foe.hubDead || hpSum(foe) < f0), `flak reaches past an allied ship to the enemy (${L.length} bursts)`);
     assert.equal(ally.alive, a0, 'flak shrapnel never damages an allied ship');
   }
-  // Spread: four platforms, four identical gunboats: the first salvos go to different ships.
+  // Spread: four platforms, four identical gunboats far apart: the first 4 bursts go to different ships.
   const ships = [];
-  for (let k = 0; k < 4; k++) ships.push({ design: 0, team: 0, x: 0, y: -90 + k * 60, a: 0, fixed: true });
-  for (let k = 0; k < 4; k++) ships.push({ design: 1, team: 1, x: 450, y: -90 + k * 60, a: Math.PI, fixed: true });
+  for (let k = 0; k < 4; k++) ships.push({ design: 0, team: 0, x: 0, y: -150 + k * 100, a: 0, fixed: true });
+  for (let k = 0; k < 4; k++) ships.push({ design: 1, team: 1, x: 450, y: -150 + k * 100, a: Math.PI, fixed: true });
   const sb = new Battle({ designs: [plat, boat], ships, seed: 4, maxTime: 60 });
-  const tg = new Set();
-  let n = 0;
-  const seenGun = new Set();
-  sb.addProjectile = ((f) => (kind, ...r) => { if (kind === 5 && n < 4 && !seenGun.has(r[6])) { seenGun.add(r[6]); n++; tg.add(r[8]); } return f(kind, ...r); })(sb.addProjectile.bind(sb));
-  while (sb.tick < 200 && n < 4) sb.step();
-  assert.ok(tg.size >= 3, `flak spreads its fire: the first 4 salvos went to ${tg.size} different ships`);
-  // A salvo: 5 shells from one cannon, a few tenths of a second apart, all at the same ship.
-  {
-    const sv = new Battle({ designs: [plat, boat], ships: [{ design: 0, team: 0, x: 0, y: 0, a: 0, fixed: true }, { design: 1, team: 1, x: 400, y: 0, a: Math.PI, fixed: true }, { design: 1, team: 1, x: 400, y: 70, a: Math.PI, fixed: true }], seed: 5, maxTime: 60 });
-    const shots = [];
-    sv.addProjectile = ((f) => (kind, ...r) => { if (kind === 5) shots.push([sv.tick, r[8]]); return f(kind, ...r); })(sv.addProjectile.bind(sv));
-    while (sv.tick < 150 && shots.length < 6) sv.step();
-    const first5 = shots.slice(0, 5);
-    assert.ok(first5.length === 5 && first5.every((x) => x[1] === first5[0][1]), `a salvo is 5 shells at one ship (${JSON.stringify(first5)})`);
-    assert.ok(first5[4][0] - first5[0][0] <= 15, 'the salvo leaves within 1.5 s');
-    assert.ok(shots.length < 6 || shots[5][0] - first5[4][0] >= 30, 'then the cannon reloads');
-  }
-  // Never bursts inside a hull (15 Nov 2026): a wreck-like brick parked right beside the target, on
-  // the shells' path, used to catch bursts inside it.
-  {
-    const ib = new Battle({ designs: [plat, boat, brick], ships: [
-      { design: 0, team: 0, x: 0, y: 0, a: 0, fixed: true },
-      { design: 2, team: 1, x: 392, y: 0, a: Math.PI, fixed: true },
-      { design: 1, team: 1, x: 404, y: 0, a: Math.PI, fixed: true },
-    ], seed: 3, maxTime: 60 });
-    ib.ents[1].light = 0; // only the gunboat is a target
-    let n = 0, inside = 0;
-    ib.flakBurst = ((f) => (i, x, y) => { n++; if (ib.blockAt(x, y)) inside++; return f(i, x, y); })(ib.flakBurst.bind(ib));
-    while (!ib.done && ib.tick < 400) ib.step();
-    assert.ok(n >= 5, `flak bursts beside a target with a ship next to it (${n})`);
-    assert.equal(inside, 0, `no flak shell bursts inside a hull (${inside} of ${n})`);
-  }
-  console.log(`flak: picks the gunboat (light ${light0[0].toFixed(1)}) over the brick (${light0[1].toFixed(2)}), ${bursts} bursts, first salvos of 4 platforms at ${tg.size} different ships`);
+  const sL = watch(sb);
+  while (sb.tick < 200 && sL.length < 4) sb.step();
+  const tg = new Set(sL.slice(0, 4).map((p) => near(sb, p).id));
+  assert.ok(tg.size >= 3, `flak spreads its fire: the first 4 bursts went to ${tg.size} different ships`);
+  console.log(`flak: picks the gunboat (light ${light0[0].toFixed(1)}) over the brick (${light0[1].toFixed(2)}), ${bursts} bursts, first bursts of 4 platforms at ${tg.size} different ships`);
 }
 
 // Shield generator (owner, 15 Nov 2026): a 10x10 unit, not a gun; its ship's shield pool takes every

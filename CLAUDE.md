@@ -541,19 +541,39 @@ Weapons (numbers in `blocks.js`):
     block dies (pure function of time; cached per entity and k); `lodColours()` = average of the blocks'
     palette colours mixed 45% toward the side's colour (wrecks: none). Quads drawn ≈ screen pixels the
     ships cover, whatever the battle size. No sim, replay or server change.
-- **Flak shrapnel worked out at the burst (owner, 21 Nov 2026: "in real life you can't really see the flak
-  projectiles only the explosions… really good looking explosions and don't even need to bother with
-  projectiles")**, on `v2-dev`, not live. Where the shrapnel lines above disagree, this wins: `flakBurst()` runs
-  each piece's line at once (same random directions and reach, fragSpeed × 85–115% × fragLife), in `FRAG_STEP`
-  (24) pieces through `sweep` and `fighterOnSegment`; first ship or wreck stops it, only enemies damaged
-  (`FRAG_VS`, `shieldMult` as before), enemy fighters too. No K_FRAG projectiles or replay shots any more; a
-  hit records explosion **size 9** (hull spark, `drawFlakHit`). Viewer `drawFlakBurst` (new replays): flash,
-  shockwave ring (glow shape **5**, ring band), fireball with hot core, 14 shrapnel streaks for 0.4 s, 9 embers,
-  3 smoke puffs for 4 s (`FLAK_LIFE` 40 ticks; the explosion loop looks back that far). Replays with shot kind 6
-  (14–21 Nov) keep the old small burst and drawn shrapnel (`_hasFrag` = `m.frag.n > 0`). Measured, 4 × 1,000
-  generated with 40% new-block ships, 5-min limit: 59 → 57 s compute, raw replay 71 → 65 MB, projectiles in
-  flight ~7,200 → ~3,300, survivors similar. Bench unchanged. Test in `tools/test-designer.mjs` (no kind-6
-  shots, sparks on the hull hit).
+- **Flak rework: bursts, no shell, no shrapnel (owner, 21 Nov 2026: "fire once every 2-3 seconds and at random
+  space between heavy concentrations of enemy ships with no primary projectile just fire then flak burst… random
+  bursts going throughout the battlefield for looks and for practical purposes its meant to take out large
+  quantities of weak back line (thrusters and a weapon) ships that just don't die because other weapons can't reach
+  them"; and earlier "you can't really see the flak projectiles only the explosions")**, on `v2-dev`, not live. Where
+  the flak lines above disagree, this wins. `WEAPON[BT.FLAK]`: range 700, `cooldown` 2.5 (×0.8–1.2), `damage` **40**
+  peak, `radius` 16, `scatter` 4, `shieldMult` 0.3 (`fragSpeed` kept only for old replays' `meta.shotSpeed[6]`).
+  `fireFlak()`: looks at up to `FLAK_PICKS` (16) random armed enemy ships in range it bears on, score = (`light` +
+  0.05) × (1 + `crowd`) × random 0.6–1.4, ×0.4 if a burst went for it in the last `FLAK_RECENT` (30) ticks
+  (`e.flakIn` is now that tick); `countCrowd()` (cached `FLAK_CROWD_EVERY` 10 ticks; entity fields `crowd`,
+  `crowdT`, `crowdN`) counts its side's ships within `FLAK_CROWD_R` (40) of its hull and its nearest one. The burst
+  lands at a random 30–70% point between it and that neighbour (alone: just off its hull toward the gun), moved out
+  of any hull (6 random tries, then toward the gun). Records explosion **10** (muzzle flash at the gun) and **6**
+  (the burst). `flakBurst(x, y, team, owner, W)`: an area blast, every enemy block within `radius` takes `damage` ×
+  (1 − d/R) × `FRAG_VS` (min block hp, so shields soak what it does), enemy fighters too; friends never, wrecks yes.
+  `flakBurstValue(W)` (blocks.js, damage × radius × 0.7 ≈ measured 460 a burst) is flak's firepower for `e.face`
+  and the designer. K_FLAK shells / K_FRAG code paths stay only so nothing breaks; no new replay has shot kinds 5/6.
+  Viewer: `drawFlakBurst` (new replays: flash, shockwave ring to ~R (glow shape **5**), fireball, 14 streaks,
+  embers, smoke 4 s, `FLAK_LIFE` 40), size 10 flash; replays with shot kind 6 keep the old look (`_hasFrag` =
+  `m.frag.n > 0`); size 9 (hull spark, `drawFlakHit`) is only in never-live v2-dev replays.
+  Why a blast: with instant shrapnel rays (an intermediate version) 98% of bursts went to the right ships but 58% of
+  pieces hit nothing and each 325-cr back-line boat took ~1,400 damage to kill; recording a spark per hit was 780k
+  records, nearly what the shrapnel shots had cost. Measured (`/tmp`-style `backline.mjs`: 6 flak battleships + 47
+  destroyers vs 38 destroyers + 222 back-line missile boats (hub, 6 thrusters, 2 launchers, frame, artillery), 120k
+  cr a side, 3 seeds): live flak 50–115 boats killed, flak side loses; instant shrapnel ~85; blast peak 80: ~165,
+  peak 60: ~157, **peak 40: ~150 killed (half gone at 82–100 s), flak side wins keeping 4–5 of 6 battleships**,
+  peak 30: ~130. Same flak side vs 19 generated battleships (equal value): flak doing no damage 10 left (= live
+  flak: the old flak did almost nothing to them), peak 40 3–7 left. 4 × 1,000 generated with 40% new-block
+  ships, 5-min limit, live → now: raw replay 71 → 52 MB, gzip 24 → 17 MB, compute 71 → 68 s. Compute is ships, not
+  flak (cpu profile: step 14%, grid build 12%, collide 8%, sweep 7%, refit 6%, fire 5%; flak not in the top 18).
+  Bench 1,000 vs 1,000 identical. Tests in `tools/test-designer.mjs` (lightly armoured target, every 2–3 s, never
+  inside a hull, no shot kinds 5/6, a flash per burst, a crowd of four beats a loner and the bursts land among them,
+  allies untouched, spread over 4 targets). Replay sent: "Flak vs back-line swarm".
 - **Cannon rework and auto gun (owner, 20 Nov 2026: "more like a cannon and less like a machine gun")**. Where
   the numbers above disagree, these win:
   - **Cannon**: one explosive shell every **10 s** doing **500** (was 100 every 2 s; same damage per second).
