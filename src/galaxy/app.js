@@ -11,6 +11,7 @@
 // (net.js), shows time passing between updates, and sends your actions to the server, which
 // applies them as the logged-in player. No speed buttons, no "Playing as", no new game.
 
+import { replayPageParts } from './replayFile.js';
 import { BT } from '../shared/blocks.js';
 import { decodeDesign, encodeDesign, analyzeDesign, designCost } from '../shared/shipStats.js';
 import { SHIPYARD_INTERVAL_MIN, SHIPS_PER_BUILD, SHIPYARD_PRICE_MULT, SHIPYARD_CROWDING_VALUE, SHIPYARD_SELL_REFUND, crowdingMult, defensePrice, DEFENSE_PRICE_SHARE, MAX_DEFENSE_ORDER, SELL_HOURS, DEFENSE_BUILD_HOURS } from '../shared/economy.js';
@@ -1345,24 +1346,39 @@ async function watch(id) {
 let backToCombat = false;
 
 /**
- * Save a battle's replay as a file (owner, 14 Nov 2026: so a player can send a replay for a bug
- * report). The file is the packed replay, gzipped, with the viewer's extra info (sides, title) in
- * a small JSON header line: `LSBREPLAY1\n<json>\n` then the gzip bytes.
+ * Save a battle's replay as a file. First (owner, 14 Nov 2026) a raw `.lsbreplay` for bug reports;
+ * since 22 Nov 2026 (owner: "a standalone playable in a browser file") a self-contained `.html`
+ * page: the replay viewer plus the replay, opened by double-clicking, no server or game needed.
+ * Inside it: `<script id="lsb-meta" type="application/json">` holds what the viewer is sent (title,
+ * sides, teams, side colours) plus the world, time and log text; `<script id="lsb-replay"
+ * type="text/plain">` the packed replay, gzipped, base64 (unpackReplay() after gunzip, as before).
  */
 async function downloadReplay(id) {
+  if (!VIEWER_PAGE) return toast('This build has no replay viewer. Run npm run build.', true);
   if (ONLINE) toast('Preparing the replay file…');
   const rep = ONLINE ? await net.replay(id) : await replays.get(id);
   if (!rep) return toast('Couldn\'t load that replay.', true);
   const entry = world.log.find((x) => x.battle?.id === id);
   const P = entry ? world.planets[entry.planet] : null;
-  const head = new TextEncoder().encode(`LSBREPLAY1\n${JSON.stringify({ id, title: rep.title, sides: rep.sides, teams: rep.teams, planet: P?.name, t: entry?.t, text: entry?.text })}\n`);
+  const B = entry?.battle;
+  const title = rep.title || (P ? `Battle at ${P.name}` : 'Battle replay');
+  const meta = { id, title, sides: rep.sides, teams: rep.teams, computeMs: rep.computeMs, planet: P?.name, t: entry?.t, text: entry?.text,
+    sideColors: B ? [colorOf(B.attacker), colorOf(B.defender)] : null };
   const gz = await new Response(new Blob([rep.bytes]).stream().pipeThrough(new CompressionStream('gzip'))).blob();
-  const url = URL.createObjectURL(new Blob([head, gz], { type: 'application/octet-stream' }));
+  const b64 = await new Promise((ok, fail) => { // a data URL is the fast way to base64 a big blob
+    const fr = new FileReader();
+    fr.onload = () => ok(String(fr.result).slice(String(fr.result).indexOf(',') + 1));
+    fr.onerror = () => fail(fr.error);
+    fr.readAsDataURL(gz);
+  }).catch(() => null);
+  if (b64 === null) return toast('Couldn\'t prepare the replay file.', true);
+  const [head, tail] = replayPageParts(pageDoc(VIEWER_PAGE), meta);
+  const url = URL.createObjectURL(new Blob([head, b64, tail], { type: 'text/html' }));
   const a = document.createElement('a');
-  a.href = url; a.download = `battle-${(P?.name || 'replay').replace(/[^A-Za-z0-9]+/g, '-')}-${id}.lsbreplay`;
+  a.href = url; a.download = `battle-${(P?.name || 'replay').replace(/[^A-Za-z0-9]+/g, '-')}-${id}.html`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60000);
-  toast('Replay saved to your downloads.');
+  toast('Replay saved to your downloads: open the file in any web browser to watch it.');
 }
 $('replay-close').addEventListener('click', () => {
   $('replay-overlay').hidden = true; $('replay-frame').srcdoc = '';
@@ -1556,7 +1572,7 @@ function renderCombat() {
     return `<div class="fight ${tone}${e.id > seen && involves(e, ui.me) ? ' new' : ''}">
       <div class="fhead"><span class="res">${label}</span><span class="where">${esc(P?.name ?? '')}</span><time>${clockText(e.t)}</time></div>
       <p>${esc(e.text)}</p>${nums ? `<div class="nums">${nums}</div>` : ''}
-      <div class="acts">${e.battle ? `<button class="small ${can ? 'go' : ''}" data-watch="${e.battle.id}" ${can ? '' : `disabled title="${ONLINE ? 'No replay for this battle' : 'This replay is no longer saved in this browser'}"`}>Watch</button>` : ''}${can ? `<button class="small" data-dl="${e.battle.id}" title="Save this replay as a file, e.g. to send it to someone for a bug report">Download</button>` : ''}<button class="small" data-planet="${e.planet}">Map</button></div>
+      <div class="acts">${e.battle ? `<button class="small ${can ? 'go' : ''}" data-watch="${e.battle.id}" ${can ? '' : `disabled title="${ONLINE ? 'No replay for this battle' : 'This replay is no longer saved in this browser'}"`}>Watch</button>` : ''}${can ? `<button class="small" data-dl="${e.battle.id}" title="Save this replay as a web page you can open in any browser, keep, or send to a friend">Download</button>` : ''}<button class="small" data-planet="${e.planet}">Map</button></div>
     </div>`;
   }).join('') || `<p class="empty">${combatFilter === 'mine' ? 'No battles involving you yet. Battles, and worlds you take or lose, show up here.' : 'No battles yet.'}</p>`;
 }

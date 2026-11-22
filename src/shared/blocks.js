@@ -52,7 +52,7 @@ export const BLOCKS = {
   [BT.MISSILE]: { name: 'Missile launcher', hp: 300, mass: 5, cost: 75 }, // was 120, then 90 (spread-out fleets take fewer ships per blast)
   [BT.PD]: { name: 'Anti-missile point defence', hp: 300, mass: 1.5, cost: 90 }, // 2.0 (owner, 18 Nov 2026): 90 (1.0: 60); // renamed (owner, Nov 2026): a friend didn't know it shoots missiles down; cost was 30 (makes missiles better)
   [BT.GUIDED]: { name: 'Guided missile launcher', hp: 300, mass: 5, cost: 135 }, // owner, Nov 2026: the missile launcher's stats, steering missiles, dearer
-  [BT.BAY]: { name: 'Fighter bay', hp: 150, mass: 3, cost: 6.25 }, // owner, Nov 2026: 225 cr a 6x6 unit (asked for 200-250)
+  [BT.BAY]: { name: 'Fighter bay', hp: 45, mass: 3, cost: 6.25 }, // hp 150 → 45 (owner, 22 Nov 2026: frame's, it belongs inside ships) // owner, Nov 2026: 225 cr a 6x6 unit (asked for 200-250)
   [BT.LANCE]: { name: 'Plasma cannon', hp: 750, mass: 4, cost: 15 },
   [BT.AUTO]: { name: 'Auto gun', hp: 300, mass: 2, cost: 125 }, // owner, 20 Nov 2026: 500 cr a 2x2 unit (first 250), 300 hp a block
   [BT.SHIELD]: { name: 'Shield generator', hp: 45, mass: 4, cost: 15 }, // owner, 15 Nov 2026: plasma's price, extremely weak blocks
@@ -163,7 +163,7 @@ export const WEAPON = {
   // (see fireFlak), within `scatter` of the spot picked. The burst does `damage` to every enemy block
   // within `radius` that it can see: the first block on each line from it, no drop-off (see flakBurst).
   // Old replays still have flak shells (shot kind 5) and shrapnel shots (kind 6).
-  [BT.FLAK]: { kind: 'flak', range: 700, damage: 40, radius: 20, fragSpeed: 90, scatter: 4, cooldown: 1, fuse: 6, speed: 75, life: 14, maxLead: 4, spread: 0,
+  [BT.FLAK]: { kind: 'flak', range: 900, damage: 40, radius: 20, fragSpeed: 90, scatter: 4, cooldown: 1, fuse: 6, speed: 75, life: 14, maxLead: 4, spread: 0,
     vs: { [4]: 1, [2]: 1, [3]: 1 }, shieldMult: 0.1 }, // shields take 10% (owner, 21 Nov 2026: was 30%); damage share against frame (4), armour (2), heavy armour (3); owner, 15 Nov 2026
 };
 

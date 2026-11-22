@@ -698,6 +698,31 @@ Weapons (numbers in `blocks.js`):
   At radius 16 with the walk small-ship damage fell to ~370 (crowd bursts used to land between two small ships).
   Designer tooltip: "a few blocks off an enemy hull". Test in `tools/test-designer.mjs` (flak vs titans and
   dreadnoughts: < 5% empty; old code 15 of 59). Bench identical. Replay sent: "Flak bursts next to the hull".
+- **Flak range 900, fighter bays 45 hp (owner, 22 Nov 2026**, after asking whether flak goes for "hundreds" of back-line
+  boats made of thrusters + a bay or plasma: "900 range would be fine it's meant to be a long range weapon… fighter
+  bays can have their health nerfed as that should be built inside ships… 45 health per block same as frame… make a
+  note for players in its tooltip that it's very fragile. Plasma is already weak so I'll leave that"), **live 22 Nov
+  2026**, no patch notes. `WEAPON[BT.FLAK].range` 700 → **900** (flak ships on Artillery now stand at 540, 60% of
+  it); `BLOCKS[BT.BAY].hp` 150 → **45**; designer bay tooltips start "VERY FRAGILE… build it deep inside the ship".
+  Targeting was already right: `e.light` (gun credits ÷ (armour/heavy/frame blocks + 10)) makes an unarmoured boat
+  score far above any warship, × crowd. Measured (`/tmp`-style `boats.mjs`: 6 of my 56×40 gunships (2 flak, 2 plasma)
+  + 30 destroyers, ~93k cr, vs 20 destroyers in front + 75 bay boats (hub, 2 thruster columns, frame, bay; 510 cr) +
+  25 plasma boats (1,949 cr) on Artillery behind, ~110k cr, 3 seeds): ~80% of the enemy ships flak hurt were boats;
+  ~30% of bursts went at fighters (flak's fallback when no ship is in range). Boats killed, before → now: bay 19 → 42
+  of 75, plasma 10 → 16 of 25; same gunships with flak swapped for heavy armour: bay 11 → 12, plasma 9 → 10. The boat
+  side still won every run of that (my gunship is a rough design). Bench identical.
+- **Replay downloads are a playable web page (owner, 22 Nov 2026: "when players download a replay for it to be a
+  standalone playable in a browser file")**, **live 22 Nov 2026**. The combat log's Download now saves
+  `battle-<world>-<id>.html` instead of `.lsbreplay`: `src/galaxy/replayFile.js` `replayPageParts(viewerDoc, meta)` gives
+  the page before and after the replay (built in the browser as `Blob([head, base64, tail])`, base64 via FileReader
+  data URL, so no giant JS string). The page holds `<script id="lsb-meta" type="application/json">` (id, title, sides,
+  teams, computeMs, planet, t, log text, sideColors), `<script id="lsb-viewer">` (the viewer page, JSON, `<` escaped)
+  and `<script id="lsb-replay" type="text/plain">` (the packed replay gzipped, base64; to read one for a bug report:
+  take that text, base64-decode, gunzip, `unpackReplay()`). It loads the viewer into an iframe from a blob URL and posts
+  `lsb-replay` like the game page; errors show in the page. Checked: a page built from a test battle opens from
+  `file://` in headless Chrome with the right title (one containing `</script>`), side names and colours and no
+  errors; the browser's gzip + base64 + fetch(data:) round trip is byte-identical. ~340 KB for a small battle (viewer
+  ~170 KB + the replay gzip × 1.33).
 - **Cannon rework and auto gun (owner, 20 Nov 2026: "more like a cannon and less like a machine gun")**. Where
   the numbers above disagree, these win:
   - **Cannon**: one explosive shell every **10 s** doing **500** (was 100 every 2 s; same damage per second).
@@ -1427,7 +1452,7 @@ economy, fleets, captures, with real battles).
   panel is all for the selected world or fleet. In the world panel the ships and move controls
   come first and the **Shipyards** section sits below them, collapsible (owner's request: yards
   were pushing the move controls down; `ui.yardsOpen` is remembered, Build stays in the header).
-- **Replay download** (owner, 14 Nov 2026, for bug reports): a Download button next to Watch in the
+- **Replay download** (owner, 14 Nov 2026, for bug reports; **since 22 Nov 2026 a playable .html page**, see "Replay downloads are a playable web page"): a Download button next to Watch in the
   combat log (`downloadReplay()` in `galaxy/app.js`) saves `battle-<world>-<id>.lsbreplay`:
   `LSBREPLAY1\n<json: id, title, sides, teams, planet, t, log text>\n` then the packed replay gzipped.
   To read one: split off the two header lines, gunzip the rest, `unpackReplay()`.
