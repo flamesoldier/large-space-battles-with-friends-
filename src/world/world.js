@@ -21,7 +21,7 @@ import { makeDesign } from '../shared/designs.js';
 import { mulberry32 } from '../shared/rng.js';
 import {
   SHIPYARD_INTERVAL_MIN, SHIPS_PER_BUILD, shipyardPrice, crowdingSurcharge, SHIPYARD_SELL_REFUND,
-  defensePrice, MAX_DEFENSE_ORDER, BOUNTY_SHARE, STARTING_CREDITS, NEUTRAL_GARRISON_HOURS, SELL_HOURS, DEFENSE_BUILD_HOURS,
+  defensePrice, MAX_DEFENSE_ORDER, BOUNTY_SHARE, STARTING_CREDITS, NEUTRAL_GARRISON_HOURS, NEUTRAL_GARRISON_BASE, SELL_HOURS, DEFENSE_BUILD_HOURS,
 } from '../shared/economy.js';
 import { generateGalaxy, linkHomesInward } from './galaxyGen.js';
 import { planRoute, travelSpeed, laneMap, laneSpeed } from './routes.js';
@@ -88,9 +88,9 @@ export function createWorld({ players, seed = 1, planetsPerPlayer, clock = 0 }) 
   return world;
 }
 
-/** Unclaimed worlds get a militia garrison worth NEUTRAL_GARRISON_HOURS of their income. */
+/** Unclaimed worlds get a militia garrison worth NEUTRAL_GARRISON_BASE + NEUTRAL_GARRISON_HOURS of their income. */
 function addMilitia(world) {
-  if (NEUTRAL_GARRISON_HOURS <= 0) return;
+  if (NEUTRAL_GARRISON_HOURS <= 0 && NEUTRAL_GARRISON_BASE <= 0) return;
   const r = mulberry32(world.seed * 13 + 5);
   const kinds = ['corvette', 'frigate', 'destroyer'].map((cls, k) => {
     const d = { ...makeDesign(cls, world.seed * 17 + k * 101 + 3), name: `Militia ${cls}` };
@@ -98,7 +98,7 @@ function addMilitia(world) {
   });
   for (const p of world.planets) {
     if (p.owner !== null) continue;
-    const budget = p.income * NEUTRAL_GARRISON_HOURS;
+    const budget = NEUTRAL_GARRISON_BASE + p.income * NEUTRAL_GARRISON_HOURS;
     let spent = 0;
     for (let guard = 0; guard < 200; guard++) {
       const fits = kinds.filter((k) => spent + k.cost <= budget);

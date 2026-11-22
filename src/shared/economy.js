@@ -73,7 +73,10 @@ export const PLANET_INCOME = [130, 330];
 export const PLANET_INCOME_STEP = 10;
 export const STARTING_CREDITS = 20000;
 
-// Unclaimed worlds are held by militia ships worth this many hours of the world's income
-// (0 = undefended: the first fleet to arrive takes it). 2.0: 12 (1.0: 4) so militia keeps 1.0's
-// credit value with a third of the income; to be checked with the test games.
+// Unclaimed worlds are held by militia ships worth NEUTRAL_GARRISON_BASE credits plus this many
+// hours of the world's income (both 0 = undefended: the first fleet to arrive takes it). 2.0: 12 h
+// (1.0: 4). The base (owner, 22 Nov 2026: militia was "too easy to take… enough for 1.5 attacks"):
+// a starting player's first siege gathers 2–3 waves of its 20,000-credit start (~20–30k), so
+// militia of ~21.5–24k holds against 2 waves and falls to 3, ~1.5 attacks a world on average.
+export const NEUTRAL_GARRISON_BASE = 20000;
 export const NEUTRAL_GARRISON_HOURS = 12;

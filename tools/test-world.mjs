@@ -1335,4 +1335,19 @@ const lanePlanHours = (W, a, b, d) => { const A = W.planets[a], B = W.planets[b]
   }
 }
 
+// Militia worth NEUTRAL_GARRISON_BASE + 12 h of income (owner, 22 Nov 2026: "enough for 1.5 attacks";
+// a starting player's first siege brings ~20–30k).
+{
+  const { NEUTRAL_GARRISON_BASE, NEUTRAL_GARRISON_HOURS } = await import('../src/shared/economy.js');
+  const m = createWorld({ players: [{ name: 'Ann' }, { name: 'Ben' }, { name: 'Cy' }, { name: 'Di' }], seed: 31 });
+  const mil = m.planets.filter((P) => P.owner === null);
+  ok(mil.length > 10, 'the galaxy has militia worlds');
+  for (const P of mil) {
+    const budget = NEUTRAL_GARRISON_BASE + P.income * NEUTRAL_GARRISON_HOURS;
+    const worth = P.garrison.reduce((s, g) => s + g.n * m.designs[g.design].cost, 0);
+    const cheapest = Math.min(...P.garrison.map((g) => m.designs[g.design].cost));
+    ok(worth <= budget && worth > budget - cheapest * 3, `militia at ${P.name} is worth ${worth} of its ${budget} (base + ${NEUTRAL_GARRISON_HOURS} h of income)`);
+  }
+}
+
 console.log(`world: ${checks} checks passed`);
