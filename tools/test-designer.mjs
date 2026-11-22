@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { makeDesign, CLASSES } from '../src/shared/designs.js';
 import { Battle } from '../src/sim/battle.js';
-import { BT, MULTIBLOCK, SHIELD, WEAPON, RIFT_POP, shieldRegen, shieldCap } from '../src/shared/blocks.js';
+import { BT, MULTIBLOCK, SHIELD, WEAPON, RIFT_POP, isWeapon, shieldRegen, shieldCap } from '../src/shared/blocks.js';
 import { riftParticle, riftSpeedStep } from '../src/shared/rift.js';
 import { analyzeDesign, cropDesign, encodeDesign, decodeDesign, weaponFacing } from '../src/shared/shipStats.js';
 import { binOf, binOpen, lineOfFire } from '../src/shared/arcs.js';
@@ -790,6 +790,25 @@ for (let k = 0; k < FORTRESSES.length; k++) {
   b2.damageCell(e, w.cells[5000], 1e9); b2.resolveCookoffs(); b2.resolveDamage(); b2.updateRifts();
   assert.ok(w.popped && b2.R.expS.a.slice(0, b2.R.expS.n).includes(12), 'the 50th sets the whole engine off');
   assert.equal(b2.R.rfEnd.a[0], 1, 'its open rift collapses');
+  { // owner, 22 Nov 2026: rift projectiles hit friendly ships too, but do them no damage
+    const cr = makeDesign('cruiser', 5), cells = cr.cells.map((t) => (isWeapon(t) ? BT.HEAVY : t)); // an unarmed friend
+    const fd = { ...cr, cells: Uint8Array.from(cells) };
+    const b3 = new Battle({ designs: [d, makeDesign('frigate', 3), fd], ships: [{ design: 0, team: 0, x: 0, y: 0, a: 0 },
+      { design: 1, team: 1, x: 1500, y: 0, a: Math.PI, fixed: true }, { design: 2, team: 0, x: 0, y: 900, a: 0, fixed: true }], seed: 2, maxTime: 120 });
+    const friend = b3.ents[2], sum = () => friend.hp.reduce((a, v) => a + v, 0);
+    while (!b3.rifts.length && b3.step());
+    assert.equal(b3.rifts.length, 1, 'a rift opened');
+    friend.x = b3.rifts[0].x + 30; friend.y = b3.rifts[0].y + 30; // move the friend into the swirl
+    const step = b3.stepRifts.bind(b3);
+    let lost = 0;
+    b3.stepRifts = () => { const h = sum(); step(); lost += h - sum(); };
+    const n0 = b3.R.rkRift.n;
+    let onFriend = 0;
+    for (let k = 0; k < 300 && b3.rifts.length; k++) b3.step();
+    for (let j = 0; j < b3.R.expS.n; j++) if (b3.R.expS.a[j] === 11) { const x = b3.R.expX.a[j] / b3.evQ, y = b3.R.expY.a[j] / b3.evQ; if (Math.hypot(x - friend.x, y - friend.y) < friend.radius + 2) onFriend++; }
+    assert.ok(onFriend > 0 && b3.R.rkRift.n > n0, `swirling projectiles stop on a friendly ship too (${onFriend} green blasts on it)`);
+    assert.equal(lost, 0, 'and it takes no damage from them');
+  }
   console.log(`  rift engine: rift opened at ${c.rfT0[0] / 10} s, ${dead.size} hit something while swirling, ${n} released, ${hits} hit; engine detonates at ${RIFT_POP.after} lost blocks`);
 }
 console.log(`designer stats match the sim for ${checked} generated designs; validation ok`);

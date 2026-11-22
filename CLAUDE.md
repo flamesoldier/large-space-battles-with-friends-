@@ -842,7 +842,7 @@ Weapons (numbers in `blocks.js`):
   "a 100*100 sized weapon fragile and explosive but can be put inside ships… doesn't need line of sight… 30 seconds to
   start firing… green… 150,000 credits… summon this effect at an empty space in the middle of enemy ships slowly adding
   more and more green projectiles that start swirling over another 30 seconds and then for them all to be released").
-  **On `v2-dev`, not live.** Owner's answers: **fires again and again** (charge 30 s, swirl 30 s, release, charge again:
+  **Live 22 Nov 2026** (fifth round below). Owner's answers: **fires again and again** (charge 30 s, swirl 30 s, release, charge again:
   ~1 rift a minute); released projectiles **fly straight and explode**; **point defence can't shoot them down**;
   strength: **"focus on it looking good first, we will balance it later"** (every number is a first guess).
   - `blocks.js`: 100×100 unit (`MULTIBLOCK` size 100), **15 cr a block = 150,000**, **20 hp**, mass 1. `WEAPON[BT.RIFT]` =
@@ -940,6 +940,11 @@ Weapons (numbers in `blocks.js`):
     13 rifts): enemies within 100 at open 15–44 (one late rift 7, when few were left); of those ~60% are destroyed before
     release, the rest fly out of reach. Test checks no drift points and ≥ 12 enemies within 100 at open. Bench identical.
     Replay sent: "Doomsday Rift Engine v4" (seed 1).
+  - **Friendly ships stop rift projectiles (owner, 22 Nov 2026: "make projectiles hit friendly ships but do no damage
+    and then make it live")**: swirling and released projectiles explode on the first ship of any side or wreck they
+    meet (`sweep(..., -1)` with no team skipped); the blast is the usual `blast(..., team)`, so friends take nothing
+    (enemies within the splash still do). Test: an unarmed friendly cruiser moved into the swirl gets green blasts and
+    loses no hp to them. **The whole rift engine is live 22 Nov 2026** (no patch notes, as asked).
 - Future weapons the owner wants: bigger cannons, a medium laser.
 
 Combat rules:

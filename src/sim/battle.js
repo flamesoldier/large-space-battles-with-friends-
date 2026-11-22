@@ -1352,7 +1352,7 @@ export class Battle {
         if (!r.alive[k]) continue;
         const x = r.x + p.x, y = r.y + p.y, x0 = r.px[k], y0 = r.py[k];
         r.px[k] = x; r.py[k] = y;
-        if (x0 !== x0 || !this.sweep(x0, y0, x, y, -1, team)) continue; // x0 NaN: it has only just appeared. Flies through friendly ships, hits enemies and debris (owner, 22 Nov 2026)
+        if (x0 !== x0 || !this.sweep(x0, y0, x, y, -1)) continue; // x0 NaN: it has only just appeared. Hits any ship or wreck; friendly ones take no damage (owner, 22 Nov 2026)
         const t = this.hitT, hx = x0 + (x - x0) * t, hy = y0 + (y - y0) * t;
         this.blast(hx, hy, RIFT_W.splash, RIFT_W.damage, team);
         this.recExplosion(hx, hy, 11);
@@ -1799,8 +1799,9 @@ export class Battle {
           continue;
         }
       } else if (kind === K_RIFT) {
-        // Rift projectile: flies over friendly ships, explodes on the first enemy ship or wreck it meets.
-        if (this.sweep(x0, y0, x1, y1, -1, P.team[i])) {
+        // Rift projectile: explodes on the first ship (friend or foe) or wreck it meets; the blast only hurts enemies
+        // (owner, 22 Nov 2026: "hit friendly ships but do no damage").
+        if (this.sweep(x0, y0, x1, y1, -1)) {
           const t = this.hitT, hx = x0 + (x1 - x0) * t, hy = y0 + (y1 - y0) * t;
           this.blast(hx, hy, RIFT_W.splash, P.dmg[i], P.team[i]);
           this.shotEnd(rec, this.now - 1 + t, 1);
