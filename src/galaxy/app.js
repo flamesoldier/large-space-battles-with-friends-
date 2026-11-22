@@ -1515,6 +1515,7 @@ const isCombat = (e) => !!e.battle;
 // thrown at a huge force is Small, not Epic). Ranked against all battles in the log (not just the ones
 // shown), so a battle keeps its colour whatever the filter. Tiers by share of battles it's bigger than.
 const SIZE_TIERS = [
+  [2, 'legendary', 'Legendary'], // only the most destructive battle so far (owner, 22 Nov 2026)
   [0.95, 'epic', 'Epic'], [0.8, 'huge', 'Huge'], [0.5, 'large', 'Large'], [0.2, 'medium', 'Medium'], [-1, 'small', 'Small'],
 ];
 const battleShips = (B) => B.players ? B.players.reduce((t, q) => t + (q.ships || 0), 0) : (B.ships || []).reduce((t, n) => t + (n || 0), 0);
@@ -1534,10 +1535,11 @@ function battleSize(B) {
   let lo = 0, hi = all.length;
   while (lo < hi) { const m = (lo + hi) >> 1; if (all[m] < destroyed) lo = m + 1; else hi = m; } // battles that destroyed less
   let eq = lo; while (eq < all.length && all[eq] === destroyed) eq++;
-  // Share of the other battles this one beats (ties count half); the top one is always Epic (unless nothing died).
+  // Share of the other battles this one beats (ties count half). The most destructive battle so far is Legendary
+  // (unless nothing died; ties share it); the rest go by share, Epic for the top 5%.
   const p = all.length <= 1 ? 0.5 : (lo + (eq - lo - 1) / 2) / (all.length - 1);
   const top = destroyed > 0 && destroyed >= all[all.length - 1] && all.length > 1;
-  const [, tier, label] = top ? SIZE_TIERS[0] : SIZE_TIERS.find(([min]) => p >= min);
+  const [, tier, label] = top ? SIZE_TIERS[0] : SIZE_TIERS.slice(1).find(([min]) => p >= min);
   return { tier, label, ships: battleShips(B), destroyed, rank: all.length - eq + 1, of: all.length };
 }
 function involves(e, pid) {
