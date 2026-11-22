@@ -1044,10 +1044,13 @@ export class Renderer {
   drawRifts(F, t, vis, minW) {
     const g = this.glow, W = RIFT_W, Rr = W.radius, P = this._rfp || (this._rfp = { x: 0, y: 0, vx: 0, vy: 0, r: 0, rr: 0, grow: 0 });
     const Q = this._rfq || (this._rfq = { x: 0, y: 0, vx: 0, vy: 0, r: 0, rr: 0, grow: 0 });
+    const C0 = this._rfc0 || (this._rfc0 = [0, 0]), C1 = this._rfc1 || (this._rfc1 = [0, 0]);
     for (let i = 0; i < F.n; i++) {
       const t0 = F.t0[i], t1 = F.t1[i], end = F.end[i];
-      if (t < t0 || t > t1 + 20 || !vis(F.x[i], F.y[i], Rr * 2 + 60)) continue;
-      const x = F.x[i], y = F.y[i], n = F.cnt[i], seed = F.seed[i], die = F.dieAt[i];
+      if (t < t0 || t > t1 + 20) continue;
+      F.at(i, Math.min(t, t1), C0); // the rift drifts with the enemy ships round it
+      if (!vis(C0[0], C0[1], Rr * 2 + 60)) continue;
+      const x = C0[0], y = C0[1], n = F.cnt[i], seed = F.seed[i], die = F.dieAt[i];
       if (t <= t1) {
         const a = (t - t0) * 0.1, fill = Math.min(1, a / W.swirl), flick = 0.85 + 0.15 * Math.sin(t * 0.9 + i);
         if (a < 2) { // the tear opening: a flash
@@ -1059,7 +1062,9 @@ export class Renderer {
         g.push(x, y, 0, Rr * (0.6 + 0.4 * fill), Rr * (0.6 + 0.4 * fill), 1, alpha2(C.rfDeep, (0.12 + 0.18 * fill) * flick));
         g.push(x, y, 0, Math.max(5 + 7 * fill, minW * 4), Math.max(5 + 7 * fill, minW * 4), 1, alpha2(C.rfGlow, (0.5 + 0.4 * fill) * flick));
         g.push(x, y, 0, Math.max(2 + 3 * fill, minW * 2), Math.max(2 + 3 * fill, minW * 2), 1, alpha2(C.rfCore, (0.6 + 0.4 * fill) * flick));
-        // the projectiles, each with a long thin trail back along its loop
+        // the projectiles, each with a long thin trail back along its loop (the centre's earlier spots worked out once)
+        const TC = this._rftc || (this._rftc = new Float32Array(16));
+        for (let j = 1; j <= 7; j++) { F.at(i, t - j, C1); TC[j * 2] = C1[0]; TC[j * 2 + 1] = C1[1]; }
         let last = -1;
         for (let k = 0; k < n; k++) {
           if (!riftParticle(k, n, seed, a, P)) break;
@@ -1069,7 +1074,7 @@ export class Renderer {
           let hx = px, hy = py;
           for (let j = 1; j <= 7; j++) {
             if (!riftParticle(k, n, seed, a - j * 0.1, Q)) break;
-            const qx = x + Q.x, qy = y + Q.y, len = Math.hypot(qx - hx, qy - hy) / 2 + 0.15, ang = Math.atan2(qy - hy, qx - hx), f = 1 - j / 8;
+            const qx = TC[j * 2] + Q.x, qy = TC[j * 2 + 1] + Q.y, len = Math.hypot(qx - hx, qy - hy) / 2 + 0.15, ang = Math.atan2(qy - hy, qx - hx), f = 1 - j / 8;
             g.push((hx + qx) / 2, (hy + qy) / 2, ang, len, Math.max(0.35, minW * 0.8), 4, alpha2(C.rfTrail, 0.75 * f));
             if (j <= 3) g.push((hx + qx) / 2, (hy + qy) / 2, ang, len, Math.max(1.4, minW * 2), 4, alpha2(C.rfGlow, 0.18 * f));
             hx = qx; hy = qy;

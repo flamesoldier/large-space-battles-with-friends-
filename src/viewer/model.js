@@ -356,6 +356,23 @@ export class ReplayModel {
     // swirling projectiles that flew into an enemy ship (rkRift/rkK/rkT): drawn up to that tick
     if (n) for (let i = 0; i < n; i++) this.rift.dieAt.push(new Float32Array(c.rfN[i]).fill(Infinity));
     if (n && c.rkRift) for (let j = 0; j < c.rkRift.length; j++) { const D = this.rift.dieAt[c.rkRift[j]]; if (D && c.rkK[j] < D.length) D[c.rkK[j]] = c.rkT[j]; }
+    // where each rift's centre is: [t, x, y] points (the opening point first), straight lines between (rp* columns)
+    if (n) {
+      const R = this.rift, pts = [];
+      for (let i = 0; i < n; i++) pts.push([R.t0[i], R.x[i], R.y[i]]);
+      if (c.rpRift) for (let j = 0; j < c.rpRift.length; j++) { const P = pts[c.rpRift[j]]; if (P) P.push(c.rpT[j], c.rpX[j] / q, c.rpY[j] / q); }
+      R.path = pts.map((P) => Float32Array.from(P));
+      /** Rift i's centre at tick t into out = [x, y] (before the first point: its opening spot; after the last: the last). */
+      R.at = (i, t, out) => {
+        const P = R.path[i], m = P.length / 3;
+        let k = 0;
+        while (k + 1 < m && P[(k + 1) * 3] <= t) k++;
+        if (k + 1 >= m || t <= P[0]) { out[0] = P[k * 3 + 1]; out[1] = P[k * 3 + 2]; return out; }
+        const f = (t - P[k * 3]) / (P[k * 3 + 3] - P[k * 3]);
+        out[0] = P[k * 3 + 1] + (P[k * 3 + 4] - P[k * 3 + 1]) * f; out[1] = P[k * 3 + 2] + (P[k * 3 + 5] - P[k * 3 + 2]) * f;
+        return out;
+      };
+    }
     for (const e of this.ents) {
       if (e.kind !== 0) continue;
       let blk = null;

@@ -55,7 +55,11 @@ const FLAK_STAND = [2, 6]; // a burst goes off this many blocks short of the hul
 const FLAK_PICKS = 16, FLAK_RECENT = 30, FLAK_CROWD_R = 40, FLAK_CROWD_EVERY = 10; // flak: ships looked at per burst, ticks a target counts as just hit, crowd radius beyond its hull, crowd recount (ticks)
 const K_KINETIC = 0, K_SHELL = 1, K_MISSILE = 2, K_PLASMA = 3, K_FIGHTER = 4, K_FLAK = 5, K_FRAG = 6, K_AUTO = 7, K_RIFT = 8; // K_AUTO: auto gun bullets (20 Nov 2026), handled like shells; K_RIFT: the rift engine's green projectiles (22 Nov 2026)
 const RIFT_W = WEAPON[BT.RIFT];
-const RIFT_PICKS = 24, RIFT_NEAR = 200, RIFT_CLEAR = 30; // rift spot: enemy ships looked at, how far round each counts as its crowd, clear space wanted round the centre
+const RIFT_PICKS = 24, RIFT_NEAR = 150, RIFT_CLEAR = 15; // rift spot: enemy ships looked at, how far round each counts as its crowd, clear space wanted round the centre
+// An open rift drifts with the enemy ships round it (owner, 22 Nov 2026: rifts missed because the fleet flew on during
+// the swirl): every RIFT_TRACK ticks it heads for the value-weighted middle of the enemy ships within RIFT_FOLLOW of
+// it, at up to RIFT_DRIFT blocks/s, moving in a straight line between those moments (recorded, so the viewer matches).
+const RIFT_TRACK = 5, RIFT_FOLLOW = 150, RIFT_DRIFT = 15;
 // Fighters (owner, Nov 2026): launched by fighter bays, kept in their own list (this.Fi), not P.
 const FIGHTER = WEAPON[BT.BAY].fighter;
 const FIGHTER_R = 2; // how close a shot must pass to hit one (blocks)
@@ -1247,7 +1251,8 @@ export class Battle {
       const rec = R.rfT0.push(this.now);
       R.rfT1.push(0); R.rfX.push(q16(x, q)); R.rfY.push(q16(y, q)); R.rfN.push(n); R.rfSeed.push(seed); R.rfTeam.push(e.team);
       R.rfEnd.push(2); R.rfSrc.push(e.id); R.rfLX.push(q16(w.lx, q)); R.rfLY.push(q16(w.ly, q));
-      this.rifts.push({ e, w, x, y, n, seed, rec, t0: this.now, alive: new Uint8Array(n).fill(1), px: new Float32Array(n).fill(NaN), py: new Float32Array(n) });
+      this.rifts.push({ e, w, x, y, n, seed, rec, t0: this.now, alive: new Uint8Array(n).fill(1), px: new Float32Array(n).fill(NaN), py: new Float32Array(n),
+        ts0: this.now, sx0: x, sy0: y, ts1: this.now, sx1: x, sy1: y, vx: 0, vy: 0 });
       w.sq = 1; w.cd = W.swirl;
       return;
     }
@@ -1304,6 +1309,7 @@ export class Battle {
 
   /** The swirl is over: every projectile flies off from where the swirl has it now (see rift.js). */
   releaseRift(r) {
+    this.driftRift(r); // fire() runs before stepRifts: bring the centre up to this tick first
     const W = RIFT_W, a = (this.now - r.t0) * DT, p = this._rp, life = Math.round(W.life / DT);
     for (let k = 0; k < r.n; k++) {
       if (!r.alive[k] || !riftParticle(k, r.n, r.seed, a, p)) continue;
@@ -1325,13 +1331,14 @@ export class Battle {
   stepRifts() {
     const p = this._rp, R = this.R;
     for (const r of this.rifts) {
+      this.driftRift(r);
       const a = (this.now - r.t0) * DT, team = r.e.team;
       for (let k = 0; k < r.n; k++) {
         if (!riftParticle(k, r.n, r.seed, a, p)) break; // they appear in order
         if (!r.alive[k]) continue;
         const x = r.x + p.x, y = r.y + p.y, x0 = r.px[k], y0 = r.py[k];
         r.px[k] = x; r.py[k] = y;
-        if (x0 !== x0 || !this.sweep(x0, y0, x, y, -1, team, true)) continue; // x0 NaN: it has only just appeared
+        if (x0 !== x0 || !this.sweep(x0, y0, x, y, -1, team)) continue; // x0 NaN: it has only just appeared. Flies through friendly ships, hits enemies and debris (owner, 22 Nov 2026)
         const t = this.hitT, hx = x0 + (x - x0) * t, hy = y0 + (y - y0) * t;
         this.blast(hx, hy, RIFT_W.splash, RIFT_W.damage, team);
         this.recExplosion(hx, hy, 11);
@@ -1339,6 +1346,35 @@ export class Battle {
         R.rkRift.push(r.rec); R.rkK.push(k); R.rkT.push(this.now);
       }
     }
+  }
+
+  /**
+   * Move an open rift's centre (r.x, r.y) to where it is this tick. Every RIFT_TRACK ticks it picks a new
+   * heading toward the middle of the enemy ships round it and records the point it will reach RIFT_TRACK
+   * ticks later (rpRift/rpT/rpX/rpY, on the replay grid); between those it moves in a straight line, so the
+   * viewer, joining the recorded points with straight lines, has the centre exactly where the sim had it.
+   */
+  driftRift(r) {
+    if (this.now >= r.ts1) {
+      r.ts0 = r.ts1; r.sx0 = r.sx1; r.sy0 = r.sy1;
+      const fr = this.fr, T = r.e.team << 4, F2 = RIFT_FOLLOW * RIFT_FOLLOW, x = r.sx0, y = r.sy0;
+      let sx = 0, sy = 0, sw = 0;
+      this.grid.queryBox(x - RIFT_FOLLOW, y - RIFT_FOLLOW, x + RIFT_FOLLOW, y + RIFT_FOLLOW, (o) => {
+        if (o.kind === SHIP && !o.dead && !fr[T | o.team] && (o.x - x) ** 2 + (o.y - y) ** 2 < F2) { sx += o.x * o.worth; sy += o.y * o.worth; sw += o.worth; }
+      });
+      let dvx = 0, dvy = 0;
+      if (sw) { dvx = (sx / sw - x) / 1.5; dvy = (sy / sw - y) / 1.5; }
+      r.vx = 0.5 * r.vx + 0.5 * dvx; r.vy = 0.5 * r.vy + 0.5 * dvy;
+      const sp = Math.hypot(r.vx, r.vy);
+      if (sp > RIFT_DRIFT) { r.vx *= RIFT_DRIFT / sp; r.vy *= RIFT_DRIFT / sp; }
+      const q = this.evQ;
+      r.ts1 = r.ts0 + RIFT_TRACK;
+      r.sx1 = Math.round((x + r.vx * RIFT_TRACK * DT) * q) / q; r.sy1 = Math.round((y + r.vy * RIFT_TRACK * DT) * q) / q;
+      const R = this.R;
+      R.rpRift.push(r.rec); R.rpT.push(r.ts1); R.rpX.push(q16(r.sx1, q)); R.rpY.push(q16(r.sy1, q));
+    }
+    const f = (this.now - r.ts0) / (r.ts1 - r.ts0);
+    r.x = r.sx0 + (r.sx1 - r.sx0) * f; r.y = r.sy0 + (r.sy1 - r.sy0) * f;
   }
 
   /** end: 0 released, 1 collapsed (its engine was lost), 2 still open when the battle ended. */
@@ -2864,6 +2900,9 @@ export class Battle {
       rfTeam: C(Uint8Array), rfEnd: C(Uint8Array), rfSrc: C(Uint32Array), rfLX: C(Int16Array), rfLY: C(Int16Array),
       // Swirling rift projectiles that flew into an enemy ship: rift record rkRift's projectile rkK, at tick rkT.
       rkRift: C(Uint32Array), rkK: C(Uint16Array), rkT: C(Uint16Array),
+      // Where an open rift's centre is (it drifts with the enemy ships round it): rift record rpRift at tick rpT is at
+      // rpX/rpY (1/EV_Q block), in a straight line from its previous point (the first is rfX/rfY at rfT0).
+      rpRift: C(Uint32Array), rpT: C(Uint16Array), rpX: C(Int16Array), rpY: C(Int16Array),
     };
   }
 

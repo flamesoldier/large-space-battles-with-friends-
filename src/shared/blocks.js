@@ -174,7 +174,7 @@ export const WEAPON = {
   // Doomsday Interdimensional Rift Engine (owner, 22 Nov 2026, inspired by guided missiles that swirled in
   // circles in the Elenris Minor replay): needs no line of sight and has no range limit. It charges for
   // `charge` s, then opens a rift in an empty space in the middle of the enemy's ships; over `swirl` s
-  // `count` green projectiles appear in it one after another and swirl round it, faster and faster, then
+  // `count` (owner asked for 500 instead of 200, "if more missiles are used up hitting enemy ships"; at 500 ~94% were used up on ships and debris before release, so 1,000) green projectiles appear in it one after another and swirl round it, faster and faster, then
   // all are released at once and fly straight out in every direction at about `speed`. While swirling they
   // already explode on any enemy ship they fly into (owner, 22 Nov 2026); once released, on the first enemy
   // ship or wreck they meet (`damage` peak, falling off over `splash` blocks, like a
@@ -182,7 +182,7 @@ export const WEAPON = {
   // If the engine is destroyed while its rift is open, the rift collapses. `radius`: the swirl reaches about
   // this far from its eye (each loop has a radius of 0.28-0.5 × this and passes back near the eye); `orbit`: how fast they fly round at first (blocks/s). `cooldown` is the whole cycle, for
   // figures only (designer damage/s). Numbers are first guesses: the owner wants the look first.
-  [BT.RIFT]: { kind: 'rift', range: 0, charge: 30, swirl: 30, cooldown: 60, count: 200, damage: 150, splash: 8, speed: 50, life: 10, radius: 60, orbit: 28 },
+  [BT.RIFT]: { kind: 'rift', range: 0, charge: 30, swirl: 30, cooldown: 60, count: 1000, damage: 150, splash: 8, speed: 50, life: 10, radius: 60, orbit: 28 },
 };
 
 // Firing arcs: every weapon can fire in any direction where its shot wouldn't pass through its

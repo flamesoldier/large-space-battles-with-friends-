@@ -908,6 +908,26 @@ Weapons (numbers in `blocks.js`):
       the arcs stay. Viewer `rift.dieAt[i][k]` = tick a swirling projectile hit (from `rk*`), not drawn after it.
     - Test in `tools/test-designer.mjs` (swirl hits on a still enemy, survivors released from the swirl, a green
       blast for every hit). Bench identical. Replay sent: "Doomsday Interdimensional Rift Engine" (seed 1, 7 rifts).
+  - **Third round (owner, 22 Nov 2026: "the projectiles need to also hit debris and the targeting needs to be a little
+    more in the middle of enemy ships, 2/4 of the rifts mostly missed the enemy fleet… make more projectiles, 500
+    instead of 200 maybe")**, on `v2-dev`, not live. Where the lines above disagree, these win:
+    - **Why rifts missed**: they opened among the enemy (16 / 26 enemy ships within 100 of the centre) but the fleet flew
+      on during the 30 s swirl (1 / 1 left at release). **Rifts now drift with the enemy**: `driftRift()` every
+      `RIFT_TRACK` (5) ticks heads for the value-weighted middle of the enemy ships within `RIFT_FOLLOW` (150) of the
+      centre (velocity half old, half (target − centre) / 1.5 s, capped `RIFT_DRIFT` 15 blocks/s), straight lines
+      between, points recorded as **`rpRift / rpT / rpX / rpY`** on the replay grid (viewer `rift.path[i]`,
+      `rift.at(i, t, out)` joins them exactly). `releaseRift` brings the centre up to the tick first (fire runs before
+      stepRifts). Spot: `RIFT_NEAR` 200 → **150**, `RIFT_CLEAR` 30 → **15**. Same battle (seed 1): enemies within 100 at
+      release 1 / 1 / 4 / 28 / 1 / 4 → 9 / 5 / 12 / 19 / 6 / 4 (fewer than at open because the swirl kills them).
+    - **Swirling projectiles hit debris** (and enemy ships; they still fly through friendly ships): `sweep(..., team)`
+      without shipsOnly. Debris takes most of them: 1,611 of 2,624 swirl hits in seed 1 were on wrecks, each blast
+      leaving more wreckage for the next.
+    - **`count` 200 → 1,000** (owner said 500): at 500, ~94% were used up before release (~40 released per rift); at
+      1,000 the swirl grinds a hole through the wreckage and ~400 per rift get released (1,500: ~960, and the rift side
+      routs the enemy before the third rift). Seed 1 at 1,000: 5 rifts, 4,172 green blasts, 1,660 released. Viewer: the
+      trail's centre points are worked out once per rift per frame; ~20 ms frame JS with two full rifts (software GL).
+    - Test now 120 frigates (40 died during the first swirl at 1,000), checks the release against the drifted centre,
+      counts swirl + released hits. Bench identical. Replay sent: "Doomsday Interdimensional Rift Engine" (seed 1).
 - Future weapons the owner wants: bigger cannons, a medium laser.
 
 Combat rules:

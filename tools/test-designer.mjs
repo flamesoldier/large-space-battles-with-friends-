@@ -734,7 +734,7 @@ for (let k = 0; k < FORTRESSES.length; k++) {
   // In battle: charges ~30 s, opens a rift among the enemy, swirls 30 s, releases every projectile from where
   // the swirl has it (the viewer draws the swirl from the same function), and point defence never touches them.
   const fr = makeDesign('frigate', 21), ships = [{ design: 0, team: 0, x: -300, y: 0, a: 0 }];
-  for (let k = 0; k < 40; k++) ships.push({ design: 1, team: 1, x: 500 + (k % 5) * 40, y: -320 + Math.floor(k / 5) * 80, a: Math.PI });
+  for (let k = 0; k < 120; k++) ships.push({ design: 1, team: 1, x: 500 + (k % 10) * 40, y: -480 + Math.floor(k / 10) * 80, a: Math.PI });
   const b = new Battle({ designs: [d, fr], ships, seed: 4, maxTime: 75 });
   b.run();
   const rep = b.toReplay(), c = rep.cols, q = rep.meta.evQ;
@@ -742,7 +742,9 @@ for (let k = 0; k < FORTRESSES.length; k++) {
   assert.ok(c.rfT0[0] >= RW.charge * 10 && c.rfT0[0] <= (RW.charge + 4) * 10, `first rift opens after charging (${c.rfT0[0] / 10} s)`);
   assert.equal(c.rfEnd[0], 0, 'first rift released');
   assert.ok(Math.abs(c.rfT1[0] - c.rfT0[0] - RW.swirl * 10) <= 1, 'it swirls 30 s');
-  const x0 = c.rfX[0] / q, y0 = c.rfY[0] / q, age = (c.rfT1[0] - c.rfT0[0]) / 10, P = {};
+  const m = new ReplayModel(packReplay(rep.meta, rep.cols));
+  const [x0, y0] = m.rift.at(0, c.rfT1[0], [0, 0]), age = (c.rfT1[0] - c.rfT0[0]) / 10, P = {}; // the rift drifts with the enemy: its centre at release
+  assert.ok(m.rift.path[0].length > 3 * 50, 'the rift recorded where it drifted');
   // swirling projectiles that flew into an enemy ship (owner: they hit ships while circling too) aren't released
   const dead = new Set();
   for (let j = 0; j < c.rkRift.length; j++) if (c.rkRift[j] === 0) { dead.add(c.rkK[j]); assert.ok(c.rkT[j] > c.rfT0[0] && c.rkT[j] <= c.rfT1[0]); }
@@ -763,9 +765,9 @@ for (let k = 0; k < FORTRESSES.length; k++) {
   for (const z of c.expS) if (z === 11) e11++;
   assert.equal(e11, c.rkRift.length + c.shotHit.filter((h, i) => h === 1 && c.shotKind[i] === 8).length, 'a green blast for every hit, swirling or released');
   assert.ok(worst < 0.3, `projectiles leave from where the swirl has them (worst ${worst.toFixed(2)} blocks off)`);
-  assert.ok(hits >= 10, `rift projectiles hit enemies (${hits} of ${n})`);
-  const m = new ReplayModel(packReplay(rep.meta, rep.cols)), E = m.ents[0].rfEng;
-  assert.ok(E && E.lx.length === 1 && m.rift.n === c.rfT0.length && m.riftShot.n >= RW.count, 'viewer reads the rift');
+  assert.ok(hits + dead.size >= 10, `rift projectiles hit enemies (${dead.size} while swirling, ${hits} of ${n} released)`);
+  const E = m.ents[0].rfEng;
+  assert.ok(E && E.lx.length === 1 && m.rift.n === c.rfT0.length && m.riftShot.n === c.shotKind.filter((z) => z === 8).length, 'viewer reads the rift');
   assert.ok(Math.abs(E.lx[0] - (70 - W / 2)) < 0.01 && Math.abs(E.ly[0] - (62 - H / 2)) < 0.01, 'viewer finds the engine centre');
   assert.ok(m.riftEngines(m.ents[0], c.rfT0[0] - 1).chg[0] > 0.95 && m.riftEngines(m.ents[0], c.rfT0[0] + 10).st[0] > 1, 'engine glow charges, then shows its rift open');
   // Fragile and explosive: 49 lost blocks are fine, the 50th sets off the whole engine; an open rift collapses.
@@ -781,7 +783,7 @@ for (let k = 0; k < FORTRESSES.length; k++) {
   b2.damageCell(e, w.cells[5000], 1e9); b2.resolveCookoffs(); b2.resolveDamage(); b2.updateRifts();
   assert.ok(w.popped && b2.R.expS.a.slice(0, b2.R.expS.n).includes(12), 'the 50th sets the whole engine off');
   assert.equal(b2.R.rfEnd.a[0], 1, 'its open rift collapses');
-  console.log(`  rift engine: rift opened at ${c.rfT0[0] / 10} s, ${dead.size} hit ships while swirling, ${n} released, ${hits} hit; engine detonates at ${RIFT_POP.after} lost blocks`);
+  console.log(`  rift engine: rift opened at ${c.rfT0[0] / 10} s, ${dead.size} hit something while swirling, ${n} released, ${hits} hit; engine detonates at ${RIFT_POP.after} lost blocks`);
 }
 console.log(`designer stats match the sim for ${checked} generated designs; validation ok`);
 console.log(`${FORTRESSES.length} Aegis fortresses are valid 150,000 cr defences`);
