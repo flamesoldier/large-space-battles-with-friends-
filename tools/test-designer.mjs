@@ -15,6 +15,7 @@ import { FORTRESSES, loadFortress } from '../src/shared/fortresses.js';
 import { defensePrice } from '../src/shared/economy.js';
 import { packReplay, unpackReplay } from '../src/shared/replayFormat.js';
 import { ReplayModel } from '../src/viewer/model.js';
+import { SpatialGrid } from '../src/sim/spatial.js';
 
 let checked = 0;
 const close = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, `${msg}: ${a} vs ${b}`);
@@ -713,6 +714,63 @@ for (let k = 0; k < FORTRESSES.length; k++) {
   assert.ok(empty / bursts < 0.05, `flak bursts against titans and dreadnoughts hurt something (${empty} of ${bursts} hit nothing)`);
   console.log(`  flak vs big ships: ${bursts - empty} of ${bursts} bursts hurt something`);
 }
+// Flankers and raiders get into the enemy formation (owner, 22 Nov 2026: "2 stance types that are supposed to fly
+// through enemy lines"). A flanker behind its own line goes for the big ship at the enemy's back, not the front row, and
+// gets there past both lines (own ships make room, it threads the gaps); a raider carries on well out the far side of
+// its target before turning. Both are made unkillable so this tests movement only.
+{
+  const mk = (cls, seed, stance) => { const d = makeDesign(cls, seed); d.stance = stance; return d; };
+  const designs = [mk('destroyer', 7, 'flank'), mk('cruiser', 8, 'line'), mk('cruiser', 9, 'line'), mk('battleship', 10, 'standoff'), mk('frigate', 11, 'raid')];
+  const ships = [{ design: 0, team: 0, x: -420, y: 0, a: 0 }, { design: 4, team: 0, x: -420, y: 60, a: 0 }];
+  for (let k = -5; k <= 5; k++) ships.push({ design: 1, team: 0, x: -330, y: k * 32, a: 0 });
+  for (let k = -5; k <= 5; k++) ships.push({ design: 2, team: 1, x: 120, y: k * 32, a: Math.PI });
+  ships.push({ design: 3, team: 1, x: 450, y: 0, a: Math.PI });
+  const b = new Battle({ designs, ships, seed: 3, maxTime: 150 });
+  const fl = b.ents[0], rd = b.ents[1], big = b.ents[ships.length - 1];
+  for (const e of [fl, rd]) for (let i = 0; i < e.hp.length; i++) e.hp[i] *= 1e4;
+  let onBig = 0, reached = -1, out = 0, g0 = null;
+  while (b.step() && b.tick < 1200) {
+    if (fl.goal === big) onBig++;
+    if (reached < 0 && Math.hypot(big.x - fl.x, big.y - fl.y) - big.radius * 0.8 - fl.radius * 0.5 < fl.prefRange * 1.6) reached = b.tick / 10;
+    if (rd.runPhase === 0) g0 = rd.goal;
+    else if (g0 && !g0.dead) out = Math.max(out, Math.hypot(g0.x - rd.x, g0.y - rd.y) - g0.radius);
+  }
+  assert.ok(onBig > b.tick * 0.9, `the flanker goes for the battleship at the back (${((onBig / b.tick) * 100).toFixed(0)}% of the time)`);
+  assert.ok(reached > 0 && reached < 100, `and reaches it through both lines (${reached} s)`);
+  assert.ok(out > 120, `the raider carries on ${out.toFixed(0)} blocks past its target before turning`);
+  console.log(`  flankers/raiders: flanker reaches the ship at the back in ${reached} s, raider runs out ${out.toFixed(0)} blocks`);
+}
+
+// Grids only clear and sum the cells their entities cover (22 Nov 2026); queries must still find exactly what a
+// brute-force check finds, also after the entities move away from where the last build put them.
+{
+  const g = new SpatialGrid(32, 6144), ents = [];
+  let seed = 9;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let k = 0; k < 300; k++) ents.push({ x: 0, y: 0, radius: 1 + rnd() * 40, _q: 0, _gx0: 0, _gx1: 0, _gy0: 0, _gy1: 0 });
+  let px = 0, py = 0;
+  for (let round = 0; round < 6; round++) {
+    const ox = (rnd() - 0.5) * 8000, oy = (rnd() - 0.5) * 8000, spread = 200 + rnd() * 2000;
+    for (const e of ents) { e.x = ox + (rnd() - 0.5) * spread; e.y = oy + (rnd() - 0.5) * spread; }
+    g.build(ents);
+    for (let k = 0; k < 50; k++) {
+      const qx = ox + (rnd() - 0.5) * spread * 1.5, qy = oy + (rnd() - 0.5) * spread * 1.5, r = rnd() * 150;
+      const got = new Set();
+      g.queryBox(qx - r, qy - r, qx + r, qy + r, (e) => { got.add(e); });
+      for (const e of ents) if (Math.abs(e.x - qx) <= r + e.radius && Math.abs(e.y - qy) <= r + e.radius) assert.ok(got.has(e), 'grid query misses an entity');
+    }
+    // where the previous build's entities were: only entities that really cover those cells now
+    if (round) {
+      const x0 = g.cx(px - 300), x1 = g.cx(px + 300), y0 = g.cx(py - 300), y1 = g.cx(py + 300);
+      g.queryBox(px - 300, py - 300, px + 300, py + 300, (e) => {
+        const r = e.radius + 3;
+        assert.ok(g.cx(e.x - r) <= x1 && g.cx(e.x + r) >= x0 && g.cx(e.y - r) <= y1 && g.cx(e.y + r) >= y0, 'stale entity left in the grid');
+      });
+    }
+    px = ox; py = oy;
+  }
+}
+
 // ---- Doomsday Interdimensional Rift Engine (owner, 22 Nov 2026)
 {
   const W = 132, H = 124, cells = new Uint8Array(W * H);

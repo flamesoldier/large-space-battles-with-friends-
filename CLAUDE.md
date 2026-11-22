@@ -991,6 +991,32 @@ Combat rules:
     and circles it close in at full speed (`pickGoal`/`steerGoal`, goal = `e.goal`).
   - **Raider** (`raid`): attack runs: straight in skimming a big ship, out the far side
     (`runPhase`), turn, new target, again.
+  - **Getting into the enemy formation (owner, 22 Nov 2026: "2 stance types that are supposed to fly through enemy
+    lines… fleets are packed so tight that it's impossible… I want them to have the opportunity to fly into enemy
+    formations", plus "ship movement also takes compute")**, on `v2-dev`, **not live**. Measured first (`/tmp`-style
+    `pen.mjs`/`why.mjs`/`eval.mjs`, scenarios: flank/raid attackers vs a line+artillery defence, big-ship knives, a wall
+    of cruisers/battleships, an even fight, the bench mix): knives were **not** jammed on enemy hulls (~95% of top speed
+    on the way in, touching an enemy ~1% of the time); what kept them out: (1) goals were the nearest big-ish ship, i.e.
+    the enemy's front row (70% of goals were Front line ships); (2) raiders turned back 6 s / 80 blocks after a pass;
+    (3) they start behind their own line and most of their bumping (4–8 per 100 ticks) was against friends; (4) most
+    then die crossing open space under fire (that part is design/balance, not movement; told the owner). Changes (flank
+    and raid only, `e.knife`): **goals deeper** (`pickGoal`: `log(mass) − d/200 + depth/GOAL_DEPTH(100)` clamped −2…+3,
+    depth = how far behind the enemy's middle along our middle → theirs (`ownCx/ownCy` added in `teamStats`), reach
+    `GOAL_REACH` 900 (was 600), every enemy looked at when ≤ `GOAL_SAMPLE` 24, else 24 random (was 12 draws: with 12
+    enemies the best was missed 35% of the time)); **raiders run out** `RAID_OUT` 150 past the target or `RAID_OUT_T`
+    10 s (was 80 / 6 s); **threading** (`threadGap`, every `THREAD_EVERY` 10 ticks while on the way in: 13 headings
+    `THREAD_STEP` 0.16 rad apart round the wanted one, cost = hulls (friend, foe, wrecks ≥ 3 radius, not its goal)
+    across the path over `THREAD_LOOK` 2.5 s, nearer counts more, + small-turn and keep-the-same-gap terms; heading
+    offset `e.thrA`; spacing still slides it sideways but doesn't bend its heading); **friends make room** (threadGap
+    adds a sideways push `wayX/wayY` to friendly non-knife, non-fixed ships on its path, used ×1.5 in their next
+    `spacing`); **slide, don't bounce** (`collide`: a knife touching a *ship* keeps its speed along the hull, head-on
+    goes round its `orbit` side; wrecks are ploughed as before; a first version scaled speed ×0.9 per touching tick and
+    left big knives crawling against wrecks 7% of the time). Result with knives made unkillable (movement only, 3 seeds
+    each; before → after): flankers past the enemy's middle 31/45/54% → 60/82/90% (front/big/wall), inside the formation
+    12–24% → 19–30% of the time, raiders past the middle 68/26/91% → 87/46/100% (fewer passes, 5.6 → 3.4, as each runs
+    further). In normal battles they still mostly die on the way in (life ~same), raiders make ~2× the passes (0.3 →
+    0.6), outcomes unchanged (value lost shares within ±0.05). Test in `tools/test-designer.mjs` (fails on the old code:
+    the flanker went for the front row 96% of the time). Replays sent: "Flankers and raiders: BEFORE / AFTER".
   - An **Interceptor** (`guard`, defend the artillery) was tried and **removed** (owner: it just
     made big clumps of ships sitting at the back). Saved designs with an unknown stance load as
     `line`.
@@ -1069,6 +1095,21 @@ Battle end:
   bolt fired in a battle's last 30 s was invisible (owner noticed in a colossus test). Replays
   recorded before the fix keep the gap.
 - Always benchmark after sim changes (`npm run bench -- 1000`); 1,000 vs 1,000 takes about 7 s.
+- **Movement compute (22 Nov 2026, with the flanker/raider work)**: (1) **neighbour lists**: `refreshNear(e)` every
+  `SPACING_EVERY` (5) ticks keeps everything within `e.radius + NEAR_MARGIN` (20) + its radius in `e.nbr`; `spacing`
+  and the every-tick `collide` read it instead of each querying the grid (`collide` refreshes early if the ship moved
+  `NEAR_MOVE` 8 from where the list was made, e.g. shoved or teleported by a test). Wrecks made last tick aren't in the
+  grid yet, so `this.newChunks` covers them and `makeChunk` also pushes a new piece into nearby ships' lists. Missed
+  touching neighbours vs a full query: 0.05–0.07% (all wrecks). (2) **per-side ship grids** (`buildTeamGrids`,
+  `TEAM_CELL` 64): `think()` searches only its enemies' grids ring by ring (`SpatialGrid.queryRingsMulti`, ring limits
+  converted from the old 32-block rings) instead of every ship and wreck round it (250 entities a search → enemies
+  only). (3) **`SpatialGrid.build` only clears and sums the box of cells its entities cover** (and last build's box),
+  not all 147,000 cells: exactly the same query results (same battle shot for shot), main grid build 1.55 → 0.69 s in
+  the bench. **The "already visited" counter is shared by every grid** (module `QID`; `grid.qid` is a getter/setter
+  for `sweep`/`lanceCount`-style callers): grids holding the same entities must not reuse each other's marks (a
+  per-grid counter broke dedupe and tripled raycasts during this work). Movement + target picking per ship-tick
+  4.35 → 2.58 µs (−41%); whole battles −15–18% compute at equal length (600 v 600, 3 seeds, 240 s each). Bench 1,000 vs
+  1,000: 244 s / 14.4 s compute / 162:61 → 186 s / 11.2 s / 212:84 (bench battles swing; raycasts 1.72M → 1.57M).
 - Line of fire is incremental: each weapon stores the cell blocking each of its 64 rays
   (`blk`), and `refit()` only re-casts rays whose blocker died (`updateLineOfFire`). A full
   re-cast per hit was fine for 50 guns but not for a giant with 1,000.
