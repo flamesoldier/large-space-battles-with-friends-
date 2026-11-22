@@ -1399,7 +1399,7 @@ function renderEvents() {
     const c = colorOf(e.players?.[0]);
     const btn = e.battle && hasReplay(e.battle.id) ? `<button class="small" data-watch="${e.battle.id}">Watch</button>` : '';
     const sz = e.battle ? battleSize(e.battle) : null;
-    return `<li class="${e.kind}${sz ? ` size-${sz.tier}` : ''}" ${sz ? `title="${sz.label} battle: ${fmt(sz.ships)} ships"` : ''} style="${e.kind === 'battle' || sz ? '' : `border-left-color:${hexA(c, 0.6)}`}" ${e.planet !== undefined ? `data-planet="${e.planet}"` : ''}><span>${esc(e.text)}</span>${btn}<time>${clockText(e.t)}</time></li>`;
+    return `<li class="${e.kind}${sz ? ` size-${sz.tier}` : ''}" ${sz ? `title="${sz.label} battle: ${fmtCr(sz.destroyed)} of ships and defences destroyed, ${fmt(sz.ships)} ships in all"` : ''} style="${e.kind === 'battle' || sz ? '' : `border-left-color:${hexA(c, 0.6)}`}" ${e.planet !== undefined ? `data-planet="${e.planet}"` : ''}><span>${esc(e.text)}</span>${btn}<time>${clockText(e.t)}</time></li>`;
   }).join('') || `<li><span class="hint">${all ? 'Nothing yet' : 'No battles yet'}${ui.mine ? ' involving you or your allies' : ''}.</span></li>`;
 }
 $('events').addEventListener('click', (e) => {
@@ -1510,30 +1510,35 @@ $('dip-list').addEventListener('click', async (e) => {
 // has it. Battles only (owner, 22 Nov 2026: "i only want battles in combat log"): sieges starting
 // and worlds taken without a fight are left out (they're still in the Battles window's All).
 const isCombat = (e) => !!e.battle;
-// Colour by size compared with every other battle in this galaxy (owner, 22 Nov 2026): ships on
-// all sides, ranked against all battles in the log (not just the ones shown), so a battle keeps its
-// colour whatever the filter. Tiers by share of battles it's bigger than.
+// Colour by importance compared with every other battle in this galaxy (owner, 22 Nov 2026: first by ships
+// on all sides; then "importance should be in credit value of ships/defences destroyed", so 5 ships
+// thrown at a huge force is Small, not Epic). Ranked against all battles in the log (not just the ones
+// shown), so a battle keeps its colour whatever the filter. Tiers by share of battles it's bigger than.
 const SIZE_TIERS = [
   [0.95, 'epic', 'Epic'], [0.8, 'huge', 'Huge'], [0.5, 'large', 'Large'], [0.2, 'medium', 'Medium'], [-1, 'small', 'Small'],
 ];
 const battleShips = (B) => B.players ? B.players.reduce((t, q) => t + (q.ships || 0), 0) : (B.ships || []).reduce((t, n) => t + (n || 0), 0);
+/** Credits of ships and defences destroyed in the battle, every side together. */
+const battleDestroyed = (B) => B.players ? B.players.reduce((t, q) => t + (q.lost || 0), 0) : (B.lost || []).reduce((t, n) => t + (n || 0), 0);
 const ordinal = (n) => `${n}${[11, 12, 13].includes(n % 100) ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th'}`;
+/** Credits, short: 950 cr, 12.4k cr, 3.1M cr. */
+const fmtCr = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M` : n >= 1e4 ? `${(n / 1e3).toFixed(n >= 1e5 ? 0 : 1)}k` : fmt(n)) + ' cr';
 let sizeCache = { n: -1, last: -1, sorted: [] };
-/** { tier, label, ships, rank } for a battle log entry, compared with every battle in the galaxy. */
+/** { tier, label, ships, destroyed, rank, of } for a battle log entry, compared with every battle in the galaxy. */
 function battleSize(B) {
   const last = world.log.length ? world.log[world.log.length - 1].id : -1;
   if (sizeCache.n !== world.log.length || sizeCache.last !== last) {
-    sizeCache = { n: world.log.length, last, sorted: world.log.filter((x) => x.battle).map((x) => battleShips(x.battle)).sort((a, b) => a - b) };
+    sizeCache = { n: world.log.length, last, sorted: world.log.filter((x) => x.battle).map((x) => battleDestroyed(x.battle)).sort((a, b) => a - b) };
   }
-  const all = sizeCache.sorted, ships = battleShips(B);
+  const all = sizeCache.sorted, destroyed = battleDestroyed(B);
   let lo = 0, hi = all.length;
-  while (lo < hi) { const m = (lo + hi) >> 1; if (all[m] < ships) lo = m + 1; else hi = m; } // battles smaller than this one
-  let eq = lo; while (eq < all.length && all[eq] === ships) eq++;
-  // Share of the other battles this one is bigger than (ties count half); the biggest is always Epic.
+  while (lo < hi) { const m = (lo + hi) >> 1; if (all[m] < destroyed) lo = m + 1; else hi = m; } // battles that destroyed less
+  let eq = lo; while (eq < all.length && all[eq] === destroyed) eq++;
+  // Share of the other battles this one beats (ties count half); the top one is always Epic (unless nothing died).
   const p = all.length <= 1 ? 0.5 : (lo + (eq - lo - 1) / 2) / (all.length - 1);
-  const top = ships >= all[all.length - 1] && all.length > 1;
+  const top = destroyed > 0 && destroyed >= all[all.length - 1] && all.length > 1;
   const [, tier, label] = top ? SIZE_TIERS[0] : SIZE_TIERS.find(([min]) => p >= min);
-  return { tier, label, ships, rank: all.length - eq + 1, of: all.length };
+  return { tier, label, ships: battleShips(B), destroyed, rank: all.length - eq + 1, of: all.length };
 }
 function involves(e, pid) {
   if (e.battle) return [e.battle.attacker, ...(e.battle.attackers || []), e.battle.defender, ...(e.battle.defenders || [])].some((x) => allied(world, x, pid));
@@ -1597,9 +1602,9 @@ function renderCombat() {
     } else if (e.capture?.yards) nums = `${e.capture.yards} shipyard${e.capture.yards > 1 ? 's' : ''} destroyed`;
     const can = e.battle && hasReplay(e.battle.id);
     const sz = battleSize(e.battle);
-    const szTip = `${fmt(sz.ships)} ships in all: ${sz.of > 1 ? `the ${sz.rank === 1 ? 'biggest' : `${ordinal(sz.rank)} biggest`} of ${fmt(sz.of)} battles in this galaxy` : 'the only battle so far'}`;
+    const szTip = `${fmt(sz.destroyed)} cr of ships and defences destroyed (all sides, ${fmt(sz.ships)} ships in all): ${sz.of > 1 ? `the ${sz.rank === 1 ? 'costliest' : `${ordinal(sz.rank)} costliest`} of ${fmt(sz.of)} battles in this galaxy` : 'the only battle so far'}`;
     return `<div class="fight ${tone} size-${sz.tier}${e.id > seen && involves(e, ui.me) ? ' new' : ''}">
-      <div class="fhead"><span class="res">${label}</span><span class="size" title="${szTip}">${sz.label} · ${fmt(sz.ships)} ships</span><span class="where">${esc(P?.name ?? '')}</span><time>${clockText(e.t)}</time></div>
+      <div class="fhead"><span class="res">${label}</span><span class="size" title="${szTip}">${sz.label} · ${fmtCr(sz.destroyed)} destroyed</span><span class="where">${esc(P?.name ?? '')}</span><time>${clockText(e.t)}</time></div>
       <p>${esc(e.text)}</p>${nums ? `<div class="nums">${nums}</div>` : ''}
       <div class="acts">${e.battle ? `<button class="small ${can ? 'go' : ''}" data-watch="${e.battle.id}" ${can ? '' : `disabled title="${ONLINE ? 'No replay for this battle' : 'This replay is no longer saved in this browser'}"`}>Watch</button>` : ''}${can ? `<button class="small" data-dl="${e.battle.id}" title="Save this replay as a web page you can open in any browser, keep, or send to a friend">Download</button>` : ''}<button class="small" data-planet="${e.planet}">Map</button></div>
     </div>`;
