@@ -1058,6 +1058,28 @@ Combat rules:
     13–14%, Raider 92–97% / 7–13%, Flanker 88–93% / 10–15% (seeds 2 and 3); mix at 40 s 0.18 → 0.23–0.30, 60–120 s
     0.31–0.43. Tried and dropped: close-in ships sliding along wrecks too (Charge 89% → 77%: they ground along debris).
     Bench 1,000 vs 1,000: 188 s / 11.0 s compute. Replay sent: "All close-in fleets: full speed".
+  - **Fifth round: room to see the fight (owner, 22 Nov 2026, phone screenshot of the full-speed replay: "the congestion is
+    the real enemy… 2 sides mashed together there is no space to see their weapons fire or miss or cool maneuvers… we might
+    need to do another full rework of how all ships move")**, on `v2-dev`, not live. Measured (same all-close-in battle,
+    gap = each armed ship's distance hull to hull to its nearest armed ship, rough hull circles): median gap 10 → 2 blocks
+    from 30 to 60 s, 80% of ships under 10 blocks; fleets were already packed before they met (20 s: median 14, 30% under
+    10). Causes: in an all-close-in battle there was **no spacing between sides at all** (close-in ships ignored enemies and
+    nobody moved from an enemy close-in ship); fleets start 20 blocks apart; everyone piled onto the same deep goals.
+    Changes: **`START_GAP` 20 → 50** in `battleSetup.js` (fleets start spread out; the biggest single gain: median gap at
+    60–80 s 2–5 → 17–22); **`spacing()`: every ship keeps clear of every other, friend and foe**, gap **`SPACING_GAP` 25 →
+    40**, its own goal/target only `SPACING_GOAL` 0.4 of that, and it **looks `SPACING_LOOK` 1.2 s ahead** (closest approach
+    on current velocities, blended 60/40 with now); `NEAR_MARGIN` 20 → 50 so the neighbour lists reach that far; close-in ships
+    on their way in **turn** round others again (only strafing ones just slide); **goals spread** (`pickGoal` subtracts
+    `HUNT_SPREAD` 1 × friends already going for it ÷ (radius / 10); `e.hunters` counted in `teamStats`); **Charge ships with
+    a goal make point-blank strafing passes** like raiders (`CHARGE_SIDE` 20 off the hull, `CHARGE_OUT` 80 out the far side)
+    instead of circling on top of it. Tried and dropped: long runs out 200–400 blocks for every close-in stance (no gain:
+    test ships do ~8 blocks/s, so they never got far), Flanker passes / wider circles. After (seeds 2 / 3): median gap at
+    40 / 60 / 80 / 100 s 34 / 30 / 20 / 16 and 33 / 31 / 29 / 30 (was 7 / 2 / 2 / 5 and 9 / 5 / 5 / 6), ships under 10 blocks
+    4–28% (was 64–85%), speed ~110% of top (shoves), mix 0.37–0.39 at 100 s; compute per battle second 35 → 32 ms (fewer
+    collisions). Mixed fights (flank/raid/line/artillery both sides) about the same length and losses. Bench 1,000 vs 1,000:
+    169 s / 11.8 s compute / 226:88 (bench uses its own start layout). Tests: the flanker test now passes at 75% on the
+    battleship (the raider goes for it too), the start-position test compares Auto with the flank distance. Replays sent:
+    "All close-in fleets: spaced out", "Mixed fight: live / spaced out".
   - An **Interceptor** (`guard`, defend the artillery) was tried and **removed** (owner: it just
     made big clumps of ships sitting at the back). Saved designs with an unknown stance load as
     `line`.
@@ -1080,7 +1102,7 @@ Combat rules:
   only sideways or forwards (never backwards), lighter ships giving way more. Exceptions:
   close-in stances (flank, raid, charge, brawl; `e.closeIn`) ignore enemies, nobody dodges an
   enemy close-in ship, and a ship's own goal never pushes it away. Measured at 400 vs 400:
-  ships touching another 31% → 9%, median hull gap 7 → 18 blocks. 1,000 vs 1,000 ~4.2 ms a
+  ships touching another 31% → 9%, median hull gap 7 → 18 blocks. **Since 22 Nov 2026 (v2-dev) gap 40, enemies too, 1.2 s look-ahead: see "Fifth round" under Stances.** 1,000 vs 1,000 ~4.2 ms a
   tick (fewer collisions pays for the queries). Spread fleets take fewer ships per missile
   blast, so missiles 90 → 75.
 - **Debris** must stay clearly visible (wrecks keep most of their colour).

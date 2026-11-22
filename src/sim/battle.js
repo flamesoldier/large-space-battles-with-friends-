@@ -64,13 +64,15 @@ const FIGHTER = WEAPON[BT.BAY].fighter;
 const FIGHTER_R = 2; // how close a shot must pass to hit one (blocks)
 // Spacing between ships (see Battle.spacing): hull gap they try to keep, how hard it bends
 // their heading and slides them sideways, and how often it's refreshed.
-const SPACING_GAP = 25, SPACING_TURN = 3, SPACING_SLIDE = 1, SPACING_EVERY = 5;
+const SPACING_GAP = 40, SPACING_TURN = 3, SPACING_SLIDE = 1, SPACING_EVERY = 5;
 // Neighbour lists (owner, 22 Nov 2026: "ship movement also takes compute"): every SPACING_EVERY ticks
 // each ship asks the grid once for everything within its radius + NEAR_MARGIN (+ the other's
 // radius) and keeps the list; spacing and the every-tick collision test both read it instead of
 // querying the grid themselves. The margin covers how far two ships (≤ 22 blocks/s each) or a
 // shoved wreck can close in the ticks until the next refresh.
-const NEAR_MARGIN = 20;
+const NEAR_MARGIN = 50; // ≥ SPACING_GAP, so spacing sees everyone it should keep clear of
+const SPACING_LOOK = 1.2, SPACING_GOAL = 0.4; // look-ahead (s); share of the gap kept from what it's going for
+const HUNT_SPREAD = 1, CHARGE_SIDE = 20, CHARGE_OUT = 80; // goal spreading; Charge passes (see steerGoal)
 const TEAM_CELL = 64; // cell size of each side's own ship grid (buildTeamGrids)
 // A ship shoved hard (collisions can throw one at several times its top speed) refreshes early once it
 // has moved this far from where its list was made, so the margin still holds for wrecks drifting in.
@@ -299,7 +301,7 @@ export class Battle {
       _threatTick: -1, _threats: [], _gx0: 0, _gx1: 0, _gy0: 0, _gy1: 0,
       design: 0, hub: -1, stance: 'line', orbit: 1, targets: [], retarget: 0, weapons: [], track: null, t1: 65535,
       escortCount: 0, slot: 0, parent: -1, shoved: false, shoveRec: -1000,
-      goal: null, runPhase: 0, runA: 0, runT: 0, thrA: 0, knife: false, wayX: 0, wayY: 0, // flank / raid steering; thrA: heading offset through the gap ahead (see threadGap); way: a friendly flanker or raider asking this ship to make room (see threadGap, spacing)
+      goal: null, hunters: 0, runPhase: 0, runA: 0, runT: 0, thrA: 0, knife: false, wayX: 0, wayY: 0, // flank / raid steering; thrA: heading offset through the gap ahead (see threadGap); way: a friendly flanker or raider asking this ship to make room (see threadGap, spacing)
       closeIn: false, sepX: 0, sepY: 0, // spacing push away from nearby ships (see `spacing`)
       nbr: null, nbrT: -1000, nbrX: 0, nbrY: 0, // ships and wrecks near it, refreshed every SPACING_EVERY ticks or once it has moved NEAR_MOVE (see refreshNear)
       fixed: false, // a defence: never moves or turns, and nothing can shove it
@@ -612,7 +614,9 @@ export class Battle {
     this.armed = [];
     for (let t = 0; t < nT; t++) { this.armed.push([]); this.armedWorth[t] = 0; }
     for (const e of this.ents)
-      if (e.kind === SHIP && !e.dead && e.weapons.length) { sx[e.team] += e.x; sy[e.team] += e.y; this.armed[e.team].push(e); this.armedWorth[e.team] += e.worth; }
+      if (e.kind === SHIP && !e.dead && e.weapons.length) { sx[e.team] += e.x; sy[e.team] += e.y; this.armed[e.team].push(e); this.armedWorth[e.team] += e.worth; e.hunters = 0; }
+    // How many close-in ships are going for each ship (their goal), so goals spread out (pickGoal).
+    for (let t = 0; t < nT; t++) for (const e of this.armed[t]) if (e.goal && !e.goal.dead) e.goal.hunters++;
     // Each side's enemies: one list (the other side's, with two sides) and their centre.
     for (let t = 0; t < nT; t++) {
       const foes = this.foes[t];
@@ -695,7 +699,9 @@ export class Battle {
       // Bigger is better, but not at any distance: 10x the mass is worth ~460 further away, and a ship GOAL_DEPTH
       // behind the enemy's middle counts like one 2.7x the mass, so they go for the big ships at the back.
       const depth = (o.x - fx) * ux + (o.y - fy) * uy;
-      const sc = Math.log(o.mass) - d / 200 + Math.max(-2, Math.min(3, depth / GOAL_DEPTH));
+      // Spread out (owner, 22 Nov 2026, congestion): every friend already going for it counts against it, less for
+      // big ships (room for one hunter per 10 blocks of radius).
+      const sc = Math.log(o.mass) - d / 200 + Math.max(-2, Math.min(3, depth / GOAL_DEPTH)) - HUNT_SPREAD * o.hunters / Math.max(1, o.radius / 10);
       if (sc > bs) { bs = sc; best = o; }
     };
     for (const o of e.targets) score(o);
@@ -813,7 +819,7 @@ export class Battle {
     // A ship holding its distance only slides out of the crowd (below), it doesn't turn: holdFacing
     // picks the gun-bearing heading needing the least turn, so each bend from the crowd became its
     // next heading and it spun on the spot (owner, 14 Nov 2026, in front of an Aegis fortress).
-    if ((sx || sy) && !hold && !thread) {
+    if ((sx || sy) && !hold && face === null) { // close-in ships on their way in turn round others too (strafing ones only slide)
       const fx = Math.cos(desired), fy = Math.sin(desired), dot = sx * fx + sy * fy;
       if (dot < 0) { sx -= dot * fx; sy -= dot * fy; }
       desired = Math.atan2(fy + sy * SPACING_TURN, fx + sx * SPACING_TURN);
@@ -940,32 +946,39 @@ export class Battle {
    * SPACING_EVERY ticks. Ships only, not debris (ships plough through wrecks).
    */
   spacing(e) {
+    // Every ship keeps clear of every other, friend AND foe (owner, 22 Nov 2026: "the congestion is the real enemy…
+    // there is no space to see their weapons fire or miss or cool manoeuvres"). Close-in ships used to ignore enemies
+    // and nobody moved away from an enemy close-in ship, so an all-close-in battle had no spacing between sides at all.
+    // What a ship is going for (its goal, or a charging ship's target) it keeps only SPACING_GOAL of the gap from.
+    // It looks SPACING_LOOK ahead: two ships closing on each other start moving apart before they touch.
     const near = e.nbr, er = e.radius * 0.7;
-    // A flanker's or raider's goal, and a charging ship's target, don't push it away: getting
-    // close to them is the point.
-    // Close-in stances (flank, raid, charge, brawl) only spread out from friends: enemies are
-    // what they came for (point defence needs to be within 30). And nobody slides away from an
-    // enemy close-in ship, or the spacing would dodge every flanker.
     const skip = e.goal || (e.stance === 'charge' ? e.targets[0] : null);
-    const fr = this.fr, tb = e.team << 4, knife = e.closeIn;
     let sx = 0, sy = 0;
     for (const o of near) {
-      if (o === e || o === skip || o.kind !== SHIP || o.dead || ((knife || o.closeIn) && !fr[tb | o.team])) continue;
+      if (o === e || o.kind !== SHIP || o.dead) continue;
+      const gap = o === skip ? SPACING_GAP * SPACING_GOAL : SPACING_GAP;
       if (o.tiles) { // a big hollow hull: keep clear of its real blocks, not a circle round it
-        const reach = er + SPACING_GAP, t = this.nearTile(o, e.x, e.y, reach);
+        const reach = er + gap, t = this.nearTile(o, e.x, e.y, reach);
         if (t < 0) continue;
         const dx = e.x - this._ntx, dy = e.y - this._nty, dc = Math.hypot(dx, dy) || 0.01;
         const push = (1 - dc / reach) * (2 * o.mass) / (o.mass + e.mass);
         sx += (dx / dc) * push; sy += (dy / dc) * push;
         continue;
       }
-      const dx = e.x - o.x, dy = e.y - o.y, dc = Math.hypot(dx, dy) || 0.01;
-      const want = er + o.radius * 0.7 + SPACING_GAP;
+      let dx = e.x - o.x, dy = e.y - o.y;
+      const want = er + o.radius * 0.7 + gap;
+      // Where the two will be closest within SPACING_LOOK, if closer than now (blended with now).
+      const rvx = e.vx - o.vx, rvy = e.vy - o.vy, rv2 = rvx * rvx + rvy * rvy;
+      if (rv2 > 1e-6) {
+        const t = -(dx * rvx + dy * rvy) / rv2;
+        if (t > 0) { const tt = t < SPACING_LOOK ? t : SPACING_LOOK, fx = dx + rvx * tt, fy = dy + rvy * tt; dx = fx * 0.6 + dx * 0.4; dy = fy * 0.6 + dy * 0.4; }
+      }
+      const dc = Math.hypot(dx, dy) || 0.01;
       if (dc >= want) continue;
       const push = (1 - dc / want) * (2 * o.mass) / (o.mass + e.mass);
       sx += (dx / dc) * push; sy += (dy / dc) * push;
     }
-    if (e.wayX || e.wayY) { sx += e.wayX * 1.5; sy += e.wayY * 1.5; e.wayX = 0; e.wayY = 0; } // making room for a friendly flanker or raider
+    if (e.wayX || e.wayY) { sx += e.wayX * 1.5; sy += e.wayY * 1.5; e.wayX = 0; e.wayY = 0; } // making room for a close-in ship (threadGap)
     const l = Math.hypot(sx, sy);
     if (l > 1) { sx /= l; sy /= l; }
     e.sepX = sx; e.sepY = sy;
@@ -984,7 +997,9 @@ export class Battle {
     if (!g || g.dead) return [desired, false];
     const dx = g.x - e.x, dy = g.y - e.y, dc = Math.hypot(dx, dy) || 1;
     const to = Math.atan2(dy, dx), d = (g.tiles ? this.gapTo(e, g) : dc - g.radius * 0.8) - e.radius * 0.5;
-    if (e.stance !== 'raid') {
+    // Charge ships make point-blank strafing passes (CHARGE_SIDE off the hull, CHARGE_OUT out the far side) instead of
+    // circling on top of their goal (owner, 22 Nov 2026: congestion).
+    if (e.stance === 'flank') {
       if (d > pr * 1.6) return [to, false];
       this._thread = false; // circling its goal
       // Circle it: tangent, bent in or out to hold the distance.
@@ -994,7 +1009,7 @@ export class Battle {
     // Raider. 0: run in, aiming beside the target so the pass skims its hull.
     e.runT += DT;
     if (e.runPhase === 0) {
-      const side = g.radius * 0.7 + e.radius + pr * 0.5;
+      const side = g.radius * 0.7 + e.radius + (e.stance === 'charge' ? CHARGE_SIDE : pr * 0.5);
       const ax = g.x - (dy / dc) * side * e.orbit, ay = g.y + (dx / dc) * side * e.orbit;
       const passed = dc < g.radius + e.radius + pr * 1.5 && dx * e.vx + dy * e.vy < 0;
       if (passed || e.runT > 40) { e.runPhase = 1; e.runA = e.a; e.runT = 0; }
@@ -1002,7 +1017,8 @@ export class Battle {
     }
     // 1: carry on out the far side; then turn back for a new pass (maybe at a new target).
     // Out through the far side of the formation, not just past the target (owner, 22 Nov 2026).
-    if (dc > g.radius + RAID_OUT + e.radius * 2 || e.runT > RAID_OUT_T) {
+    const OUT = e.stance === 'charge' ? CHARGE_OUT : RAID_OUT;
+    if (dc > g.radius + OUT + e.radius * 2 || e.runT > RAID_OUT_T) {
       e.runPhase = 0; e.runT = 0; e.orbit = -e.orbit; e.goal = null;
       this.pickGoal(e);
       return [to, false];

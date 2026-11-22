@@ -735,7 +735,8 @@ for (let k = 0; k < FORTRESSES.length; k++) {
     if (rd.runPhase === 0) g0 = rd.goal;
     else if (g0 && !g0.dead) out = Math.max(out, Math.hypot(g0.x - rd.x, g0.y - rd.y) - g0.radius);
   }
-  assert.ok(onBig > b.tick * 0.9, `the flanker goes for the battleship at the back (${((onBig / b.tick) * 100).toFixed(0)}% of the time)`);
+  assert.ok(onBig > b.tick * 0.75, // (the raider goes for it too, and goals spread out: pickGoal counts hunters)
+    `the flanker goes for the battleship at the back (${((onBig / b.tick) * 100).toFixed(0)}% of the time)`);
   assert.ok(reached > 0 && reached < 100, `and reaches it through both lines (${reached} s)`);
   assert.ok(out > 120, `the raider carries on ${out.toFixed(0)} blocks past its target before turning`);
   console.log(`  flankers/raiders: flanker reaches the ship at the back in ${reached} s, raider runs out ${out.toFixed(0)} blocks`);

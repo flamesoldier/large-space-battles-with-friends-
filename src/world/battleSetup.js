@@ -100,11 +100,12 @@ export function startSpot(d, n, spanY, r1, r2, top, spread = 30 + Math.sqrt(n) *
 
 // Fleets start spread out (owner, Nov 2026: ships used to start in a blob and spread out once the
 // battle began). Every ship keeps at least START_GAP blocks of open space to its neighbours,
-// about what Battle.spacing() leaves between hulls (it pushes apart inside 25), and the fleet's
+// a little more than Battle.spacing() keeps between hulls (it pushes apart inside 40; was 20 until 22 Nov 2026,
+// owner: "the congestion is the real enemy"), and the fleet's
 // area is sized from its ships' real footprints, so a fleet of battleships gets more room than
 // the same number of corvettes. Ships in one camp all face the same way, so footprints are
 // boxes: w along the depth, h across.
-const START_GAP = 20, START_ROOM = 1.25; // ROOM: area to spare, so random spots can be found
+const START_GAP = 50, START_ROOM = 1.25; // ROOM: area to spare, so random spots can be found
 
 /**
  * Start spots for one camp's fleet: [{ depth, across }] per ship, in the order given (ds: its

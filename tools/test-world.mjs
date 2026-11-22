@@ -906,7 +906,7 @@ const resolve = (scen) => {
   for (const side of [0, 1]) {
     const f = (p) => avg(side, `s${p}`, toEnemy(side)), t = (p) => avg(side, `s${p}`, topY(side));
     ok(f('front') > f('auto') + 40 && f('auto') > f('back') + 60, `side ${side}: Front ships start nearest the enemy, Back ones furthest`);
-    ok(t('top') > 150 && t('bottom') < -150 && Math.abs(t('auto')) < 80, `side ${side}: flank ships start out on their own wing`);
+    ok(t('top') > 150 && t('bottom') < -150 && Math.abs(t('auto')) < t('top') * 0.2, `side ${side}: flank ships start out on their own wing`); // Auto: relative, fleets take more room since START_GAP 50
   }
   const fx = (p) => avg(1, `f${p}`, (s) => -s.x), fy = (p) => avg(1, `f${p}`, (s) => s.y);
   ok(fx('front') > fx('back') + 20, 'Front defences stand in front of Back ones');
