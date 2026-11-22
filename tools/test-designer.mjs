@@ -743,18 +743,25 @@ for (let k = 0; k < FORTRESSES.length; k++) {
   assert.equal(c.rfEnd[0], 0, 'first rift released');
   assert.ok(Math.abs(c.rfT1[0] - c.rfT0[0] - RW.swirl * 10) <= 1, 'it swirls 30 s');
   const x0 = c.rfX[0] / q, y0 = c.rfY[0] / q, age = (c.rfT1[0] - c.rfT0[0]) / 10, P = {};
-  let n = 0, hits = 0, worst = 0;
+  // swirling projectiles that flew into an enemy ship (owner: they hit ships while circling too) aren't released
+  const dead = new Set();
+  for (let j = 0; j < c.rkRift.length; j++) if (c.rkRift[j] === 0) { dead.add(c.rkK[j]); assert.ok(c.rkT[j] > c.rfT0[0] && c.rkT[j] <= c.rfT1[0]); }
+  let n = 0, k = 0, hits = 0, worst = 0;
   for (let i = 0; i < c.shotKind.length; i++) {
     if (c.shotKind[i] !== 8) continue;
     assert.notEqual(c.shotHit[i], 2, 'no rift projectile is shot down');
     if (c.shotT0[i] !== c.rfT1[0]) continue;
-    assert.ok(riftParticle(n, c.rfN[0], c.rfSeed[0], age, P), 'every projectile has appeared by release');
+    while (dead.has(k)) k++;
+    assert.ok(riftParticle(k, c.rfN[0], c.rfSeed[0], age, P), 'every projectile has appeared by release');
     worst = Math.max(worst, Math.hypot(c.shotX[i] / q - (x0 + P.x), c.shotY[i] / q - (y0 + P.y)));
-    assert.equal(c.shotSpd[i], riftSpeedStep(c.rfSeed[0], n));
+    assert.equal(c.shotSpd[i], riftSpeedStep(c.rfSeed[0], k));
     if (c.shotHit[i] === 1) hits++;
-    n++;
+    n++; k++;
   }
-  assert.equal(n, RW.count, 'every projectile released');
+  assert.equal(n + dead.size, RW.count, 'every projectile that survived the swirl released');
+  let e11 = 0;
+  for (const z of c.expS) if (z === 11) e11++;
+  assert.equal(e11, c.rkRift.length + c.shotHit.filter((h, i) => h === 1 && c.shotKind[i] === 8).length, 'a green blast for every hit, swirling or released');
   assert.ok(worst < 0.3, `projectiles leave from where the swirl has them (worst ${worst.toFixed(2)} blocks off)`);
   assert.ok(hits >= 10, `rift projectiles hit enemies (${hits} of ${n})`);
   const m = new ReplayModel(packReplay(rep.meta, rep.cols)), E = m.ents[0].rfEng;
@@ -762,9 +769,11 @@ for (let k = 0; k < FORTRESSES.length; k++) {
   assert.ok(Math.abs(E.lx[0] - (70 - W / 2)) < 0.01 && Math.abs(E.ly[0] - (62 - H / 2)) < 0.01, 'viewer finds the engine centre');
   assert.ok(m.riftEngines(m.ents[0], c.rfT0[0] - 1).chg[0] > 0.95 && m.riftEngines(m.ents[0], c.rfT0[0] + 10).st[0] > 1, 'engine glow charges, then shows its rift open');
   // Fragile and explosive: 49 lost blocks are fine, the 50th sets off the whole engine; an open rift collapses.
-  const b2 = new Battle({ designs: [d, makeDesign('frigate', 3)], ships: [{ design: 0, team: 0, x: 0, y: 0, a: 0 }, { design: 1, team: 1, x: 1500, y: 0, a: Math.PI }], seed: 2, maxTime: 120 });
+  const b2 = new Battle({ designs: [d, makeDesign('frigate', 3)], ships: [{ design: 0, team: 0, x: 0, y: 0, a: 0 }, { design: 1, team: 1, x: 1500, y: 0, a: Math.PI, fixed: true }], seed: 2, maxTime: 120 });
   while (!b2.rifts.length && b2.step());
   assert.equal(b2.rifts.length, 1, 'the lone ship opened a rift');
+  for (let k = 0; k < 150 && b2.rifts.length; k++) b2.step();
+  assert.ok(b2.R.rkRift.n > 0 && b2.R.expS.a.slice(0, b2.R.expS.n).includes(11), `swirling projectiles hit the lone enemy (${b2.R.rkRift.n} hits)`);
   const e = b2.ents.find((o) => o.id === 0), w = e.weapons.find((o) => o.type === BT.RIFT);
   for (let k = 0; k < RIFT_POP.after - 1; k++) b2.damageCell(e, w.cells[k * 37], 1e9);
   b2.resolveCookoffs();
@@ -772,7 +781,7 @@ for (let k = 0; k < FORTRESSES.length; k++) {
   b2.damageCell(e, w.cells[5000], 1e9); b2.resolveCookoffs(); b2.resolveDamage(); b2.updateRifts();
   assert.ok(w.popped && b2.R.expS.a.slice(0, b2.R.expS.n).includes(12), 'the 50th sets the whole engine off');
   assert.equal(b2.R.rfEnd.a[0], 1, 'its open rift collapses');
-  console.log(`  rift engine: rift opened at ${c.rfT0[0] / 10} s, ${n} projectiles released, ${hits} hit; engine detonates at ${RIFT_POP.after} lost blocks`);
+  console.log(`  rift engine: rift opened at ${c.rfT0[0] / 10} s, ${dead.size} hit ships while swirling, ${n} released, ${hits} hit; engine detonates at ${RIFT_POP.after} lost blocks`);
 }
 console.log(`designer stats match the sim for ${checked} generated designs; validation ok`);
 console.log(`${FORTRESSES.length} Aegis fortresses are valid 150,000 cr defences`);

@@ -3,15 +3,18 @@
 // replay viewer (which draws the swirl from them), so the swirl is never recorded: a rift record
 // (centre, open and release ticks, count, seed) is enough, and the viewer stays a pure function of time.
 //
-// Projectile k of n comes out of the rift's centre at spawnAt(k), spirals out to its own orbit over
-// GROW_S seconds and circles there, every one the same way round; the whole vortex speeds up as it
-// fills (ACCEL), so by release they are whipping round at 2.5× their first speed. At release each flies
-// off along its orbit bent outward by OUT_BEND, so they burst out in every direction like a pinwheel.
-
+// Shaped like the guided missiles that swirled in the owner's Elenris Minor replay (22 Nov 2026: "get the
+// circling to look more similar to how the rockets circled"): measured there, each missile flew its own loop
+// that kept passing back through the middle (loops ~40-90 blocks across, their centres 16-54 blocks off the
+// middle), about half going each way round, so the loops overlap in a rosette with a bright knot at the
+// centre. Here projectile k comes out of the rift's eye at spawnAt(k) and flies a circle of radius `rho`
+// that passes within a quarter of rho of the eye, clockwise or anticlockwise, the circle slowly turning round
+// the eye (PREC) and every projectile speeding up as the rift fills (ACCEL). At release each flies straight
+// off along its circle, so they burst out in every direction.
 import { WEAPON, BT } from './blocks.js';
 
 export const RIFT_W = WEAPON[BT.RIFT];
-const GROW_S = 1.6, ACCEL = 1.5, OUT_BEND = 0.75;
+const ACCEL = 0.6, PREC = 0.09; // speed at release = (1 + ACCEL) × W.orbit; circles turn round the eye at PREC rad/s
 
 /** Cheap repeatable hash in [0, 1). */
 export function riftHash(seed, k, j) {
@@ -29,20 +32,20 @@ export function riftSpawnAt(k, n, W = RIFT_W) {
 /**
  * Where projectile k of n is, `a` seconds after its rift opened, relative to the rift's centre.
  * Fills out { x, y, vx, vy, r, rr, grow } and returns true, or false if it hasn't appeared yet.
- * (vx, vy) is the direction it flies off in if released now (unit length); `rr` its orbit radius.
+ * (vx, vy) is the direction it flies off in if released now (unit length, along its circle); `r` its
+ * distance from the eye, `rr` its circle's radius, `grow` 0 → 1 over its first 0.8 s.
  */
 export function riftParticle(k, n, seed, a, out, W = RIFT_W) {
   const s = riftSpawnAt(k, n, W);
   if (a < s) return false;
-  const T = W.swirl, h1 = riftHash(seed, k, 1), h2 = riftHash(seed, k, 2), h3 = riftHash(seed, k, 3);
-  const rr = W.radius * (0.22 + 0.78 * Math.sqrt(h1)); // more of them out towards the rim
-  const tau = a - s, g = Math.min(1, tau / GROW_S), grow = 1 - (1 - g) ** 3;
-  const r = Math.max(0.5, rr * grow * (1 + 0.07 * Math.sin(tau * 2.1 + h3 * 6.283)));
-  const w0 = W.orbit / rr; // starting angular speed; the vortex speeds up as it fills: w(t) = w0 (1 + ACCEL t / T)
-  const th = h2 * 6.283 + w0 * (tau + (ACCEL * (a * a - s * s)) / (2 * T));
-  const c = Math.cos(th), sn = Math.sin(th);
-  out.x = c * r; out.y = sn * r; out.r = r; out.rr = rr; out.grow = grow;
-  const d = th + Math.PI / 2 - OUT_BEND; // counter-clockwise, bent outward
+  const T = W.swirl, h1 = riftHash(seed, k, 1), h2 = riftHash(seed, k, 2), h3 = riftHash(seed, k, 3), h5 = riftHash(seed, k, 5);
+  const rho = W.radius * (0.28 + 0.22 * h1), dir = h3 < 0.5 ? 1 : -1;
+  const tau = a - s, phi = h2 * 6.283 + dir * PREC * a, cd = rho * (1 + 0.5 * (h5 - 0.5));
+  const L = W.orbit * (tau + (ACCEL * (a * a - s * s)) / (2 * T)); // distance flown round its circle
+  const th = phi + Math.PI + (dir * L) / rho;
+  const x = Math.cos(phi) * cd + Math.cos(th) * rho, y = Math.sin(phi) * cd + Math.sin(th) * rho;
+  out.x = x; out.y = y; out.r = Math.hypot(x, y); out.rr = rho; out.grow = Math.min(1, tau / 0.8);
+  const d = th + (dir * Math.PI) / 2;
   out.vx = Math.cos(d); out.vy = Math.sin(d);
   return true;
 }

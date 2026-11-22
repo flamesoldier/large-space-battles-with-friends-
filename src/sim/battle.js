@@ -55,7 +55,7 @@ const FLAK_STAND = [2, 6]; // a burst goes off this many blocks short of the hul
 const FLAK_PICKS = 16, FLAK_RECENT = 30, FLAK_CROWD_R = 40, FLAK_CROWD_EVERY = 10; // flak: ships looked at per burst, ticks a target counts as just hit, crowd radius beyond its hull, crowd recount (ticks)
 const K_KINETIC = 0, K_SHELL = 1, K_MISSILE = 2, K_PLASMA = 3, K_FIGHTER = 4, K_FLAK = 5, K_FRAG = 6, K_AUTO = 7, K_RIFT = 8; // K_AUTO: auto gun bullets (20 Nov 2026), handled like shells; K_RIFT: the rift engine's green projectiles (22 Nov 2026)
 const RIFT_W = WEAPON[BT.RIFT];
-const RIFT_PICKS = 24, RIFT_NEAR = 200, RIFT_CLEAR = 20; // rift spot: enemy ships looked at, how far round each counts as its crowd, clear space wanted round the centre
+const RIFT_PICKS = 24, RIFT_NEAR = 200, RIFT_CLEAR = 30; // rift spot: enemy ships looked at, how far round each counts as its crowd, clear space wanted round the centre
 // Fighters (owner, Nov 2026): launched by fighter bays, kept in their own list (this.Fi), not P.
 const FIGHTER = WEAPON[BT.BAY].fighter;
 const FIGHTER_R = 2; // how close a shot must pass to hit one (blocks)
@@ -167,7 +167,7 @@ export class Battle {
     this.shoved = []; // debris pushed by ships since its last shove record
     this.cookoffs = []; // world x, y pairs of heavy-laser blocks destroyed this tick
     this.flakPops = []; // ship, cell pairs of flak cannon blocks destroyed this tick
-    this.rifts = []; // open rifts (rift engine): { e, w, x, y, n, seed, rec } (see fireRift)
+    this.rifts = []; // open rifts (rift engine): { e, w, x, y, n, seed, rec, t0, alive, px, py } (see fireRift, stepRifts)
     this._rp = { x: 0, y: 0, vx: 0, vy: 0, r: 0, rr: 0, grow: 0 };
     this.stamp = new Int32Array(8192);
     this.stampGen = 1;
@@ -496,6 +496,7 @@ export class Battle {
     this.buildMissileGrid();
     const n = this.ents.length;
     for (let k = 0; k < n; k++) { const e = this.ents[k]; if (e.kind === SHIP && !e.dead) this.fire(e); }
+    if (this.rifts.length) this.stepRifts();
     this.resolveCookoffs();
     this.resolveDamage();
     if (this.rifts.length) this.updateRifts();
@@ -1246,7 +1247,7 @@ export class Battle {
       const rec = R.rfT0.push(this.now);
       R.rfT1.push(0); R.rfX.push(q16(x, q)); R.rfY.push(q16(y, q)); R.rfN.push(n); R.rfSeed.push(seed); R.rfTeam.push(e.team);
       R.rfEnd.push(2); R.rfSrc.push(e.id); R.rfLX.push(q16(w.lx, q)); R.rfLY.push(q16(w.ly, q));
-      this.rifts.push({ e, w, x, y, n, seed, rec, t0: this.now });
+      this.rifts.push({ e, w, x, y, n, seed, rec, t0: this.now, alive: new Uint8Array(n).fill(1), px: new Float32Array(n).fill(NaN), py: new Float32Array(n) });
       w.sq = 1; w.cd = W.swirl;
       return;
     }
@@ -1305,13 +1306,39 @@ export class Battle {
   releaseRift(r) {
     const W = RIFT_W, a = (this.now - r.t0) * DT, p = this._rp, life = Math.round(W.life / DT);
     for (let k = 0; k < r.n; k++) {
-      if (!riftParticle(k, r.n, r.seed, a, p)) continue;
+      if (!r.alive[k] || !riftParticle(k, r.n, r.seed, a, p)) continue;
       const step = riftSpeedStep(r.seed, k), v = (W.speed * step) / 200;
       const x = r.x + p.x, y = r.y + p.y;
       const rec = this.shotStart(K_RIFT, r.e.team, x, y, Math.atan2(p.vy, p.vx), false, step);
       this.addProjectile(K_RIFT, BT.RIFT, x, y, p.vx * v, p.vy * v, life, -1, r.e.team, -1, W.damage, 0, rec);
     }
     this.endRift(r, 0);
+  }
+
+  /**
+   * Swirling projectiles explode on any enemy ship they fly into (owner, 22 Nov 2026: "the projectiles should
+   * hit enemy ships as they circle around as well"). Each tick every projectile that has appeared sweeps
+   * from where the swirl had it last tick to where it has it now (enemy ships only: friends and wrecks are
+   * flown through); a hit is a blast like a released one's (explosion 11), recorded as rkRift/rkK/rkT so the
+   * viewer stops drawing it there. Only survivors are released.
+   */
+  stepRifts() {
+    const p = this._rp, R = this.R;
+    for (const r of this.rifts) {
+      const a = (this.now - r.t0) * DT, team = r.e.team;
+      for (let k = 0; k < r.n; k++) {
+        if (!riftParticle(k, r.n, r.seed, a, p)) break; // they appear in order
+        if (!r.alive[k]) continue;
+        const x = r.x + p.x, y = r.y + p.y, x0 = r.px[k], y0 = r.py[k];
+        r.px[k] = x; r.py[k] = y;
+        if (x0 !== x0 || !this.sweep(x0, y0, x, y, -1, team, true)) continue; // x0 NaN: it has only just appeared
+        const t = this.hitT, hx = x0 + (x - x0) * t, hy = y0 + (y - y0) * t;
+        this.blast(hx, hy, RIFT_W.splash, RIFT_W.damage, team);
+        this.recExplosion(hx, hy, 11);
+        r.alive[k] = 0;
+        R.rkRift.push(r.rec); R.rkK.push(k); R.rkT.push(this.now);
+      }
+    }
   }
 
   /** end: 0 released, 1 collapsed (its engine was lost), 2 still open when the battle ended. */
@@ -2835,6 +2862,8 @@ export class Battle {
       // at rfT1 released (rfEnd 0, they become shots of kind 8), collapsed (1, the engine was lost) or the battle ended (2).
       rfT0: C(Uint16Array), rfT1: C(Uint16Array), rfX: C(Int16Array), rfY: C(Int16Array), rfN: C(Uint16Array), rfSeed: C(Uint16Array),
       rfTeam: C(Uint8Array), rfEnd: C(Uint8Array), rfSrc: C(Uint32Array), rfLX: C(Int16Array), rfLY: C(Int16Array),
+      // Swirling rift projectiles that flew into an enemy ship: rift record rkRift's projectile rkK, at tick rkT.
+      rkRift: C(Uint32Array), rkK: C(Uint16Array), rkT: C(Uint16Array),
     };
   }
 

@@ -887,6 +887,27 @@ Weapons (numbers in `blocks.js`):
     battle, 54–90% of projectiles hit (in a 40-frigate test only 10%), 1–2 engines detonate; seed 3 the rift side won by
     rout. Bench 1,000 vs 1,000 identical shot for shot. Test in `tools/test-designer.mjs`. Replay sent: "Doomsday
     Interdimensional Rift Engine" (seed 3: 5 rifts, two collapse).
+  - **Second round (owner, 22 Nov 2026: "I like the green projectile, the rift, lighting and see the block design but I
+    don't like the green circles around the attack. The projectiles should hit enemy ships as they circle around as
+    well and can you get the circling to look more similar to how the rockets circled in the replay")**, on `v2-dev`,
+    not live. Where the rift lines above disagree, these win:
+    - **Swirl shaped like the replay's missiles.** Measured in b28350 (607 missiles looping 3+ times between 100 and
+      160 s round one point): **285 clockwise, 322 anticlockwise**, each on its own loop (fitted radius 45–90) whose
+      centre sat 16–54 blocks off the middle, so the loops overlap in a rosette with a bright knot at the centre and
+      long thin trails. `riftParticle` now: loop radius `rho` = radius × (0.28–0.5), its centre `rho` × (0.75–1.25)
+      from the eye (so the loop passes back near it), half each way round, starting at the eye, loop centres turning
+      round the eye at `PREC` 0.09 rad/s, speed `orbit` (28) × (1 + `ACCEL` 0.6 × age / swirl); release along its
+      loop. `radius` 45 → **60** (the swirl reaches ~60 from the eye), `RIFT_CLEAR` 20 → **30**.
+    - **Swirling projectiles hit enemy ships**: `stepRifts()` (after `fire`, before cook-offs) sweeps each live
+      projectile from last tick's swirl point to this tick's (`sweep(..., team, shipsOnly)`: friends and wrecks are
+      flown through), a hit = the same blast + explosion 11, the projectile is gone (`r.alive`) and recorded in
+      **`rkRift` / `rkK` / `rkT`**; only survivors are released. Demo battles (same harness, 3 seeds): ~40% of
+      projectiles hit ships while swirling (seed 1: ~555 of 1,400), the rest released.
+    - **No rings**: every glow-shape-5 ring is gone (opening, rim, inner, release, collapse, blast 11, detonation 12)
+      and so are the spiral arms; a faint haze, the bright eye, the projectiles with 7-step (0.7 s) thin trails and
+      the arcs stay. Viewer `rift.dieAt[i][k]` = tick a swirling projectile hit (from `rk*`), not drawn after it.
+    - Test in `tools/test-designer.mjs` (swirl hits on a still enemy, survivors released from the swirl, a green
+      blast for every hit). Bench identical. Replay sent: "Doomsday Interdimensional Rift Engine" (seed 1, 7 rifts).
 - Future weapons the owner wants: bigger cannons, a medium laser.
 
 Combat rules:

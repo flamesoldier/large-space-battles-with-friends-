@@ -1033,73 +1033,57 @@ export class Renderer {
   }
 
   /**
-   * Open rifts (22 Nov 2026): a green tear in space among the enemy, a dark-green well with a bright rim and
-   * turning spiral arms, its projectiles gathering one by one and whipping round it faster and faster
-   * (positions from src/shared/rift.js, pure functions of time) with crackling arcs, then a flash as they
-   * are released (they are shots of kind 8 from then on: drawRiftShots), or an implosion if its engine was lost.
+   * Open rifts (22 Nov 2026): a green tear in space among the enemy with a bright eye, its projectiles coming
+   * out of the eye one by one and looping round it in overlapping circles both ways round, like the guided
+   * missiles in the owner's Elenris Minor replay (a rosette with a knot of light in the middle), each trailing
+   * a long thin streak along its path (positions from src/shared/rift.js, pure functions of time), crackling
+   * arcs from the eye; a projectile that flew into an enemy ship stops at its hit (F.dieAt, explosion 11).
+   * Then a flash as the rest are released (shots of kind 8 from then on: drawRiftShots), or, if its engine was
+   * lost, they all fall back into the eye. No rings (owner, 22 Nov 2026: "I don't like the green circles").
    */
   drawRifts(F, t, vis, minW) {
     const g = this.glow, W = RIFT_W, Rr = W.radius, P = this._rfp || (this._rfp = { x: 0, y: 0, vx: 0, vy: 0, r: 0, rr: 0, grow: 0 });
     const Q = this._rfq || (this._rfq = { x: 0, y: 0, vx: 0, vy: 0, r: 0, rr: 0, grow: 0 });
     for (let i = 0; i < F.n; i++) {
       const t0 = F.t0[i], t1 = F.t1[i], end = F.end[i];
-      if (t < t0 || t > t1 + 20 || !vis(F.x[i], F.y[i], Rr * 3 + 60)) continue;
-      const x = F.x[i], y = F.y[i], n = F.cnt[i], seed = F.seed[i];
+      if (t < t0 || t > t1 + 20 || !vis(F.x[i], F.y[i], Rr * 2 + 60)) continue;
+      const x = F.x[i], y = F.y[i], n = F.cnt[i], seed = F.seed[i], die = F.dieAt[i];
       if (t <= t1) {
         const a = (t - t0) * 0.1, fill = Math.min(1, a / W.swirl), flick = 0.85 + 0.15 * Math.sin(t * 0.9 + i);
-        // the tear opening: a flash and a ring racing out
-        if (a < 2) {
+        if (a < 2) { // the tear opening: a flash
           const u = a / 2;
-          g.push(x, y, 0, 20 + 70 * u, 20 + 70 * u, 1, alpha2(C.rfGlow, 0.8 * (1 - u)));
+          g.push(x, y, 0, 15 + 45 * u, 15 + 45 * u, 1, alpha2(C.rfGlow, 0.8 * (1 - u)));
           if (u < 0.4) g.push(x, y, 0, 10 * (1 - u), 10 * (1 - u), 1, alpha2(C.rfCore, 1 - u / 0.4));
-          const rr = (Rr * 1.4 * Math.min(1, u * 1.6)) / 0.84;
-          g.push(x, y, 0, rr, rr, 5, alpha2(C.rfArc, 0.9 * (1 - u)));
         }
-        const open = Math.min(1, a / 1.2);
-        // the well: a deep green haze, a bright rim, an inner ring tightening round the eye
-        g.push(x, y, 0, Rr * 1.5 * open, Rr * 1.5 * open, 1, alpha2(C.rfDeep, (0.35 + 0.25 * fill) * flick));
-        const rim = (Rr * (1.02 + 0.03 * Math.sin(t * 0.7))) / 0.84 * open;
-        g.push(x, y, 0, rim, rim, 5, alpha2(C.rfGlow, (0.35 + 0.4 * fill) * flick));
-        g.push(x, y, 0, rim * 1.06, rim * 1.06, 5, alpha2(C.rfDeep, 0.5 * fill));
-        const ir = (Rr * (0.24 - 0.08 * fill)) / 0.84 * open;
-        g.push(x, y, 0, ir, ir, 5, alpha2(C.rfArc, 0.5 + 0.4 * fill));
-        g.push(x, y, 0, Math.max(3 + 6 * fill, minW * 3), Math.max(3 + 6 * fill, minW * 3), 1, alpha2(C.rfCore, (0.5 + 0.5 * fill) * flick));
-        // three spiral arms turning with the vortex
-        const rot = t * (0.012 + 0.05 * fill);
-        for (let arm = 0; arm < 3; arm++) {
-          let px = x, py = y;
-          for (let j = 1; j <= 14; j++) {
-            const rho = (j / 14) * Rr * 1.15 * open, ph = arm * 2.0944 + rot + rho * 0.06;
-            const qx = x + Math.cos(ph) * rho, qy = y + Math.sin(ph) * rho;
-            const k = (1 - j / 15) * (0.25 + 0.5 * fill);
-            g.push((px + qx) / 2, (py + qy) / 2, Math.atan2(qy - py, qx - px), Math.hypot(qx - px, qy - py) / 2 + 0.3, Math.max(2.4 - j * 0.1, minW * 1.5), 4, alpha2(C.rfTrail, k));
-            px = qx; py = qy;
-          }
-        }
-        // the projectiles, each with a short curved trail
+        // a faint green haze and the bright eye
+        g.push(x, y, 0, Rr * (0.6 + 0.4 * fill), Rr * (0.6 + 0.4 * fill), 1, alpha2(C.rfDeep, (0.12 + 0.18 * fill) * flick));
+        g.push(x, y, 0, Math.max(5 + 7 * fill, minW * 4), Math.max(5 + 7 * fill, minW * 4), 1, alpha2(C.rfGlow, (0.5 + 0.4 * fill) * flick));
+        g.push(x, y, 0, Math.max(2 + 3 * fill, minW * 2), Math.max(2 + 3 * fill, minW * 2), 1, alpha2(C.rfCore, (0.6 + 0.4 * fill) * flick));
+        // the projectiles, each with a long thin trail back along its loop
         let last = -1;
         for (let k = 0; k < n; k++) {
           if (!riftParticle(k, n, seed, a, P)) break;
+          if (t >= die[k]) continue;
           last = k;
           const px = x + P.x, py = y + P.y;
           let hx = px, hy = py;
-          for (let j = 1; j <= 3; j++) {
-            if (!riftParticle(k, n, seed, a - j * 0.07, Q)) break;
-            const qx = x + Q.x, qy = y + Q.y;
-            g.push((hx + qx) / 2, (hy + qy) / 2, Math.atan2(qy - hy, qx - hx), Math.hypot(qx - hx, qy - hy) / 2 + 0.2, Math.max(1.3 - j * 0.25, minW), 4, alpha2(C.rfTrail, 0.7 - j * 0.18));
+          for (let j = 1; j <= 7; j++) {
+            if (!riftParticle(k, n, seed, a - j * 0.1, Q)) break;
+            const qx = x + Q.x, qy = y + Q.y, len = Math.hypot(qx - hx, qy - hy) / 2 + 0.15, ang = Math.atan2(qy - hy, qx - hx), f = 1 - j / 8;
+            g.push((hx + qx) / 2, (hy + qy) / 2, ang, len, Math.max(0.35, minW * 0.8), 4, alpha2(C.rfTrail, 0.75 * f));
+            if (j <= 3) g.push((hx + qx) / 2, (hy + qy) / 2, ang, len, Math.max(1.4, minW * 2), 4, alpha2(C.rfGlow, 0.18 * f));
             hx = qx; hy = qy;
           }
-          const fl = 0.8 + 0.2 * Math.sin(t * 1.3 + k * 2.1);
-          g.push(px, py, 0, Math.max(3.2, minW * 4) * fl, Math.max(3.2, minW * 4) * fl, 1, alpha2(C.rfGlow, 0.55));
-          g.push(px, py, 0, Math.max(1.1, minW * 1.6), Math.max(1.1, minW * 1.6), 1, alpha2(C.rfCore, 0.95));
-          if (P.grow < 0.35) g.push(x, y, 0, 6, 6, 1, alpha2(C.rfCore, 0.5 * (1 - P.grow / 0.35))); // a spark at the eye as each one comes through
+          g.push(px, py, 0, Math.max(2.4, minW * 3), Math.max(2.4, minW * 3), 1, alpha2(C.rfGlow, 0.5));
+          g.push(px, py, 0, Math.max(0.9, minW * 1.4), Math.max(0.9, minW * 1.4), 1, alpha2(C.rfCore, 0.95));
+          if (P.grow < 0.35) g.push(x, y, 0, 5, 5, 1, alpha2(C.rfCore, 0.5 * (1 - P.grow / 0.35))); // a spark at the eye as each one comes through
         }
         // crackling arcs from the eye to a few of them, new ones every 0.3 s
         if (last >= 0) {
           const slot = Math.floor(t / 3), life = 1 - (t - slot * 3) / 3;
           for (let arc = 0; arc < 2 + Math.round(3 * fill); arc++) {
             const k = Math.floor(hash01(slot * 7 + i, arc) * (last + 1));
-            if (!riftParticle(k, n, seed, a, P)) continue;
+            if (t >= die[k] || !riftParticle(k, n, seed, a, P)) continue;
             let px = x, py = y;
             for (let j = 1; j <= 5; j++) {
               const f = j / 5, jit = j < 5 ? (hash01(slot * 13 + arc, j + i) - 0.5) * 9 : 0;
@@ -1112,21 +1096,18 @@ export class Renderer {
         continue;
       }
       const u = (t - t1) / 20; // after the rift ends: 2 s
-      if (end === 0) { // released: a burst of light and a shock ring
-        g.push(x, y, 0, Rr * (1.2 + 2.5 * u), Rr * (1.2 + 2.5 * u), 1, alpha2(C.rfGlow, 0.9 * (1 - u)));
-        if (u < 0.3) g.push(x, y, 0, Rr * 0.6 * (1 - u), Rr * 0.6 * (1 - u), 1, alpha2(C.rfCore, 1 - u / 0.3));
-        const rr = (Rr * (1.1 + 6 * u)) / 0.84;
-        g.push(x, y, 0, rr, rr, 5, alpha2(C.rfArc, 0.8 * (1 - u)));
+      if (end === 0) { // released: a burst of light
+        g.push(x, y, 0, Rr * (0.8 + 1.6 * u), Rr * (0.8 + 1.6 * u), 1, alpha2(C.rfGlow, 0.7 * (1 - u)));
+        if (u < 0.3) g.push(x, y, 0, Rr * 0.4 * (1 - u), Rr * 0.4 * (1 - u), 1, alpha2(C.rfCore, 1 - u / 0.3));
       } else if (end === 1) { // collapsed: everything falls into the eye, which pinches shut with a pop
         const v = Math.min(1, u * 2), a = (t1 - t0) * 0.1;
         if (v < 1) {
           const sh = (1 - v) * (1 - v);
           for (let k = 0; k < n; k++) {
             if (!riftParticle(k, n, seed, a + (t - t1) * 0.1, P)) break;
+            if (t1 >= die[k]) continue;
             g.push(x + P.x * sh, y + P.y * sh, 0, Math.max(2.4, minW * 3), Math.max(2.4, minW * 3), 1, alpha2(C.rfGlow, 0.6 * (1 - v)));
           }
-          const rr = (Rr * (1 - v)) / 0.84;
-          g.push(x, y, 0, rr, rr, 5, alpha2(C.rfGlow, 0.8 * (1 - v)));
         } else {
           const w = (u - 0.5) * 2;
           g.push(x, y, 0, 8 + 30 * w, 8 + 30 * w, 1, alpha2(C.rfCore, 0.9 * (1 - w)));
@@ -1166,7 +1147,6 @@ export class Renderer {
       const u = age / life, r = 2.5 + 11 * u;
       g.push(x, y, 0, r, r, 1, alpha2(C.rfGlow, 1 - u));
       if (u < 0.35) g.push(x, y, 0, r * 0.5, r * 0.5, 1, alpha2(C.rfCore, 1 - u / 0.35));
-      if (u < 0.6) g.push(x, y, 0, (r * 1.2) / 0.84, (r * 1.2) / 0.84, 5, alpha2(C.rfArc, 0.5 * (1 - u / 0.6)));
       return;
     }
     if (age > RIFT_BOOM || !vis(x, y, 300)) return;
@@ -1174,8 +1154,6 @@ export class Renderer {
     g.push(x, y, 0, R, R, 1, alpha2(C.rfGlow, 0.9 * (1 - u)));
     g.push(x, y, 0, R * 0.6, R * 0.6, 1, alpha2(C.boom, 0.7 * (1 - u) * (1 - u)));
     if (u < 0.25) g.push(x, y, 0, 40 * (1 - u * 4) + 10, 40 * (1 - u * 4) + 10, 1, alpha2(C.rfCore, 1 - u * 4));
-    const rr = (40 + 320 * u) / 0.84;
-    g.push(x, y, 0, rr, rr, 5, alpha2(C.rfArc, 0.8 * (1 - u)));
     for (let k = 0; k < 16; k++) { // green streaks flung out
       const ang = hash01(i, k) * 6.283, d = (30 + 200 * hash01(i, k + 20)) * Math.sqrt(u), len = 6 + 18 * (1 - u);
       g.push(x + Math.cos(ang) * d, y + Math.sin(ang) * d, ang, len, Math.max(1.4, minW * 1.5), 2, alpha2(C.rfTrail, 1 - u));
