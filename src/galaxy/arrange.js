@@ -450,9 +450,27 @@ function pieceAt(wx, wy) {
   for (let i = S.pieces.length - 1; i >= 0; i--) {
     const p = S.pieces[i], dx = wx - p.x, dy = wy - p.y, c = Math.cos(p.a), s = Math.sin(p.a);
     const lx = dx * c + dy * s, ly = -dx * s + dy * c, pad = Math.max(0.5, (S.opts.touch ? 12 : 6) / S.cam.z);
-    if (Math.abs(lx) <= p.shape.w / 2 + pad && Math.abs(ly) <= p.shape.h / 2 + pad) return i;
+    if (Math.abs(lx) <= p.shape.w / 2 + pad && Math.abs(ly) <= p.shape.h / 2 + pad && nearBlock(p.shape, lx, ly, pad)) return i;
   }
   return -1;
+}
+
+// Owner, 23 Nov 2026: clicking in the gaps of an Aegis fortress selected the fortress. A click only
+// picks a piece if one of its real blocks is within `pad` blocks of the pointer, not anywhere in its box.
+function nearBlock(sh, lx, ly, pad) {
+  const gx = lx + sh.w / 2, gy = ly + sh.h / 2, r = Math.min(pad, 40);
+  const i0 = Math.max(0, Math.floor(gx - r)), i1 = Math.min(sh.w - 1, Math.floor(gx + r));
+  const j0 = Math.max(0, Math.floor(gy - r)), j1 = Math.min(sh.h - 1, Math.floor(gy + r));
+  for (let j = j0; j <= j1; j++) {
+    const dy = Math.max(j - gy, 0, gy - (j + 1));
+    if (dy > r) continue;
+    for (let i = i0; i <= i1; i++) {
+      if (!sh.occ[j * sh.w + i]) continue;
+      const dx = Math.max(i - gx, 0, gx - (i + 1));
+      if (dx * dx + dy * dy <= r * r) return true;
+    }
+  }
+  return false;
 }
 
 function down(e) {
