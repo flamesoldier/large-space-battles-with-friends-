@@ -1405,7 +1405,7 @@ All money numbers are in `src/shared/economy.js` (placeholders until balanced in
     saved after the filled ones so new defences refill them; overlaps and out-of-range pieces turn
     red and block Save. Keys are captured while it's open (the galaxy keydown returns early). Phones:
     swipeable bar with Back and Save first.
-    **Clicks pick real blocks (owner, 23 Nov 2026: "clicking on the gaps selects the citadel")**, on `v2-dev`, not live:
+    **Clicks pick real blocks (owner, 23 Nov 2026: "clicking on the gaps selects the citadel")**, **live 23 Nov 2026** (no patch notes):
     `pieceAt()` keeps its box test as a quick check, then `nearBlock()` needs one of the piece's own blocks within the hit
     margin (6 px, 12 on touch, at most 40 blocks), so the gaps and courtyards of hollow fortresses select what's in them.
     Checked on Aegis II–IV shapes (4,000 random clicks each: every click on a block hits, every click with no block
