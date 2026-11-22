@@ -65,12 +65,15 @@ export const SELL_HOURS = 5 / 60;
 export const DEFENSE_BUILD_HOURS = 5 / 60;
 
 // Income: every world pays a fixed number of credits per hour into its owner's global pool.
-// Home worlds pay HOME_INCOME; every other world rolls a fixed value in PLANET_INCOME (in
-// steps of PLANET_INCOME_STEP) when the galaxy is made, and keeps it whoever owns it.
-// 2.0: a third of 1.0's 1,500 and 400–1,000 (steps of 50).
+// Home worlds pay HOME_INCOME. Every other world pays PLANET_INCOME_BASE plus
+// PLANET_INCOME_PER_LANE for each hyperlane it has (owner, 22 Nov 2026: more lanes are harder
+// to hold, so they should be worth more, and no random incomes). Set when the galaxy is made
+// (`planetIncome()`), kept whoever owns it. Generated worlds have 1–7 lanes, ~3.4 on average,
+// so 110–410 cr/h, ~230 on average (the same average as the old random 130–330).
 export const HOME_INCOME = 500;
-export const PLANET_INCOME = [130, 330];
-export const PLANET_INCOME_STEP = 10;
+export const PLANET_INCOME_BASE = 60;
+export const PLANET_INCOME_PER_LANE = 50;
+export function planetIncome(lanes) { return PLANET_INCOME_BASE + PLANET_INCOME_PER_LANE * lanes; }
 export const STARTING_CREDITS = 20000;
 
 // Unclaimed worlds are held by militia ships worth NEUTRAL_GARRISON_BASE credits plus this many

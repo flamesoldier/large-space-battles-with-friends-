@@ -1350,4 +1350,17 @@ const lanePlanHours = (W, a, b, d) => { const A = W.planets[a], B = W.planets[b]
   }
 }
 
+// Income = base + a share per hyperlane (owner, 22 Nov 2026: more lanes, harder to hold, worth more).
+{
+  const { planetIncome, PLANET_INCOME_BASE, PLANET_INCOME_PER_LANE } = await import('../src/shared/economy.js');
+  for (const players of [2, 5, 8]) {
+    const m = createWorld({ players: Array.from({ length: players }, (_, i) => ({ name: 'P' + i })), seed: 12 });
+    const deg = new Map(m.planets.map((P) => [P.id, 0]));
+    for (const [a, b] of m.lanes) { deg.set(a, deg.get(a) + 1); deg.set(b, deg.get(b) + 1); }
+    const bad = m.planets.filter((P) => P.home < 0 && P.income !== planetIncome(deg.get(P.id)));
+    ok(!bad.length, `${players} players: every world pays ${PLANET_INCOME_BASE} + ${PLANET_INCOME_PER_LANE} per hyperlane`);
+    ok(m.planets.filter((P) => P.home >= 0).every((P) => P.income === HOME_INCOME), 'home worlds keep the home income');
+  }
+}
+
 console.log(`world: ${checks} checks passed`);

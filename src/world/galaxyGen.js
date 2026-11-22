@@ -7,7 +7,7 @@
 // player count always give the same map.
 
 import { mulberry32 } from '../shared/rng.js';
-import { HOME_INCOME, PLANET_INCOME, PLANET_INCOME_STEP } from '../shared/economy.js';
+import { HOME_INCOME, planetIncome } from '../shared/economy.js';
 import { PLANET_SPACING, HOME_CLEARANCE, DEFAULT_PLANETS_PER_PLAYER } from './rules.js';
 
 const SYL_A = ['Ar', 'Bel', 'Cor', 'Dra', 'El', 'Fen', 'Gal', 'Hes', 'Ix', 'Jor', 'Kal', 'Lyr', 'Mor', 'Nex', 'Or', 'Pyr', 'Quin', 'Rho', 'Sel', 'Tar', 'Ul', 'Vey', 'Wyr', 'Xan', 'Yor', 'Zeph'];
@@ -95,15 +95,12 @@ export function generateGalaxy({ players, seed = 1, planetsPerPlayer = DEFAULT_P
     if (pts.every((q) => Math.hypot(q.x - p.x, q.y - p.y) >= (q.home >= 0 ? HOME_CLEARANCE : PLANET_SPACING))) pts.push(p);
   }
 
-  const step = PLANET_INCOME_STEP, [lo, hi] = PLANET_INCOME;
-  const planets = pts.map((p, id) => ({
-    id, name: name(), x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10,
-    size: p.home >= 0 ? 1 : 0.55 + r() * 0.45,
-    income: p.home >= 0 ? HOME_INCOME : lo + step * Math.floor(r() * ((hi - lo) / step + 1)),
-    home: p.home,
-  }));
-  // Bigger worlds pay a bit more (purely cosmetic link: size follows income).
-  for (const p of planets) if (p.home < 0) p.size = 0.5 + 0.5 * ((p.income - lo) / (hi - lo));
+  // Income and size are set once the hyperlanes are made (below). The two random draws the old
+  // random income used are still taken, so a seed gives the same map as before.
+  const planets = pts.map((p, id) => {
+    if (p.home < 0) { r(); r(); }
+    return { id, name: name(), x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, size: 1, income: HOME_INCOME, home: p.home };
+  });
 
   // ---- hyperlanes
   const n = planets.length, lanes = [], has = new Set();
@@ -136,6 +133,13 @@ export function generateGalaxy({ players, seed = 1, planetsPerPlayer = DEFAULT_P
   }
   linkHomesInward(planets, lanes);
   lanes.sort((x, y) => x[0] - y[0] || x[1] - y[1]);
+  // Every world but a home pays a base plus a share per hyperlane; bigger on the map the more it pays.
+  const deg = new Array(n).fill(0);
+  for (const [a, b] of lanes) { deg[a]++; deg[b]++; }
+  for (const p of planets) if (p.home < 0) {
+    p.income = planetIncome(deg[p.id]);
+    p.size = Math.min(1, 0.5 + 0.1 * (deg[p.id] - 1));
+  }
   const spawns = [];
   for (const p of planets) if (p.home >= 0) spawns[p.home] = p.id;
   return { radius, planets, lanes, spawns };
