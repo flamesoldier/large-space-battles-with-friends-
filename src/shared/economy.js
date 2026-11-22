@@ -71,6 +71,11 @@ export const DEFENSE_BUILD_HOURS = 5 / 60;
 // (`planetIncome()`), kept whoever owns it. Generated worlds have 1–7 lanes, ~3.4 on average,
 // so 220–820 cr/h, ~460 on average (owner, 22 Nov 2026: a 3-lane world should make at least 420).
 export const HOME_INCOME = 850;
+// Bots get double income (owner, 22 Nov 2026: "the ai too easy… they are only needed for testing
+// but can you give them double the income as a normal player would get"). Every world a bot holds
+// pays it this many times its income (a bot's total income is shown doubled; a single world's
+// income in its panel stays the normal figure).
+export const BOT_INCOME_MULT = 2;
 export const PLANET_INCOME_BASE = 120;
 export const PLANET_INCOME_PER_LANE = 100;
 export function planetIncome(lanes) { return PLANET_INCOME_BASE + PLANET_INCOME_PER_LANE * lanes; }

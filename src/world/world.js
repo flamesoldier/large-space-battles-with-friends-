@@ -22,6 +22,7 @@ import { mulberry32 } from '../shared/rng.js';
 import {
   SHIPYARD_INTERVAL_MIN, SHIPS_PER_BUILD, shipyardPrice, crowdingSurcharge, SHIPYARD_SELL_REFUND,
   defensePrice, MAX_DEFENSE_ORDER, BOUNTY_SHARE, STARTING_CREDITS, NEUTRAL_GARRISON_HOURS, NEUTRAL_GARRISON_BASE, SELL_HOURS, DEFENSE_BUILD_HOURS,
+  BOT_INCOME_MULT,
 } from '../shared/economy.js';
 import { generateGalaxy, linkHomesInward } from './galaxyGen.js';
 import { planRoute, travelSpeed, laneMap, laneSpeed } from './routes.js';
@@ -134,7 +135,9 @@ export function allied(world, a, b) {
 export const playerName = (world, id) => (id === null || id === undefined ? 'Militia' : world.players[id]?.name ?? '?');
 
 /** Credits per hour from every world a player holds. */
-export const incomeOf = (world, pid) => world.planets.reduce((s, p) => s + (p.owner === pid ? p.income : 0), 0);
+/** A player's income multiplier: bots earn BOT_INCOME_MULT times as much (owner, 22 Nov 2026). */
+const incomeMult = (world, pid) => (world.players[pid]?.bot ? BOT_INCOME_MULT : 1);
+export const incomeOf = (world, pid) => world.planets.reduce((s, p) => s + (p.owner === pid ? p.income : 0), 0) * incomeMult(world, pid);
 
 export function addShips(planet, owner, design, n, goal = undefined) {
   if (n <= 0) return;
@@ -429,8 +432,9 @@ export function advanceTo(world, t, { rally = true } = {}) {
   let fresh = null; // ships just built at worlds with a rally point: Map(planet → { design: n })
   for (const p of world.planets) {
     if (p.owner === null) continue;
-    world.players[p.owner].credits += (p.income * dt) / HOUR_MS;
-    noteIncome(world, p.owner, (p.income * dt) / HOUR_MS);
+    const earned = (p.income * incomeMult(world, p.owner) * dt) / HOUR_MS;
+    world.players[p.owner].credits += earned;
+    noteIncome(world, p.owner, earned);
     for (const y of p.yards) {
       if (y.next > t || y.sellAt != null) continue; // a shipyard being sold has stopped building
       const k = (Math.floor((t - y.next) / YARD_MS) + 1) * SHIPS_PER_BUILD;

@@ -1310,6 +1310,15 @@ const lanePlanHours = (W, a, b, d) => { const A = W.planets[a], B = W.planets[b]
   {
     const g = createAutoWorld({ players: [{ name: 'Ann' }, { name: 'Bot 1', bot: true }, { name: 'Bot 2', bot: true }, { name: 'Bot 3', bot: true }], seed: 8 });
     ok(g.players[1].bot && !g.players[0].bot && g.players[1].claimed, 'createWorld marks bot seats');
+    // Double income for bots (owner, 22 Nov 2026).
+    {
+      const e = createAutoWorld({ players: [{ name: 'Ann' }, { name: 'Bot 1', bot: true }], seed: 8 });
+      const c0 = e.players.map((p) => p.credits);
+      advanceTo(e, HOUR_MS);
+      const gain = e.players.map((p, i) => p.credits - c0[i]);
+      ok(Math.abs(gain[1] - 2 * gain[0]) < 1e-6 && gain[0] === HOME_INCOME, `bots earn double: ${gain[0]} vs ${gain[1]} cr in an hour`);
+      ok(incomeOf(e, 1) === 2 * incomeOf(e, 0), 'and their income shows doubled');
+    }
     proposeAlliance(g, 0, 1);
     const res = fake(g);
     let defOrders = 0;
