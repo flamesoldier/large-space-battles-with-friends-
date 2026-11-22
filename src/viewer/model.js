@@ -265,13 +265,13 @@ export class ReplayModel {
     // renderer can draw a flame on every working thruster that has open space behind it.
     for (const e of this.ents) {
       if (e.kind !== 0) continue;
-      const thr = [], behind = [];
+      const thr = [], behind = [], mega = [];
       for (let g = 0; g < e.map.length; g++) {
         const li = e.map[g];
-        if (li < 0 || e.type[li] !== BT.THRUSTER) continue;
-        thr.push(li); behind.push(g % e.w > 0 ? e.map[g - 1] : -1);
+        if (li < 0 || (e.type[li] !== BT.THRUSTER && e.type[li] !== BT.MEGA)) continue;
+        thr.push(li); behind.push(g % e.w > 0 ? e.map[g - 1] : -1); mega.push(e.type[li] === BT.MEGA ? 1 : 0);
       }
-      e.thr = Int32Array.from(thr); e.thrBehind = Int32Array.from(behind);
+      e.thr = Int32Array.from(thr); e.thrBehind = Int32Array.from(behind); e.thrMega = Uint8Array.from(mega);
     }
     for (const e of this.ents) { neighbours(e); e.map = null; } // the grid map is only needed until here
     this.spark = sp;

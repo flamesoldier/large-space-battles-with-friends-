@@ -70,6 +70,11 @@ vec3 hullBlock(int code, vec2 p) {
     float br = min(abs(p.x - p.y), abs(p.x + p.y));
     float bar = 1.0 - smoothstep(0.08, 0.14, br);
     lit *= mix(1.0, 0.78 + 0.22 * bar, d);
+  } else if (type == 5 && var >= 8) { // mega thruster (22 Nov 2026): heavier housing, two rings, a blue-white core
+    float ring = smoothstep(0.66, 0.72, r) * (1.0 - smoothstep(0.8, 0.86, r));
+    float ring2 = smoothstep(0.44, 0.5, r) * (1.0 - smoothstep(0.56, 0.62, r));
+    lit *= mix(1.0, 0.45 + ring * 0.8 + ring2 * 0.6 - sh * 0.1, d);
+    if (!dead) glow = (vec3(0.55, 0.7, 1.0) * (1.0 - smoothstep(0.0, 0.46, r)) + vec3(0.9) * (1.0 - smoothstep(0.0, 0.18, r))) * d;
   } else if (type == 5) { // thruster: housing with a nozzle, hot inside
     float ring = smoothstep(0.42, 0.5, r) * (1.0 - smoothstep(0.62, 0.7, r));
     lit *= mix(1.0, 0.55 + ring * 0.7 - sh * 0.1, d);
@@ -596,7 +601,7 @@ function blockPalette(team, dead) {
   const T = TEAM[team], k = dead ? 0.7 : 1; // wrecks stay readable, just burnt
   const p = [];
   p[BT.HUB] = T.hub; p[BT.ARMOR] = T.armor; p[BT.HEAVY] = T.heavy; p[BT.FRAME] = T.frame;
-  p[BT.THRUSTER] = '#3d434f'; p[BT.LASER] = team ? '#ffd9c9' : '#d8f4ff'; p[BT.CANNON] = '#9aa1ab'; p[BT.MISSILE] = '#b9b16c'; p[BT.PD] = PD_COLOR; p[BT.LANCE] = team ? '#8a4f63' : '#5b5f9c'; p[BT.GUIDED] = '#8fb79e'; p[BT.BAY] = '#c9a23c'; p[BT.FLAK] = '#6e6656'; p[BT.AUTO] = '#a7a08e'; p[BT.SHIELD] = '#2b6f7a'; p[BT.RIFT] = '#3c5a48';
+  p[BT.THRUSTER] = '#3d434f'; p[BT.MEGA] = '#4a3f5c'; p[BT.LASER] = team ? '#ffd9c9' : '#d8f4ff'; p[BT.CANNON] = '#9aa1ab'; p[BT.MISSILE] = '#b9b16c'; p[BT.PD] = PD_COLOR; p[BT.LANCE] = team ? '#8a4f63' : '#5b5f9c'; p[BT.GUIDED] = '#8fb79e'; p[BT.BAY] = '#c9a23c'; p[BT.FLAK] = '#6e6656'; p[BT.AUTO] = '#a7a08e'; p[BT.SHIELD] = '#2b6f7a'; p[BT.RIFT] = '#3c5a48';
   return p.map((c) => (c ? rgba(dead ? shade(c, k) : c) : 0));
 }
 const PAL = [[blockPalette(0, false), blockPalette(1, false)], [blockPalette(0, true), blockPalette(1, true)]];
@@ -619,7 +624,7 @@ function lookFor(hex) {
   const make = (dead) => {
     const p = [];
     p[BT.HUB] = T.hub; p[BT.ARMOR] = T.armor; p[BT.HEAVY] = T.heavy; p[BT.FRAME] = T.frame;
-    p[BT.THRUSTER] = '#3d434f'; p[BT.LASER] = mixHex(hex, '#ffffff', 0.75); p[BT.CANNON] = '#9aa1ab'; p[BT.MISSILE] = '#b9b16c';
+    p[BT.THRUSTER] = '#3d434f'; p[BT.MEGA] = '#4a3f5c'; p[BT.LASER] = mixHex(hex, '#ffffff', 0.75); p[BT.CANNON] = '#9aa1ab'; p[BT.MISSILE] = '#b9b16c';
     p[BT.PD] = PD_COLOR; p[BT.LANCE] = shade(mixHex(hex, '#40404a', 0.5), 0.9); p[BT.GUIDED] = '#8fb79e'; p[BT.BAY] = '#c9a23c'; p[BT.FLAK] = shade(mixHex(hex, '#6e6656', 0.7), 0.95); p[BT.SHIELD] = shade(mixHex(hex, '#2b6f7a', 0.75), 0.95); p[BT.AUTO] = shade(mixHex(hex, '#a7a08e', 0.75), 1); p[BT.RIFT] = shade(mixHex(hex, '#3c5a48', 0.85), 1);
     return p.map((c) => (c ? rgba(dead ? shade(c, 0.7) : c) : 0));
   };
@@ -830,6 +835,7 @@ export class Renderer {
             const k = rf ? e.rfEng.blk[i] : -1;
             solid.push(x, y, tr.a, k >= 0 ? rf.chg[k] : 0, k >= 0 ? rf.st[k] : 0, 10 + 16 * mask + 256 * v + deadBit, pal[type]);
           }
+          else if (type === BT.MEGA) solid.push(x, y, tr.a, 0.5, 0.5, 10 + BT.THRUSTER + 16 * mask + 256 * (8 + (v & 7)) + deadBit, pal[type]); // shader type 5, var 8+ = mega
           else solid.push(x, y, tr.a, 0.5, 0.5, 10 + type + 16 * mask + 256 * v + deadBit, pal[type]);
           blocks++;
         }
@@ -837,13 +843,14 @@ export class Renderer {
       if (!dead) {
         // A flame on each working thruster with open space behind it (nose is local +x, so
         // flames point to -x). Length flickers per thruster as a pure function of time.
-        const eng = e.look ? e.look.engine : C.engine[e.team], th = e.thr, tb = e.thrBehind;
+        const eng = e.look ? e.look.engine : C.engine[e.team], th = e.thr, tb = e.thrBehind, tm = e.thrMega;
         for (let k = 0; th && k < th.length; k++) {
           const i = th[k], b = tb[k];
           if (de[i] <= t || (b >= 0 && de[b] > t)) continue;
-          const len = 0.9 + 0.25 * Math.sin(t * 1.9 + k * 2.3) + 0.15 * Math.sin(t * 4.7 + k);
+          const big = tm && tm[k] ? 2.2 : 1; // a mega thruster's flame is longer and wider
+          const len = (0.9 + 0.25 * Math.sin(t * 1.9 + k * 2.3) + 0.15 * Math.sin(t * 4.7 + k)) * big;
           const fx = lx[i] - 0.5 - len, fy = ly[i];
-          glow.push(tr.x + fx * c - fy * s, tr.y + fx * s + fy * c, tr.a, len + 0.2, 0.55, 1, eng);
+          glow.push(tr.x + fx * c - fy * s, tr.y + fx * s + fy * c, tr.a, len + 0.2, 0.55 * (big > 1 ? 1.5 : 1), 1, eng);
         }
         if (e.shN) this.drawShield(model, e, t, tr, px);
         if (e.rfEng) this.drawRiftEngine(model, e, t, tr, px);

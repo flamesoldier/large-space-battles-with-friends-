@@ -10,7 +10,7 @@
 // Randomness comes from the world's seed, the player and the clock, so a run is repeatable.
 
 import { makeDesign } from '../shared/designs.js';
-import { BT } from '../shared/blocks.js';
+import { BT, isThruster } from '../shared/blocks.js';
 import { mulberry32 } from '../shared/rng.js';
 import { defensePrice } from '../shared/economy.js';
 import { HOUR_MS } from './rules.js';
@@ -34,7 +34,7 @@ function botDesigns(world, pid) {
   let defence = null;
   for (let k = 0; k < 20 && !defence; k++) {
     const d = makeDesign('cruiser', base + 50 + k);
-    const fort = { ...d, cells: d.cells.map((t) => (t === BT.THRUSTER ? BT.ARMOR : t)), name: `${name} fort` };
+    const fort = { ...d, cells: d.cells.map((t) => (isThruster(t) ? BT.ARMOR : t)), name: `${name} fort` };
     if (!defenseProblem(fort)) defence = fort;
   }
   const v = { ships, defence };

@@ -2,7 +2,7 @@
 // All game numbers come from src/shared (blocks.js, shipStats.js, economy.js), the same code the
 // battle sim and server use.
 
-import { BT, BLOCKS, WEAPON, MULTIBLOCK, HULL_CLASSES, COOKOFF, SHIELD, FLAK_POP, RIFT_POP, shieldRegen, shieldCap } from '../shared/blocks.js';
+import { BT, BLOCKS, WEAPON, MULTIBLOCK, HULL_CLASSES, COOKOFF, SHIELD, FLAK_POP, RIFT_POP, shieldRegen, shieldCap, isThruster } from '../shared/blocks.js';
 import { ARC_BINS, binAngle, binOpen, arcCentre } from '../shared/arcs.js';
 import { openDir, unitDir, lookAngle } from '../shared/weaponLook.js';
 import { routeLength } from '../shared/bayRoute.js';
@@ -21,12 +21,12 @@ const fmt = (n) => Math.round(n).toLocaleString();
 
 // Same colours as the replay viewer's Azure side, so a design looks like it will in battle.
 const COLOR = {
-  [BT.HUB]: '#86e8ff', [BT.ARMOR]: '#5c7ea3', [BT.HEAVY]: '#41597a', [BT.FRAME]: '#90a6c0', [BT.THRUSTER]: '#3d434f',
+  [BT.HUB]: '#86e8ff', [BT.ARMOR]: '#5c7ea3', [BT.HEAVY]: '#41597a', [BT.FRAME]: '#90a6c0', [BT.THRUSTER]: '#3d434f', [BT.MEGA]: '#4a3f5c',
   [BT.LASER]: '#d8f4ff', [BT.CANNON]: '#9aa1ab', [BT.MISSILE]: '#b9b16c', [BT.PD]: '#c2413f', [BT.LANCE]: '#2c3150', [BT.GUIDED]: '#8fb79e', [BT.BAY]: '#c9a23c', [BT.FLAK]: '#5d574b', [BT.SHIELD]: '#2b6f7a', [BT.AUTO]: '#a7a08e', [BT.RIFT]: '#24382d',
 };
 // Palette order and number keys.
 const PALETTE = [
-  [BT.FRAME, '1'], [BT.ARMOR, '2'], [BT.HEAVY, '3'], [BT.THRUSTER, '4'], [BT.LASER, '5'],
+  [BT.FRAME, '1'], [BT.ARMOR, '2'], [BT.HEAVY, '3'], [BT.THRUSTER, '4'], [BT.MEGA, 't'], [BT.LASER, '5'],
   [BT.CANNON, '6'], [BT.AUTO, 'u'], [BT.PD, '7'], [BT.MISSILE, '8'], [BT.GUIDED, 'g'], [BT.BAY, 'c'], [BT.LANCE, '9'], [BT.FLAK, 'k'], [BT.SHIELD, 'e'], [BT.RIFT, 'v'], [BT.HUB, '0'], [0, 'x'],
 ];
 const WEAPON_ORDER = [BT.LASER, BT.CANNON, BT.AUTO, BT.PD, BT.MISSILE, BT.GUIDED, BT.BAY, BT.LANCE, BT.FLAK, BT.RIFT];
@@ -56,6 +56,7 @@ const BLOCK_HINT = {
   [BT.PD]: `SHOOTS DOWN ENEMY MISSILES (normal and guided) within ${WEAPON[BT.PD].range} blocks: a missile has ${WEAPON[BT.MISSILE].hp} hp and each burst does ${WEAPON[BT.PD].missileDamage}, so a few of these protect a ship. Then ENEMY FIGHTERS within ${WEAPON[BT.PD].range} (${WEAPON[BT.PD].damage} a burst). When neither is near, it shoots any enemy ship within ${WEAPON[BT.PD].range}.`,
   // Owner, Nov 2026: players didn't know thrusters also set galaxy map speed.
   [BT.THRUSTER]: 'Moves the ship. More thrust for the ship\'s mass means a higher top speed and faster turning in battle.\n\nIT ALSO SETS SPEED ON THE GALAXY MAP: a fleet crosses the map at the top speed of its SLOWEST ship, so one under-powered ship slows the whole fleet down. Top speed (in the stats panel) is the same number in battle and on the map; a ship with almost no thrust can\'t leave its world.',
+  [BT.MEGA]: `MEGA THRUSTER: one block with ${BLOCKS[BT.MEGA].thrust / BLOCKS[BT.THRUSTER].thrust}× the thrust of a normal thruster, for big ships that can't fit enough of them. Costs ${BLOCKS[BT.MEGA].cost} cr (${BLOCKS[BT.MEGA].cost / BLOCKS[BT.THRUSTER].cost}× a thruster) and has ${BLOCKS[BT.MEGA].hp} hp (${BLOCKS[BT.MEGA].hp / BLOCKS[BT.THRUSTER].hp}×). Like any thruster it also sets the ship's speed on the galaxy map, and top speed is capped at 22 however much thrust you add.`,
   [BT.CANNON]: `A SLOW, HEAVY EXPLOSIVE GUN: one big shell every ${WEAPON[BT.CANNON].cooldown} s, aimed ahead of its target. Where it hits it blows ${WEAPON[BT.CANNON].damage} damage into the blocks nearest the impact, so one shell destroys about ${Math.floor(WEAPON[BT.CANNON].damage / BLOCKS[BT.HEAVY].hp)} heavy armour or ${Math.floor(WEAPON[BT.CANNON].damage / BLOCKS[BT.FRAME].hp)} frame. Range ${WEAPON[BT.CANNON].range}.`,
   [BT.AUTO]: `A RAPID-FIRE CLOSE-RANGE GUN: a 2×2 unit spraying fast bullets every ${WEAPON[BT.AUTO].cooldown} s, ${WEAPON[BT.AUTO].damage} damage each, out to ${WEAPON[BT.AUTO].range} blocks. Fairly inaccurate, so it's best close in; misses fly on for ${WEAPON[BT.AUTO].life} s and can hit something further away. It also shoots enemy fighters when no ship is in reach. Keeps firing while 2 of its 4 blocks survive.`,
   [BT.MISSILE]: 'A huge, slow, unguided missile: flies straight where it was aimed, over your own ships, and its blast wrecks everything within 9 blocks. Point defence can shoot it down.',
@@ -81,7 +82,7 @@ function blockTitle(t) {
   if (t === BT.FLAK) s = `${B.name}: one 10×10 unit, ${B.cost * 100} cr, ${B.hp} hp per block. Lose ${FLAK_POP.after} of its 100 blocks and the whole unit blows up (small blast, little harm to the ship)`;
   if (t === BT.AUTO) s = `${B.name}: one 2×2 unit, ${B.cost * 4} cr, ${B.hp} hp per block, keeps firing while 2 of its 4 blocks survive`;
   if (t === BT.RIFT) s = `${B.name}: one 100×100 unit, ${(B.cost * 10000).toLocaleString('en')} cr, only ${B.hp} hp per block. Lose ${RIFT_POP.after} blocks and the whole engine detonates (${RIFT_POP.damage} damage within ${RIFT_POP.radius} blocks)`;
-  if (t === BT.THRUSTER) s += `, thrust ${B.thrust}`;
+  if (isThruster(t)) s += `, thrust ${B.thrust}`;
   if (W && t === BT.FLAK) s += `. Range ${W.range}, a burst every second among crowded enemy ships, ${W.damage} damage to every block facing it within ${W.radius} blocks`;
   else if (W && t === BT.RIFT) s += `. Any range, a rift of ${W.count} projectiles about every ${W.cooldown} s`;
   else if (W && t !== BT.BAY) s += `. Range ${W.range}, ${W.damage} damage every ${W.cooldown} s`;
@@ -99,7 +100,7 @@ for (const [t, key] of PALETTE) {
   $('blocks').append(b);
 }
 function setBlock(t) {
-  if (t === BT.THRUSTER && defenseMode()) { toast("Defences can't have thrusters: they never move."); return; }
+  if (isThruster(t) && defenseMode()) { toast("Defences can't have thrusters: they never move."); return; }
   block = t;
   if ((MULTIBLOCK[t] || t === BT.HUB || tool === 'pan') && tool !== 'pencil') setTool('pencil'); // picking a block leaves the Hand tool
   document.querySelectorAll('.blk').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.block) === t)));
@@ -239,7 +240,7 @@ function refresh(force = false) {
   $('place-hint').textContent = PLACE_INFO[ed.place][defenseMode() ? 'defHint' : 'hint'];
   const errs = [...a.errors], warns = [...a.warnings];
   if (defenseMode()) {
-    const n = a.byType[BT.THRUSTER] || 0;
+    const n = (a.byType[BT.THRUSTER] || 0) + (a.byType[BT.MEGA] || 0);
     if (n) errs.unshift(`Defences can't have thrusters: remove ${n === 1 ? 'the' : `all ${n}`} thruster${n > 1 ? 's' : ''}.`);
     for (let k = warns.length - 1; k >= 0; k--) if (warns[k].startsWith('No thrusters')) warns.splice(k, 1);
     warns.push('A defence never moves or turns: its front (the right-hand side here) always faces the enemy. Put the guns where you want them to fire, e.g. all facing front, or armour in front and guns on the sides to hit ships flying past.');
@@ -468,6 +469,10 @@ function glyph(t, x, y, z, i) {
     g.strokeStyle = 'rgba(0,0,0,0.22)'; g.lineWidth = Math.max(1, z * 0.08);
     g.beginPath(); g.moveTo(x + z * 0.1, y + z * 0.1); g.lineTo(x + z * 0.9, y + z * 0.9); g.moveTo(x + z * 0.9, y + z * 0.1); g.lineTo(x + z * 0.1, y + z * 0.9); g.stroke();
   } else if (t === BT.THRUSTER) { ring(z * 0.3, Math.max(1, z * 0.1), 'rgba(200,210,225,0.55)'); circle(z * 0.2, '#ff8c3a'); circle(z * 0.09, '#ffe2b0'); }
+  else if (t === BT.MEGA) { // mega thruster: heavier housing, double ring, a blue-white core
+    ring(z * 0.38, Math.max(1, z * 0.07), 'rgba(220,225,240,0.6)'); ring(z * 0.27, Math.max(1, z * 0.06), 'rgba(160,140,230,0.7)');
+    circle(z * 0.2, '#7fa8ff'); circle(z * 0.1, '#f2f6ff');
+  }
   else if (t === BT.LASER || t === BT.CANNON || t === BT.PD || t === BT.MISSILE || t === BT.GUIDED) gunGlyph(t, cx, cy, z, i);
 }
 
@@ -1204,7 +1209,7 @@ function buildSimChoices() {
   (embed?.designs || []).forEach((o) => {
     try {
       const d = { ...decodeDesign(o.data), name: o.name };
-      if (o.fixed || o.defence || !d.cells.includes(BT.THRUSTER)) defs.push(simChoice('Defences in this game', o.name, o.mine ? 'yours' : o.owner, d, strHash(String(o.data.cells ?? '')), true));
+      if (o.fixed || o.defence || !d.cells.some(isThruster)) defs.push(simChoice('Defences in this game', o.name, o.mine ? 'yours' : o.owner, d, strHash(String(o.data.cells ?? '')), true));
       else simChoices.push(simChoice('In this game', o.name, o.mine ? 'yours' : o.owner, d, strHash(String(o.data.cells ?? ''))));
     } catch { /* skip */ }
   });
@@ -1213,7 +1218,7 @@ function buildSimChoices() {
     try {
       const d = decodeDesign(o);
       if (!ok(d)) return;
-      if (d.cells.includes(BT.THRUSTER)) simChoices.push(simChoice('Saved in this browser', d.name || 'Unnamed', 'saved', d, strHash(String(o.cells ?? ''))));
+      if (d.cells.some(isThruster)) simChoices.push(simChoice('Saved in this browser', d.name || 'Unnamed', 'saved', d, strHash(String(o.cells ?? ''))));
       else defs.push(simChoice('Saved defences', d.name || 'Unnamed', 'saved', d, strHash(String(o.cells ?? '')), true));
     } catch { /* skip */ }
   });
@@ -1429,7 +1434,7 @@ let defenseShown = false;
 /** In the defence designer, take every thruster off the design (after loading or importing one). */
 function dropThrusters() {
   if (!defenseMode()) return 0;
-  const n = ed.removeType(BT.THRUSTER);
+  const n = ed.removeType([BT.THRUSTER, BT.MEGA]);
   if (n) toast(`Removed ${n} thruster${n === 1 ? '' : 's'}: defences never move. Undo puts them back.`);
   return n;
 }
@@ -1441,16 +1446,18 @@ function enterDefenseMode() {
   $('cost-label').textContent = 'Block price';
   $('t-copies-label').textContent = 'Your defences';
   $('t-hint').textContent = 'Your defences stand in staggered rows, fronts toward the enemy, exactly as at a real world, against an enemy fleet worth the same number of credits (at full block price). Real battle sim.';
-  const tb = document.querySelector(`.blk[data-block="${BT.THRUSTER}"]`);
-  if (tb) { tb.disabled = true; tb.title = "Thrusters: not allowed on defences. A defence never moves."; }
-  if (block === BT.THRUSTER) setBlock(BT.ARMOR);
+  for (const t of [BT.THRUSTER, BT.MEGA]) {
+    const tb = document.querySelector(`.blk[data-block="${t}"]`);
+    if (tb) { tb.disabled = true; tb.title = `${BLOCKS[t].name}s: not allowed on defences. A defence never moves.`; }
+  }
+  if (isThruster(block)) setBlock(BT.ARMOR);
   // Your last defence if you have one, otherwise the design on screen with its thrusters taken off.
   clearTimeout(saveTimer);
   CUR_KEY = DEF_CUR_KEY;
   const saved = store.get(DEF_CUR_KEY, null);
   let loaded = false;
   if (saved) { try { const d = decodeDesign(saved); if (d.cells.some((c) => c && c !== BT.HUB)) { ed.load(d); ed.resetHistory(); loaded = true; } } catch { /* use the one on screen */ } }
-  if (loaded) { syncFields(); fit(); dropThrusters(); } else { ed.removeType(BT.THRUSTER); ed.resetHistory(); }
+  if (loaded) { syncFields(); fit(); dropThrusters(); } else { ed.removeType([BT.THRUSTER, BT.MEGA]); ed.resetHistory(); }
 }
 const simMode = () => embed?.mode === 'sim';
 let simShown = false;
@@ -1465,7 +1472,7 @@ function syncEmbed() {
   if (!embed || !design) return;
   if (simMode()) { $('use-design').hidden = true; return; }
   if (defenseMode()) {
-    const price = defensePrice(design), thr = info.byType[BT.THRUSTER] || 0;
+    const price = defensePrice(design), thr = (info.byType[BT.THRUSTER] || 0) + (info.byType[BT.MEGA] || 0);
     const b = $('use-design');
     b.hidden = false;
     b.textContent = `Build defence · ${fmt(price)} cr`;

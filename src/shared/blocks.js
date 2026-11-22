@@ -18,6 +18,7 @@ export const BT = {
   FLAK: 13, // flak cannon (owner, 14 Nov 2026): a 10x10 unit, long range, shells burst beside lightly armoured ships in a spray of shrapnel
   SHIELD: 14, // shield generator (owner, 15 Nov 2026): a 10x10 unit that gives its ship a regenerating shield pool
   AUTO: 15, // auto gun (owner, 20 Nov 2026): a 2x2 unit, short range, fires fast inaccurate bullets every 0.2 s
+  MEGA: 17, // mega thruster (owner, 22 Nov 2026: big ships couldn't fit enough thrusters): one block, 10x a thruster's thrust and price, 5x its hp. The viewer draws it as shader type 5 (thruster) with var 8+
   RIFT: 16, // Doomsday Interdimensional Rift Engine (owner, 22 Nov 2026): a 100x100 superweapon that opens a rift among the enemy. The viewer's shape code holds 4 type bits, so it draws this one as shader type 0 (empty cells are never drawn)
 };
 
@@ -49,6 +50,7 @@ export const BLOCKS = {
   [BT.HEAVY]: { name: 'Heavy armor', hp: 240, mass: 4, cost: 7 },
   [BT.FRAME]: { name: 'Frame', hp: 45, mass: 1, cost: 1 },
   [BT.THRUSTER]: { name: 'Thruster', hp: 60, mass: 1.5, thrust: 10, cost: 20 },
+  [BT.MEGA]: { name: 'Mega thruster', hp: 300, mass: 1.5, thrust: 100, cost: 200 }, // owner, 22 Nov 2026: same size, 10x as powerful, 10x as expensive, 5x the hp
   [BT.LASER]: { name: 'Laser', hp: 300, mass: 2, cost: 120 }, // 2.0 (owner, 18 Nov 2026): 120 (1.0: 80); // was 45: lasers out-fought everything at equal cost (tools/balance.mjs)
   [BT.CANNON]: { name: 'Cannon', hp: 300, mass: 3, cost: 120 }, // 2.0 (owner, 18 Nov 2026): 120 (1.0: 50); // hp 300 (owner, 12 Nov 2026: every weapon except plasma and bays; laser was 130, cannon 150, missile/guided 200, PD 80); was 60: slow shells lose a lot to wrecks and overkill
   [BT.MISSILE]: { name: 'Missile launcher', hp: 300, mass: 5, cost: 75 }, // was 120, then 90 (spread-out fleets take fewer ships per blast)
@@ -188,6 +190,8 @@ export const WEAPON = {
 // Firing arcs: every weapon can fire in any direction where its shot wouldn't pass through its
 // own ship (see arcs.js). The heavy laser looks out from the centre of its 10x10 unit.
 
+/** Thruster or mega thruster: anything that pushes the ship (and that a defence can't have). */
+export const isThruster = (t) => t === BT.THRUSTER || t === BT.MEGA;
 export const isWeapon = (t) => (t >= BT.LASER && t <= BT.FLAK) || t === BT.AUTO || t === BT.RIFT;
 
 // Hull classes come from block count (the ship designer shows which one a design falls in).

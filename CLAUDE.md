@@ -966,6 +966,16 @@ Weapons (numbers in `blocks.js`):
     meet (`sweep(..., -1)` with no team skipped); the blast is the usual `blast(..., team)`, so friends take nothing
     (enemies within the splash still do). Test: an unarmed friendly cruiser moved into the swirl gets green blasts and
     loses no hp to them. **The whole rift engine is live 22 Nov 2026** (no patch notes, as asked).
+- **Mega thruster** (`BT.MEGA` = 17; owner, 22 Nov 2026: "it's difficult to fit so many thrusters on a big ship… same size,
+  10 times as powerful, 10 times as expensive, 5 times the HP"; "no need to send me replays… make it live"), **live 22 Nov
+  2026**, no patch notes: one block, thrust **100**, **200 cr**, **300 hp**, mass 1.5 (the thruster's; he didn't ask to change
+  it). `isThruster(t)` in `blocks.js` (thruster or mega) is used wherever thrust is counted or thrusters are banned: sim
+  `refit` (and kept out of flak's `gunCost`), `analyzeDesign`, `defenseProblem`, bot forts, the designer (palette key **T**,
+  tooltip, purple ringed glyph, defence mode greys it out and strips it, `ed.removeType` takes a list, sim screen's
+  ship/defence split). Top speed is still capped at 22. Viewer: shape code type field is 4 bits, so it's drawn as shader type 5
+  (thruster) with var 8+ (`type == 5 && var >= 8`: heavier housing, two rings, blue-white core); `e.thrMega` makes its flame
+  2.2× longer and 1.5× wider. Test in `tools/test-designer.mjs` (numbers, designer = sim, flak, save/load, viewer). Bench
+  identical. A generated titan with its thrusters swapped: 4.6 → 22 top speed.
 - Future weapons the owner wants: bigger cannons, a medium laser.
 
 Combat rules:
@@ -1536,7 +1546,7 @@ designer's numbers against the sim.
   sides stack. Checked in headless Chrome on `dist/galaxy.html` (search, add, fight, replay and back, phone, defences
   only on side 2, a defence row in the replay). **Live 22 Nov 2026** with the combat log change (owner: "make it live"; no
   patch notes). **Fixed 22 Nov 2026 (owner: "I added 1500 of a type of ship but it didn't add value to the total credits
-  after 1000 ships")**, on `v2-dev`, not live: each fleet row was cut to 1,000 silently (the box still showed 1,500,
+  after 1000 ships")**, **live 22 Nov 2026** (with the mega thruster): each fleet row was cut to 1,000 silently (the box still showed 1,500,
   totals and the fight used 1,000). Now `SIM_MAX` 20,000 per row (the biggest battles tested), `simCount()`; leaving a
   box puts the number really used back in it, with a toast if it was cut. Checked in headless Chrome (1,500 counts
   1,500; 25,000 → 20,000 shown). A huge fight runs in the player's own browser, so it can take minutes (Stop works).

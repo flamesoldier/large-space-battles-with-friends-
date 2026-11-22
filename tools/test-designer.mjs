@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { makeDesign, CLASSES } from '../src/shared/designs.js';
 import { Battle } from '../src/sim/battle.js';
-import { BT, MULTIBLOCK, SHIELD, WEAPON, RIFT_POP, isWeapon, shieldRegen, shieldCap } from '../src/shared/blocks.js';
+import { BT, BLOCKS, MULTIBLOCK, SHIELD, WEAPON, RIFT_POP, isWeapon, shieldRegen, shieldCap } from '../src/shared/blocks.js';
 import { riftParticle, riftSpeedStep } from '../src/shared/rift.js';
 import { analyzeDesign, cropDesign, encodeDesign, decodeDesign, weaponFacing } from '../src/shared/shipStats.js';
 import { binOf, binOpen, lineOfFire } from '../src/shared/arcs.js';
@@ -880,6 +880,30 @@ for (let k = 0; k < FORTRESSES.length; k++) {
     assert.equal(lost, 0, 'and it takes no damage from them');
   }
   console.log(`  rift engine: rift opened at ${c.rfT0[0] / 10} s, ${dead.size} hit something while swirling, ${n} released, ${hits} hit; engine detonates at ${RIFT_POP.after} lost blocks`);
+}
+
+{ // mega thruster (owner, 22 Nov 2026): 10x a thruster's thrust and price, 5x its hp; designer and sim agree
+  assert.equal(BLOCKS[BT.MEGA].thrust, BLOCKS[BT.THRUSTER].thrust * 10);
+  assert.equal(BLOCKS[BT.MEGA].cost, BLOCKS[BT.THRUSTER].cost * 10);
+  assert.equal(BLOCKS[BT.MEGA].hp, BLOCKS[BT.THRUSTER].hp * 5);
+  assert.ok(!isWeapon(BT.MEGA), 'a mega thruster is not a weapon');
+  const d = makeDesign('titan', 9), mk = (t) => ({ ...d, cells: d.cells.map((c) => (c === BT.THRUSTER ? t : c)) });
+  const plain = analyzeDesign(d), mega = analyzeDesign(mk(BT.MEGA)), none = analyzeDesign(mk(BT.ARMOR));
+  assert.ok(mega.ok, mega.errors.join('; '));
+  assert.ok(mega.maxSpeed > plain.maxSpeed && plain.maxSpeed > none.maxSpeed, `speeds ${none.maxSpeed} / ${plain.maxSpeed} / ${mega.maxSpeed}`);
+  const b = new Battle({ designs: [mk(BT.MEGA)], ships: [{ design: 0, team: 0, x: 0, y: 0, a: 0 }] });
+  close(mega.maxSpeed, b.ents[0].maxSpeed, 'mega thruster speed');
+  close(mega.turn, b.ents[0].turn, 'mega thruster turn');
+  const pb = new Battle({ designs: [d], ships: [{ design: 0, team: 0, x: 0, y: 0, a: 0 }] });
+  close(b.ents[0].light, pb.ents[0].light, 'flak does not count mega thrusters as guns');
+  const r = decodeDesign(encodeDesign(cropDesign(mk(BT.MEGA))));
+  assert.equal(r.cells.filter((c) => c === BT.MEGA).length, d.cells.filter((c) => c === BT.THRUSTER).length, 'save and load keep mega thrusters');
+  // viewer: a replay with mega thrusters opens and lists them for flames
+  const bt = new Battle({ designs: [mk(BT.MEGA), makeDesign('destroyer', 3)], ships: [{ design: 0, team: 0, x: 0, y: 0, a: 0 }, { design: 1, team: 1, x: 300, y: 0, a: Math.PI }], maxTime: 3 });
+  while (!bt.done) bt.step();
+  const rep = bt.toReplay(), m = new ReplayModel(unpackReplay(packReplay(rep.meta, rep.cols)));
+  assert.ok(m.ents[0].thrMega.some((x) => x), 'viewer finds the mega thrusters');
+  console.log(`  mega thruster: titan top speed ${plain.maxSpeed.toFixed(1)} -> ${mega.maxSpeed.toFixed(1)} with the same blocks`);
 }
 console.log(`designer stats match the sim for ${checked} generated designs; validation ok`);
 console.log(`${FORTRESSES.length} Aegis fortresses are valid 150,000 cr defences`);

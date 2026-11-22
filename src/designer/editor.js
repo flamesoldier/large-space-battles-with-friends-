@@ -223,11 +223,12 @@ export class ShipEditor {
     this.changed();
   }
 
-  /** Remove every block of one type (thrusters from a defence, say) as one undo step. Returns how many. */
+  /** Remove every block of one type, or of a list of types (thrusters from a defence, say), as one undo step. Returns how many. */
   removeType(t) {
+    const ts = [].concat(t).filter((x) => x !== BT.HUB);
     this.checkpoint();
     let n = 0;
-    for (let i = 0; i < this.cells.length; i++) if (this.cells[i] === t && t !== BT.HUB) { this.write(i, 0); n++; }
+    for (let i = 0; i < this.cells.length; i++) if (ts.includes(this.cells[i])) { this.write(i, 0); n++; }
     this.changed();
     return n;
   }

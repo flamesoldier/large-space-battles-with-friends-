@@ -7,7 +7,7 @@
 // the two agree; if you change the formulas in battle.js, change them here too.
 
 import { bayRoute } from './bayRoute.js';
-import { BT, BLOCKS, WEAPON, MULTIBLOCK, HULL_CLASSES, MAX_BLOCKS, MAX_W, MAX_H, COOKOFF, RIFT_POP, SHIELD, shieldRegen as shieldRegenOf, shieldCap, isWeapon, flakBurstValue } from './blocks.js';
+import { BT, BLOCKS, WEAPON, MULTIBLOCK, HULL_CLASSES, MAX_BLOCKS, MAX_W, MAX_H, COOKOFF, RIFT_POP, SHIELD, shieldRegen as shieldRegenOf, shieldCap, isWeapon, isThruster, flakBurstValue } from './blocks.js';
 import { lineOfFire, openDegrees } from './arcs.js';
 
 // Escort and Brawler were taken out (owner, Nov 2026). A design saved with either loads as Front
@@ -111,7 +111,7 @@ export function analyzeDesign(d) {
     if (!t) continue;
     const B = BLOCKS[t];
     blocks++; cost += B.cost; mass += B.mass; hp += B.hp;
-    if (t === BT.THRUSTER) thrust += B.thrust;
+    if (isThruster(t)) thrust += B.thrust;
     if (t === BT.HUB) hubs++;
     byType[t] = (byType[t] || 0) + 1;
   }

@@ -11,7 +11,7 @@
 //    their position at any time with a formula and nothing has to be recorded.
 //  * Everything is recorded as events + low-rate transform samples (see toReplay()).
 
-import { BT, BLOCKS, WEAPON, MULTIBLOCK, COOKOFF, FLAK_POP, RIFT_POP, SHIELD, shieldRegen, shieldCap, isWeapon, flakBurstValue } from '../shared/blocks.js';
+import { BT, BLOCKS, WEAPON, MULTIBLOCK, COOKOFF, FLAK_POP, RIFT_POP, SHIELD, shieldRegen, shieldCap, isWeapon, isThruster, flakBurstValue } from '../shared/blocks.js';
 import { riftParticle, riftSpeedStep } from '../shared/rift.js';
 import { lineOfFire, updateLineOfFire, binOf, binOpen, binAngle, ARC_BINS } from '../shared/arcs.js';
 import { bayRoute } from '../shared/bayRoute.js';
@@ -378,8 +378,8 @@ export class Battle {
       if (!t || e.hp[i] <= 0) continue;
       if (T) T[((y / TILE) | 0) * tw + ((x / TILE) | 0)] = 1;
       mass += BLOCKS[t].mass;
-      if (t === BT.THRUSTER) thrust += BLOCKS[t].thrust;
-      else if (t >= BT.LASER && t !== BT.SHIELD && t !== BT.RIFT) gunCost += BLOCKS[t].cost;
+      if (isThruster(t)) thrust += BLOCKS[t].thrust;
+      else if (t >= BT.LASER && t !== BT.MEGA && t !== BT.SHIELD && t !== BT.RIFT) gunCost += BLOCKS[t].cost;
       else if (t === BT.ARMOR || t === BT.HEAVY || t === BT.FRAME) plating++;
       if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
     }

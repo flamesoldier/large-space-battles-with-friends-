@@ -16,7 +16,7 @@
 // readBattle()'s result to applyEvent().
 
 import { analyzeDesign, decodeDesign, encodeDesign, designCost } from '../shared/shipStats.js';
-import { BT } from '../shared/blocks.js';
+import { BT, isThruster } from '../shared/blocks.js';
 import { makeDesign } from '../shared/designs.js';
 import { mulberry32 } from '../shared/rng.js';
 import {
@@ -285,7 +285,7 @@ export const sellValue = (yard) => Math.round(yard.paid * SHIPYARD_SELL_REFUND);
 
 /** Why a design can't be a defence, or null if it can (it has to have no thrusters). */
 export function defenseProblem(design) {
-  const n = design.cells.reduce((s, t) => s + (t === BT.THRUSTER ? 1 : 0), 0);
+  const n = design.cells.reduce((s, t) => s + (isThruster(t) ? 1 : 0), 0);
   return n ? `Defences can't have thrusters: remove its ${n} thruster${n > 1 ? 's' : ''} in the designer.` : null;
 }
 
