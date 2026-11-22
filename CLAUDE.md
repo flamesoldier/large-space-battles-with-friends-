@@ -1703,18 +1703,34 @@ times 2,054 → 710 (mostly one turn to a new target); ships spinning in place 3
 flips between the fortress (~400 away, "angle in") and nearby enemies (~150, "turn away"), so they
 keep turning; that's the Skirmisher rule itself and was raised with the owner, not changed.
 
-**Ships slide along defences (owner, 23 Nov 2026: "sometime ships will get stuck in defences… ships need to weave
-through small gaps… is there a way to free those that get stuck without using to much compute")**, on `v2-dev`, **not
-live**: in `collide()` any ship touching a defence (`o.fixed`) slides along it keeping its speed, like close-in ships
-already did along hulls (`(e.knife || (o.fixed && !e.fixed)) && o.kind === SHIP`), instead of losing the speed going
-into it. Cause found (`/tmp`-style `stuck/run.mjs`: Aegis I/II with 30 battleships + 60 cruisers + 80 destroyers behind
-it vs 40 battleships + 120 destroyers, and 60 bot forts in rows with titans that don't fit through): Front line ships of
-the fortress's side outside their range, pressed into the wall by the crowd-spacing push, crawling at 0–2 blocks/s.
-Stuck = touching a defence, moved < 3 blocks in 5 s, wanting to move. 6 seeds each, live → now: runs with a stretch of
-30 s+ 6 of 18 → 0 of 18 (longest 51.5 → 26 s); rows: ships stuck 10 s+ 4 → 0. Tried and dropped: a committed slide
-direction kept for 2 s (worse in some seeds, up to 44 s). Only runs while a ship touches a defence: bench identical
-shot for shot. Test in `tools/test-designer.mjs` (fails on the old code). Replays sent: "Ships stuck on defences:
-BEFORE / AFTER".
+**Ships find their way round their own side's defences (owner, 23 Nov 2026: "sometime ships will get stuck in defences…
+ships need to weave through small gaps"; then, after a first try that let any ship slide along a defence it touched (his
+screenshot of the replay: "if anything its worse now"): "what about if defences generate no fly zones but only for allies but i
+still want ships to be able to weave through defences… make 1 immobile invincible enemy ship and see if you can get all your
+friendly ships through a maze of defences")**, on `v2-dev`, **not live** (the slide was dropped). Cause: ships of the
+fortress's side outside their range steered straight at their target, into their own wall, and sat in its pockets (a slide
+can't get out of a concave pocket). Now: `navGrid(team)` = a map of that side's own and allied defences (enemy defences
+aren't in it: ships attack those): squares of `C` blocks (4, or more so it stays under `NAV_CELLS` 400,000) over them plus
+`NAV_MARGIN` 80, `occ` where a live defence block is, `d2` = chamfer distance (2 straight, 3 diagonal) to the nearest; built
+when first wanted, rebuilt at most every `NAV_REBUILD` 50 ticks after a defence loses blocks (`navDirty` from `refit`). A ship
+on the map checks every `NAV_CHECK` 10 ticks whether the straight line to its target (a knife's goal) has room for it
+(`navLine`, room `need` from its narrower half side + 1.5); if not (`e.navOn`), `navHeading` steers it down a distance map to
+that place (`navField`: Dijkstra with Dial's 4-bucket queue (`navPush`/`navReach`), grown only as far as the ship asking needs
+and carried on later; goal = its `NAV_GOAL` (24-square) block, or for a target off the map the stretch of edge facing it
+(`NAV_SECTORS` 16); shared by every ship of the same size class going there; `NAV_FIELDS` 32 kept per map, oldest dropped;
+kept across rebuilds since defences only lose blocks), toward the furthest square along the way it can see (every 5 ticks;
+near the ship a square counts only if it isn't tighter than the ship's own, so it can leave a wall but not cut a corner). Gaps
+are used when the ship fits (that's `need`). A ship **holding its distance** does the same while its own defences block its
+shot (thin line check), then holds again. `NAV.on` (exported) switches it off for tests. Measured: maze (`/tmp`-style
+`maze/run.mjs`: corridor, 4 friendly walls with gaps at alternate ends and two dead-end pockets facing the ships, 46 ships from
+destroyer to titan, one invincible enemy beyond, nobody can be hurt): live 0 of 46 through, now 46 of 46 (4 seeds; slow
+battleships take up to ~460 s, some going round the corridor), 1.4 s compute. Stuck runs (`stuck/run.mjs`, 6 seeds each,
+ships stuck 10 s+ / longest): Aegis I 24 / 51.5 s → 2 / 11 s, Aegis II 26 / 37 s → 0 / 4.5 s, bot rows 4 / 40.5 s → 1 / 20 s;
+survivors about the same. Compute: battles with no defences identical (bench shot for shot); route finding ~0.9 s of an
+~11 s Aegis battle (~8%; was 3× at first, before shared growing maps, edge goals, bigger goal blocks, keeping maps across
+rebuilds and the bucket queue); those battles run ~20% more per battle second overall, because ships that used to sit
+behind walls now fight. Test in `tools/test-designer.mjs` (a small maze: 8/8 through, 0/8 without). Replays sent: "Maze
+of defences: BEFORE / AFTER", "Fleet behind an Aegis fortress: BEFORE / AFTER".
 
 **Debris collides with ships too** (owner, Nov 2026: "debris should be part of the battle"): a
 ship and a wreck push each other apart by the same rule, so ships plough through light debris

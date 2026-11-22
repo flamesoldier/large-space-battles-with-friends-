@@ -3,7 +3,7 @@
 // designs survive crop, save and load unchanged.
 import assert from 'node:assert/strict';
 import { makeDesign, CLASSES } from '../src/shared/designs.js';
-import { Battle } from '../src/sim/battle.js';
+import { NAV, Battle } from '../src/sim/battle.js';
 import { BT, BLOCKS, MULTIBLOCK, SHIELD, WEAPON, RIFT_POP, isWeapon, shieldRegen, shieldCap } from '../src/shared/blocks.js';
 import { riftParticle, riftSpeedStep } from '../src/shared/rift.js';
 import { analyzeDesign, cropDesign, encodeDesign, decodeDesign, weaponFacing } from '../src/shared/shipStats.js';
@@ -906,23 +906,34 @@ for (let k = 0; k < FORTRESSES.length; k++) {
   assert.ok(m.ents[0].thrMega.some((x) => x), 'viewer finds the mega thrusters');
   console.log(`  mega thruster: titan top speed ${plain.maxSpeed.toFixed(1)} -> ${mega.maxSpeed.toFixed(1)} with the same blocks`);
 }
-// Ships slide along defences they touch instead of stopping dead (owner, 23 Nov 2026: ships got stuck on defences).
+// Ships find their way round their own side's defences (owner, 23 Nov 2026: ships got stuck in the pockets of a
+// fortress they were behind; "get all your friendly ships through a maze of defences"). Two walls with gaps at
+// opposite ends and a dead-end pocket facing the ships; nobody can be hurt; every ship must get past.
 {
-  const wall = { name: 'Wall', cls: 'cruiser', w: 6, h: 40, cells: new Uint8Array(240).fill(BT.HEAVY), hub: 20 * 6 + 2, stance: 'line' };
-  wall.cells[wall.hub] = BT.HUB;
-  const cr = makeDesign('cruiser', 3);
-  const sb = new Battle({ designs: [wall, cr], ships: [
-    { design: 0, team: 0, x: 0, y: 0, a: 0, fixed: true },
-    { design: 1, team: 0, x: -14, y: 6, a: 0 },
-  ], seed: 1, maxTime: 10 });
-  const w = sb.ents[0], s = sb.ents[1];
-  s.x = w.x - w.bhw - s.bhw + 1; s.y = w.y + 5; s.a = 0; s.c = 1; s.s = 0; s.vx = 8; s.vy = 1; s.nbr = null;
-  sb.collide(s);
-  const sp = Math.hypot(s.vx, s.vy);
-  assert.ok(sp > 6, `a ship pushed into a defence keeps its speed (${sp.toFixed(1)} of 8.1)`);
-  assert.ok(Math.abs(s.vy) > Math.abs(s.vx) * 2 && s.vy > 0, `and slides along it (vx ${s.vx.toFixed(2)}, vy ${s.vy.toFixed(2)})`);
-  assert.equal(w.x, 0, 'the defence stays put');
-  console.log(`  slides along a defence: velocity (8, 1) -> (${s.vx.toFixed(1)}, ${s.vy.toFixed(1)})`);
+  const ds = [], sh = [];
+  const slab = (len) => { const w = 6, h = len, cells = new Uint8Array(w * h).fill(BT.HEAVY), hub = ((h / 2) | 0) * w + 2; cells[hub] = BT.HUB; ds.push({ name: 'Wall', cls: 'titan', w, h, cells, hub, stance: 'line' }); return ds.length - 1; };
+  const vw = (x, ya, yb) => sh.push({ design: slab(yb - ya), team: 0, x, y: (ya + yb) / 2, a: 0, fixed: true });
+  const hw = (y, xa, xb) => sh.push({ design: slab(xb - xa), team: 0, x: (xa + xb) / 2, y, a: Math.PI / 2, fixed: true });
+  hw(-306, -500, 500); hw(306, -500, 500);
+  vw(-100, -300, 200); hw(-60, -230, -103); hw(60, -230, -103); // gap at the bottom, a pocket facing the ships
+  vw(150, -200, 300);                                           // gap at the top
+  const foe = makeDesign('cruiser', 5); foe.stance = 'line'; ds.push(foe);
+  sh.push({ design: ds.length - 1, team: 1, x: 800, y: 0, a: Math.PI, fixed: true });
+  const first = sh.length, dd = makeDesign('destroyer', 7); dd.stance = 'line'; ds.push(dd);
+  for (let k = 0; k < 8; k++) sh.push({ design: ds.length - 1, team: 0, x: -420 + (k % 2) * 50, y: -150 + ((k / 2) | 0) * 80, a: 0 });
+  const run = (on) => {
+    NAV.on = on;
+    const mb = new Battle({ designs: ds, ships: sh, seed: 3, maxTime: 9999 });
+    mb.damageCell = () => {};
+    const mine = mb.ents.slice(first).filter((e) => e.kind === 0);
+    while (mb.tick < 3000 && !mine.every((e) => e.x > 180)) { mb.done = false; mb.step(); }
+    NAV.on = true;
+    return { through: mine.filter((e) => e.x > 180).length, t: mb.tick / 10 };
+  };
+  const off = run(false), on = run(true);
+  assert.equal(on.through, 8, `every ship finds its way through its own defences (${on.through} of 8)`);
+  assert.ok(off.through < 8, `(without route finding only ${off.through} of 8 do)`);
+  console.log(`  maze of own defences: ${on.through}/8 through in ${on.t} s (without route finding ${off.through}/8)`);
 }
 console.log(`designer stats match the sim for ${checked} generated designs; validation ok`);
 console.log(`${FORTRESSES.length} Aegis fortresses are valid 150,000 cr defences`);

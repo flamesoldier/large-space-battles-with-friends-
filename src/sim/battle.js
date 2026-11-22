@@ -46,6 +46,18 @@ const q16 = (v, q) => { const r = Math.round(v * q); return r > 32767 ? 32767 : 
 const qAng = (a) => Math.round((wrapAngle(a) / TWO_PI) * 65536) & 0xffff;
 const wrapAngle = (a) => a - TWO_PI * Math.floor((a + Math.PI) / TWO_PI);
 const SHIP = 0, CHUNK = 1;
+// Ships find their way round their own side's defences (owner, 23 Nov 2026: ships got stuck in the pockets of a
+// fortress they were behind; "defences generate no fly zones but only for allies but i still want ships to be able
+// to weave through defences"). See navGrid / navHeading.
+export const NAV = { on: true };
+const NAV_MARGIN = 80; // open space kept round the defences in a side's map
+const NAV_CELLS = 400000; // the map's cells are 4 blocks or bigger, so no map has more than about this many
+const NAV_CHECK = 10; // ticks between a ship's checks that its way to its target is clear
+const NAV_REBUILD = 50; // at most this often a side's map is rebuilt after its defences lose blocks
+const NAV_FIELDS = 32; // distance maps kept per side's map (see navField)
+const NAV_GOAL = 24; // a distance map's goal is the square of this many map squares it falls in (about 100 blocks)
+const NAV_SECTORS = 16; // a goal outside the map: which of these stretches of its edge faces it
+const NAV_DX = [-1, 0, 1, -1, 1, -1, 0, 1], NAV_DY = [-1, -1, -1, 0, 0, 1, 1, 1];
 export const FACE_MARGIN = 4; // holdFacing keeps the target this many arc slices (5.6° each) inside a gun's arc
 export const MAX_TEAMS = 16; // sides in one battle (players plus militia); fr[] is indexed (a << 4) | b
 // Debris stays hittable and solid for the whole battle (owner: debris is part of the fight).
@@ -151,6 +163,7 @@ export class Battle {
     // in a rout (-1 otherwise). A routed side has lost even though some of its ships still fire.
     this.endReason = null;
     this.lastClosing = 0; // last tick an armed ship was still flying in toward its enemy (see step)
+    this.navG = []; this.navDirty = new Uint8Array(MAX_TEAMS); this.hasFixed = false; // each side's map of its own and allied defences (see navGrid)
     this.routed = -1;
     this.ents = [];
     this.byId = [];
@@ -232,6 +245,7 @@ export class Battle {
     e.x = spec.x; e.y = spec.y; e.a = spec.a; e.c = Math.cos(e.a); e.s = Math.sin(e.a);
     e.design = spec.design;
     e.fixed = !!spec.fixed;
+    if (e.fixed) this.hasFixed = true;
     e.hub = d.hub;
     e.stance = STANCES[d.stance] ? d.stance : 'line';
     e.closeIn = e.stance === 'flank' || e.stance === 'raid' || e.stance === 'charge' || e.stance === 'brawl';
@@ -305,6 +319,7 @@ export class Battle {
       closeIn: false, sepX: 0, sepY: 0, // spacing push away from nearby ships (see `spacing`)
       nbr: null, nbrT: -1000, nbrX: 0, nbrY: 0, // ships and wrecks near it, refreshed every SPACING_EVERY ticks or once it has moved NEAR_MOVE (see refreshNear)
       fixed: false, // a defence: never moves or turns, and nothing can shove it
+      navOn: false, navT: -1000, navWx: 0, navWy: 0, // finding its way round its own side's defences, and the point it steers for (see navHeading)
       org: -1, oi: 0, oj: 0, ow: 0, // debris: the ship it first broke off and where its grid sits in that ship's grid
       still: false, // can't move under its own power: a defence, or a ship with every thruster gone (see refit)
       // Collision box: centre (local) and half size, shrunk to the live blocks as they are lost.
@@ -455,6 +470,7 @@ export class Battle {
     range = cannon || laser || longest; // missile boats stand off at missile range, not at 60
     e.mass = Math.max(1, mass);
     e.still = e.fixed || thrust === 0;
+    if (e.fixed) for (let t = 0; t < this.navDirty.length; t++) this.navDirty[t] = 1; // its blocks changed: maps are out of date
     // The hub has weak manoeuvring jets, so a ship that loses every engine still crawls.
     e.maxSpeed = Math.max(2.5, Math.min(22, (30 * thrust) / e.mass));
     e.turn = Math.max(0.05, Math.min(2.5, (1.6 * e.maxSpeed) / e.w));
@@ -804,6 +820,13 @@ export class Battle {
         if (d < pr * 0.6 && e.stance !== 'charge') { backX -= dx; backY -= dy; }
       }
     }
+    // Its own side's defences in the way: fly round them (a planned route through gaps it fits).
+    // A ship holding its distance does the same while its own defences block its shots (it moves until it has a clear line).
+    if (this.hasFixed && NAV.on && !disarmed && !ward) {
+      const g = e.knife && e.goal && !e.goal.dead ? e.goal : null;
+      const h = this.navHeading(e, g ? g.x : tx, g ? g.y : ty, hold);
+      if (h !== null) { desired = h; if (hold) { hold = false; slow = true; backX = 0; backY = 0; } }
+    } else e.navOn = false;
     // Spacing (owner, Nov 2026: the front was too crowded to see the shots): every ship steers
     // away from ships crowding it, friend or foe, but only sideways or forwards, never back, so
     // it still goes where its stance wants and the lines spread out instead of piling up.
@@ -842,6 +865,196 @@ export class Battle {
     }
     this.collide(e);
     e.x += e.vx * DT; e.y += e.vy * DT;
+  }
+
+
+  /**
+   * A side's map of its own and its allies' defences (owner, 23 Nov 2026: "defences generate no fly zones but only
+   * for allies"): squares of C blocks over the defences plus NAV_MARGIN, `occ` 1 where a live defence block is,
+   * `d2` = twice the distance in squares to the nearest such square (chamfer). Built when first wanted, rebuilt at most
+   * every NAV_REBUILD ticks after a defence loses blocks. Enemy defences aren't in it: ships attack those.
+   */
+  navGrid(team) {
+    let G = this.navG[team];
+    if (G && (!this.navDirty[team] || this.now - G.t < NAV_REBUILD)) return G.empty ? null : G;
+    this.navDirty[team] = 0;
+    const defs = [];
+    for (const f of this.ents) if (f.fixed && f.kind === SHIP && !f.dead && f.alive > 0 && this.fr[(team << 4) | f.team]) defs.push(f);
+    if (!defs.length) { this.navG[team] = { empty: true, t: this.now }; return null; }
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const f of defs) { x0 = Math.min(x0, f.x - f.radius); y0 = Math.min(y0, f.y - f.radius); x1 = Math.max(x1, f.x + f.radius); y1 = Math.max(y1, f.y + f.radius); }
+    x0 -= NAV_MARGIN; y0 -= NAV_MARGIN; x1 += NAV_MARGIN; y1 += NAV_MARGIN;
+    const C = Math.max(4, Math.ceil(Math.sqrt(((x1 - x0) * (y1 - y0)) / NAV_CELLS)));
+    const W = Math.ceil((x1 - x0) / C), H = Math.ceil((y1 - y0) / C), N = W * H;
+    if (!G || G.empty || G.N !== N) G = { N, occ: new Uint8Array(N), d2: new Uint16Array(N), fields: new Map() };
+    else G.occ.fill(0); // distance maps are kept: defences only lose blocks, so their routes still work (just not always the shortest)
+    Object.assign(G, { empty: false, t: this.now, x0, y0, C, W, H });
+    const occ = G.occ;
+    for (const f of defs) {
+      const w = f.w, h = f.h, c = f.c, s = f.s, types = f.types, hp = f.hp;
+      for (let j = 0; j < h; j++) {
+        const ly = j + 0.5 - h / 2;
+        for (let i = 0; i < w; i++) {
+          const k = j * w + i;
+          if (!types[k] || hp[k] <= 0) continue;
+          const lx = i + 0.5 - w / 2;
+          const cx = ((f.x + lx * c - ly * s - x0) / C) | 0, cy = ((f.y + lx * s + ly * c - y0) / C) | 0;
+          if (cx >= 0 && cy >= 0 && cx < W && cy < H) occ[cy * W + cx] = 1;
+        }
+      }
+    }
+    // Distance to the nearest defence square: 2 per straight step, 3 per diagonal one.
+    const d2 = G.d2;
+    for (let k = 0; k < N; k++) d2[k] = occ[k] ? 0 : 65000;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const k = y * W + x; let v = d2[k];
+      if (!v) continue;
+      if (x > 0) v = Math.min(v, d2[k - 1] + 2);
+      if (y > 0) { v = Math.min(v, d2[k - W] + 2); if (x > 0) v = Math.min(v, d2[k - W - 1] + 3); if (x < W - 1) v = Math.min(v, d2[k - W + 1] + 3); }
+      d2[k] = v;
+    }
+    for (let y = H - 1; y >= 0; y--) for (let x = W - 1; x >= 0; x--) {
+      const k = y * W + x; let v = d2[k];
+      if (!v) continue;
+      if (x < W - 1) v = Math.min(v, d2[k + 1] + 2);
+      if (y < H - 1) { v = Math.min(v, d2[k + W] + 2); if (x < W - 1) v = Math.min(v, d2[k + W + 1] + 3); if (x > 0) v = Math.min(v, d2[k + W - 1] + 3); }
+      d2[k] = v;
+    }
+    this.navG[team] = G;
+    return G;
+  }
+
+  /** Whether a ship needing `need` (d2 units) of room can fly straight from square (ax, ay) to (bx, by). Squares within
+   *  `esc` of (ex, ey) only need as much room as (ex, ey) has, so a ship already against a wall can get away from it
+   *  (but not cut a corner). */
+  navLine(G, ax, ay, bx, by, need, ex, ey, esc) {
+    const n = Math.ceil(Math.max(Math.abs(bx - ax), Math.abs(by - ay)) * 2) + 1, W = G.W;
+    const low = ex >= 0 && ey >= 0 && ex < W && ey < G.H ? Math.min(need, G.d2[ey * W + ex]) : need; // near it: no tighter than where it is
+    for (let k = 0; k <= n; k++) {
+      const x = (ax + ((bx - ax) * k) / n) | 0, y = (ay + ((by - ay) * k) / n) | 0;
+      if (x < 0 || y < 0 || x >= W || y >= G.H) continue;
+      const c = y * W + x, v = G.d2[c];
+      if (G.occ[c] || (v < need && (v < low || Math.abs(x - ex) > esc || Math.abs(y - ey) > esc))) return false;
+    }
+    return true;
+  }
+
+  /**
+   * Distance (2 a straight step, 3 a diagonal one) to the squares round goal square (gx, gy), through squares with at
+   * least `need` room: a Dijkstra search shared by every ship of that size going there, grown only as far as the
+   * ships asking need (`navReach`) and carried on when one further away asks. Kept per map (up to NAV_FIELDS, oldest
+   * dropped); the goal is rounded to NAV_GOAL squares.
+   */
+  navField(G, gx, gy, need, sector = -1) {
+    const bx = ((gx / NAV_GOAL) | 0) * NAV_GOAL, by = ((gy / NAV_GOAL) | 0) * NAV_GOAL; // the goal's NAV_GOAL × NAV_GOAL square
+    gx = Math.min(G.W - 1, bx + (NAV_GOAL >> 1)); gy = Math.min(G.H - 1, by + (NAV_GOAL >> 1));
+    const key = sector >= 0 ? -(sector * 64 + Math.min(63, need)) - 1 : (gy * G.W + gx) * 64 + Math.min(63, need);
+    let F = G.fields.get(key);
+    if (F) { G.fields.delete(key); G.fields.set(key, F); return F; } // most recently used last
+    if (G.fields.size >= NAV_FIELDS) { const k = G.fields.keys().next().value; F = G.fields.get(k); G.fields.delete(k); }
+    else F = { d: new Uint32Array(G.N), b: [new Int32Array(256), new Int32Array(256), new Int32Array(256), new Int32Array(256)], bn: new Int32Array(4), left: 0, cur: 0, need: 0 };
+    F.d.fill(0xffffffff); F.bn.fill(0); F.left = 0; F.cur = 0; F.need = need;
+    const W = G.W, H = G.H, occ = G.occ, d2 = G.d2, d = F.d;
+    // Seeds: a goal outside the map is the stretch of its edge facing that way (NAV_SECTORS of them round the middle);
+    // a goal on the map, the open squares round it (wider until some are found).
+    if (sector >= 0) {
+      const cx = W / 2, cy = H / 2;
+      for (let k = 0; k < 2 * (W + H); k++) {
+        const x = k < W ? k : k < W + H ? W - 1 : k < 2 * W + H ? 2 * W + H - 1 - k : 0;
+        const y = k < W ? 0 : k < W + H ? k - W : k < 2 * W + H ? H - 1 : 2 * (W + H) - 1 - k;
+        const sc = Math.floor(((Math.atan2(y + 0.5 - cy, x + 0.5 - cx) + Math.PI) / TWO_PI) * NAV_SECTORS) % NAV_SECTORS;
+        const c = y * W + x;
+        if (sc === sector && !occ[c] && d2[c] >= need && d[c] !== 0) { d[c] = 0; this.navPush(F, c, 0); }
+      }
+    }
+    for (let r = NAV_GOAL >> 1; r <= 4 * NAV_GOAL && !F.left; r *= 2) {
+      for (let y = Math.max(0, gy - r); y <= Math.min(H - 1, gy + r); y++) for (let x = Math.max(0, gx - r); x <= Math.min(W - 1, gx + r); x++) {
+        const c = y * W + x;
+        if (!occ[c] && d2[c] >= need && d[c] !== 0) { d[c] = 0; this.navPush(F, c, 0); }
+      }
+    }
+    G.fields.set(key, F);
+    return F;
+  }
+
+  /** Dial's bucket queue: steps cost 2 or 3, so four buckets by distance (mod 4) hold the whole frontier. */
+  navPush(F, c, f) {
+    const k = f & 3;
+    let a = F.b[k];
+    if (F.bn[k] === a.length) { const z = new Int32Array(a.length * 2); z.set(a); a = F.b[k] = z; }
+    a[F.bn[k]++] = c; F.left++;
+  }
+
+  /** Grow field F until square c's distance is final (or nothing is left to reach). */
+  navReach(G, F, c) {
+    const W = G.W, H = G.H, occ = G.occ, d2 = G.d2, d = F.d, need = F.need, bn = F.bn;
+    while (F.left > 0 && F.cur <= d[c]) {
+      const k = F.cur & 3;
+      if (!bn[k]) { F.cur++; continue; }
+      const top = F.b[k][--bn[k]]; F.left--;
+      const tf = F.cur;
+      if (d[top] !== tf) continue; // a stale entry
+      const x = top % W, y = (top - x) / W;
+      for (let n = 0; n < 8; n++) {
+        const ox = NAV_DX[n], oy = NAV_DY[n], nx = x + ox, ny = y + oy;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+        const nc = ny * W + nx;
+        if (occ[nc] || d2[nc] < need) continue;
+        const nf = tf + (ox && oy ? 3 : 2);
+        if (nf < d[nc]) { d[nc] = nf; this.navPush(F, nc, nf); }
+      }
+    }
+    return d[c];
+  }
+
+  /**
+   * Heading for a ship whose own side's defences stand between it and (px, py): down the distance map to that place,
+   * toward the furthest square along the way it can see. null when the way is clear, so it steers as usual.
+   */
+  navHeading(e, px, py, thin = false) {
+    const G = this.navGrid(e.team);
+    if (!G) { e.navOn = false; return null; }
+    const C = G.C, sx = (e.x - G.x0) / C, sy = (e.y - G.y0) / C;
+    if (sx < 0 || sy < 0 || sx >= G.W || sy >= G.H) { e.navOn = false; return null; }
+    const hw = Math.min(e.bhw, e.bhh), n0 = Math.ceil(2 * ((hw + 1.5) / C + 0.5)), need = n0 <= 6 ? n0 : (n0 + 3) & ~3; // fewer sizes, so more ships share a field
+    const isx = sx | 0, isy = sy | 0, W = G.W;
+    const gx = Math.max(0, Math.min(W - 1, ((px - G.x0) / C) | 0)), gy = Math.max(0, Math.min(G.H - 1, ((py - G.y0) / C) | 0));
+    if ((e.id + this.now) % NAV_CHECK === 0) e.navOn = !this.navLine(G, sx, sy, (px - G.x0) / C, (py - G.y0) / C, thin ? 1 : need, isx, isy, 1); // holding: only a shot has to get through
+    if (!e.navOn) return null;
+    if (this.now - e.navT >= 5) { // pick the square to steer for every half second
+      e.navT = this.now;
+      const ux = (px - G.x0) / C, uy = (py - G.y0) / C, out = ux < 0 || uy < 0 || ux >= W || uy >= G.H;
+      const sector = out ? Math.floor(((Math.atan2(uy - G.H / 2, ux - W / 2) + Math.PI) / TWO_PI) * NAV_SECTORS) % NAV_SECTORS : -1;
+      const FF = this.navField(G, gx, gy, need, sector), F = FF.d, esc = Math.ceil(need / 2) + 2;
+      let c = isy * W + isx;
+      if (this.navReach(G, FF, c) === 0xffffffff) { // against a wall: the best square close by
+        let best = -1, bf = 0xffffffff;
+        for (let y = Math.max(0, isy - esc); y <= Math.min(G.H - 1, isy + esc); y++) for (let x = Math.max(0, isx - esc); x <= Math.min(W - 1, isx + esc); x++) {
+          const k = y * W + x; if (G.occ[k] || G.d2[k] < need) continue;
+          const v = this.navReach(G, FF, k); if (v < bf) { bf = v; best = k; }
+        }
+        if (best < 0) { e.navOn = false; return null; } // nowhere to go from here: steer as usual
+        c = best;
+      }
+      // Walk downhill; keep the furthest square still in sight.
+      let far = c;
+      for (let step = 0; step < 24 && F[c] > 0; step++) {
+        const x = c % W, y = (c - x) / W;
+        let nb = -1, nf = F[c];
+        for (let k = 0; k < 8; k++) {
+          const nx = x + NAV_DX[k], ny = y + NAV_DY[k];
+          if (nx < 0 || ny < 0 || nx >= W || ny >= G.H) continue;
+          const v = F[ny * W + nx]; if (v < nf) { nf = v; nb = ny * W + nx; }
+        }
+        if (nb < 0) break;
+        c = nb;
+        if (!this.navLine(G, sx, sy, (c % W) + 0.5, ((c / W) | 0) + 0.5, need, isx, isy, esc)) break;
+        far = c;
+      }
+      if (F[far] === 0) { e.navOn = false; return null; } // there: steer as usual
+      e.navWx = G.x0 + ((far % W) + 0.5) * C; e.navWy = G.y0 + (((far / W) | 0) + 0.5) * C;
+    }
+    return Math.atan2(e.navWy - e.y, e.navWx - e.x);
   }
 
   /**
@@ -1084,10 +1297,8 @@ export class Battle {
       const pen = Math.min(best, 4), share = e.fixed ? 0 : o.fixed ? 1 : o.mass / (o.mass + e.mass);
       const push = pen * share;
       e.x += bx * push * 0.5; e.y += by * push * 0.5; // positional correction
-      if ((e.knife || (o.fixed && !e.fixed)) && o.kind === SHIP) {
+      if (e.knife && o.kind === SHIP) {
         // Close-in ships slide along a ship they touched, keeping their speed past it, instead of bouncing off.
-        // Every ship slides along a defence the same way (owner, 23 Nov 2026: ships sometimes got stuck on defences):
-        // a defence never moves, so a ship pressed against it by the crowd used to sit there for 20-40 s.
         // (Wrecks they plough through like everyone else: sliding along wrecks too was tried and left them slower,
         // 89% → 77% of top speed for Charge ships in an all-close-in battle.)
         const vn = e.vx * bx + e.vy * by;
