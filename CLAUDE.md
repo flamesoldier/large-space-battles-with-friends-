@@ -1080,6 +1080,8 @@ Combat rules:
     169 s / 11.8 s compute / 226:88 (bench uses its own start layout). Tests: the flanker test now passes at 75% on the
     battleship (the raider goes for it too), the start-position test compares Auto with the flank distance. Replays sent:
     "All close-in fleets: spaced out", "Mixed fight: live / spaced out".
+  - **All five rounds above (getting into the formation through room to see the fight) and the movement compute work went
+    live together on 22 Nov 2026** (owner: "That's a lot more spaced out nice, make it live"; no patch notes).
   - An **Interceptor** (`guard`, defend the artillery) was tried and **removed** (owner: it just
     made big clumps of ships sitting at the back). Saved designs with an unknown stance load as
     `line`.
