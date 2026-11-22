@@ -1363,4 +1363,43 @@ const lanePlanHours = (W, a, b, d) => { const A = W.planets[a], B = W.planets[b]
   }
 }
 
+// ---- 2.0 with allies (owner, 22 Nov 2026: "does that work with allies?"): two allies against two
+// enemies, both sending every fleet at the same enemy home. Stand-in battles (the bigger side wins).
+// Also checks no ship waits without a reason: dispatchAll goes round again while it sends anything
+// (this game, seed 9, had 5 ships waiting 13 minutes at 55.75 h with a single round).
+{
+  const g = createAutoWorld({ players: [{ name: 'Ann', team: 'A' }, { name: 'Bo', team: 'A' }, { name: 'Cy' }, { name: 'Di' }], seed: 9 });
+  for (const pl of g.players) { pl.credits = 1e6; buildShipyard(g, pl.id, pl.home, { ...makeDesign('destroyer', 3 + pl.id), name: `D${pl.id}` }); }
+  const target = g.players[2].home;
+  for (const pid of [0, 1]) setDestination(g, pid, g.players[pid].home, target);
+  const res = (scen) => {
+    const val = {};
+    for (const q of scen.groups) val[q.team] = (val[q.team] || 0) + q.n * worthOf(g, q.design);
+    const teams = Object.keys(val).map(Number).sort((a, b) => val[b] - val[a] || a - b);
+    const top = teams[0], rest = teams.slice(1).reduce((x, t) => x + val[t], 0), keep = Math.max(0, 1 - rest / val[top]);
+    return { groups: scen.groups.map((q) => ({ ...q, survived: q.team === top ? Math.floor(q.n * keep) : 0 })), routed: [], seconds: 60 };
+  };
+  let allyAttacks = 0, idle = 0, toAlly = 0, logSeen = 0, joint = 0, allyCaptures = 0;
+  for (let t = 0; t <= 96 * HOUR_MS; t += HOUR_MS / 4) {
+    runWorld(g, t, res);
+    for (const sg of g.sieges) { const P = g.planets[sg.planet]; if (P.owner !== null && sg.leader !== P.owner && allied(g, sg.leader, P.owner)) allyAttacks++; }
+    for (const f of g.fleets) { const P = g.planets[f.legs[f.leg]?.to]; if (P && !f.retreat && P.owner !== null && P.owner !== f.owner && allied(g, P.owner, f.owner)) toAlly++; }
+    for (const P of g.planets) for (const x of P.garrison) {
+      if (x.owner === null || g.designs[x.design].fixed || !allied(g, x.owner, P.owner)) continue;
+      const goal = x.goal === undefined ? (P.owner === x.owner ? P.dest?.to ?? null : null) : x.goal;
+      if (!holdReason(g, P, x.owner, { [x.design]: x.n }, goal)) idle++;
+    }
+    for (; logSeen < g.log.length; logSeen++) {
+      const e = g.log[logSeen];
+      if (e.capture && e.capture.from !== null && e.capture.by !== e.capture.from && allied(g, e.capture.by, e.capture.from)) allyCaptures++;
+      const ps = (e.battle?.players || []).map((q) => q.id);
+      if (ps.includes(0) && ps.includes(1)) joint++;
+    }
+  }
+  ok(!allyAttacks && !allyCaptures, `allies never attack or take each other's worlds (${allyAttacks} sieges, ${allyCaptures} captures)`);
+  ok(toAlly > 0, `fleets fly to and through allied worlds (${toAlly} fleet-quarter-hours)`);
+  ok(joint > 0, `allies fight side by side (${joint} battles)`);
+  ok(!idle, `with allies too, no ship sits at a world without a reason (${idle})`);
+}
+
 console.log(`world: ${checks} checks passed`);

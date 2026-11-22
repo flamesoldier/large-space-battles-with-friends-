@@ -964,6 +964,21 @@ function moveOn(world, f, P) {
  * be turned back by the tie-break), used after a battle there.
  */
 export function dispatchAll(world, first = null) {
+  // Go round again while the last round sent anything (owner, 22 Nov 2026): a fleet leaving a world
+  // later in the round can free ships at a world already passed (it no longer pins it, or the
+  // tie-break turned it back), and those ships used to wait for the next event, sometimes minutes.
+  // A round that sends nothing ends it; the cap is only a safety net.
+  let sent = 0;
+  for (let round = 0; round < DISPATCH_ROUNDS; round++) {
+    const n = dispatchRound(world, first);
+    sent += n;
+    if (!n) break;
+  }
+  return sent;
+}
+const DISPATCH_ROUNDS = 8;
+
+function dispatchRound(world, first) {
   let sent = 0;
   const order = first === null ? world.planets : [world.planets[first], ...world.planets.filter((P) => P.id !== first)];
   for (const P of order) {
