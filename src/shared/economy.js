@@ -70,7 +70,7 @@ export const DEFENSE_BUILD_HOURS = 5 / 60;
 // to hold, so they should be worth more, and no random incomes). Set when the galaxy is made
 // (`planetIncome()`), kept whoever owns it. Generated worlds have 1–7 lanes, ~3.4 on average,
 // so 220–820 cr/h, ~460 on average (owner, 22 Nov 2026: a 3-lane world should make at least 420).
-export const HOME_INCOME = 500;
+export const HOME_INCOME = 850;
 export const PLANET_INCOME_BASE = 120;
 export const PLANET_INCOME_PER_LANE = 100;
 export function planetIncome(lanes) { return PLANET_INCOME_BASE + PLANET_INCOME_PER_LANE * lanes; }
