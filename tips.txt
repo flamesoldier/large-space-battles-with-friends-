@@ -1,0 +1,69 @@
+Frame: 1 cr, 45 hp, mass 1. Cheap filler for inside the ship; dies fast. (1)
+
+=====
+
+Armour: 3 cr, 110 hp, mass 2. Everyday hull plating, over twice as tough as frame. (2)
+
+=====
+
+Heavy armour: 7 cr, 240 hp, mass 4. The toughest outer skin. (3)
+
+=====
+
+Thruster: 20 cr, 60 hp, mass 1.5, thrust 10. Top speed = 30 × thrust ÷ mass (max 22), in battle and on the galaxy map. (4)
+
+=====
+
+Mega thruster: 200 cr, 300 hp, mass 15, thrust 100. 10 thrusters in one block: 10× the thrust, 10× the cost and 10× the weight. (T)
+
+=====
+
+Laser: 120 cr, 300 hp, mass 2. Range 340, every 15 s. Never misses; its 400-damage beam burns through about 3 armour blocks. (5)
+
+=====
+
+Cannon: 120 cr, 300 hp, mass 3. Range 340, every 10 s. A slow shell that blasts 500 damage into the blocks it hits. (6)
+
+=====
+
+Auto gun: 2×2 unit, 500 cr, 300 hp per block. Range 200, 55 damage every 0.2 s. Rapid-fire but inaccurate: for ships that get close. (U)
+
+=====
+
+Anti-missile point defence: 90 cr, 300 hp, mass 1.5. Range 80, 30 damage every 0.2 s. Shoots down missiles, then fighters, then nearby ships. (7)
+
+=====
+
+Missile launcher: 75 cr, 300 hp, mass 5. Range 700, every 30 s. A slow missile at the biggest enemy; its blast hits every block within 9. Point defence can shoot it down. (8)
+
+=====
+
+Guided missile launcher: 135 cr, 300 hp, mass 5. Range 700, every 30 s. The same missile, but it steers after its target. (G)
+
+=====
+
+Fighter bay: 6×6 unit, 225 cr, 45 hp per block. Launches 3 fighters, then 1 a minute. Very fragile: build it inside, with a tunnel out. (C)
+
+=====
+
+Plasma cannon: 10×10 unit, 1,500 cr, 750 hp per block. Range 650, every 10 s. Its bolt burns through ship after ship; best against big ships. WARNING: it hits your own ships too, and its blocks explode. (9)
+
+=====
+
+Flak cannon: 10×10 unit, 1,500 cr, 200 hp per block. Range 900, a burst every second. Shreds lightly armoured ships and fighters; armour skins and shields resist it. (K)
+
+=====
+
+Shield generator: 10×10 unit, 1,500 cr, 45 hp per block. A 7,500 shield refilling 150/s; each extra generator adds less. Explodes if a block dies, so protect it. (E)
+
+=====
+
+Doomsday Interdimensional Rift Engine: 100×100 unit, 150,000 cr, 20 hp per block. Every minute it opens a rift of 1,000 projectiles among the enemy, at any range. Detonates after 50 lost blocks, so protect it. (V)
+
+=====
+
+Hub: 40 cr, 60 hp, mass 4. One per ship. Lose it and the ship breaks apart, so protect it. (0)
+
+=====
+
+Erase blocks (right drag also erases) (X)

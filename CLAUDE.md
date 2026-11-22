@@ -968,14 +968,19 @@ Weapons (numbers in `blocks.js`):
     loses no hp to them. **The whole rift engine is live 22 Nov 2026** (no patch notes, as asked).
 - **Mega thruster** (`BT.MEGA` = 17; owner, 22 Nov 2026: "it's difficult to fit so many thrusters on a big ship… same size,
   10 times as powerful, 10 times as expensive, 5 times the HP"; "no need to send me replays… make it live"), **live 22 Nov
-  2026**, no patch notes: one block, thrust **100**, **200 cr**, **300 hp**, mass 1.5 (the thruster's; he didn't ask to change
-  it). `isThruster(t)` in `blocks.js` (thruster or mega) is used wherever thrust is counted or thrusters are banned: sim
+  2026**, no patch notes: one block, thrust **100**, **200 cr**, **300 hp**, mass **15** (owner, same night: "should weigh 10
+  times more too"; it was 1.5 at first, so it now only saves space, not weight). `isThruster(t)` in `blocks.js` (thruster or mega) is used wherever thrust is counted or thrusters are banned: sim
   `refit` (and kept out of flak's `gunCost`), `analyzeDesign`, `defenseProblem`, bot forts, the designer (palette key **T**,
   tooltip, purple ringed glyph, defence mode greys it out and strips it, `ed.removeType` takes a list, sim screen's
   ship/defence split). Top speed is still capped at 22. Viewer: shape code type field is 4 bits, so it's drawn as shader type 5
   (thruster) with var 8+ (`type == 5 && var >= 8`: heavier housing, two rings, blue-white core); `e.thrMega` makes its flame
   2.2× longer and 1.5× wider. Test in `tools/test-designer.mjs` (numbers, designer = sim, flak, save/load, viewer). Bench
-  identical. A generated titan with its thrusters swapped: 4.6 → 22 top speed.
+  identical. A generated titan with its thrusters swapped: 4.6 → 22 top speed (at mass 1.5).
+- **Block tooltips shortened (owner, 22 Nov 2026: "reduce them all to a very short summary of need to know information")**,
+  **live 22 Nov 2026**, no patch notes: each palette tooltip is the stats line + one short line (`BLOCK_HINT` in
+  `designer/app.js`, functions of the block's `WEAPON` entry so numbers follow `blocks.js`). Owner's wording: "protect" not
+  "bury"; heavy armour isn't special against flak (no block lets flak through). Block names **Armour** / **Heavy armour** (were
+  "Armor"). Reviewed in the doc "Block tooltips: current and suggested". The weapon-table hover texts (`SHOT_HINT`) are unchanged.
 - Future weapons the owner wants: bigger cannons, a medium laser.
 
 Combat rules:

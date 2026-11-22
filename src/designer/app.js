@@ -52,43 +52,38 @@ const SHIP_CUR_KEY = 'lsb.designer.current.v1', DEF_CUR_KEY = 'lsb.designer.defe
 let CUR_KEY = SHIP_CUR_KEY;
 // What a block is for, in its palette tooltip (owner, Nov 2026: a friend didn't know point defence
 // shoots missiles down).
+// Palette tooltips (owner, 22 Nov 2026: "a very short summary of need to know information"): the stats
+// line, then one short line. Every number comes from blocks.js, so they stay right after rebalancing.
+const nf = (n) => n.toLocaleString('en');
+const every = (W) => `Range ${W.range}, every ${W.cooldown} s.`;
 const BLOCK_HINT = {
-  [BT.PD]: `SHOOTS DOWN ENEMY MISSILES (normal and guided) within ${WEAPON[BT.PD].range} blocks: a missile has ${WEAPON[BT.MISSILE].hp} hp and each burst does ${WEAPON[BT.PD].missileDamage}, so a few of these protect a ship. Then ENEMY FIGHTERS within ${WEAPON[BT.PD].range} (${WEAPON[BT.PD].damage} a burst). When neither is near, it shoots any enemy ship within ${WEAPON[BT.PD].range}.`,
-  // Owner, Nov 2026: players didn't know thrusters also set galaxy map speed.
-  [BT.THRUSTER]: 'Moves the ship. More thrust for the ship\'s mass means a higher top speed and faster turning in battle.\n\nIT ALSO SETS SPEED ON THE GALAXY MAP: a fleet crosses the map at the top speed of its SLOWEST ship, so one under-powered ship slows the whole fleet down. Top speed (in the stats panel) is the same number in battle and on the map; a ship with almost no thrust can\'t leave its world.',
-  [BT.MEGA]: `MEGA THRUSTER: one block with ${BLOCKS[BT.MEGA].thrust / BLOCKS[BT.THRUSTER].thrust}× the thrust of a normal thruster, for big ships that can't fit enough of them. Costs ${BLOCKS[BT.MEGA].cost} cr (${BLOCKS[BT.MEGA].cost / BLOCKS[BT.THRUSTER].cost}× a thruster) and has ${BLOCKS[BT.MEGA].hp} hp (${BLOCKS[BT.MEGA].hp / BLOCKS[BT.THRUSTER].hp}×). Like any thruster it also sets the ship's speed on the galaxy map, and top speed is capped at 22 however much thrust you add.`,
-  [BT.CANNON]: `A SLOW, HEAVY EXPLOSIVE GUN: one big shell every ${WEAPON[BT.CANNON].cooldown} s, aimed ahead of its target. Where it hits it blows ${WEAPON[BT.CANNON].damage} damage into the blocks nearest the impact, so one shell destroys about ${Math.floor(WEAPON[BT.CANNON].damage / BLOCKS[BT.HEAVY].hp)} heavy armour or ${Math.floor(WEAPON[BT.CANNON].damage / BLOCKS[BT.FRAME].hp)} frame. Range ${WEAPON[BT.CANNON].range}.`,
-  [BT.AUTO]: `A RAPID-FIRE CLOSE-RANGE GUN: a 2×2 unit spraying fast bullets every ${WEAPON[BT.AUTO].cooldown} s, ${WEAPON[BT.AUTO].damage} damage each, out to ${WEAPON[BT.AUTO].range} blocks. Fairly inaccurate, so it's best close in; misses fly on for ${WEAPON[BT.AUTO].life} s and can hit something further away. It also shoots enemy fighters when no ship is in reach. Keeps firing while 2 of its 4 blocks survive.`,
-  [BT.MISSILE]: 'A huge, slow, unguided missile: flies straight where it was aimed, over your own ships, and its blast wrecks everything within 9 blocks. Point defence can shoot it down.',
-  [BT.GUIDED]: 'The same huge missile, but it steers after its target in flight (and finds a new one nearby if its target dies), so it hits ships that dodge. Point defence can still shoot it down.',
-  [BT.BAY]: `VERY FRAGILE: its blocks have only ${BLOCKS[BT.BAY].hp} hp, the same as frame, so build it deep inside the ship behind armour, with a tunnel out, not on the hull. LAUNCHES FIGHTERS: ${WEAPON[BT.BAY].waves[0]} as the battle opens, then one every minute for as long as it lasts, at any range. Fighters need a way out: put the bay on the hull edge, or leave a tunnel of empty cells from it to space; the tunnel can turn corners (hover the bay to see its way out). A fighter circles the nearest enemy ship shooting it (${WEAPON[BT.BAY].fighter.damage} damage every ${WEAPON[BT.BAY].fighter.cooldown} s, range ${WEAPON[BT.BAY].fighter.range}), dogfights enemy fighters, and flies until it's shot down (${WEAPON[BT.BAY].fighter.hp} hp). Early on they soak up enemy fire; late in a battle they hunt down the long-range ships left at the back. Lasers hit them ${Math.round(WEAPON[BT.LASER].fighterHit * 100)}% of the time; point defence goes for them first. They shine in long, drawn-out fights.`,
+  [BT.FRAME]: () => 'Cheap filler for inside the ship; dies fast.',
+  [BT.ARMOR]: () => 'Everyday hull plating, over twice as tough as frame.',
+  [BT.HEAVY]: () => 'The toughest outer skin.',
+  [BT.HUB]: () => 'One per ship. Lose it and the ship breaks apart, so protect it.',
+  [BT.THRUSTER]: () => 'Top speed = 30 × thrust ÷ mass (max 22), in battle and on the galaxy map.',
+  [BT.MEGA]: () => { const T = BLOCKS[BT.THRUSTER], M = BLOCKS[BT.MEGA]; return `${M.thrust / T.thrust} thrusters in one block: ${M.thrust / T.thrust}× the thrust, ${M.cost / T.cost}× the cost and ${M.mass / T.mass}× the weight.`; },
+  [BT.LASER]: (W) => `${every(W)} Never misses; its ${W.damage}-damage beam burns through about ${Math.floor(W.damage / BLOCKS[BT.ARMOR].hp)} armour blocks.`,
+  [BT.CANNON]: (W) => `${every(W)} A slow shell that blasts ${W.damage} damage into the blocks it hits.`,
+  [BT.AUTO]: (W) => `Range ${W.range}, ${W.damage} damage every ${W.cooldown} s. Rapid-fire but inaccurate: for ships that get close.`,
+  [BT.PD]: (W) => `Range ${W.range}, ${W.damage} damage every ${W.cooldown} s. Shoots down missiles, then fighters, then nearby ships.`,
+  [BT.MISSILE]: (W) => `${every(W)} A slow missile at the biggest enemy; its blast hits every block within ${W.splash}. Point defence can shoot it down.`,
+  [BT.GUIDED]: (W) => `${every(W)} The same missile, but it steers after its target.`,
+  [BT.BAY]: (W) => `Launches ${W.waves[0]} fighters, then 1 ${W.cooldown === 60 ? 'a minute' : `every ${W.cooldown} s`}. Very fragile: build it inside, with a tunnel out.`,
+  [BT.LANCE]: (W) => `${every(W)} Its bolt burns through ship after ship; best against big ships. WARNING: it hits your own ships too, and its blocks explode.`,
+  [BT.FLAK]: (W) => `Range ${W.range}, a burst every ${W.cooldown === 1 ? 'second' : `${W.cooldown} s`}. Shreds lightly armoured ships and fighters; armour skins and shields resist it.`,
+  [BT.SHIELD]: () => `A ${nf(shieldCap(1))} shield refilling ${nf(shieldRegen(1))}/s; each extra generator adds less. Explodes if a block dies, so protect it.`,
+  [BT.RIFT]: (W) => `Every minute it opens a rift of ${nf(W.count)} projectiles among the enemy, at any range. Detonates after ${RIFT_POP.after} lost blocks, so protect it.`,
 };
-// Owner, 15 Nov 2026: tooltip rewritten to match the live rules (shrapnel 30, same damage to every block, never bursts inside a hull).
-const FW = WEAPON[BT.FLAK];
-BLOCK_HINT[BT.FLAK] = `ANTI-SWARM GUN FOR BIG SHIPS: every second a flak burst goes off up to ${FW.range} blocks away, with no shell to dodge or stop: it appears in open space a few blocks off an enemy hull (on the side facing a neighbour when ships are packed close together), picking lightly armoured ones (lots of guns and thrusters, little armour or frame), so it reaches the back lines. Its unseen shrapnel does ${FW.damage} damage to every enemy block within ${FW.radius} blocks that faces the burst, the first block on each line from it, however far out. Blocks behind other blocks are safe until the ones in front are destroyed, so tough outer blocks protect the inside: a heavy armour skin (${BLOCKS[BT.HEAVY].hp} hp) takes ${Math.ceil(BLOCKS[BT.HEAVY].hp / FW.damage)} hits a block, frame (${BLOCKS[BT.FRAME].hp} hp) only ${Math.ceil(BLOCKS[BT.FRAME].hp / FW.damage)}. Against shields it does only ${Math.round(FW.shieldMult * 100)}%. So it guts swarms of small, lightly built ships and fighters and only scratches thick armour. It never hurts your side. Many flak cannons spread their bursts over many targets; with no ship in range it fires at enemy fighters. Its blocks have ${BLOCKS[BT.FLAK].hp} hp; once ${FLAK_POP.after} of its 100 blocks are destroyed the whole unit blows up, but the blast is small (${FLAK_POP.damage} damage within ${FLAK_POP.radius} blocks) and barely scratches the rest of your ship.`;
-BLOCK_HINT[BT.SHIELD] = `GIVES THE SHIP A SHIELD, which soaks up every hit (any weapon) before a single block takes damage, and refills all the time, so a ship that gets a breather recovers. One generator gives ${shieldCap(1).toLocaleString('en')} shield refilling ${shieldRegen(1).toLocaleString('en')} a second; each extra one adds a little less than the one before: 2 give ${shieldCap(2).toLocaleString('en')} (${shieldRegen(2).toLocaleString('en')}/s), 10 give ${shieldCap(10).toLocaleString('en')} (${shieldRegen(10).toLocaleString('en')}/s), 100 give ${shieldCap(100).toLocaleString('en')} (${shieldRegen(100).toLocaleString('en')}/s). If the shield is knocked down it stays off until it has refilled to ${Math.round(SHIELD.restart * 100)}% of its full amount. Flak shrapnel only does ${Math.round(WEAPON[BT.FLAK].shieldMult * 100)}% damage to shields. Its blocks are very weak (${BLOCKS[BT.SHIELD].hp} hp): once the shield is down, if any one is destroyed the whole generator explodes (${SHIELD.damage} damage within ${SHIELD.radius} blocks, your own ship included) and its shield is gone. Bury generators deep in armour and keep them apart, so big armoured ships get the most out of them.`;
-const RW = WEAPON[BT.RIFT];
-BLOCK_HINT[BT.RIFT] = `LATE-GAME SUPERWEAPON. A 100×100 unit costing ${(BLOCKS[BT.RIFT].cost * 10000).toLocaleString('en')} cr. It needs NO LINE OF SIGHT and has NO RANGE LIMIT, so it works from deep inside the ship. It charges for ${RW.charge} s, then tears open a rift in an empty space in the middle of the enemy's ships: over ${RW.swirl} s, ${RW.count} green projectiles pour out of it one after another and swirl round it faster and faster, then all are released at once and fly straight out in every direction, each exploding on the first enemy ship or wreck it meets (${RW.damage} damage at the centre of a ${RW.splash}-block blast). They fly over your own ships and point defence CAN'T shoot them down. Then it charges again: about one rift a minute. If the engine is destroyed while its rift is open, the rift collapses.\n\nFRAGILE AND EXPLOSIVE: its blocks have only ${BLOCKS[BT.RIFT].hp} hp, and once ${RIFT_POP.after} of them are destroyed the whole engine detonates (${RIFT_POP.damage} damage within ${RIFT_POP.radius} blocks of its centre), which wrecks your own ship. Bury it deep inside heavy armour.`;
 const PLASMA_WARNING = "WARNING: HUGE FRIENDLY FIRE. ITS BOLT CARVES THROUGH YOUR OWN SHIPS AS WELL AS THE ENEMY'S, AND ITS BLOCKS EXPLODE WHEN DESTROYED, WRECKING YOUR SHIP AND ANY ALLY NEARBY.";
 
 // ------------------------------------------------------------ UI setup
 function blockTitle(t) {
   if (!t) return 'Erase blocks (right drag also erases)';
-  const B = BLOCKS[t], W = WEAPON[t];
-  let s = `${B.name}: ${B.cost} cr, ${B.hp} hp, mass ${B.mass}`;
-  if (t === BT.LANCE) s = `${B.name}: one 10×10 unit, ${B.cost * 100} cr, ${B.hp} hp per block, keeps firing while half survives. Destroyed blocks explode (${COOKOFF.damage} damage, radius ${COOKOFF.radius}), hurting your own ship and allies`;
-  if (t === BT.BAY) { const n = MULTIBLOCK[t].size; s = `${B.name}: one ${n}×${n} unit, ${B.cost * n * n} cr, only ${B.hp} hp per block (very fragile: build it inside the ship), keeps launching while half its blocks survive`; }
-  if (t === BT.SHIELD) s = `${B.name}: one 10×10 unit, ${B.cost * 100} cr, ${B.hp} hp per block, +${shieldCap(1).toLocaleString('en')} shield refilling ${shieldRegen(1)}/s (each extra generator adds a little less). If any block dies the whole unit explodes`;
-  if (t === BT.FLAK) s = `${B.name}: one 10×10 unit, ${B.cost * 100} cr, ${B.hp} hp per block. Lose ${FLAK_POP.after} of its 100 blocks and the whole unit blows up (small blast, little harm to the ship)`;
-  if (t === BT.AUTO) s = `${B.name}: one 2×2 unit, ${B.cost * 4} cr, ${B.hp} hp per block, keeps firing while 2 of its 4 blocks survive`;
-  if (t === BT.RIFT) s = `${B.name}: one 100×100 unit, ${(B.cost * 10000).toLocaleString('en')} cr, only ${B.hp} hp per block. Lose ${RIFT_POP.after} blocks and the whole engine detonates (${RIFT_POP.damage} damage within ${RIFT_POP.radius} blocks)`;
-  if (isThruster(t)) s += `, thrust ${B.thrust}`;
-  if (W && t === BT.FLAK) s += `. Range ${W.range}, a burst every second among crowded enemy ships, ${W.damage} damage to every block facing it within ${W.radius} blocks`;
-  else if (W && t === BT.RIFT) s += `. Any range, a rift of ${W.count} projectiles about every ${W.cooldown} s`;
-  else if (W && t !== BT.BAY) s += `. Range ${W.range}, ${W.damage} damage every ${W.cooldown} s`;
-  if (t === BT.HUB) s += '. One per ship; placing it moves it. Lose it and the ship breaks apart.';
-  if (BLOCK_HINT[t]) s += `.\n\n${BLOCK_HINT[t]}`;
-  if (t === BT.LANCE) s += `.\n\n${PLASMA_WARNING}`;
+  const B = BLOCKS[t], n = MULTIBLOCK[t]?.size;
+  let s = n ? `${B.name}: ${n}×${n} unit, ${nf(B.cost * n * n)} cr, ${B.hp} hp per block.`
+    : `${B.name}: ${B.cost} cr, ${B.hp} hp, mass ${B.mass}${isThruster(t) ? `, thrust ${B.thrust}` : ''}.`;
+  if (BLOCK_HINT[t]) s += ` ${BLOCK_HINT[t](WEAPON[t])}`;
   return s;
 }
 for (const [t, key] of PALETTE) {

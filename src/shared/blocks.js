@@ -46,11 +46,11 @@ export const flakBurstValue = (W) => W.damage * W.radius * 0.5;
 
 export const BLOCKS = {
   [BT.HUB]: { name: 'Hub', hp: 60, mass: 4, cost: 40 }, // fragile on purpose (owner): a hit hub and the ship falls apart
-  [BT.ARMOR]: { name: 'Armor', hp: 110, mass: 2, cost: 3 },
-  [BT.HEAVY]: { name: 'Heavy armor', hp: 240, mass: 4, cost: 7 },
+  [BT.ARMOR]: { name: 'Armour', hp: 110, mass: 2, cost: 3 },
+  [BT.HEAVY]: { name: 'Heavy armour', hp: 240, mass: 4, cost: 7 },
   [BT.FRAME]: { name: 'Frame', hp: 45, mass: 1, cost: 1 },
   [BT.THRUSTER]: { name: 'Thruster', hp: 60, mass: 1.5, thrust: 10, cost: 20 },
-  [BT.MEGA]: { name: 'Mega thruster', hp: 300, mass: 1.5, thrust: 100, cost: 200 }, // owner, 22 Nov 2026: same size, 10x as powerful, 10x as expensive, 5x the hp
+  [BT.MEGA]: { name: 'Mega thruster', hp: 300, mass: 15, thrust: 100, cost: 200 }, // owner, 22 Nov 2026: same size, 10x as powerful, 10x as expensive, 5x the hp; then 10x the weight too
   [BT.LASER]: { name: 'Laser', hp: 300, mass: 2, cost: 120 }, // 2.0 (owner, 18 Nov 2026): 120 (1.0: 80); // was 45: lasers out-fought everything at equal cost (tools/balance.mjs)
   [BT.CANNON]: { name: 'Cannon', hp: 300, mass: 3, cost: 120 }, // 2.0 (owner, 18 Nov 2026): 120 (1.0: 50); // hp 300 (owner, 12 Nov 2026: every weapon except plasma and bays; laser was 130, cannon 150, missile/guided 200, PD 80); was 60: slow shells lose a lot to wrecks and overkill
   [BT.MISSILE]: { name: 'Missile launcher', hp: 300, mass: 5, cost: 75 }, // was 120, then 90 (spread-out fleets take fewer ships per blast)

@@ -886,6 +886,7 @@ for (let k = 0; k < FORTRESSES.length; k++) {
   assert.equal(BLOCKS[BT.MEGA].thrust, BLOCKS[BT.THRUSTER].thrust * 10);
   assert.equal(BLOCKS[BT.MEGA].cost, BLOCKS[BT.THRUSTER].cost * 10);
   assert.equal(BLOCKS[BT.MEGA].hp, BLOCKS[BT.THRUSTER].hp * 5);
+  assert.equal(BLOCKS[BT.MEGA].mass, BLOCKS[BT.THRUSTER].mass * 10, 'a mega thruster weighs 10 thrusters (owner)');
   assert.ok(!isWeapon(BT.MEGA), 'a mega thruster is not a weapon');
   const d = makeDesign('titan', 9), mk = (t) => ({ ...d, cells: d.cells.map((c) => (c === BT.THRUSTER ? t : c)) });
   const plain = analyzeDesign(d), mega = analyzeDesign(mk(BT.MEGA)), none = analyzeDesign(mk(BT.ARMOR));
