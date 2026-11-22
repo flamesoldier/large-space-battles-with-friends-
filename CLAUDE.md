@@ -1707,7 +1707,7 @@ keep turning; that's the Skirmisher rule itself and was raised with the owner, n
 ships need to weave through small gaps"; then, after a first try that let any ship slide along a defence it touched (his
 screenshot of the replay: "if anything its worse now"): "what about if defences generate no fly zones but only for allies but i
 still want ships to be able to weave through defences… make 1 immobile invincible enemy ship and see if you can get all your
-friendly ships through a maze of defences")**, on `v2-dev`, **not live** (the slide was dropped). Cause: ships of the
+friendly ships through a maze of defences")**, **live 23 Nov 2026** (owner: "make it live"; no patch notes; the slide was dropped). Cause: ships of the
 fortress's side outside their range steered straight at their target, into their own wall, and sat in its pockets (a slide
 can't get out of a concave pocket). Now: `navGrid(team)` = a map of that side's own and allied defences (enemy defences
 aren't in it: ships attack those): squares of `C` blocks (4, or more so it stays under `NAV_CELLS` 400,000) over them plus
