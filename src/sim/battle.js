@@ -764,7 +764,10 @@ export class Battle {
       const qx = sx - e.x, qy = sy - e.y, qd = Math.hypot(qx, qy);
       desired = qd > 6 ? Math.atan2(qy, qx) : Math.atan2(ey, ex);
       slow = qd < 25;
-    } else if (!disarmed && (e.stance === 'flank' || e.stance === 'raid')) {
+    } else if (!disarmed && (e.stance === 'flank' || e.stance === 'raid' || (e.stance === 'charge' && e.goal && !e.goal.dead))) {
+      // Charge ships circle their goal point blank at full speed like flankers, instead of stopping beside it (owner,
+      // 22 Nov 2026: "in a totally close-in… scenario ships should be going at full speed all the time unless slowing
+      // down turning").
       [desired, slow] = this.steerGoal(e, desired, pr);
       thread = this._thread;
       // Flying past or circling its goal, it turns its guns on it and keeps going the way it was (owner, 22 Nov 2026:
@@ -803,6 +806,10 @@ export class Battle {
     // A flanker or raider on its way in steers through the gap it found instead of being pushed round by the crowd.
     if (thread) desired += e.thrA; else e.thrA = 0;
     if (face !== null) thread = true; // strafing: the crowd slides it, it doesn't turn it (as for holding ships)
+    if (thread && (sx || sy)) { // ...and only sideways or forwards, never back against the way it's going
+      const fx = Math.cos(desired), fy = Math.sin(desired), dot = sx * fx + sy * fy;
+      if (dot < 0) { sx -= dot * fx; sy -= dot * fy; }
+    }
     // A ship holding its distance only slides out of the crowd (below), it doesn't turn: holdFacing
     // picks the gun-bearing heading needing the least turn, so each bend from the crowd became its
     // next heading and it spun on the spot (owner, 14 Nov 2026, in front of an Aegis fortress).
@@ -1062,8 +1069,9 @@ export class Battle {
       const push = pen * share;
       e.x += bx * push * 0.5; e.y += by * push * 0.5; // positional correction
       if (e.knife && o.kind === SHIP) {
-        // Flankers and raiders slide along a ship they touched, keeping their speed past it, instead of bouncing off.
-        // (Wrecks they plough through like everyone else.)
+        // Close-in ships slide along a ship they touched, keeping their speed past it, instead of bouncing off.
+        // (Wrecks they plough through like everyone else: sliding along wrecks too was tried and left them slower,
+        // 89% → 77% of top speed for Charge ships in an all-close-in battle.)
         const vn = e.vx * bx + e.vy * by;
         if (vn < 0) {
           const sp = Math.hypot(e.vx, e.vy);

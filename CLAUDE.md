@@ -1046,6 +1046,18 @@ Combat rules:
     ~0.33–0.38 (two seeds). Picture: the fleets close into two or three mixed blobs by ~60 s rather than a clean line;
     each blob still leans to its side. Normal mixes without Charge ships unchanged; bench 1,000 vs 1,000 199 s / 12.3 s
     compute. Replays sent: "All close-in fleets: LIVE / NEW".
+  - **Fourth round (owner, 22 Nov 2026: "the front lines are still way too congested most ships are just running into
+    each other… in a totally close-in on both sides scenario… ships should be going at full speed all the time unless
+    slowing down turning")**, on `v2-dev`, not live. Measured (`/tmp`-style `speed.mjs`, same all-close-in battle, from
+    first contact, speed as a share of top speed): Charge 77% mean / 23% of the time under half speed, Raider 80% / 19%,
+    Flanker 79% / 20%; of the slow moments ~1/3 touching a hull (2/3 of those by a wreck), ~1/2 turning, ~1/3–1/2 the
+    crowd-spacing slide pushing it backwards (close-in ships on the way in skipped the "never backwards" rule other ships
+    get, since that sat inside the heading bend they don't use). Changes: **spacing never slides a threading or strafing
+    close-in ship backwards** against its way; **Charge ships with a goal circle it point blank at full speed** like
+    flankers (`steerGoal`, so they strafe it with `face` too) instead of braking to hold beside it. After: Charge 89–90% /
+    13–14%, Raider 92–97% / 7–13%, Flanker 88–93% / 10–15% (seeds 2 and 3); mix at 40 s 0.18 → 0.23–0.30, 60–120 s
+    0.31–0.43. Tried and dropped: close-in ships sliding along wrecks too (Charge 89% → 77%: they ground along debris).
+    Bench 1,000 vs 1,000: 188 s / 11.0 s compute. Replay sent: "All close-in fleets: full speed".
   - An **Interceptor** (`guard`, defend the artillery) was tried and **removed** (owner: it just
     made big clumps of ships sitting at the back). Saved designs with an unknown stance load as
     `line`.
