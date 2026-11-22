@@ -661,7 +661,10 @@ export class Battle {
     }
     e.targets = best;
     if (e.stance === 'escort' && (!e.ward || e.ward.dead)) this.pickWard(e);
-    if (e.stance === 'flank' || e.stance === 'raid') {
+    // Charge ships pick their goal the same way (owner, 22 Nov 2026: "make both fleets entirely out of close-in designs…
+    // hopefully we should get a complete mix of both sides"): diving for big ships deep in the enemy formation instead of
+    // the nearest one mixed two all-close-in fleets more (enemies among each ship's 6 nearest ~0.27 → ~0.35 at 60–90 s).
+    if (e.stance === 'flank' || e.stance === 'raid' || e.stance === 'charge') {
       this.pickGoal(e);
       // Guns fire at the goal too (it goes first), as well as at whatever is nearest.
       const g = e.goal;

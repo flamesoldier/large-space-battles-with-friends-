@@ -1034,6 +1034,18 @@ Combat rules:
     their time (was 5%), but they die sooner (life 61 → 32 s). Replays sent: "Even fight: live / A (enemies make way,
     broadside passes) / B (A + charge speed + start at the front)". Test in `tools/test-designer.mjs` (an enemy cruiser
     in a charging corvette's path gets a make-way push; its target doesn't).
+  - **Third round (owner, 22 Nov 2026: broadside passes are what he wanted; "the extra speed for charging isn't needed
+    players will design their front line ships with a lot of speed anyway"; "make both fleets entirely out of close-in
+    designs… hopefully we should get a complete mix of both sides")**, on `v2-dev`, not live. Option B (charge speed,
+    front start) dropped. Test: `/tmp`-style `page3.mjs`, both sides 80 corvette Charge, 80 frigate Raid, 70 destroyer
+    Flank, 40 cruiser Charge, 20 cruiser Flank, 10 battleship Raid, mix = share of enemies among each armed ship's 6
+    nearest armed ships (0.5 = fully mixed), at 60–90 s: live ~0.26–0.33, A ~0.23–0.36. What doesn't help: close-in ships
+    making way for each other too (~0.27), a keep-right passing rule in `threadGap` and head-on slides (~0.33). **What
+    helped: Charge ships pick their goal like flankers** (`pickGoal` in `think()` for `charge` too, so the deep goal is
+    `targets[0]` and they dive for big ships deep in the formation, still holding point blank when they get there):
+    ~0.33–0.38 (two seeds). Picture: the fleets close into two or three mixed blobs by ~60 s rather than a clean line;
+    each blob still leans to its side. Normal mixes without Charge ships unchanged; bench 1,000 vs 1,000 199 s / 12.3 s
+    compute. Replays sent: "All close-in fleets: LIVE / NEW".
   - An **Interceptor** (`guard`, defend the artillery) was tried and **removed** (owner: it just
     made big clumps of ships sitting at the back). Saved designs with an unknown stance load as
     `line`.
