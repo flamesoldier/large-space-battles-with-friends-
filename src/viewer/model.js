@@ -9,6 +9,7 @@ import { MULTIBLOCK, BT } from '../shared/blocks.js';
 import { lineOfFire } from '../shared/arcs.js';
 import { bayRoute } from '../shared/bayRoute.js';
 import { openDir, unitDir, lookAngle } from '../shared/weaponLook.js';
+import { RIFT_W } from '../shared/rift.js';
 
 export function lowerBound(arr, v, n = arr.length) {
   let lo = 0, hi = n;
@@ -61,7 +62,7 @@ export class ReplayModel {
   }
 
   makeEnt(kind, team, w, h) {
-    const e = { kind, team, w, h, parent: null, look: null, radius: Math.hypot(w, h) / 2, map: new Int32Array(w * h).fill(-1), tmp: [], sv0: 0, svN: 0, sh0: 0, shN: 0, thr: null, thrBehind: null, nb: null, unit: null, gun: null, aims: null };
+    const e = { kind, team, w, h, parent: null, look: null, radius: Math.hypot(w, h) / 2, map: new Int32Array(w * h).fill(-1), tmp: [], sv0: 0, svN: 0, sh0: 0, shN: 0, thr: null, thrBehind: null, nb: null, unit: null, gun: null, aims: null, rfEng: null };
     this.ents.push(e);
     return e;
   }
@@ -309,6 +310,8 @@ export class ReplayModel {
     this.auto = meta.shotSpeed[7] ? liveIndex(straight(7)) : null; // auto gun bullets (20 Nov 2026)
     this.frag = meta.shotSpeed[6] ? liveIndex(straight(6)) : null; // flak shrapnel, each piece a projectile (14 Nov 2026)
     this.fighter = fighters(c, q); // fighters from fighter bays (shot kind 4, Nov 2026), or null
+    this.riftShot = meta.shotSpeed[8] && perKind[8] ? liveIndex(straight(8)) : null; // rift engine projectiles once released (22 Nov 2026)
+    this.decodeRifts(meta, c);
     const nl = c.lasT.length;
     this.laser = { n: nl, t: c.lasT, x0: new Float32Array(nl), y0: new Float32Array(nl), x1: new Float32Array(nl), y1: new Float32Array(nl), team: c.lasTeam, hit: c.lasHit, kind: c.lasKind,
       // Beam ends attached to entities (newer replays): ids (0xffffffff = none) and local offsets.
@@ -338,6 +341,64 @@ export class ReplayModel {
     for (const e of this.ents) if (e.kind === 0 && e.t1 !== Infinity) { this.transform(e, e.t1, tr); deaths.push([e.t1, tr.x, tr.y, e.radius, e.team]); }
     deaths.sort((a, b) => a[0] - b[0]);
     this.death = { n: deaths.length, t: Float32Array.from(deaths, (d) => d[0]), d: deaths };
+  }
+
+  /**
+   * Rifts (Doomsday Interdimensional Rift Engine, 22 Nov 2026): one record each (open/end tick, centre,
+   * projectile count and seed; the swirl itself comes from src/shared/rift.js), and on every ship carrying
+   * an engine `e.rfEng`: its engines' centres, which engine each block belongs to (`blk`) and the
+   * [open, end] ticks of each engine's rifts, for its charge glow (riftEngines).
+   */
+  decodeRifts(meta, c) {
+    const n = c.rfT0 ? c.rfT0.length : 0, q = meta.evQ;
+    this.rift = n ? { n, t0: Float32Array.from(c.rfT0), t1: Float32Array.from(c.rfT1), x: Float32Array.from(c.rfX, (v) => v / q), y: Float32Array.from(c.rfY, (v) => v / q),
+      cnt: c.rfN, seed: c.rfSeed, team: c.rfTeam, end: c.rfEnd } : null;
+    for (const e of this.ents) {
+      if (e.kind !== 0) continue;
+      let blk = null;
+      const cx = [], cy = [];
+      for (let i = 0; i < e.type.length; i++) {
+        if (e.type[i] !== BT.RIFT) continue;
+        const v = e.unit[i] - 1, u = (v / 100) | 0, w = v - u * 100;
+        const x = e.lx[i] - (u + 0.5) + 50, y = e.ly[i] - (w + 0.5) + 50; // the engine's centre
+        let k = 0;
+        while (k < cx.length && Math.abs(cx[k] - x) + Math.abs(cy[k] - y) > 1) k++;
+        if (k === cx.length) { cx.push(x); cy.push(y); }
+        (blk ||= new Int8Array(e.type.length).fill(-1))[i] = k;
+      }
+      if (blk) e.rfEng = { lx: cx, ly: cy, blk, ev: cx.map(() => []), chg: new Float32Array(cx.length), st: new Float32Array(cx.length), at: -1 };
+    }
+    for (let i = 0; i < n; i++) {
+      const e = this.ents[c.rfSrc[i]], E = e && e.rfEng;
+      if (!E) continue;
+      const lx = c.rfLX[i] / q, ly = c.rfLY[i] / q;
+      let k = 0, bd = Infinity;
+      for (let j = 0; j < E.lx.length; j++) { const d = Math.abs(E.lx[j] - lx) + Math.abs(E.ly[j] - ly); if (d < bd) { bd = d; k = j; } }
+      E.ev[k].push(this.rift.t0[i], this.rift.t1[i]);
+    }
+  }
+
+  /**
+   * Each rift engine on ship e at time t: chg = how far charged (0..1), st = 1 + how full its rift is
+   * while one is open, else 0. Cached for the last t asked.
+   */
+  riftEngines(e, t) {
+    const E = e.rfEng;
+    if (E.at === t) return E;
+    E.at = t;
+    const charge = RIFT_W.charge / this.dt, swirl = RIFT_W.swirl / this.dt;
+    for (let k = 0; k < E.lx.length; k++) {
+      const ev = E.ev[k];
+      let prev = 0, next = -1, st = 0;
+      for (let j = 0; j < ev.length; j += 2) {
+        if (ev[j] <= t && t <= ev[j + 1]) { st = 1 + Math.min(1, (t - ev[j]) / swirl); break; }
+        if (ev[j + 1] < t) prev = ev[j + 1];
+        else if (ev[j] > t) { next = ev[j]; break; }
+      }
+      E.st[k] = st;
+      E.chg[k] = st ? 1 : next > prev ? Math.min(1, (t - prev) / (next - prev)) : Math.min(1, (t - prev) / charge);
+    }
+    return E;
   }
 
   /**
@@ -628,7 +689,7 @@ function unitPos(d) {
         if (n >= 0 && !seen[n] && cells[n] === T) { seen[n] = 1; stack.push(n); }
     }
     let dir = 0;
-    if (T !== BT.SHIELD) {
+    if (T !== BT.SHIELD && T !== BT.RIFT) { // shields and rift engines don't point
       const lf = lineOfFire(cells, null, w, h, group[0], {}, group);
       dir = unitDir({ m0: lf.m0, m1: lf.m1, route: lf.buried && T === BT.BAY ? bayRoute(cells, null, w, h, group) : null });
     }

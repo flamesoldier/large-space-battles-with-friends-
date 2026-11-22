@@ -2,7 +2,7 @@
 // All game numbers come from src/shared (blocks.js, shipStats.js, economy.js), the same code the
 // battle sim and server use.
 
-import { BT, BLOCKS, WEAPON, MULTIBLOCK, HULL_CLASSES, COOKOFF, SHIELD, FLAK_POP, shieldRegen, shieldCap } from '../shared/blocks.js';
+import { BT, BLOCKS, WEAPON, MULTIBLOCK, HULL_CLASSES, COOKOFF, SHIELD, FLAK_POP, RIFT_POP, shieldRegen, shieldCap } from '../shared/blocks.js';
 import { ARC_BINS, binAngle, binOpen, arcCentre } from '../shared/arcs.js';
 import { openDir, unitDir, lookAngle } from '../shared/weaponLook.js';
 import { routeLength } from '../shared/bayRoute.js';
@@ -22,14 +22,14 @@ const fmt = (n) => Math.round(n).toLocaleString();
 // Same colours as the replay viewer's Azure side, so a design looks like it will in battle.
 const COLOR = {
   [BT.HUB]: '#86e8ff', [BT.ARMOR]: '#5c7ea3', [BT.HEAVY]: '#41597a', [BT.FRAME]: '#90a6c0', [BT.THRUSTER]: '#3d434f',
-  [BT.LASER]: '#d8f4ff', [BT.CANNON]: '#9aa1ab', [BT.MISSILE]: '#b9b16c', [BT.PD]: '#c2413f', [BT.LANCE]: '#2c3150', [BT.GUIDED]: '#8fb79e', [BT.BAY]: '#c9a23c', [BT.FLAK]: '#5d574b', [BT.SHIELD]: '#2b6f7a', [BT.AUTO]: '#a7a08e',
+  [BT.LASER]: '#d8f4ff', [BT.CANNON]: '#9aa1ab', [BT.MISSILE]: '#b9b16c', [BT.PD]: '#c2413f', [BT.LANCE]: '#2c3150', [BT.GUIDED]: '#8fb79e', [BT.BAY]: '#c9a23c', [BT.FLAK]: '#5d574b', [BT.SHIELD]: '#2b6f7a', [BT.AUTO]: '#a7a08e', [BT.RIFT]: '#24382d',
 };
 // Palette order and number keys.
 const PALETTE = [
   [BT.FRAME, '1'], [BT.ARMOR, '2'], [BT.HEAVY, '3'], [BT.THRUSTER, '4'], [BT.LASER, '5'],
-  [BT.CANNON, '6'], [BT.AUTO, 'u'], [BT.PD, '7'], [BT.MISSILE, '8'], [BT.GUIDED, 'g'], [BT.BAY, 'c'], [BT.LANCE, '9'], [BT.FLAK, 'k'], [BT.SHIELD, 'e'], [BT.HUB, '0'], [0, 'x'],
+  [BT.CANNON, '6'], [BT.AUTO, 'u'], [BT.PD, '7'], [BT.MISSILE, '8'], [BT.GUIDED, 'g'], [BT.BAY, 'c'], [BT.LANCE, '9'], [BT.FLAK, 'k'], [BT.SHIELD, 'e'], [BT.RIFT, 'v'], [BT.HUB, '0'], [0, 'x'],
 ];
-const WEAPON_ORDER = [BT.LASER, BT.CANNON, BT.AUTO, BT.PD, BT.MISSILE, BT.GUIDED, BT.BAY, BT.LANCE, BT.FLAK];
+const WEAPON_ORDER = [BT.LASER, BT.CANNON, BT.AUTO, BT.PD, BT.MISSILE, BT.GUIDED, BT.BAY, BT.LANCE, BT.FLAK, BT.RIFT];
 
 const ed = new ShipEditor();
 // block: the selected palette block (0 = eraser), or null when nothing is selected (Esc).
@@ -66,6 +66,8 @@ const BLOCK_HINT = {
 const FW = WEAPON[BT.FLAK];
 BLOCK_HINT[BT.FLAK] = `ANTI-SWARM GUN FOR BIG SHIPS: every second a flak burst goes off up to ${FW.range} blocks away, with no shell to dodge or stop: it appears in open space a few blocks off an enemy hull (on the side facing a neighbour when ships are packed close together), picking lightly armoured ones (lots of guns and thrusters, little armour or frame), so it reaches the back lines. Its unseen shrapnel does ${FW.damage} damage to every enemy block within ${FW.radius} blocks that faces the burst, the first block on each line from it, however far out. Blocks behind other blocks are safe until the ones in front are destroyed, so tough outer blocks protect the inside: a heavy armour skin (${BLOCKS[BT.HEAVY].hp} hp) takes ${Math.ceil(BLOCKS[BT.HEAVY].hp / FW.damage)} hits a block, frame (${BLOCKS[BT.FRAME].hp} hp) only ${Math.ceil(BLOCKS[BT.FRAME].hp / FW.damage)}. Against shields it does only ${Math.round(FW.shieldMult * 100)}%. So it guts swarms of small, lightly built ships and fighters and only scratches thick armour. It never hurts your side. Many flak cannons spread their bursts over many targets; with no ship in range it fires at enemy fighters. Its blocks have ${BLOCKS[BT.FLAK].hp} hp; once ${FLAK_POP.after} of its 100 blocks are destroyed the whole unit blows up, but the blast is small (${FLAK_POP.damage} damage within ${FLAK_POP.radius} blocks) and barely scratches the rest of your ship.`;
 BLOCK_HINT[BT.SHIELD] = `GIVES THE SHIP A SHIELD, which soaks up every hit (any weapon) before a single block takes damage, and refills all the time, so a ship that gets a breather recovers. One generator gives ${shieldCap(1).toLocaleString('en')} shield refilling ${shieldRegen(1).toLocaleString('en')} a second; each extra one adds a little less than the one before: 2 give ${shieldCap(2).toLocaleString('en')} (${shieldRegen(2).toLocaleString('en')}/s), 10 give ${shieldCap(10).toLocaleString('en')} (${shieldRegen(10).toLocaleString('en')}/s), 100 give ${shieldCap(100).toLocaleString('en')} (${shieldRegen(100).toLocaleString('en')}/s). If the shield is knocked down it stays off until it has refilled to ${Math.round(SHIELD.restart * 100)}% of its full amount. Flak shrapnel only does ${Math.round(WEAPON[BT.FLAK].shieldMult * 100)}% damage to shields. Its blocks are very weak (${BLOCKS[BT.SHIELD].hp} hp): once the shield is down, if any one is destroyed the whole generator explodes (${SHIELD.damage} damage within ${SHIELD.radius} blocks, your own ship included) and its shield is gone. Bury generators deep in armour and keep them apart, so big armoured ships get the most out of them.`;
+const RW = WEAPON[BT.RIFT];
+BLOCK_HINT[BT.RIFT] = `LATE-GAME SUPERWEAPON. A 100×100 unit costing ${(BLOCKS[BT.RIFT].cost * 10000).toLocaleString('en')} cr. It needs NO LINE OF SIGHT and has NO RANGE LIMIT, so it works from deep inside the ship. It charges for ${RW.charge} s, then tears open a rift in an empty space in the middle of the enemy's ships: over ${RW.swirl} s, ${RW.count} green projectiles pour out of it one after another and swirl round it faster and faster, then all are released at once and fly straight out in every direction, each exploding on the first enemy ship or wreck it meets (${RW.damage} damage at the centre of a ${RW.splash}-block blast). They fly over your own ships and point defence CAN'T shoot them down. Then it charges again: about one rift a minute. If the engine is destroyed while its rift is open, the rift collapses.\n\nFRAGILE AND EXPLOSIVE: its blocks have only ${BLOCKS[BT.RIFT].hp} hp, and once ${RIFT_POP.after} of them are destroyed the whole engine detonates (${RIFT_POP.damage} damage within ${RIFT_POP.radius} blocks of its centre), which wrecks your own ship. Bury it deep inside heavy armour.`;
 const PLASMA_WARNING = "WARNING: HUGE FRIENDLY FIRE. ITS BOLT CARVES THROUGH YOUR OWN SHIPS AS WELL AS THE ENEMY'S, AND ITS BLOCKS EXPLODE WHEN DESTROYED, WRECKING YOUR SHIP AND ANY ALLY NEARBY.";
 
 // ------------------------------------------------------------ UI setup
@@ -78,8 +80,10 @@ function blockTitle(t) {
   if (t === BT.SHIELD) s = `${B.name}: one 10×10 unit, ${B.cost * 100} cr, ${B.hp} hp per block, +${shieldCap(1).toLocaleString('en')} shield refilling ${shieldRegen(1)}/s (each extra generator adds a little less). If any block dies the whole unit explodes`;
   if (t === BT.FLAK) s = `${B.name}: one 10×10 unit, ${B.cost * 100} cr, ${B.hp} hp per block. Lose ${FLAK_POP.after} of its 100 blocks and the whole unit blows up (small blast, little harm to the ship)`;
   if (t === BT.AUTO) s = `${B.name}: one 2×2 unit, ${B.cost * 4} cr, ${B.hp} hp per block, keeps firing while 2 of its 4 blocks survive`;
+  if (t === BT.RIFT) s = `${B.name}: one 100×100 unit, ${(B.cost * 10000).toLocaleString('en')} cr, only ${B.hp} hp per block. Lose ${RIFT_POP.after} blocks and the whole engine detonates (${RIFT_POP.damage} damage within ${RIFT_POP.radius} blocks)`;
   if (t === BT.THRUSTER) s += `, thrust ${B.thrust}`;
   if (W && t === BT.FLAK) s += `. Range ${W.range}, a burst every second among crowded enemy ships, ${W.damage} damage to every block facing it within ${W.radius} blocks`;
+  else if (W && t === BT.RIFT) s += `. Any range, a rift of ${W.count} projectiles about every ${W.cooldown} s`;
   else if (W && t !== BT.BAY) s += `. Range ${W.range}, ${W.damage} damage every ${W.cooldown} s`;
   if (t === BT.HUB) s += '. One per ship; placing it moves it. Lose it and the ship breaks apart.';
   if (BLOCK_HINT[t]) s += `.\n\n${BLOCK_HINT[t]}`;
@@ -228,8 +232,8 @@ function refresh(force = false) {
   $('weapons').innerHTML = WEAPON_ORDER.filter((t) => a.fire[t]).map((t) => {
     const f = a.fire[t];
     const W = WEAPON[t];
-    const shot = t === BT.BAY ? `${W.waves[0]} fighters, then 1 / ${W.cooldown} s` : t === BT.FLAK ? `${W.damage} a block in ${W.radius} / ~${W.cooldown} s` : `${fmt(W.damage)} / ${W.cooldown} s`;
-    return `<tr title="${SHOT_HINT[t] || ''}"><td>${BLOCKS[t].name}</td><td>${f.count}${f.buried ? ` <small title="${t === BT.BAY ? 'no way out' : 'buried'}">(${f.buried} ${t === BT.BAY ? 'sealed' : 'buried'})</small>` : ''}</td><td>${shot}</td><td>${t === BT.BAY ? 'any' : f.range}</td></tr>`;
+    const shot = t === BT.BAY ? `${W.waves[0]} fighters, then 1 / ${W.cooldown} s` : t === BT.FLAK ? `${W.damage} a block in ${W.radius} / ~${W.cooldown} s` : t === BT.RIFT ? `${W.count} × ${W.damage} / ~${W.cooldown} s` : `${fmt(W.damage)} / ${W.cooldown} s`;
+    return `<tr title="${SHOT_HINT[t] || ''}"><td>${BLOCKS[t].name}</td><td>${f.count}${f.buried ? ` <small title="${t === BT.BAY ? 'no way out' : 'buried'}">(${f.buried} ${t === BT.BAY ? 'sealed' : 'buried'})</small>` : ''}</td><td>${shot}</td><td>${t === BT.BAY || t === BT.RIFT ? 'any' : f.range}</td></tr>`;
   }).join('') || '<tr><td colspan="4" style="color:var(--dim)">No weapons yet</td></tr>';
   $('stance-hint').textContent = STANCE_INFO[ed.stance].hint;
   $('place-hint').textContent = PLACE_INFO[ed.place][defenseMode() ? 'defHint' : 'hint'];
@@ -264,6 +268,7 @@ const SHOT_HINT = {
   [BT.PD]: `Anti-missile: shoots down enemy missiles within ${WEAPON[BT.PD].range} blocks first (${WEAPON[BT.PD].missileDamage} a burst, a missile has ${WEAPON[BT.MISSILE].hp} hp), then enemy fighters (the best answer to carriers), then enemy hulls, ${WEAPON[BT.PD].damage} a burst, all within ${WEAPON[BT.PD].range}.`,
   [BT.LANCE]: `A blue plasma bolt that carves through ship after ship until its damage is spent.\n\n${PLASMA_WARNING}`,
   [BT.FLAK]: `A burst every second, no shell, in open space between crowded, lightly armoured enemy ships in range, doing ${WEAPON[BT.FLAK].damage} damage to every enemy block facing it within ${WEAPON[BT.FLAK].radius} blocks ( ${Math.round(WEAPON[BT.FLAK].shieldMult * 100)}% against shields). Deadly to small ships and fighters; blocks behind other blocks are safe, so a tough skin protects what's inside. Flak cannons spread their fire over many targets.`,
+  [BT.RIFT]: `Charges ${WEAPON[BT.RIFT].charge} s, then opens a rift among the enemy anywhere on the battlefield (no line of sight needed): ${WEAPON[BT.RIFT].count} green projectiles gather and swirl for ${WEAPON[BT.RIFT].swirl} s, then fly out in every direction, each a ${WEAPON[BT.RIFT].damage}-damage blast. Point defence can't stop them. About one rift a minute.`,
   [BT.BAY]: `${WEAPON[BT.BAY].waves[0]} fighters as the battle opens, then one every minute. Fighters circle enemy ships shooting them (${WEAPON[BT.BAY].fighter.damage} damage every ${WEAPON[BT.BAY].fighter.cooldown} s, range ${WEAPON[BT.BAY].fighter.range}), dogfight enemy fighters, and fly until shot down (${WEAPON[BT.BAY].fighter.hp} hp). Point defence shoots them first.`,
 };
 
@@ -286,7 +291,7 @@ const bmp = document.createElement('canvas');
 bmp.width = ed.w; bmp.height = ed.h;
 const bg = bmp.getContext('2d');
 const bimg = bg.createImageData(ed.w, ed.h), bpx = new Uint32Array(bimg.data.buffer);
-const RGBA = new Uint32Array(16);
+const RGBA = new Uint32Array(32);
 for (const [t, hex] of Object.entries(COLOR)) {
   const v = parseInt(hex.slice(1), 16);
   RGBA[t] = (255 << 24) | ((v & 255) << 16) | (((v >> 8) & 255) << 8) | (v >> 16); // little-endian ABGR
@@ -363,7 +368,7 @@ function draw() {
       const gr = w.group;
       if (!visible(gr.x0, gr.y0, gr.x1, gr.y1)) continue;
       const x = sx(gr.x0 + ox), y = sy(gr.y0 + oy), ww = (gr.x1 - gr.x0 + 1) * z, hh = (gr.y1 - gr.y0 + 1) * z;
-      if (gr.ok && ww > 12) (gr.type === BT.BAY ? bayUnit : gr.type === BT.AUTO ? autoUnit : gr.type === BT.FLAK ? flakUnit : gr.type === BT.SHIELD ? shieldUnit : plasmaUnit)(x, y, ww, hh, z, w);
+      if (gr.ok && ww > 12) (gr.type === BT.BAY ? bayUnit : gr.type === BT.AUTO ? autoUnit : gr.type === BT.FLAK ? flakUnit : gr.type === BT.SHIELD ? shieldUnit : gr.type === BT.RIFT ? riftUnit : plasmaUnit)(x, y, ww, hh, z, w);
       g.strokeStyle = gr.ok ? 'rgba(200,205,255,0.4)' : '#ff6b6b'; g.lineWidth = Math.max(1, dpr());
       g.strokeRect(x + 0.5, y + 0.5, ww - 1, hh - 1);
     }
@@ -603,6 +608,25 @@ function shieldUnit(x, y, ww, hh, z) {
   g.strokeStyle = 'rgba(140,240,255,0.6)'; g.lineWidth = R * 0.02; g.beginPath(); g.arc(cx, cy, R * 0.44, 0, Math.PI * 2); g.stroke();
 }
 
+/** A rift engine (22 Nov 2026), drawn like the viewer's: armoured housing, two rings, a green vortex. */
+function riftUnit(x, y, ww, hh) {
+  const cx = x + ww / 2, cy = y + hh / 2, R = Math.min(ww, hh);
+  g.fillStyle = '#20282b'; g.fillRect(x, y, ww, hh);
+  g.fillStyle = '#2c3639'; g.fillRect(x + R * 0.03, y + R * 0.03, ww - R * 0.06, hh - R * 0.06);
+  g.fillStyle = '#3a474a';
+  for (const [px, py] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { g.beginPath(); g.arc(cx + px * R * 0.39, cy + py * R * 0.39, R * 0.05, 0, Math.PI * 2); g.fill(); }
+  g.fillStyle = '#5dff8f';
+  for (const [px, py] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { g.beginPath(); g.arc(cx + px * R * 0.39, cy + py * R * 0.39, R * 0.02, 0, Math.PI * 2); g.fill(); }
+  g.strokeStyle = '#59666a'; g.lineWidth = R * 0.07; g.beginPath(); g.arc(cx, cy, R * 0.415, 0, Math.PI * 2); g.stroke();
+  g.strokeStyle = '#3dff86'; g.lineWidth = R * 0.015; g.beginPath(); g.arc(cx, cy, R * 0.36, 0, Math.PI * 2); g.stroke();
+  g.strokeStyle = '#46524f'; g.lineWidth = R * 0.07; g.beginPath(); g.arc(cx, cy, R * 0.3, 0, Math.PI * 2); g.stroke();
+  const gr = g.createRadialGradient(cx, cy, 0, cx, cy, R * 0.26);
+  gr.addColorStop(0, '#effff4'); gr.addColorStop(0.2, '#5dff8f'); gr.addColorStop(0.7, '#12542b'); gr.addColorStop(1, '#0b2a18');
+  g.fillStyle = gr; g.beginPath(); g.arc(cx, cy, R * 0.26, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = 'rgba(93,255,143,0.55)'; g.lineWidth = R * 0.012;
+  for (let k = 0; k < 3; k++) { g.beginPath(); for (let j = 0; j <= 30; j++) { const r = (j / 30) * R * 0.25, a = k * 2.094 + j * 0.2; j ? g.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r) : g.moveTo(cx, cy); } g.stroke(); }
+}
+
 /** A plasma cannon unit, drawn as one machine: housing, corner machinery, pipes into a blue orb. */
 function plasmaUnit(x, y, ww, hh, z, wp) {
   const cx = x + ww / 2, cy = y + hh / 2, R = Math.min(ww, hh);
@@ -793,7 +817,7 @@ canvas.addEventListener('pointerdown', (e) => {
   last = null;
   if (tool === 'pencil' || MULTIBLOCK[type] || type === BT.HUB) {
     ed.checkpoint(); drag.started = true;
-    if (MULTIBLOCK[type]) { if (!ed.stamp(x, y, type)) toast(type === BT.BAY ? `A fighter bay needs a clear ${MULTIBLOCK[type].size}×${MULTIBLOCK[type].size} space inside the grid, away from the hub.` : `A ${type === BT.AUTO ? 'auto gun' : type === BT.FLAK ? 'flak cannon' : type === BT.SHIELD ? 'shield generator' : 'plasma cannon'} needs a clear ${MULTIBLOCK[type].size}×${MULTIBLOCK[type].size} space inside the grid, away from the hub.`); drag.once = true; }
+    if (MULTIBLOCK[type]) { if (!ed.stamp(x, y, type)) toast(type === BT.BAY ? `A fighter bay needs a clear ${MULTIBLOCK[type].size}×${MULTIBLOCK[type].size} space inside the grid, away from the hub.` : `A ${type === BT.AUTO ? 'auto gun' : type === BT.FLAK ? 'flak cannon' : type === BT.SHIELD ? 'shield generator' : type === BT.RIFT ? 'rift engine' : 'plasma cannon'} needs a clear ${MULTIBLOCK[type].size}×${MULTIBLOCK[type].size} space inside the grid, away from the hub.`); drag.once = true; }
     else if (type === BT.HUB) { ed.setCell(x, y, BT.HUB); drag.once = true; }
     else strokeTo(x, y, type);
   } else if (tool === 'fill') {

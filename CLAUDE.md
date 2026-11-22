@@ -751,7 +751,7 @@ Weapons (numbers in `blocks.js`):
     live blocks nearest the impact first (out to `splash` 8 blocks), each taking what it has left: 2 heavy
     armour (240) or 11 frame (45), as the owner put it. Shields soak it like any hit. Explosion size **8**
     (viewer `LIFE/BASE/GROW[8]`, between a shell hit and a missile blast). Price unchanged (120).
-  - **Auto gun** (`BT.AUTO` = 15, the last type the viewer's shape code can hold): a **2×2 unit**, **250 cr**
+  - **Auto gun** (`BT.AUTO` = 15, the last type the viewer's shape code can hold; the rift engine, 16, is drawn as type 0): a **2×2 unit**, **250 cr**
     (62.5 a block), **300 hp a block**, keeps firing while 2 of 4 survive (`MULTIBLOCK`), range **150**,
     **55** damage every **0.3 s**, bullets at **150 blocks/s**, `spread` 0.07 rad, **life 3 s** (not 30: at
     3+ shots a second long-lived misses would swamp battles). `kind: 'shell', auto: true` → projectile kind
@@ -837,6 +837,56 @@ Weapons (numbers in `blocks.js`):
     hulls in a crowd (allied hulls block shots, owner's rule). Bench 1,000 vs 1,000: 11.6 → 11.8 s compute,
     cannon shells 95k → 26k, replay 3.42 → 2.69 MB gzip, survivors 200:75 → 206:79. Tests in
     `tools/test-designer.mjs` (2 heavy / 11 frame, whole units, bullets fired).
+- **Doomsday Interdimensional Rift Engine** (`BT.RIFT` = 16, weapon kind `'rift'`; owner, 22 Nov 2026, inspired by his
+  Elenris Minor replay b28350, where 1,440 guided missiles circled a hollow fortress's courtyard, the bug fixed 14 Nov:
+  "a 100*100 sized weapon fragile and explosive but can be put inside ships… doesn't need line of sight… 30 seconds to
+  start firing… green… 150,000 credits… summon this effect at an empty space in the middle of enemy ships slowly adding
+  more and more green projectiles that start swirling over another 30 seconds and then for them all to be released").
+  **On `v2-dev`, not live.** Owner's answers: **fires again and again** (charge 30 s, swirl 30 s, release, charge again:
+  ~1 rift a minute); released projectiles **fly straight and explode**; **point defence can't shoot them down**;
+  strength: **"focus on it looking good first, we will balance it later"** (every number is a first guess).
+  - `blocks.js`: 100×100 unit (`MULTIBLOCK` size 100), **15 cr a block = 150,000**, **20 hp**, mass 1. `WEAPON[BT.RIFT]` =
+    `{ charge 30, swirl 30, count 200, damage 150, splash 8, speed 50, life 10, radius 45, orbit 25, cooldown 60, range 0 }`.
+    `RIFT_POP` `{ after 50, radius 70, damage 900 }`: once 50 of its 10,000 blocks are destroyed the whole engine
+    detonates (killCells, explosion **12**, `blast(..., anyone)` hurting its own ship). A plasma bolt that reaches it
+    (5,000 budget, ~250 of its blocks) always sets it off: the demo ship needed a 16-block heavy belt to live long
+    enough (an 8-block mixed skin lost both engines at ~19 s to 430k of generated ships). `isWeapon` includes it.
+  - `src/shared/rift.js` (sim and viewer): `riftParticle(k, n, seed, age, out)` = where projectile k is `age` s after its
+    rift opened (appears at `riftSpawnAt` = 92% of the swirl × k/n, spirals out from the eye over 1.6 s to its orbit
+    0.22–1.0 × radius, every one the same way round, the vortex speeding up to 2.5× by release; `vx/vy` = its release
+    direction, the orbit bent 0.75 rad outward), `riftSpeedStep` (85–115%, in `shotSpd` steps), `riftHash`. **The swirl
+    is never simulated or recorded**: nothing exists until release, then the sim makes real projectiles from these
+    positions and the viewer draws the swirl from the same function (test: shots start < 0.3 blocks from it).
+  - Sim (`battle.js`): one weapon per unit with `omni: true`, skipped by `facing`/`updateLineOfFire`, `e.face`, stance
+    ranges and flak's `gunCost` (so a rift ship isn't flak's favourite target and doesn't stand at range 0). `fire()` →
+    `fireRift()`: charged (`w.sq` 0) → `riftSpot()` (of up to `RIFT_PICKS` 24 armed enemies, the most enemy value within
+    `RIFT_NEAR` 200 × random, ×0.15 near an open rift so engines spread out; centre = value-weighted middle of those
+    enemies, moved out in rings of 8 to the nearest point with no hull box within `RIFT_CLEAR` 20), snapped to the
+    replay grid, recorded, `w.sq` 1, `w.cd` = swirl; then `releaseRift()`: `K_RIFT` (8) projectiles, owner -1, fly over
+    friendly ships (`sweep(..., team)`), `blast()` on the first enemy ship or wreck (explosion **11**), not in the missile
+    grid (PD can't see them). `updateRifts()` (after resolveDamage): a rift whose engine popped, broke off or died
+    collapses; an open rift sets `lastClosing` so a quiet swirl doesn't end the battle as stalled. Pops queue through
+    `flakPops` → `popRift()`.
+  - Replay: columns `rfT0 rfT1 rfX rfY rfN rfSeed rfTeam rfEnd rfSrc rfLX rfLY` (end 0 released, 1 collapsed, 2 open
+    at the battle's end), shot kind **8** (`meta.shotSpeed[8]`), explosions 11 and 12. Old replays have none.
+  - Viewer: **shape code type 0 = the rift engine** (the type field is 4 bits and empty cells are never drawn), the var
+    field is now **14 bits** (`& 16383`, a 100×100 place needs 9,999) and `DEAD_BIT` **2^22** (codes stay < 2^24, exact in a
+    float). Shader: gunmetal housing, chamfered rim, four corner pylons, a coiled outer ring and a counter-turning inner
+    ring of emitter plates with glowing slots, a green spiral vortex with a white eye; size slot = charge (0..1) and 1 +
+    rift fill while open (`ReplayModel.riftEngines(e, t)` from `e.rfEng`: engine centres, `blk` engine per block, each
+    engine's [open, end] ticks, matched by `rfSrc` + `rfLX/LY`). `drawRiftEngine` glow over the ship at any zoom;
+    `drawRifts` (opening flash and ring, deep-green well, rims, 3 turning spiral arms, every projectile with a 3-step
+    curved trail, crackling arcs re-picked every 0.3 s, release burst and shock ring, or a collapse sucking them into the
+    eye), `drawRiftShots` (green orbs with trails), `drawRiftBoom` (11 green blast; 12 detonation fireball, ring,
+    streaks, `RIFT_BOOM` 60 ticks). All pure functions of time; ring = glow shape 5 again.
+  - Designer: key **V**, palette colour, `riftUnit()` drawing, tooltip and weapon-table hint, "count × damage / ~60 s",
+    range "any"; `analyzeDesign` treats it as omni (never buried, no arc), damage/s = count × damage / 60, left out of
+    min/max range, error "must be whole 100×100 units", warning "EXPLOSIVE…". Galaxy thumbnail colour.
+  - Measured (`/tmp`-style: 2 hand-built 162×148 "Rift Dreadnoughts" (engine in a 16-block heavy belt, cannons/lasers/PD
+    on the skin, 255,571 cr, Artillery, Back) + 102 generated escorts vs an equal-value mixed fleet, 3 seeds): 5–7 rifts a
+    battle, 54–90% of projectiles hit (in a 40-frigate test only 10%), 1–2 engines detonate; seed 3 the rift side won by
+    rout. Bench 1,000 vs 1,000 identical shot for shot. Test in `tools/test-designer.mjs`. Replay sent: "Doomsday
+    Interdimensional Rift Engine" (seed 3: 5 rifts, two collapse).
 - Future weapons the owner wants: bigger cannons, a medium laser.
 
 Combat rules:

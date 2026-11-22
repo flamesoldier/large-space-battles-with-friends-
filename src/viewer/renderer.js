@@ -6,6 +6,7 @@
 import { BT } from '../shared/blocks.js';
 import { hash01 } from '../shared/rng.js';
 import { lowerBound } from './model.js';
+import { riftParticle, RIFT_W } from '../shared/rift.js';
 
 const VS = `#version 300 es
 layout(location=0) in vec2 corner;
@@ -30,15 +31,16 @@ precision highp int; // shape codes run past 2^15: phones' mediump ints could ga
 in vec2 vUV; in vec4 vCol; flat in highp float vShape; flat in float vAng; flat in highp vec2 vSize; out vec4 o;
 uniform float uDet;   // 0..1: how much fine detail to draw (by on-screen block size)
 uniform highp float uTime;  // replay time in ticks, for glows that pulse (minutes of ticks: too big for mediump)
-// Detailed hull block. Shape code = 10 + type + 16 * open-sides mask + 256 * var + 2^20 (DEAD_BIT) if
+// Detailed hull block. Shape code = 10 + (type & 15) + 16 * open-sides mask + 256 * var + 2^22 (DEAD_BIT) if
+// (type 0 is the rift engine, BT.RIFT = 16: empty cells are never drawn, and var needs 14 bits for its 100x100 unit);
 // it's debris; var is 0..7 for variety, or for plasma cannon blocks u * 10 + v, the block's
 // place in its 10x10 unit (the whole unit is drawn as one machine). Edges facing open space get a bevel lit from the upper left of the
 // world and a dark outline, so a hull reads as solid plating instead of a grid of tiles; each
 // block type has its own surface (plates, rivets, truss, nozzle, lens, turret, tubes, coils).
 vec2 rotd(vec2 v, float a) { float c = cos(a), s = sin(a); return vec2(v.x * c + v.y * s, -v.x * s + v.y * c); } // into a gun's own frame (barrels along +x)
 vec3 hullBlock(int code, vec2 p) {
-  int type = code & 15, mask = (code >> 4) & 15, var = (code >> 8) & 4095, hv = var & 7;
-  bool dead = code >= 1048576;
+  int type = code & 15, mask = (code >> 4) & 15, var = (code >> 8) & 16383, hv = var & 7;
+  bool dead = code >= 4194304;
   float c = cos(vAng), s = sin(vAng);
   vec2 Lw = vec2(-0.6, -0.8);
   vec2 L = vec2(Lw.x * c + Lw.y * s, -Lw.x * s + Lw.y * c); // light in block space
@@ -375,6 +377,55 @@ vec3 hullBlock(int code, vec2 p) {
             + vec3(1.0, 0.85, 0.5) * dome * smoothstep(0.08, 0.0, R) * 0.25) * d;
     }
   }
+  else if (type == 0) { // Doomsday Interdimensional Rift Engine (22 Nov 2026): the 100x100 unit is one machine, a green vortex
+    // held in two turning rings inside an armoured housing. vSize.x = how far charged (0..1), vSize.y = 1 + how
+    // full its rift is while one is open (0 otherwise).
+    vec2 q = (vec2(float(var / 100), float(var - (var / 100) * 100)) + p * 0.5 + 0.5) / 100.0 - 0.5;
+    vec2 aq = abs(q);
+    col = mix(col, vec3(0.40, 0.45, 0.47), 0.72); // gunmetal whatever the side's colour, so the green glow is what reads
+    float R = length(q), ang = atan(q.y, q.x), chg = clamp(vSize.x, 0.0, 1.0), open = step(0.5, vSize.y), fill = clamp(vSize.y - 1.0, 0.0, 1.0);
+    float spin = 0.15 + 0.6 * chg + open * (1.0 + 2.5 * fill);
+    float base = 0.3 + 0.04 * step(0.5, fract((q.x + q.y) * 9.0)); // dark gunmetal housing
+    float seam = 1.0 - smoothstep(0.0, 0.012, min(abs(fract(q.x * 8.0 + 0.5) - 0.5), abs(fract(q.y * 8.0 + 0.5) - 0.5)) / 8.0 * 8.0);
+    base -= seam * 0.08 * step(0.48, R);
+    float cham = smoothstep(0.82, 0.84, aq.x + aq.y); // chamfered corners, a raised rim
+    float rim = max(smoothstep(0.455, 0.47, max(aq.x, aq.y)), cham);
+    base = mix(base, 0.55 - dot(q, L) * 0.6, rim);
+    // four capacitor pylons in the corners
+    vec2 pc = aq - vec2(0.39);
+    float pyl = 1.0 - smoothstep(0.045, 0.055, length(pc)), pylCore = 1.0 - smoothstep(0.015, 0.028, length(pc));
+    base = mix(base, 0.62 - dot(pc, L) * 6.0, pyl);
+    // outer ring: a heavy torus wound with 16 coils, turning slowly
+    float oR = smoothstep(0.375, 0.385, R) * (1.0 - smoothstep(0.445, 0.455, R));
+    float tor = 1.0 - pow((R - 0.415) / 0.035, 2.0);
+    float coil = step(0.5, fract(ang / 6.2832 * 16.0 + uTime * 0.0015 * spin));
+    base = mix(base, (0.42 + 0.45 * tor) * (0.85 + 0.25 * coil) - dot(normalize(q + 1e-5), L) * 0.25, oR);
+    // channel between the rings: green energy chasing round it
+    float ch = smoothstep(0.345, 0.352, R) * (1.0 - smoothstep(0.368, 0.375, R));
+    base = mix(base, 0.08, ch);
+    // inner ring: eight emitter plates turning the other way, glowing slots between them
+    float iR = smoothstep(0.26, 0.27, R) * (1.0 - smoothstep(0.335, 0.345, R));
+    float ia = fract(ang / 6.2832 * 8.0 - uTime * 0.0025 * spin);
+    float slot = 1.0 - smoothstep(0.04, 0.07, abs(ia - 0.5));
+    base = mix(base, mix(0.5 - dot(q, L) * 0.5, 0.12, slot), iR);
+    // the vortex: dark green spiral arms falling into a bright eye
+    float core = 1.0 - smoothstep(0.255, 0.262, R);
+    float arm = 0.5 + 0.5 * sin(ang * 3.0 + R * 55.0 - uTime * 0.05 * spin);
+    base = mix(base, 0.1 + 0.12 * arm, core);
+    lit *= mix(1.0, base, d);
+    if (!dead) {
+      float e = 0.25 + 0.75 * chg, pulse = 0.85 + 0.15 * sin(uTime * (0.2 + 0.6 * chg + open));
+      vec3 G = vec3(0.25, 1.0, 0.45), W = vec3(0.85, 1.0, 0.9);
+      float flow = pow(0.5 + 0.5 * sin(ang * 6.0 - uTime * 0.12 * spin), 3.0);
+      float eye = 1.0 - smoothstep(0.0, 0.06 + 0.06 * chg + 0.08 * open, R);
+      glow = (G * ch * (0.35 + 0.65 * flow) * e * 1.4
+            + G * iR * slot * e * pulse
+            + G * core * pow(arm, 2.0) * (0.25 + 0.75 * e) * (0.6 + 0.8 * open)
+            + W * eye * (0.4 + 0.6 * e) * pulse * (1.0 + open)
+            + G * pylCore * (0.3 + 0.7 * chg) * pulse
+            + G * oR * coil * 0.12 * e) * d;
+    }
+  }
   else if (type == 14) { // shield generator: the 10x10 unit is one emitter, a glowing dish inside a ring of coils
     vec2 q = (vec2(float(var / 10), float(var - (var / 10) * 10)) + p * 0.5 + 0.5) / 10.0 - 0.5;
     vec2 aq = abs(q);
@@ -427,7 +478,7 @@ void main(){
 
 const AIM_OUT = { a: 0, since: 0, next: 0 };
 const FLAK_RIPPLE = [1.4, 0, 2.1, 0.7]; // ticks after the shot that each flak barrel fires (the shader's recoil uses the same)
-const DEAD_BIT = 1048576; // debris flag in a detailed block's shape code (var takes bits 8-19: a 10x10 unit's place + 100 × direction)
+const DEAD_BIT = 4194304; // debris flag in a detailed block's shape code (var takes bits 8-21: a 100x100 rift engine's place, or a 10x10 unit's place + 100 × direction)
 const STRIDE = 7; // x, y, angle, sx, sy, shape, rgba(u32)
 
 // Shield bubbles (15 Nov 2026): one quad per shielded ship over its distance map (model.shieldMap), so
@@ -545,7 +596,7 @@ function blockPalette(team, dead) {
   const T = TEAM[team], k = dead ? 0.7 : 1; // wrecks stay readable, just burnt
   const p = [];
   p[BT.HUB] = T.hub; p[BT.ARMOR] = T.armor; p[BT.HEAVY] = T.heavy; p[BT.FRAME] = T.frame;
-  p[BT.THRUSTER] = '#3d434f'; p[BT.LASER] = team ? '#ffd9c9' : '#d8f4ff'; p[BT.CANNON] = '#9aa1ab'; p[BT.MISSILE] = '#b9b16c'; p[BT.PD] = PD_COLOR; p[BT.LANCE] = team ? '#8a4f63' : '#5b5f9c'; p[BT.GUIDED] = '#8fb79e'; p[BT.BAY] = '#c9a23c'; p[BT.FLAK] = '#6e6656'; p[BT.AUTO] = '#a7a08e'; p[BT.SHIELD] = '#2b6f7a';
+  p[BT.THRUSTER] = '#3d434f'; p[BT.LASER] = team ? '#ffd9c9' : '#d8f4ff'; p[BT.CANNON] = '#9aa1ab'; p[BT.MISSILE] = '#b9b16c'; p[BT.PD] = PD_COLOR; p[BT.LANCE] = team ? '#8a4f63' : '#5b5f9c'; p[BT.GUIDED] = '#8fb79e'; p[BT.BAY] = '#c9a23c'; p[BT.FLAK] = '#6e6656'; p[BT.AUTO] = '#a7a08e'; p[BT.SHIELD] = '#2b6f7a'; p[BT.RIFT] = '#3c5a48';
   return p.map((c) => (c ? rgba(dead ? shade(c, k) : c) : 0));
 }
 const PAL = [[blockPalette(0, false), blockPalette(1, false)], [blockPalette(0, true), blockPalette(1, true)]];
@@ -569,7 +620,7 @@ function lookFor(hex) {
     const p = [];
     p[BT.HUB] = T.hub; p[BT.ARMOR] = T.armor; p[BT.HEAVY] = T.heavy; p[BT.FRAME] = T.frame;
     p[BT.THRUSTER] = '#3d434f'; p[BT.LASER] = mixHex(hex, '#ffffff', 0.75); p[BT.CANNON] = '#9aa1ab'; p[BT.MISSILE] = '#b9b16c';
-    p[BT.PD] = PD_COLOR; p[BT.LANCE] = shade(mixHex(hex, '#40404a', 0.5), 0.9); p[BT.GUIDED] = '#8fb79e'; p[BT.BAY] = '#c9a23c'; p[BT.FLAK] = shade(mixHex(hex, '#6e6656', 0.7), 0.95); p[BT.SHIELD] = shade(mixHex(hex, '#2b6f7a', 0.75), 0.95); p[BT.AUTO] = shade(mixHex(hex, '#a7a08e', 0.75), 1);
+    p[BT.PD] = PD_COLOR; p[BT.LANCE] = shade(mixHex(hex, '#40404a', 0.5), 0.9); p[BT.GUIDED] = '#8fb79e'; p[BT.BAY] = '#c9a23c'; p[BT.FLAK] = shade(mixHex(hex, '#6e6656', 0.7), 0.95); p[BT.SHIELD] = shade(mixHex(hex, '#2b6f7a', 0.75), 0.95); p[BT.AUTO] = shade(mixHex(hex, '#a7a08e', 0.75), 1); p[BT.RIFT] = shade(mixHex(hex, '#3c5a48', 0.85), 1);
     return p.map((c) => (c ? rgba(dead ? shade(c, 0.7) : c) : 0));
   };
   L = { pal: [make(false), make(true)], lod: rgba(hex), engine: rgba(hex, 150), accent: hex };
@@ -612,6 +663,7 @@ export function applyColors(model, sideColors) {
 }
 const FLAK_LIFE = 40; // ticks a flak burst is drawn for (its smoke lingers)
 const LANCE_CHARGE = 6, LANCE_LIFE = 16; // heavy laser: charge-up and beam life, in ticks
+const RIFT_BOOM = 60; // ticks a rift engine's detonation is drawn for
 const FIGHTER_DEATH = 12; // a shot-down fighter tumbles and burns out over this many ticks (1.2 s)
 const alpha2 = (col, k) => (col & 0xffffff) | ((Math.max(0, Math.min(1, k)) * 255) << 24);
 const fadeCol = (col, k) => (col & 0xffffff) | ((((col >>> 24) * Math.max(0, Math.min(1, k))) | 0) << 24); // scales the colour's own alpha
@@ -629,6 +681,8 @@ const C = {
   // Flak (14 Nov 2026): hot amber shells, a white flash and a spray of orange shrapnel streaks.
   flShell: rgba('#fff0c2', 255), flTrail: rgba('#ffb347', 210), flFlash: rgba('#fff8e8', 255), flRing: rgba('#ffe0b0', 255), flCore: rgba('#fff0a0', 255), flGlow: rgba('#ff9a3c', 255),
   shield: rgba('#6fe8ff', 255),
+  // Rift engine (22 Nov 2026): green whatever the side (owner: "I want the projectiles to be green").
+  rfGlow: rgba('#2dff6a', 255), rfBody: rgba('#8dffb0', 255), rfCore: rgba('#effff4', 255), rfDeep: rgba('#0f8a3e', 255), rfTrail: rgba('#3dff86', 255), rfArc: rgba('#c8ffd8', 255),
   autoHalo: rgba('#ff8a1e', 255), autoFlash: rgba('#ffd27a', 255), autoSpark: rgba('#ffb347', 255), flShrap: rgba('#ffc070', 255), tracer: rgba('#ffe58a', 255), tracerHot: rgba('#fffbe8', 255), flSmoke: rgba('#8c8278', 255),
 };
 
@@ -736,6 +790,7 @@ export class Renderer {
           blocks++;
         }
         if (!dead && e.shN) this.drawShield(model, e, t, tr, px);
+        if (!dead && e.rfEng) this.drawRiftEngine(model, e, t, tr, px);
         continue;
       }
       const c = Math.cos(tr.a), s = Math.sin(tr.a), pal = e.look ? e.look.pal[dead ? 1 : 0] : PAL[dead ? 1 : 0][e.team];
@@ -751,7 +806,7 @@ export class Renderer {
         // Detailed blocks: which sides are open (for bevels and outlines). Small guns are fixed mounts
         // pointing out of the hull; flak and plasma turrets turn to aim (ReplayModel.aimAt). Pure
         // function of time, like the rest.
-        const nb = e.nb, un = e.unit, deadBit = dead ? DEAD_BIT : 0, gun = e.gun;
+        const nb = e.nb, un = e.unit, deadBit = dead ? DEAD_BIT : 0, gun = e.gun, rf = e.rfEng ? model.riftEngines(e, t) : null;
         let aimA = null, aimS = null;
         if (gun) { // flak and plasma turrets turn to aim (22 Nov 2026); a wreck's stays where it was when it broke off
           const src = e.kind === 0 ? e : e.parent, at = e.kind === 0 ? t : e.t0, G = model.designs[src.design]._guns;
@@ -771,6 +826,10 @@ export class Renderer {
           const v = un[i] ? un[i] - 1 : (i * 2654435761) >>> 29; // weapons: the way they point (+ place in a unit); else variety
           const g = gun ? gun[i] : -1; // a block of a turning turret: its aim and ticks since it fired ride in the size slot
           if (g >= 0) solid.push(x, y, tr.a, aimA[g], aimS[g], 10 + type + 16 * mask + 256 * v + deadBit, pal[type]);
+          else if (type === BT.RIFT) { // shader type 0; its charge rides in the size slot (riftPhase)
+            const k = rf ? e.rfEng.blk[i] : -1;
+            solid.push(x, y, tr.a, k >= 0 ? rf.chg[k] : 0, k >= 0 ? rf.st[k] : 0, 10 + 16 * mask + 256 * v + deadBit, pal[type]);
+          }
           else solid.push(x, y, tr.a, 0.5, 0.5, 10 + type + 16 * mask + 256 * v + deadBit, pal[type]);
           blocks++;
         }
@@ -787,6 +846,7 @@ export class Renderer {
           glow.push(tr.x + fx * c - fy * s, tr.y + fx * s + fy * c, tr.a, len + 0.2, 0.55, 1, eng);
         }
         if (e.shN) this.drawShield(model, e, t, tr, px);
+        if (e.rfEng) this.drawRiftEngine(model, e, t, tr, px);
       } else if (t - e.t0 < 14) {
         const k = 1 - (t - e.t0) / 14;
         glow.push(tr.x, tr.y, 0, e.radius * 1.3, e.radius * 1.3, 1, (C.hotChunk & 0xffffff) | ((k * 170) << 24));
@@ -909,11 +969,14 @@ export class Renderer {
     if (m.frag) this.drawShrapnel(m.frag, t, vis, minW);
     if (m.auto) this.drawTracers(m.auto, t, vis, minW);
     if (m.fighter) this.drawFighters(m.fighter, t, vis, minW);
+    if (m.rift) this.drawRifts(m.rift, t, vis, minW);
+    if (m.riftShot) this.drawRiftShots(m.riftShot, t, vis, minW);
     // Detonations: 0 = missile shot down, 1 = cannon shell, 2 = heavy missile, 3 = heavy-laser block cooking off,
     // 4 = plasma bolt bursting into a hull, 5 = plasma bolt's final blast (both blue)
     const E = m.expl;
     const LIFE = [6, 8, 24, 22, 12, 24, 0, 22, 16], BASE = [1, 1.5, 5, 3, 3, 6, 0, 6, 2.5], GROW = [2.5, 5, 15, 16, 9, 20, 0, 24, 8]; // 7: shield generator exploding, 8: explosive cannon shell (20 Nov 2026)
-    for (let i = lowerBound(E.t, t - FLAK_LIFE); i < E.n && E.t[i] <= t; i++) {
+    for (let i = lowerBound(E.t, t - Math.max(FLAK_LIFE, RIFT_BOOM)); i < E.n && E.t[i] <= t; i++) {
+      if (E.s[i] === 11 || E.s[i] === 12) { this.drawRiftBoom(E, i, t, vis, minW); continue; }
       if (E.s[i] === 6) { this._hasFrag = !!(m.frag && m.frag.n > 0); this.drawFlakBurst(E, i, t, vis, minW); continue; }
       if (E.s[i] === 9) { this.drawFlakHit(E, i, t, vis, minW); continue; }
       if (E.s[i] === 10) { this.drawFlakFire(E, i, t, vis, minW); continue; }
@@ -950,6 +1013,172 @@ export class Renderer {
       const u = (t - t0) / 20, R = r * (0.6 + u * 1.6);
       g.push(x, y, 0, R, R, 1, alpha(C.boom, (1 - u) * 0.9));
       if (u < 0.35) g.push(x, y, 0, R * 0.55, R * 0.55, 1, alpha(C.boomCore, 1 - u / 0.35));
+    }
+  }
+
+  /** A rift engine's glow over its ship, so it reads at any zoom: swells as it charges, blazes while its rift is open. */
+  drawRiftEngine(model, e, t, tr, px) {
+    const E = model.riftEngines(e, t), g = this.glow, c = Math.cos(tr.a), s = Math.sin(tr.a);
+    for (let k = 0; k < E.lx.length; k++) {
+      // a destroyed engine has no glow (its blocks are gone): look at one block near its middle
+      let alive = false;
+      for (let i = 0; i < E.blk.length && !alive; i++) if (E.blk[i] === k && Math.abs(e.lx[i] - E.lx[k]) < 3 && Math.abs(e.ly[i] - E.ly[k]) < 3 && e.death[i] > t) alive = true;
+      if (!alive) continue;
+      const x = tr.x + E.lx[k] * c - E.ly[k] * s, y = tr.y + E.lx[k] * s + E.ly[k] * c, ch = E.chg[k], open = E.st[k] > 0;
+      const pulse = 0.85 + 0.15 * Math.sin(t * (0.15 + 0.5 * ch) + k);
+      const R = Math.max(8 + 22 * ch + (open ? 14 : 0), px * 3);
+      g.push(x, y, 0, R * 1.6, R * 1.6, 1, alpha2(C.rfGlow, (0.08 + 0.22 * ch + (open ? 0.2 : 0)) * pulse));
+      g.push(x, y, 0, R * 0.35, R * 0.35, 1, alpha2(C.rfCore, (0.15 + 0.45 * ch + (open ? 0.3 : 0)) * pulse));
+    }
+  }
+
+  /**
+   * Open rifts (22 Nov 2026): a green tear in space among the enemy, a dark-green well with a bright rim and
+   * turning spiral arms, its projectiles gathering one by one and whipping round it faster and faster
+   * (positions from src/shared/rift.js, pure functions of time) with crackling arcs, then a flash as they
+   * are released (they are shots of kind 8 from then on: drawRiftShots), or an implosion if its engine was lost.
+   */
+  drawRifts(F, t, vis, minW) {
+    const g = this.glow, W = RIFT_W, Rr = W.radius, P = this._rfp || (this._rfp = { x: 0, y: 0, vx: 0, vy: 0, r: 0, rr: 0, grow: 0 });
+    const Q = this._rfq || (this._rfq = { x: 0, y: 0, vx: 0, vy: 0, r: 0, rr: 0, grow: 0 });
+    for (let i = 0; i < F.n; i++) {
+      const t0 = F.t0[i], t1 = F.t1[i], end = F.end[i];
+      if (t < t0 || t > t1 + 20 || !vis(F.x[i], F.y[i], Rr * 3 + 60)) continue;
+      const x = F.x[i], y = F.y[i], n = F.cnt[i], seed = F.seed[i];
+      if (t <= t1) {
+        const a = (t - t0) * 0.1, fill = Math.min(1, a / W.swirl), flick = 0.85 + 0.15 * Math.sin(t * 0.9 + i);
+        // the tear opening: a flash and a ring racing out
+        if (a < 2) {
+          const u = a / 2;
+          g.push(x, y, 0, 20 + 70 * u, 20 + 70 * u, 1, alpha2(C.rfGlow, 0.8 * (1 - u)));
+          if (u < 0.4) g.push(x, y, 0, 10 * (1 - u), 10 * (1 - u), 1, alpha2(C.rfCore, 1 - u / 0.4));
+          const rr = (Rr * 1.4 * Math.min(1, u * 1.6)) / 0.84;
+          g.push(x, y, 0, rr, rr, 5, alpha2(C.rfArc, 0.9 * (1 - u)));
+        }
+        const open = Math.min(1, a / 1.2);
+        // the well: a deep green haze, a bright rim, an inner ring tightening round the eye
+        g.push(x, y, 0, Rr * 1.5 * open, Rr * 1.5 * open, 1, alpha2(C.rfDeep, (0.35 + 0.25 * fill) * flick));
+        const rim = (Rr * (1.02 + 0.03 * Math.sin(t * 0.7))) / 0.84 * open;
+        g.push(x, y, 0, rim, rim, 5, alpha2(C.rfGlow, (0.35 + 0.4 * fill) * flick));
+        g.push(x, y, 0, rim * 1.06, rim * 1.06, 5, alpha2(C.rfDeep, 0.5 * fill));
+        const ir = (Rr * (0.24 - 0.08 * fill)) / 0.84 * open;
+        g.push(x, y, 0, ir, ir, 5, alpha2(C.rfArc, 0.5 + 0.4 * fill));
+        g.push(x, y, 0, Math.max(3 + 6 * fill, minW * 3), Math.max(3 + 6 * fill, minW * 3), 1, alpha2(C.rfCore, (0.5 + 0.5 * fill) * flick));
+        // three spiral arms turning with the vortex
+        const rot = t * (0.012 + 0.05 * fill);
+        for (let arm = 0; arm < 3; arm++) {
+          let px = x, py = y;
+          for (let j = 1; j <= 14; j++) {
+            const rho = (j / 14) * Rr * 1.15 * open, ph = arm * 2.0944 + rot + rho * 0.06;
+            const qx = x + Math.cos(ph) * rho, qy = y + Math.sin(ph) * rho;
+            const k = (1 - j / 15) * (0.25 + 0.5 * fill);
+            g.push((px + qx) / 2, (py + qy) / 2, Math.atan2(qy - py, qx - px), Math.hypot(qx - px, qy - py) / 2 + 0.3, Math.max(2.4 - j * 0.1, minW * 1.5), 4, alpha2(C.rfTrail, k));
+            px = qx; py = qy;
+          }
+        }
+        // the projectiles, each with a short curved trail
+        let last = -1;
+        for (let k = 0; k < n; k++) {
+          if (!riftParticle(k, n, seed, a, P)) break;
+          last = k;
+          const px = x + P.x, py = y + P.y;
+          let hx = px, hy = py;
+          for (let j = 1; j <= 3; j++) {
+            if (!riftParticle(k, n, seed, a - j * 0.07, Q)) break;
+            const qx = x + Q.x, qy = y + Q.y;
+            g.push((hx + qx) / 2, (hy + qy) / 2, Math.atan2(qy - hy, qx - hx), Math.hypot(qx - hx, qy - hy) / 2 + 0.2, Math.max(1.3 - j * 0.25, minW), 4, alpha2(C.rfTrail, 0.7 - j * 0.18));
+            hx = qx; hy = qy;
+          }
+          const fl = 0.8 + 0.2 * Math.sin(t * 1.3 + k * 2.1);
+          g.push(px, py, 0, Math.max(3.2, minW * 4) * fl, Math.max(3.2, minW * 4) * fl, 1, alpha2(C.rfGlow, 0.55));
+          g.push(px, py, 0, Math.max(1.1, minW * 1.6), Math.max(1.1, minW * 1.6), 1, alpha2(C.rfCore, 0.95));
+          if (P.grow < 0.35) g.push(x, y, 0, 6, 6, 1, alpha2(C.rfCore, 0.5 * (1 - P.grow / 0.35))); // a spark at the eye as each one comes through
+        }
+        // crackling arcs from the eye to a few of them, new ones every 0.3 s
+        if (last >= 0) {
+          const slot = Math.floor(t / 3), life = 1 - (t - slot * 3) / 3;
+          for (let arc = 0; arc < 2 + Math.round(3 * fill); arc++) {
+            const k = Math.floor(hash01(slot * 7 + i, arc) * (last + 1));
+            if (!riftParticle(k, n, seed, a, P)) continue;
+            let px = x, py = y;
+            for (let j = 1; j <= 5; j++) {
+              const f = j / 5, jit = j < 5 ? (hash01(slot * 13 + arc, j + i) - 0.5) * 9 : 0;
+              const qx = x + P.x * f - (P.y / (P.r || 1)) * jit, qy = y + P.y * f + (P.x / (P.r || 1)) * jit;
+              g.push((px + qx) / 2, (py + qy) / 2, Math.atan2(qy - py, qx - px), Math.hypot(qx - px, qy - py) / 2 + 0.3, Math.max(0.6, minW), 4, alpha2(C.rfArc, 0.9 * life));
+              px = qx; py = qy;
+            }
+          }
+        }
+        continue;
+      }
+      const u = (t - t1) / 20; // after the rift ends: 2 s
+      if (end === 0) { // released: a burst of light and a shock ring
+        g.push(x, y, 0, Rr * (1.2 + 2.5 * u), Rr * (1.2 + 2.5 * u), 1, alpha2(C.rfGlow, 0.9 * (1 - u)));
+        if (u < 0.3) g.push(x, y, 0, Rr * 0.6 * (1 - u), Rr * 0.6 * (1 - u), 1, alpha2(C.rfCore, 1 - u / 0.3));
+        const rr = (Rr * (1.1 + 6 * u)) / 0.84;
+        g.push(x, y, 0, rr, rr, 5, alpha2(C.rfArc, 0.8 * (1 - u)));
+      } else if (end === 1) { // collapsed: everything falls into the eye, which pinches shut with a pop
+        const v = Math.min(1, u * 2), a = (t1 - t0) * 0.1;
+        if (v < 1) {
+          const sh = (1 - v) * (1 - v);
+          for (let k = 0; k < n; k++) {
+            if (!riftParticle(k, n, seed, a + (t - t1) * 0.1, P)) break;
+            g.push(x + P.x * sh, y + P.y * sh, 0, Math.max(2.4, minW * 3), Math.max(2.4, minW * 3), 1, alpha2(C.rfGlow, 0.6 * (1 - v)));
+          }
+          const rr = (Rr * (1 - v)) / 0.84;
+          g.push(x, y, 0, rr, rr, 5, alpha2(C.rfGlow, 0.8 * (1 - v)));
+        } else {
+          const w = (u - 0.5) * 2;
+          g.push(x, y, 0, 8 + 30 * w, 8 + 30 * w, 1, alpha2(C.rfCore, 0.9 * (1 - w)));
+        }
+      }
+    }
+  }
+
+  /** Released rift projectiles (shot kind 8): green orbs with a glowing trail, flying straight out. */
+  drawRiftShots(S, t, vis, minW) {
+    const g = this.glow;
+    const [la, lb] = S.live(t);
+    for (let q = la; q < lb; q++) {
+      const i = S.liveIdx[q];
+      if (S.t0[i] > t || t > S.t1[i]) continue;
+      const age = t - S.t0[i], vx = S.vx[i], vy = S.vy[i], x = S.x[i] + vx * age, y = S.y[i] + vy * age;
+      if (!vis(x, y, 20)) continue;
+      const fade = S.hit[i] ? 1 : Math.min(1, (S.t1[i] - t) / 15);
+      const a = Math.atan2(vy, vx), c = Math.cos(a), s = Math.sin(a);
+      const trail = Math.min(age * Math.hypot(vx, vy), 16) / 2;
+      if (trail > 0.3) {
+        g.push(x - c * trail, y - s * trail, a, trail, Math.max(2.6, minW * 3), 2, alpha2(C.rfGlow, 0.45 * fade));
+        g.push(x - c * trail, y - s * trail, a, trail, Math.max(0.9, minW * 1.2), 2, alpha2(C.rfTrail, 0.9 * fade));
+      }
+      const fl = 0.85 + 0.15 * Math.sin(t * 2.3 + i);
+      g.push(x, y, 0, Math.max(3.6, minW * 4) * fl, Math.max(3.6, minW * 4) * fl, 1, alpha2(C.rfGlow, 0.6 * fade));
+      g.push(x, y, 0, Math.max(1.3, minW * 1.8), Math.max(1.3, minW * 1.8), 1, alpha2(C.rfCore, fade));
+    }
+  }
+
+  /** Explosion 11: a rift projectile's green blast. 12: a rift engine detonating, a huge green fireball and shock ring. */
+  drawRiftBoom(E, i, t, vis, minW) {
+    const g = this.glow, age = t - E.t[i], x = E.x[i], y = E.y[i];
+    if (E.s[i] === 11) {
+      const life = 16;
+      if (age > life || !vis(x, y, 20)) return;
+      const u = age / life, r = 2.5 + 11 * u;
+      g.push(x, y, 0, r, r, 1, alpha2(C.rfGlow, 1 - u));
+      if (u < 0.35) g.push(x, y, 0, r * 0.5, r * 0.5, 1, alpha2(C.rfCore, 1 - u / 0.35));
+      if (u < 0.6) g.push(x, y, 0, (r * 1.2) / 0.84, (r * 1.2) / 0.84, 5, alpha2(C.rfArc, 0.5 * (1 - u / 0.6)));
+      return;
+    }
+    if (age > RIFT_BOOM || !vis(x, y, 300)) return;
+    const u = age / RIFT_BOOM, R = 30 + 140 * Math.sqrt(u);
+    g.push(x, y, 0, R, R, 1, alpha2(C.rfGlow, 0.9 * (1 - u)));
+    g.push(x, y, 0, R * 0.6, R * 0.6, 1, alpha2(C.boom, 0.7 * (1 - u) * (1 - u)));
+    if (u < 0.25) g.push(x, y, 0, 40 * (1 - u * 4) + 10, 40 * (1 - u * 4) + 10, 1, alpha2(C.rfCore, 1 - u * 4));
+    const rr = (40 + 320 * u) / 0.84;
+    g.push(x, y, 0, rr, rr, 5, alpha2(C.rfArc, 0.8 * (1 - u)));
+    for (let k = 0; k < 16; k++) { // green streaks flung out
+      const ang = hash01(i, k) * 6.283, d = (30 + 200 * hash01(i, k + 20)) * Math.sqrt(u), len = 6 + 18 * (1 - u);
+      g.push(x + Math.cos(ang) * d, y + Math.sin(ang) * d, ang, len, Math.max(1.4, minW * 1.5), 2, alpha2(C.rfTrail, 1 - u));
     }
   }
 

@@ -11,7 +11,8 @@
 //    their position at any time with a formula and nothing has to be recorded.
 //  * Everything is recorded as events + low-rate transform samples (see toReplay()).
 
-import { BT, BLOCKS, WEAPON, MULTIBLOCK, COOKOFF, FLAK_POP, SHIELD, shieldRegen, shieldCap, isWeapon, flakBurstValue } from '../shared/blocks.js';
+import { BT, BLOCKS, WEAPON, MULTIBLOCK, COOKOFF, FLAK_POP, RIFT_POP, SHIELD, shieldRegen, shieldCap, isWeapon, flakBurstValue } from '../shared/blocks.js';
+import { riftParticle, riftSpeedStep } from '../shared/rift.js';
 import { lineOfFire, updateLineOfFire, binOf, binOpen, binAngle, ARC_BINS } from '../shared/arcs.js';
 import { bayRoute } from '../shared/bayRoute.js';
 import { mulberry32 } from '../shared/rng.js';
@@ -52,7 +53,9 @@ export const MAX_TEAMS = 16; // sides in one battle (players plus militia); fr[]
 const CHUNK_RETIRE_TICKS = Infinity;
 const FLAK_STAND = [2, 6]; // a burst goes off this many blocks short of the hull it was walked to (fireFlak)
 const FLAK_PICKS = 16, FLAK_RECENT = 30, FLAK_CROWD_R = 40, FLAK_CROWD_EVERY = 10; // flak: ships looked at per burst, ticks a target counts as just hit, crowd radius beyond its hull, crowd recount (ticks)
-const K_KINETIC = 0, K_SHELL = 1, K_MISSILE = 2, K_PLASMA = 3, K_FIGHTER = 4, K_FLAK = 5, K_FRAG = 6, K_AUTO = 7; // K_AUTO: auto gun bullets (20 Nov 2026), handled like shells
+const K_KINETIC = 0, K_SHELL = 1, K_MISSILE = 2, K_PLASMA = 3, K_FIGHTER = 4, K_FLAK = 5, K_FRAG = 6, K_AUTO = 7, K_RIFT = 8; // K_AUTO: auto gun bullets (20 Nov 2026), handled like shells; K_RIFT: the rift engine's green projectiles (22 Nov 2026)
+const RIFT_W = WEAPON[BT.RIFT];
+const RIFT_PICKS = 24, RIFT_NEAR = 200, RIFT_CLEAR = 20; // rift spot: enemy ships looked at, how far round each counts as its crowd, clear space wanted round the centre
 // Fighters (owner, Nov 2026): launched by fighter bays, kept in their own list (this.Fi), not P.
 const FIGHTER = WEAPON[BT.BAY].fighter;
 const FIGHTER_R = 2; // how close a shot must pass to hit one (blocks)
@@ -164,6 +167,8 @@ export class Battle {
     this.shoved = []; // debris pushed by ships since its last shove record
     this.cookoffs = []; // world x, y pairs of heavy-laser blocks destroyed this tick
     this.flakPops = []; // ship, cell pairs of flak cannon blocks destroyed this tick
+    this.rifts = []; // open rifts (rift engine): { e, w, x, y, n, seed, rec } (see fireRift)
+    this._rp = { x: 0, y: 0, vx: 0, vy: 0, r: 0, rr: 0, grow: 0 };
     this.stamp = new Int32Array(8192);
     this.stampGen = 1;
     this.queue = new Int32Array(8192);
@@ -220,13 +225,17 @@ export class Battle {
         (e.gens ||= []).push({ cells: group, lx: sx / group.length, ly: sy / group.length, popped: false });
         continue;
       }
+      if (t === BT.RIFT) { // the rift engine needs no line of sight: it charges, then opens a rift (fireRift)
+        e.weapons.push({ cell: group[0], cells: group, type: t, lx: sx / group.length, ly: sy / group.length, cd: RIFT_W.charge + this.rng() * 3, ...arcFields(), omni: true });
+        continue;
+      }
       // Fighter bays launch their opening wave early; plasma cannons charge for 4-10 s.
       const cd0 = this.rng();
       const wpn = { cell: group[0], cells: group, type: t, lx: sx / group.length, ly: sy / group.length, cd: t === BT.BAY ? 1 + cd0 * 2 : t === BT.AUTO ? cd0 * 0.6 : 4 + cd0 * 6, ...arcFields() };
       if (t === BT.BAY) wpn.sq = WEAPON[BT.BAY].waves[0]; // fighters still to launch in this wave (wave index w.wv)
       e.weapons.push(wpn);
     }
-    for (const w of e.weapons) this.facing(e, w);
+    for (const w of e.weapons) if (w.type !== BT.RIFT) this.facing(e, w);
     if (e.gens) {
       e.shieldMax = shieldCap(e.gens.length); e.shield = e.shieldMax; e.shieldRegen = shieldRegen(e.gens.length);
       this.recShield(e);
@@ -329,7 +338,7 @@ export class Battle {
       if (T) T[((y / TILE) | 0) * tw + ((x / TILE) | 0)] = 1;
       mass += BLOCKS[t].mass;
       if (t === BT.THRUSTER) thrust += BLOCKS[t].thrust;
-      else if (t >= BT.LASER && t !== BT.SHIELD) gunCost += BLOCKS[t].cost;
+      else if (t >= BT.LASER && t !== BT.SHIELD && t !== BT.RIFT) gunCost += BLOCKS[t].cost;
       else if (t === BT.ARMOR || t === BT.HEAVY || t === BT.FRAME) plating++;
       if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
     }
@@ -355,6 +364,7 @@ export class Battle {
       }
     }
     for (const w of e.weapons) { // armour shot away can open new arcs (and new ways out for fighter bays)
+      if (w.type === BT.RIFT) continue; // needs no line of sight
       updateLineOfFire(e.types, e.hp, e.w, e.h, w);
       if (w.type === BT.BAY) this.bayExit(e, w, false);
     }
@@ -364,7 +374,7 @@ export class Battle {
     e.face.fill(0);
     for (const w of e.weapons) {
       const W = WEAPON[w.type];
-      if (w.type === BT.PD || w.type === BT.BAY || w.buried) continue;
+      if (w.type === BT.PD || w.type === BT.BAY || w.type === BT.RIFT || w.buried) continue;
       const v = (W.kind === 'flak' ? flakBurstValue(W) : W.damage || 1) / W.cooldown;
       for (let k = 0; k < ARC_BINS; k++) if (w.omni || binOpen(w.m0, w.m1, k)) e.face[k] += v;
     }
@@ -391,6 +401,7 @@ export class Battle {
     // Point defence doesn't drive positioning. "Direct" range is the main gun: cannons if fitted, else lasers.
     let shortest = Infinity, longest = 0, cannon = 0, laser = 0, far = 0, near = Infinity;
     for (const w of e.weapons) {
+      if (w.type === BT.RIFT) continue; // no range: it doesn't decide where the ship stands
       const W = WEAPON[w.type], wr = W.range;
       far = Math.max(far, wr); near = Math.min(near, wr);
       if (w.type === BT.PD || w.type === BT.LANCE || w.type === BT.FLAK) continue;
@@ -487,6 +498,7 @@ export class Battle {
     for (let k = 0; k < n; k++) { const e = this.ents[k]; if (e.kind === SHIP && !e.dead) this.fire(e); }
     this.resolveCookoffs();
     this.resolveDamage();
+    if (this.rifts.length) this.updateRifts();
     if (this.now % TRACK_EVERY === 0) this.recordTracks();
 
     this.tick++;
@@ -1142,6 +1154,7 @@ export class Battle {
       w.cd -= DT;
       if (w.cd > 0) continue;
       const W = WEAPON[w.type];
+      if (W.kind === 'rift') { this.fireRift(e, w, W); continue; }
       const wx = e.x + w.lx * e.c - w.ly * e.s, wy = e.y + w.lx * e.s + w.ly * e.c;
       if (W.kind === 'pd') {
         w.cd = this.firePD(e, w, wx, wy, W) ? W.cooldown * (0.85 + 0.3 * this.rng()) : 0.25;
@@ -1216,6 +1229,119 @@ export class Battle {
         Math.round(W.life / DT), e.id, e.team, tg.id, W.damage, W.hp || 0, rec);
       if (W.guided) this.setMissileAim(this.P.n - 1, tg, ax, ay);
     }
+  }
+
+  /**
+   * Doomsday Interdimensional Rift Engine (owner, 22 Nov 2026). No line of sight, no range: charged
+   * (w.sq 0), it opens a rift in an empty space in the middle of the enemy's ships (riftSpot) and swirls
+   * for W.swirl s (w.sq 1) while its projectiles gather (src/shared/rift.js, nothing simulated or recorded
+   * meanwhile: the viewer draws the swirl from the rift record); then it releases them (releaseRift) and
+   * charges again. A rift whose engine is lost collapses (updateRifts).
+   */
+  fireRift(e, w, W) {
+    if (w.sq === 0) {
+      if (!this.riftSpot(e)) { w.cd = 1; return; } // no enemy left to aim at: look again in a second
+      const q = this.evQ, x = Math.round(this._ax * q) / q, y = Math.round(this._ay * q) / q; // on the replay's grid, so sim and viewer swirl round the same point
+      const seed = (this.rng() * 65536) | 0, n = W.count, R = this.R;
+      const rec = R.rfT0.push(this.now);
+      R.rfT1.push(0); R.rfX.push(q16(x, q)); R.rfY.push(q16(y, q)); R.rfN.push(n); R.rfSeed.push(seed); R.rfTeam.push(e.team);
+      R.rfEnd.push(2); R.rfSrc.push(e.id); R.rfLX.push(q16(w.lx, q)); R.rfLY.push(q16(w.ly, q));
+      this.rifts.push({ e, w, x, y, n, seed, rec, t0: this.now });
+      w.sq = 1; w.cd = W.swirl;
+      return;
+    }
+    const k = this.rifts.findIndex((r) => r.w === w);
+    if (k >= 0) { this.releaseRift(this.rifts[k]); this.rifts.splice(k, 1); }
+    w.sq = 0; w.cd = W.charge;
+  }
+
+  /**
+   * Where a rift opens: among up to RIFT_PICKS armed enemy ships, the one with the most enemy value
+   * within RIFT_NEAR of it (a spot near a rift already open counts far less, so several engines spread
+   * out), × random; the rift goes at the value-weighted middle of the enemy ships round it, moved out to
+   * the nearest point with RIFT_CLEAR blocks of open space round it. Sets _ax/_ay; false if no enemy.
+   */
+  riftSpot(e) {
+    const pool = this.foeArmed[e.team], n = pool.length, fr = this.fr, T = e.team << 4, N2 = RIFT_NEAR * RIFT_NEAR;
+    if (!n) return false;
+    let best = null, bs = -1;
+    for (let k = 0; k < Math.min(RIFT_PICKS, n); k++) {
+      const o = n <= RIFT_PICKS ? pool[k] : pool[(this.rng() * n) | 0];
+      if (o.dead) continue;
+      let v = 0;
+      this.grid.queryBox(o.x - RIFT_NEAR, o.y - RIFT_NEAR, o.x + RIFT_NEAR, o.y + RIFT_NEAR, (s) => {
+        if (s.kind === SHIP && !s.dead && !fr[T | s.team] && (s.x - o.x) ** 2 + (s.y - o.y) ** 2 < N2) v += s.worth;
+      });
+      for (const r of this.rifts) if ((r.x - o.x) ** 2 + (r.y - o.y) ** 2 < 160 * 160) v *= 0.15;
+      v *= 0.8 + 0.4 * this.rng();
+      if (v > bs) { bs = v; best = o; }
+    }
+    if (!best) return false;
+    let sx = 0, sy = 0, sw = 0;
+    this.grid.queryBox(best.x - RIFT_NEAR, best.y - RIFT_NEAR, best.x + RIFT_NEAR, best.y + RIFT_NEAR, (s) => {
+      if (s.kind === SHIP && !s.dead && !fr[T | s.team] && (s.x - best.x) ** 2 + (s.y - best.y) ** 2 < N2) { sx += s.x * s.worth; sy += s.y * s.worth; sw += s.worth; }
+    });
+    const cx = sw ? sx / sw : best.x, cy = sw ? sy / sw : best.y;
+    for (let ring = 0; ring <= 24; ring++) {
+      const rad = ring * 8, m = ring ? ring * 6 : 1, a0 = this.rng() * TWO_PI;
+      for (let j = 0; j < m; j++) {
+        const a = a0 + (j * TWO_PI) / m, x = cx + Math.cos(a) * rad, y = cy + Math.sin(a) * rad;
+        if (this.riftClear(x, y)) { this._ax = x; this._ay = y; return true; }
+      }
+    }
+    this._ax = cx; this._ay = cy; // packed solid: open it in the middle anyway
+    return true;
+  }
+
+  /** No ship or wreck within RIFT_CLEAR of (x, y)? (Boxes round their live blocks.) */
+  riftClear(x, y) {
+    let ok = true;
+    const R = RIFT_CLEAR;
+    this.grid.queryBox(x - R, y - R, x + R, y + R, (s) => { if (!s.dead && !s.retired && this.boxGap(s, x, y) < R) { ok = false; return true; } });
+    return ok;
+  }
+
+  /** The swirl is over: every projectile flies off from where the swirl has it now (see rift.js). */
+  releaseRift(r) {
+    const W = RIFT_W, a = (this.now - r.t0) * DT, p = this._rp, life = Math.round(W.life / DT);
+    for (let k = 0; k < r.n; k++) {
+      if (!riftParticle(k, r.n, r.seed, a, p)) continue;
+      const step = riftSpeedStep(r.seed, k), v = (W.speed * step) / 200;
+      const x = r.x + p.x, y = r.y + p.y;
+      const rec = this.shotStart(K_RIFT, r.e.team, x, y, Math.atan2(p.vy, p.vx), false, step);
+      this.addProjectile(K_RIFT, BT.RIFT, x, y, p.vx * v, p.vy * v, life, -1, r.e.team, -1, W.damage, 0, rec);
+    }
+    this.endRift(r, 0);
+  }
+
+  /** end: 0 released, 1 collapsed (its engine was lost), 2 still open when the battle ended. */
+  endRift(r, end) {
+    this.R.rfT1.set(r.rec, this.now); this.R.rfEnd.set(r.rec, end);
+  }
+
+  /** Rifts whose engine blew up, broke off or went down with its ship collapse. An open rift keeps the battle going. */
+  updateRifts() {
+    const L = this.rifts;
+    for (let k = 0; k < L.length; k++) {
+      const r = L[k];
+      if (r.e.dead || r.w.popped || !r.e.weapons.includes(r.w)) { this.endRift(r, 1); r.w.sq = 0; L.splice(k--, 1); continue; }
+      this.lastClosing = this.now;
+    }
+  }
+
+  /** A rift engine lost a block: once RIFT_POP.after are gone the whole engine detonates. */
+  popRift(e, i) {
+    let w = null;
+    for (const o of e.weapons) if (o.type === BT.RIFT && !o.popped && o.cells.includes(i)) { w = o; break; }
+    if (!w) return;
+    let lost = 0;
+    for (const c of w.cells) if (e.hp[c] <= 0) lost++;
+    if (lost < RIFT_POP.after) return;
+    w.popped = true;
+    this.killCells(e, w.cells);
+    const x = e.x + w.lx * e.c - w.ly * e.s, y = e.y + w.lx * e.s + w.ly * e.c;
+    this.recExplosion(x, y, 12); // 12: rift engine detonating
+    this.blast(x, y, RIFT_POP.radius, RIFT_POP.damage, -1, true);
   }
 
   /**
@@ -1621,6 +1747,16 @@ export class Battle {
         if (hit) {
           if (this.canDamage(this.hitE, P.team[i])) { const he = this.hitE, hc = this.hitCell; this.damageCell(he, hc, P.dmg[i] * (FRAG_VS[he.types[hc]] ?? 1), WEAPON[BT.FLAK].shieldMult); }
           this.shotEnd(rec, this.now - 1 + this.hitT, 1);
+          this.removeProjectile(i--);
+          continue;
+        }
+      } else if (kind === K_RIFT) {
+        // Rift projectile: flies over friendly ships, explodes on the first enemy ship or wreck it meets.
+        if (this.sweep(x0, y0, x1, y1, -1, P.team[i])) {
+          const t = this.hitT, hx = x0 + (x1 - x0) * t, hy = y0 + (y1 - y0) * t;
+          this.blast(hx, hy, RIFT_W.splash, P.dmg[i], P.team[i]);
+          this.shotEnd(rec, this.now - 1 + t, 1);
+          this.recExplosion(hx, hy, 11); // 11: green rift blast
           this.removeProjectile(i--);
           continue;
         }
@@ -2104,7 +2240,7 @@ export class Battle {
     const rec = R.shotT0.push(this.now);
     R.shotSpd.push(spd); // speed × 200 / the kind's shotSpeed, 0 = exactly shotSpeed (only shrapnel varies)
     R.shotFlight.push(0); R.shotX.push(q16(x, this.evQ)); R.shotY.push(q16(y, this.evQ)); R.shotAng.push(qAng(ang));
-    R.shotHit.push(0); R.shotTeam.push(team); R.shotKind.push(kind === K_AUTO ? 7 : kind === K_FRAG ? 6 : kind === K_FLAK ? 5 : kind === K_FIGHTER ? 4 : guided ? 3 : kind === K_MISSILE ? 1 : kind === K_PLASMA ? 2 : 0);
+    R.shotHit.push(0); R.shotTeam.push(team); R.shotKind.push(kind === K_RIFT ? 8 : kind === K_AUTO ? 7 : kind === K_FRAG ? 6 : kind === K_FLAK ? 5 : kind === K_FIGHTER ? 4 : guided ? 3 : kind === K_MISSILE ? 1 : kind === K_PLASMA ? 2 : 0);
     return rec;
   }
   /** hit: 0 expired, 1 hit something, 2 shot down by point defence. */
@@ -2224,7 +2360,7 @@ export class Battle {
       // chain reaction through the rest of the gun doesn't recurse.
       const lx = (i % e.w) + 0.5 - e.w / 2, ly = ((i / e.w) | 0) + 0.5 - e.h / 2;
       this.cookoffs.push(e.x + lx * e.c - ly * e.s, e.y + lx * e.s + ly * e.c);
-    } else if ((e.types[i] === BT.FLAK || e.types[i] === BT.SHIELD) && e.kind === SHIP) this.flakPops.push(e, i);
+    } else if ((e.types[i] === BT.FLAK || e.types[i] === BT.SHIELD || e.types[i] === BT.RIFT) && e.kind === SHIP) this.flakPops.push(e, i);
   }
 
   /** Destroy the rest of a unit outright (it blew up): its own ship's shield doesn't stop that. */
@@ -2286,6 +2422,7 @@ export class Battle {
       const e = F[k], i = F[k + 1];
       if (e.dead) continue;
       if (e.types[i] === BT.SHIELD) { this.popShield(e, i); continue; }
+      if (e.types[i] === BT.RIFT) { this.popRift(e, i); continue; }
       let w = null;
       for (const o of e.weapons) if (o.type === BT.FLAK && !o.popped && o.cells.includes(i)) { w = o; break; }
       if (!w) continue;
@@ -2693,6 +2830,11 @@ export class Battle {
       gmRec: C(Uint32Array), gmT: C(Uint32Array), gmX: C(Int16Array), gmY: C(Int16Array),
       // Shields: from tick shT ship shEnt's shield pool is shV / 255 of its size then (shield generators).
       shT: C(Uint16Array), shEnt: C(Uint32Array), shV: C(Uint8Array),
+      // Rifts (rift engine, 22 Nov 2026): opened at tick rfT0 at rfX/rfY by ship rfSrc's engine (centre rfLX/rfLY in
+      // the ship's frame, 1/EV_Q block) for side rfTeam; rfN projectiles, swirl from src/shared/rift.js with rfSeed;
+      // at rfT1 released (rfEnd 0, they become shots of kind 8), collapsed (1, the engine was lost) or the battle ended (2).
+      rfT0: C(Uint16Array), rfT1: C(Uint16Array), rfX: C(Int16Array), rfY: C(Int16Array), rfN: C(Uint16Array), rfSeed: C(Uint16Array),
+      rfTeam: C(Uint8Array), rfEnd: C(Uint8Array), rfSrc: C(Uint32Array), rfLX: C(Int16Array), rfLY: C(Int16Array),
     };
   }
 
@@ -2728,6 +2870,8 @@ export class Battle {
       if (P.kind[i] === K_MISSILE && WEAPON[P.wtype[i]].guided) { this.guidedPoint(i, P.x[i], P.y[i], this.now); this.shotEnd(P.rec[i], this.now, 1); continue; }
       this.shotEnd(P.rec[i], this.now + P.life[i], 0);
     }
+    for (const r of this.rifts) this.endRift(r, 2); // still swirling when the battle ended
+    this.rifts.length = 0;
     const Fi = this.Fi; // fighters still flying at the end
     for (let i = 0; i < Fi.n; i++) { this.fighterPoint(i, this.now); this.shotEnd(Fi.rec[i], this.now, 1); }
     const S = this.shipCount;
@@ -2769,7 +2913,7 @@ export class Battle {
     const meta = {
       version: 1, friendlyFire: this.friendlyFire, trackTotal: total, evQ: this.evQ, dt: DT, trackEvery: TRACK_EVERY, shoveEvery: SHOVE_EVERY, velQ: VEL_Q, missileEvery: MISSILE_EVERY, posQ: POS_Q, angQ: ANG_Q,
       ticks: this.tick, shipCount: S, chunkCount: this.byId.length - S,
-      shotSpeed: [WEAPON[BT.CANNON].speed, WEAPON[BT.MISSILE].speed, WEAPON[BT.LANCE].speed, WEAPON[BT.GUIDED].speed, FIGHTER.speed, WEAPON[BT.FLAK].speed, WEAPON[BT.FLAK].fragSpeed, WEAPON[BT.AUTO].speed], fighterSpeed: FIGHTER.speed,
+      shotSpeed: [WEAPON[BT.CANNON].speed, WEAPON[BT.MISSILE].speed, WEAPON[BT.LANCE].speed, WEAPON[BT.GUIDED].speed, FIGHTER.speed, WEAPON[BT.FLAK].speed, WEAPON[BT.FLAK].fragSpeed, WEAPON[BT.AUTO].speed, RIFT_W.speed], fighterSpeed: FIGHTER.speed,
       designs: this.designs.map((d) => ({ name: d.name, cls: d.cls, stance: d.stance, w: d.w, h: d.h, hub: d.hub, cells: Array.from(d.cells) })),
       survivors: [...this.teamAlive], teams: this.nT,
     };

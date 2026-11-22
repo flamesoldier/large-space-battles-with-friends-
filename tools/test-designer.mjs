@@ -4,7 +4,8 @@
 import assert from 'node:assert/strict';
 import { makeDesign, CLASSES } from '../src/shared/designs.js';
 import { Battle } from '../src/sim/battle.js';
-import { BT, MULTIBLOCK, SHIELD, WEAPON, shieldRegen, shieldCap } from '../src/shared/blocks.js';
+import { BT, MULTIBLOCK, SHIELD, WEAPON, RIFT_POP, shieldRegen, shieldCap } from '../src/shared/blocks.js';
+import { riftParticle, riftSpeedStep } from '../src/shared/rift.js';
 import { analyzeDesign, cropDesign, encodeDesign, decodeDesign, weaponFacing } from '../src/shared/shipStats.js';
 import { binOf, binOpen, lineOfFire } from '../src/shared/arcs.js';
 import { shipyardPrice } from '../src/shared/economy.js';
@@ -711,6 +712,67 @@ for (let k = 0; k < FORTRESSES.length; k++) {
   assert.ok(bursts > 20, `flak fired at the big ships (${bursts} bursts)`);
   assert.ok(empty / bursts < 0.05, `flak bursts against titans and dreadnoughts hurt something (${empty} of ${bursts} hit nothing)`);
   console.log(`  flak vs big ships: ${bursts - empty} of ${bursts} bursts hurt something`);
+}
+// ---- Doomsday Interdimensional Rift Engine (owner, 22 Nov 2026)
+{
+  const W = 132, H = 124, cells = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const edge = Math.min(x, y, W - 1 - x, H - 1 - y);
+    cells[y * W + x] = x < 6 ? BT.THRUSTER : edge < 8 ? BT.HEAVY : BT.FRAME;
+  }
+  for (let y = 12; y < 112; y++) for (let x = 20; x < 120; x++) cells[y * W + x] = BT.RIFT;
+  for (let y = 20; y < H - 20; y += 8) cells[y * W + W - 1] = BT.CANNON;
+  cells[62 * W + 10] = BT.HUB;
+  const d = { name: 'rifter', cls: 'leviathan', w: W, h: H, cells, hub: 62 * W + 10, stance: 'standoff' };
+  const a = analyzeDesign(d);
+  assert.ok(a.ok, `rift ship is valid: ${a.errors}`);
+  const rw = a.weapons.find((x) => x.type === BT.RIFT);
+  assert.ok(rw && rw.omni && !rw.buried, 'a rift engine deep inside the hull is not buried: it needs no line of sight');
+  assert.ok(a.warnings.some((x) => x.startsWith('EXPLOSIVE')), 'designer warns the rift engine is explosive');
+  assert.equal(a.fire[BT.RIFT].count, 1);
+  const RW = WEAPON[BT.RIFT];
+  // In battle: charges ~30 s, opens a rift among the enemy, swirls 30 s, releases every projectile from where
+  // the swirl has it (the viewer draws the swirl from the same function), and point defence never touches them.
+  const fr = makeDesign('frigate', 21), ships = [{ design: 0, team: 0, x: -300, y: 0, a: 0 }];
+  for (let k = 0; k < 40; k++) ships.push({ design: 1, team: 1, x: 500 + (k % 5) * 40, y: -320 + Math.floor(k / 5) * 80, a: Math.PI });
+  const b = new Battle({ designs: [d, fr], ships, seed: 4, maxTime: 75 });
+  b.run();
+  const rep = b.toReplay(), c = rep.cols, q = rep.meta.evQ;
+  assert.ok(c.rfT0.length >= 1, 'a rift opened');
+  assert.ok(c.rfT0[0] >= RW.charge * 10 && c.rfT0[0] <= (RW.charge + 4) * 10, `first rift opens after charging (${c.rfT0[0] / 10} s)`);
+  assert.equal(c.rfEnd[0], 0, 'first rift released');
+  assert.ok(Math.abs(c.rfT1[0] - c.rfT0[0] - RW.swirl * 10) <= 1, 'it swirls 30 s');
+  const x0 = c.rfX[0] / q, y0 = c.rfY[0] / q, age = (c.rfT1[0] - c.rfT0[0]) / 10, P = {};
+  let n = 0, hits = 0, worst = 0;
+  for (let i = 0; i < c.shotKind.length; i++) {
+    if (c.shotKind[i] !== 8) continue;
+    assert.notEqual(c.shotHit[i], 2, 'no rift projectile is shot down');
+    if (c.shotT0[i] !== c.rfT1[0]) continue;
+    assert.ok(riftParticle(n, c.rfN[0], c.rfSeed[0], age, P), 'every projectile has appeared by release');
+    worst = Math.max(worst, Math.hypot(c.shotX[i] / q - (x0 + P.x), c.shotY[i] / q - (y0 + P.y)));
+    assert.equal(c.shotSpd[i], riftSpeedStep(c.rfSeed[0], n));
+    if (c.shotHit[i] === 1) hits++;
+    n++;
+  }
+  assert.equal(n, RW.count, 'every projectile released');
+  assert.ok(worst < 0.3, `projectiles leave from where the swirl has them (worst ${worst.toFixed(2)} blocks off)`);
+  assert.ok(hits >= 10, `rift projectiles hit enemies (${hits} of ${n})`);
+  const m = new ReplayModel(packReplay(rep.meta, rep.cols)), E = m.ents[0].rfEng;
+  assert.ok(E && E.lx.length === 1 && m.rift.n === c.rfT0.length && m.riftShot.n >= RW.count, 'viewer reads the rift');
+  assert.ok(Math.abs(E.lx[0] - (70 - W / 2)) < 0.01 && Math.abs(E.ly[0] - (62 - H / 2)) < 0.01, 'viewer finds the engine centre');
+  assert.ok(m.riftEngines(m.ents[0], c.rfT0[0] - 1).chg[0] > 0.95 && m.riftEngines(m.ents[0], c.rfT0[0] + 10).st[0] > 1, 'engine glow charges, then shows its rift open');
+  // Fragile and explosive: 49 lost blocks are fine, the 50th sets off the whole engine; an open rift collapses.
+  const b2 = new Battle({ designs: [d, makeDesign('frigate', 3)], ships: [{ design: 0, team: 0, x: 0, y: 0, a: 0 }, { design: 1, team: 1, x: 1500, y: 0, a: Math.PI }], seed: 2, maxTime: 120 });
+  while (!b2.rifts.length && b2.step());
+  assert.equal(b2.rifts.length, 1, 'the lone ship opened a rift');
+  const e = b2.ents.find((o) => o.id === 0), w = e.weapons.find((o) => o.type === BT.RIFT);
+  for (let k = 0; k < RIFT_POP.after - 1; k++) b2.damageCell(e, w.cells[k * 37], 1e9);
+  b2.resolveCookoffs();
+  assert.ok(!w.popped, 'the engine survives 49 lost blocks');
+  b2.damageCell(e, w.cells[5000], 1e9); b2.resolveCookoffs(); b2.resolveDamage(); b2.updateRifts();
+  assert.ok(w.popped && b2.R.expS.a.slice(0, b2.R.expS.n).includes(12), 'the 50th sets the whole engine off');
+  assert.equal(b2.R.rfEnd.a[0], 1, 'its open rift collapses');
+  console.log(`  rift engine: rift opened at ${c.rfT0[0] / 10} s, ${n} projectiles released, ${hits} hit; engine detonates at ${RIFT_POP.after} lost blocks`);
 }
 console.log(`designer stats match the sim for ${checked} generated designs; validation ok`);
 console.log(`${FORTRESSES.length} Aegis fortresses are valid 150,000 cr defences`);

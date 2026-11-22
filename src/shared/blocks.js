@@ -17,7 +17,8 @@ export const BT = {
   BAY: 12, // fighter bay (owner, Nov 2026): a 6x6 unit that launches a fighter every 30 s
   FLAK: 13, // flak cannon (owner, 14 Nov 2026): a 10x10 unit, long range, shells burst beside lightly armoured ships in a spray of shrapnel
   SHIELD: 14, // shield generator (owner, 15 Nov 2026): a 10x10 unit that gives its ship a regenerating shield pool
-  AUTO: 15, // auto gun (owner, 20 Nov 2026): a 2x2 unit, short range, fires fast inaccurate bullets every 0.2 s. Type 15 is the last the viewer's shape code can hold (10 + type + 16 × sides)
+  AUTO: 15, // auto gun (owner, 20 Nov 2026): a 2x2 unit, short range, fires fast inaccurate bullets every 0.2 s
+  RIFT: 16, // Doomsday Interdimensional Rift Engine (owner, 22 Nov 2026): a 100x100 superweapon that opens a rift among the enemy. The viewer's shape code holds 4 type bits, so it draws this one as shader type 0 (empty cells are never drawn)
 };
 
 // Multi-block weapons: footprint in blocks, and the fraction of those blocks that must
@@ -27,6 +28,7 @@ export const MULTIBLOCK = {
   [BT.BAY]: { size: 6, minIntact: 0.5 },
   [BT.SHIELD]: { size: 10, minIntact: 1 }, // shield generator: the whole unit goes up when any block dies
   [BT.AUTO]: { size: 2, minIntact: 0.5 }, // auto gun: keeps firing while 2 of its 4 blocks survive
+  [BT.RIFT]: { size: 100, minIntact: 0.5 }, // rift engine: blows up long before half of it is gone (RIFT_POP)
   [BT.FLAK]: { size: 10, minIntact: 0.5 }, // flak cannon: same footprint as the plasma cannon // fighter bay (owner: big, it takes up space inside ships): keeps launching while 18 of its 36 blocks survive
 };
 
@@ -56,6 +58,7 @@ export const BLOCKS = {
   [BT.LANCE]: { name: 'Plasma cannon', hp: 750, mass: 4, cost: 15 },
   [BT.AUTO]: { name: 'Auto gun', hp: 300, mass: 2, cost: 125 }, // owner, 20 Nov 2026: 500 cr a 2x2 unit (first 250), 300 hp a block
   [BT.SHIELD]: { name: 'Shield generator', hp: 45, mass: 4, cost: 15 }, // owner, 15 Nov 2026: plasma's price, extremely weak blocks
+  [BT.RIFT]: { name: 'Doomsday Interdimensional Rift Engine', hp: 20, mass: 1, cost: 15 }, // owner, 22 Nov 2026: 150,000 cr a 100x100 unit, fragile and explosive (RIFT_POP)
   [BT.FLAK]: { name: 'Flak cannon', hp: 200, mass: 4, cost: 15 }, // owner, 14 Nov 2026: plasma's size and price, 1,500 a 10x10 unit; it doesn't explode when destroyed, so 200 hp (owner, 15 Nov: plasma's 750 makes up for its chain explosion) // hp was 120 (owner, Nov 2026: plasma ships lost their guns at once); 1,500 a 10x10 unit (was 3,500): an anti-capital weapon, see CLAUDE.md
 };
 
@@ -69,6 +72,9 @@ export const COOKOFF = { radius: 16, damage: 300, refHp: 120 };
 // goes up at once, but the blast barely touches the rest of the ship (radius and peak damage below).
 // The owner suggested 1 block; measured, that stripped big ships of their flak within a minute, see CLAUDE.md.
 export const FLAK_POP = { after: 25, radius: 8, damage: 30 };
+// Rift engine (owner, 22 Nov 2026: "fragile and explosive"): once `after` of its 10,000 blocks are destroyed
+// the whole engine detonates in a huge green blast from its centre that hurts anyone, its own ship included.
+export const RIFT_POP = { after: 50, radius: 70, damage: 900 };
 // Shield generator (owner, 15 Nov 2026). Each working 10x10 generator adds `capacity` to its ship's shield
 // pool and refills it at `regen` per second, all the time. While the pool holds, every hit on the ship
 // (any weapon, its own cook-offs included) drains the pool instead of the blocks; what a hit can't be
@@ -165,12 +171,23 @@ export const WEAPON = {
   // Old replays still have flak shells (shot kind 5) and shrapnel shots (kind 6).
   [BT.FLAK]: { kind: 'flak', range: 900, damage: 40, radius: 20, fragSpeed: 90, scatter: 4, cooldown: 1, fuse: 6, speed: 75, life: 14, maxLead: 4, spread: 0,
     vs: { [4]: 1, [2]: 1, [3]: 1 }, shieldMult: 0.1 }, // shields take 10% (owner, 21 Nov 2026: was 30%); damage share against frame (4), armour (2), heavy armour (3); owner, 15 Nov 2026
+  // Doomsday Interdimensional Rift Engine (owner, 22 Nov 2026, inspired by guided missiles that swirled in
+  // circles in the Elenris Minor replay): needs no line of sight and has no range limit. It charges for
+  // `charge` s, then opens a rift in an empty space in the middle of the enemy's ships; over `swirl` s
+  // `count` green projectiles appear in it one after another and swirl round it, faster and faster, then
+  // all are released at once and fly straight out in every direction at about `speed`, each exploding on
+  // the first enemy ship or wreck it meets (`damage` peak, falling off over `splash` blocks, like a
+  // missile) and flying over friendly ships. Point defence can't shoot them down. Then it charges again.
+  // If the engine is destroyed while its rift is open, the rift collapses. `radius`: the swirl's size;
+  // `orbit`: how fast the projectiles circle at first (blocks/s). `cooldown` is the whole cycle, for
+  // figures only (designer damage/s). Numbers are first guesses: the owner wants the look first.
+  [BT.RIFT]: { kind: 'rift', range: 0, charge: 30, swirl: 30, cooldown: 60, count: 200, damage: 150, splash: 8, speed: 50, life: 10, radius: 45, orbit: 25 },
 };
 
 // Firing arcs: every weapon can fire in any direction where its shot wouldn't pass through its
 // own ship (see arcs.js). The heavy laser looks out from the centre of its 10x10 unit.
 
-export const isWeapon = (t) => (t >= BT.LASER && t <= BT.FLAK) || t === BT.AUTO;
+export const isWeapon = (t) => (t >= BT.LASER && t <= BT.FLAK) || t === BT.AUTO || t === BT.RIFT;
 
 // Hull classes come from block count (the ship designer shows which one a design falls in).
 // Ships can be absurdly big: a 350,000-block worldbreaker duel resolves in about 2 s.

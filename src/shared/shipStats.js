@@ -7,7 +7,7 @@
 // the two agree; if you change the formulas in battle.js, change them here too.
 
 import { bayRoute } from './bayRoute.js';
-import { BT, BLOCKS, WEAPON, MULTIBLOCK, HULL_CLASSES, MAX_BLOCKS, MAX_W, MAX_H, COOKOFF, SHIELD, shieldRegen as shieldRegenOf, shieldCap, isWeapon, flakBurstValue } from './blocks.js';
+import { BT, BLOCKS, WEAPON, MULTIBLOCK, HULL_CLASSES, MAX_BLOCKS, MAX_W, MAX_H, COOKOFF, RIFT_POP, SHIELD, shieldRegen as shieldRegenOf, shieldCap, isWeapon, flakBurstValue } from './blocks.js';
 import { lineOfFire, openDegrees } from './arcs.js';
 
 // Escort and Brawler were taken out (owner, Nov 2026). A design saved with either loads as Front
@@ -134,6 +134,10 @@ export function analyzeDesign(d) {
     if (g.type === BT.SHIELD) continue;
     let sx = 0, sy = 0;
     for (const c of g.cells) { sx += (c % w) + 0.5; sy += ((c / w) | 0) + 0.5; }
+    if (g.type === BT.RIFT) { // needs no line of sight: works from deep inside the ship
+      weapons.push({ type: g.type, cell: g.cells[0], x: sx / g.cells.length, y: sy / g.cells.length, omni: true, buried: false, m0: 0, m1: 0, arcDeg: 360, group: g });
+      continue;
+    }
     const wf = weaponFacing(cells, w, h, g.cells[0], g.cells);
     // A fighter bay with no straight line out can still launch along a path with corners (bayRoute).
     if (g.type === BT.BAY && wf.buried) { wf.route = bayRoute(cells, null, w, h, g.cells); if (wf.route) wf.buried = false; }
@@ -146,11 +150,11 @@ export function analyzeDesign(d) {
     const W = WEAPON[wp.type], f = (fire[wp.type] ||= { count: 0, buried: 0, dps: 0, alpha: 0, range: W.range });
     f.count++;
     if (wp.buried) { f.buried++; continue; }
-    const shot = W.kind === 'flak' ? flakBurstValue(W) : W.damage; // flak: a whole burst
+    const shot = W.kind === 'flak' ? flakBurstValue(W) : W.kind === 'rift' ? W.count * W.damage : W.damage; // flak: a whole burst; rift: every projectile
     f.dps += shot / W.cooldown; f.alpha += shot;
     dps += shot / W.cooldown; alpha += shot; // point defence counts too: it's a real anti-ship gun now (32 every 0.2 s)
   }
-  const ranges = weapons.filter((x) => x.type !== BT.PD && !x.buried).map((x) => WEAPON[x.type].range);
+  const ranges = weapons.filter((x) => x.type !== BT.PD && x.type !== BT.RIFT && !x.buried).map((x) => WEAPON[x.type].range);
 
   // ---- validation
   const cls = hullClassFor(blocks);
@@ -168,6 +172,7 @@ export function analyzeDesign(d) {
   if (badGroups.some((g) => g.type === BT.FLAK)) errors.push('Flak cannons must be whole 10×10 units, not touching each other.');
   if (badGroups.some((g) => g.type === BT.SHIELD)) errors.push('Shield generators must be whole 10×10 units, not touching each other.');
   if (badGroups.some((g) => g.type === BT.AUTO)) errors.push('Auto guns must be whole 2×2 units, not touching each other.');
+  if (badGroups.some((g) => g.type === BT.RIFT)) errors.push('Rift engines must be whole 100×100 units, not touching each other.');
   if (badGroups.some((g) => g.type === BT.BAY)) errors.push(`Fighter bays must be whole ${MULTIBLOCK[BT.BAY].size}×${MULTIBLOCK[BT.BAY].size} units, not touching each other.`);
 
   if (!weapons.length) warnings.push('No weapons: the ship counts as a disarmed hulk in battle.');
@@ -180,6 +185,7 @@ export function analyzeDesign(d) {
   const narrow = weapons.filter((x) => !x.omni && !x.buried && x.arcDeg < 45 && x.type !== BT.BAY);
   if (narrow.length) warnings.push(`${narrow.length} weapon${narrow.length > 1 ? 's have' : ' has'} a firing arc under 45°. Guns that stick out of the hull can cover more.`);
   if (!thrust && blocks > 1) warnings.push('No thrusters: the ship crawls on hub jets (2.5 speed).');
+  if (groups.some((g) => g.type === BT.RIFT && g.ok)) warnings.push(`EXPLOSIVE: rift engine blocks have only ${BLOCKS[BT.RIFT].hp} hp, and once ${RIFT_POP.after} of them are destroyed the whole engine detonates (${RIFT_POP.damage} damage within ${RIFT_POP.radius} blocks of its centre, your own ship included). It needs no line of sight, so bury it deep inside heavy armour.`);
   if (groups.some((g) => g.type === BT.LANCE)) warnings.push(`FRIENDLY FIRE: plasma bolts carve through your own ships too. Plasma cannon blocks also explode when destroyed and chain-react, wrecking everything within about ${COOKOFF.radius} blocks of the gun, your own ship included. Armour it well.`);
 
   // Shield generators: each whole one adds to the shield pool. One that dies explodes, and that sets
