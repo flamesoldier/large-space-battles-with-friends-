@@ -1494,19 +1494,28 @@ designer's numbers against the sim.
   can't fight. Everything else is the normal test battle (your side + extras vs any enemy).
   **Replaced 22 Nov 2026 (owner: "the combat simulator button should lead to a screen where i can select what ships i
   want to fight… several designs against… several designs… every ship currently in the game selectable… a search
-  function like typing gob to find the ship called goblin")**, on `v2-dev`, not live: in `mode: 'sim'` the designer opens
+  function like typing gob to find the ship called goblin")**, live 22 Nov 2026: in `mode: 'sim'` the designer opens
   `#sim` (full-screen section in `designer/index.html`, code under "battle simulator" in `designer/app.js`) instead of the
   test dialog. Two sides, each a search box (name starts-with first, then contains, then owner or hull class; Enter adds
   the top match; up to 80 shown, grouped In this game / On the designer screen / Saved in this browser / Samples when
   empty) and a fleet list (rows of design + count 0–1,000, default `DEFAULT_COPIES`, ✕, Clear, totals). Choices: every
-  design in `world.designs` with thrusters (all players' and militia; defences left out: they can't join a fleet; the
-  galaxy now sends `fixed` for every design), the design on the designer screen, the browser library, samples. Fleets
+  design in `world.designs` (all players' and militia; the galaxy now sends `fixed` for every design), the design on the
+  designer screen, the browser library, samples, and **on side 2 only (owner, same day: "defences should be listed at
+  least for the defending side… test how their fleet would go against a fortress") defences**: groups Defences in this
+  game (any `fixed` or thruster-less design), Saved defences, Aegis fortresses (`loadFortresses()`, unpacked once when the
+  screen opens). Side 2 is headed "defends"; its defences stand in rows round the origin facing side 1
+  (`layoutDefences(..., [π], 2)`), side 2's ships start behind them and side 1 clear of them (`defenceReach`); Swap sides
+  keeps defences on side 2; a defence over 3,000 blocks defaults to 1 copy; prices show "defence, N cr to build (M cr of
+  blocks)", results count block value. Fleets
   are remembered per browser (`lsb.sim.fleets.v1`, keys `group|owner|name|hash`). Fight / Stop, seed, Swap sides;
   `makeVersusScenario(sides, seed)` in `testBattle.js` (both sides placed with `fleetSpots` like the test battle's
   flying ships); result dialog `#sim-res` (winner, per side and per design: ships, survived, value, lost) and Watch
   replay (`playReplay(back)`, Back returns to the result). Ship designer button hides the screen; the designer's
   top-right button reads Battle simulator in this mode and brings it back. Keys are ignored while it's open. Phones:
-  sides stack. Checked in headless Chrome on `dist/galaxy.html` (search, add, fight, replay and back, phone).
+  sides stack. Checked in headless Chrome on `dist/galaxy.html` (search, add, fight, replay and back, phone, defences
+  only on side 2, a defence row in the replay). **Live 22 Nov 2026** with the combat log change (owner: "make it live"; no
+  patch notes). The owner thought the log card's text line was "the battle number and the ships, redundant": that was the
+  made-up text in the preview's fake battles; real entries carry the battle's story there, unchanged.
 - **Start positions** (owner, Nov 2026: "giving the player more strategy is always better"): a
   **Start** picker next to Stance in the ship and defence designers (also explained under "Start
   position" in the side panel): Auto, Front, Middle, Back, Top flank, Bottom flank. Saved with the
@@ -1710,7 +1719,7 @@ economy, fleets, captures, with real battles).
   changed hands, and every siege (Under attack / Attack begins / Joined attack), from the current
   player's side (World taken / World lost / Defended / Repelled / Ambushed / Blocked a fleet). **Since 22 Nov 2026
   (owner: "i only want battles in combat log… colour coded for how big the battles are compared to other battles";
-  `v2-dev`, not live) only entries with a battle** (`isCombat`; sieges and fight-free captures are gone from it and its
+  **live 22 Nov 2026**) only entries with a battle** (`isCombat`; sieges and fight-free captures are gone from it and its
   badge, still in the Battles window's All), **each coloured by size**: `battleSize()` in `galaxy/app.js` ranks the
   battle's total ships (all sides) against every battle in the log (not the filtered list): Epic ≥ 95% of the others
   (and always the biggest), Huge ≥ 80%, Large ≥ 50%, Medium ≥ 20%, Small below; card border tint, a chip "Huge · 2,400

@@ -1167,7 +1167,9 @@ $('replay-close').addEventListener('click', () => {
 // ------------------------------------------------------------ battle simulator
 // Owner, 22 Nov 2026: the galaxy's Battle simulator button opens a screen where you pick the ships
 // for both sides, several designs each, from every ship in the game, with a search box ("gob"
-// finds Goblin). Defences aren't listed: they never move, so they can't join a fleet.
+// finds Goblin). Defences (players' own, saved ones and the Aegis fortresses) can be put on side 2
+// only, the defending side (owner, same day: "test how their fleet would go against a fortress"):
+// they stand in rows facing side 1, exactly like the test battle's defences.
 let simChoices = [];
 const simFleets = [[], []]; // per side: [{ key, count }]
 const SIM_KEY = 'lsb.sim.fleets.v1';
@@ -1185,31 +1187,49 @@ function smallThumb(d) {
   return url;
 }
 const strHash = (t) => { let h = 2166136261; for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
-function simChoice(group, name, owner, d, keyPart) {
+function simChoice(group, name, owner, d, keyPart, fixed = false) {
   const n = countBlocks(d);
-  return { key: `${group}|${owner}|${name}|${keyPart}`, group, name, owner, design: d, cost: designCost(d), cls: hullClassFor(n)?.id || d.cls || '', blocks: n };
+  return { key: `${group}|${owner}|${name}|${keyPart}`, group, name, owner, design: d, cost: designCost(d), cls: hullClassFor(n)?.id || d.cls || '', blocks: n, fixed };
+}
+let fortressDesigns = null; // the four Aegis fortresses, unpacked once
+async function loadFortresses() {
+  if (!fortressDesigns) fortressDesigns = await Promise.all(FORTRESSES.map((f, k) => loadFortress(k)));
+  return fortressDesigns;
 }
 function buildSimChoices() {
   simChoices = [];
   const ok = (d) => { try { const a = analyzeDesign(d); return a.ok && a.weapons.length > 0; } catch { return false; } };
   // Every ship in this galaxy, yours and everyone else's (designs in play are valid already).
+  const defs = [];
   (embed?.designs || []).forEach((o) => {
-    if (o.fixed || o.defence) return;
     try {
       const d = { ...decodeDesign(o.data), name: o.name };
-      if (d.cells.includes(BT.THRUSTER)) simChoices.push(simChoice('In this game', o.name, o.mine ? 'yours' : o.owner, d, strHash(String(o.data.cells ?? ''))));
+      if (o.fixed || o.defence || !d.cells.includes(BT.THRUSTER)) defs.push(simChoice('Defences in this game', o.name, o.mine ? 'yours' : o.owner, d, strHash(String(o.data.cells ?? '')), true));
+      else simChoices.push(simChoice('In this game', o.name, o.mine ? 'yours' : o.owner, d, strHash(String(o.data.cells ?? ''))));
     } catch { /* skip */ }
   });
   if (design && info?.ok && info.weapons.length && !defenseMode()) simChoices.push(simChoice('On the designer screen', design.name || 'Your design', 'designer', { ...design, name: design.name || 'Your design' }, 'now'));
-  library().forEach((o) => { try { const d = decodeDesign(o); if (ok(d)) simChoices.push(simChoice('Saved in this browser', d.name || 'Unnamed', 'saved', d, strHash(String(o.cells ?? '')))); } catch { /* skip */ } });
+  library().forEach((o) => {
+    try {
+      const d = decodeDesign(o);
+      if (!ok(d)) return;
+      if (d.cells.includes(BT.THRUSTER)) simChoices.push(simChoice('Saved in this browser', d.name || 'Unnamed', 'saved', d, strHash(String(o.cells ?? ''))));
+      else defs.push(simChoice('Saved defences', d.name || 'Unnamed', 'saved', d, strHash(String(o.cells ?? '')), true));
+    } catch { /* skip */ }
+  });
   for (const cls of Object.keys(CLASSES)) simChoices.push(simChoice('Samples', `Sample ${cls}`, 'sample', { ...makeDesign(cls, 7), name: `Sample ${cls}` }, cls));
+  // Defences go last (side 2 only), then the four ready-made fortresses.
+  simChoices.push(...defs);
+  if (fortressDesigns) fortressDesigns.forEach((d, k) => simChoices.push(simChoice('Aegis fortresses', FORTRESSES[k].name, 'fortress', d, `f${k}`, true)));
 }
+const simLabel = (c) => c.owner === 'yours' ? 'Yours' : (c.group === 'In this game' || c.group === 'Defences in this game') ? c.owner : c.group;
+const simPrice = (c) => c.fixed ? `defence, ${fmt(defensePrice(c.design))} cr to build (${fmt(c.cost)} cr of blocks)` : `${fmt(c.cost)} cr`;
 const simByKey = (k) => simChoices.find((c) => c.key === k);
 function saveSim() { store.set(SIM_KEY, simFleets.map((f) => f.map(({ key, count }) => ({ key, count })))); }
 function loadSim() {
   const saved = store.get(SIM_KEY, null);
   if (!Array.isArray(saved)) return;
-  saved.slice(0, 2).forEach((f, side) => { simFleets[side] = (Array.isArray(f) ? f : []).filter((x) => simByKey(x.key)).map((x) => ({ key: x.key, count: Math.max(0, Math.min(1000, Math.floor(x.count) || 0)) })); });
+  saved.slice(0, 2).forEach((f, side) => { simFleets[side] = (Array.isArray(f) ? f : []).filter((x) => simByKey(x.key) && (side === 1 || !simByKey(x.key).fixed)).map((x) => ({ key: x.key, count: Math.max(0, Math.min(1000, Math.floor(x.count) || 0)) })); });
 }
 const hl = (text, q) => {
   const t = escapeHtml(text);
@@ -1224,6 +1244,7 @@ function renderSimResults(side) {
   // Name matches first (starting with what you typed, then containing it), then owner or class.
   const scored = [];
   simChoices.forEach((c, k) => {
+    if (c.fixed && side === 0) return; // defences only on the defending side
     const nm = c.name.toLowerCase();
     const s = !q ? 2 : nm.startsWith(q) ? 0 : nm.includes(q) ? 1 : (c.owner.toLowerCase().includes(q) || c.cls.includes(q)) ? 2 : -1;
     if (s >= 0) scored.push([s, k]);
@@ -1234,7 +1255,7 @@ function renderSimResults(side) {
     if (shown >= SIM_SHOW) break;
     const c = simChoices[k];
     if (q === '' && c.group !== grp) { grp = c.group; html += `<div class="grp">${escapeHtml(grp)}</div>`; }
-    html += `<button type="button" class="sim-pick" data-add="${k}"><img alt="" data-thumb="${k}"><span><b>${hl(c.name, q)}</b><small>${escapeHtml(c.owner === 'yours' ? 'Yours' : c.group === 'In this game' ? c.owner : c.group)} · ${escapeHtml(c.cls)} · ${fmt(c.cost)} cr</small></span><span class="add">+ Add</span></button>`;
+    html += `<button type="button" class="sim-pick" data-add="${k}"><img alt="" data-thumb="${k}"><span><b>${hl(c.name, q)}</b><small>${escapeHtml(simLabel(c))} · ${escapeHtml(c.cls)} · ${simPrice(c)}</small></span><span class="add">+ Add</span></button>`;
     shown++;
   }
   if (scored.length > shown) html += `<div class="more">${fmt(scored.length - shown)} more: type to narrow the list.</div>`;
@@ -1249,7 +1270,7 @@ function renderSimFleet(side) {
   const el = box.querySelector('.sim-fleet');
   el.innerHTML = f.length ? f.map((x, i) => {
     const c = simByKey(x.key);
-    return `<div class="sim-row"><img alt="" src="${smallThumb(c.design)}"><span><b>${escapeHtml(c.name)}</b><small>${escapeHtml(c.owner === 'yours' ? 'Yours' : c.group === 'In this game' ? c.owner : c.group)} · ${escapeHtml(c.cls)} · ${fmt(c.cost)} cr each</small></span><input type="number" min="0" max="1000" value="${x.count}" data-count="${i}" title="How many" aria-label="How many ${escapeHtml(c.name)}"><button type="button" class="small" data-del="${i}" title="Remove">✕</button></div>`;
+    return `<div class="sim-row"><img alt="" src="${smallThumb(c.design)}"><span><b>${escapeHtml(c.name)}</b><small>${escapeHtml(simLabel(c))} · ${escapeHtml(c.cls)} · ${simPrice(c)}${c.fixed ? '' : ' each'}</small></span><input type="number" min="0" max="1000" value="${x.count}" data-count="${i}" title="How many" aria-label="How many ${escapeHtml(c.name)}"><button type="button" class="small" data-del="${i}" title="Remove">✕</button></div>`;
   }).join('') : '<div class="empty">No ships yet: search above and press + Add.</div>';
   syncSimTotals(side);
 }
@@ -1264,7 +1285,8 @@ function syncSimTotals(side) {
 function setupSim() {
   if ($('sim-sides').children.length) return;
   $('sim-sides').innerHTML = [0, 1].map((side) => `<div class="sim-side" data-side="${side}">
-    <h3>Side ${side + 1} <span></span></h3>
+    <h3>Side ${side + 1}${side ? ' · defends' : ' · attacks'} <span></span></h3>
+    <p class="hint sim-note">${side ? 'Ships, plus defences and Aegis fortresses: defences stand in rows facing side 1, like at a real world.' : 'Ships only (defences can go on side 2, the defending side).'}</p>
     <input type="search" class="sim-search" placeholder="Search ships, e.g. “gob” for Goblin" aria-label="Search ships for side ${side + 1}" autocomplete="off">
     <div class="sim-results"></div>
     <div class="sim-fleet-head"><span>In this fleet</span><button type="button" class="small" data-clear>Clear</button></div>
@@ -1282,7 +1304,7 @@ function setupSim() {
       if (!b) return;
       const c = simChoices[Number(b.dataset.add)], f = simFleets[side];
       const have = f.findIndex((x) => x.key === c.key);
-      if (have < 0) f.push({ key: c.key, count: DEFAULT_COPIES[c.cls] ?? 10 });
+      if (have < 0) f.push({ key: c.key, count: c.fixed && c.blocks > 3000 ? 1 : DEFAULT_COPIES[c.cls] ?? 10 });
       renderSimFleet(side); saveSim();
       const k = have < 0 ? f.length - 1 : have;
       const input = box.querySelector(`[data-count="${k}"]`);
@@ -1308,6 +1330,7 @@ function setupSim() {
 function openSim() {
   refresh(true);
   setupSim();
+  if (!fortressDesigns) loadFortresses().then(() => { if (!$('sim').hidden) openSim(); }).catch(() => { /* no fortresses, then */ });
   buildSimChoices();
   loadSim();
   // First time: a sample fight to start from, your newest ship against a sample destroyer.
@@ -1323,16 +1346,19 @@ function openSim() {
 }
 $('sim-designer').addEventListener('click', () => { $('sim').hidden = true; toast('Press Battle simulator (top right) to go back to the simulator.'); });
 $('sim-swap').addEventListener('click', () => {
+  // Defences can't attack, so they stay on side 2; the ships change sides.
   const a = simFleets[0].splice(0), b = simFleets[1].splice(0);
-  simFleets[0].push(...b); simFleets[1].push(...a);
+  const stay = b.filter((x) => simByKey(x.key)?.fixed);
+  simFleets[0].push(...b.filter((x) => !simByKey(x.key)?.fixed)); simFleets[1].push(...a, ...stay);
   renderSimFleet(0); renderSimFleet(1); saveSim();
+  if (stay.length) toast('Ships swapped sides. Defences stay on side 2: they can\'t attack.');
 });
 $('sim-res-close').addEventListener('click', () => $('sim-res').close());
 $('sim-watch').addEventListener('click', () => playReplay('sim'));
 let simRunning = false, simStop = false;
 $('sim-run').addEventListener('click', async () => {
   if (simRunning) { simStop = true; return; }
-  const sides = simFleets.map((f) => f.filter((x) => x.count > 0).map((x) => { const c = simByKey(x.key); return { design: { ...c.design }, count: x.count, label: c.name, owner: c.owner, group: c.group }; }));
+  const sides = simFleets.map((f, i) => f.filter((x) => x.count > 0).map((x) => { const c = simByKey(x.key); return { design: { ...c.design }, count: x.count, label: c.name, owner: c.owner, group: c.group, fixed: c.fixed && i === 1 }; }));
   if (!sides[0].length || !sides[1].length) return toast('Add ships to both sides first.');
   const seed = Math.max(1, Number($('sim-seed').value) || 1);
   const scen = makeVersusScenario(sides, seed);

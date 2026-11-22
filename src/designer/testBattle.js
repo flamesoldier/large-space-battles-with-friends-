@@ -106,20 +106,32 @@ export function summarise(battle, scen) {
 export function makeVersusScenario(sides, seed = 1) {
   const r = mulberry32(seed * 977 + 5);
   const designs = [], ships = [], rows = [[], []];
-  sides.forEach((list, team) => {
-    const idx = [];
+  // Defences (fixed, side 2 only) stand in rows round the origin facing side 1, which comes in
+  // from the left; side 2's ships start behind them and side 1 clear of them, as in a real battle.
+  const lists = sides.map((list, team) => {
+    const fly = [], fixed = [];
     for (const x of list) {
       if (!(x.count > 0)) continue;
       designs.push(x.design);
       const di = designs.length - 1;
       rows[team].push(di);
-      for (let k = 0; k < x.count; k++) idx.push(di);
+      for (let k = 0; k < x.count; k++) (x.fixed && team === 1 ? fixed : fly).push(di);
     }
+    return { fly, fixed };
+  });
+  const defs = lists[1].fixed.map((di) => ({ design: di, team: 1, fixed: true }));
+  let clear = [0, 0];
+  if (defs.length) {
+    layoutDefences(defs, designs, [Math.PI], 2);
+    clear = [defenceReach(defs, designs, Math.PI), defenceReach(defs, designs, 0)];
+  }
+  lists.forEach(({ fly }, team) => {
+    if (team === 1) for (const sh of defs) ships.push(sh);
     const dir = team === 0 ? 1 : -1;
-    const spots = fleetSpots(idx.map((di) => designs[di]), r, team === 0 ? -1 : 1);
-    idx.forEach((di, i) => {
+    const spots = fleetSpots(fly.map((di) => designs[di]), r, team === 0 ? -1 : 1);
+    fly.forEach((di, i) => {
       const { depth, across } = spots[i];
-      ships.push({ design: di, team, x: -dir * (220 + depth), y: across, a: team === 0 ? 0 : Math.PI });
+      ships.push({ design: di, team, x: -dir * (Math.max(220, clear[team] + 60) + depth), y: across, a: team === 0 ? 0 : Math.PI });
     });
   });
   return { designs, ships, rows };
