@@ -1229,7 +1229,7 @@ function saveSim() { store.set(SIM_KEY, simFleets.map((f) => f.map(({ key, count
 function loadSim() {
   const saved = store.get(SIM_KEY, null);
   if (!Array.isArray(saved)) return;
-  saved.slice(0, 2).forEach((f, side) => { simFleets[side] = (Array.isArray(f) ? f : []).filter((x) => simByKey(x.key) && (side === 1 || !simByKey(x.key).fixed)).map((x) => ({ key: x.key, count: Math.max(0, Math.min(1000, Math.floor(x.count) || 0)) })); });
+  saved.slice(0, 2).forEach((f, side) => { simFleets[side] = (Array.isArray(f) ? f : []).filter((x) => simByKey(x.key) && (side === 1 || !simByKey(x.key).fixed)).map((x) => ({ key: x.key, count: simCount(x.count) })); });
 }
 const hl = (text, q) => {
   const t = escapeHtml(text);
@@ -1238,6 +1238,9 @@ const hl = (text, q) => {
   return i < 0 ? t : escapeHtml(text.slice(0, i)) + '<mark>' + escapeHtml(text.slice(i, i + q.length)) + '</mark>' + escapeHtml(text.slice(i + q.length));
 };
 const SIM_SHOW = 80;
+/** Most ships one fleet row can hold (the biggest battles tested are 20,000 ships). Was 1,000, cut silently. */
+const SIM_MAX = 20000;
+const simCount = (v) => Math.max(0, Math.min(SIM_MAX, Math.floor(Number(v)) || 0));
 function renderSimResults(side) {
   const box = document.querySelector(`.sim-side[data-side="${side}"]`);
   const q = box.querySelector('.sim-search').value.trim().toLowerCase();
@@ -1270,7 +1273,7 @@ function renderSimFleet(side) {
   const el = box.querySelector('.sim-fleet');
   el.innerHTML = f.length ? f.map((x, i) => {
     const c = simByKey(x.key);
-    return `<div class="sim-row"><img alt="" src="${smallThumb(c.design)}"><span><b>${escapeHtml(c.name)}</b><small>${escapeHtml(simLabel(c))} · ${escapeHtml(c.cls)} · ${simPrice(c)}${c.fixed ? '' : ' each'}</small></span><input type="number" min="0" max="1000" value="${x.count}" data-count="${i}" title="How many" aria-label="How many ${escapeHtml(c.name)}"><button type="button" class="small" data-del="${i}" title="Remove">✕</button></div>`;
+    return `<div class="sim-row"><img alt="" src="${smallThumb(c.design)}"><span><b>${escapeHtml(c.name)}</b><small>${escapeHtml(simLabel(c))} · ${escapeHtml(c.cls)} · ${simPrice(c)}${c.fixed ? '' : ' each'}</small></span><input type="number" min="0" max="${SIM_MAX}" value="${x.count}" data-count="${i}" title="How many" aria-label="How many ${escapeHtml(c.name)}"><button type="button" class="small" data-del="${i}" title="Remove">✕</button></div>`;
   }).join('') : '<div class="empty">No ships yet: search above and press + Add.</div>';
   syncSimTotals(side);
 }
@@ -1315,8 +1318,16 @@ function setupSim() {
     box.querySelector('.sim-fleet').addEventListener('input', (e) => {
       const i = e.target.dataset.count;
       if (i === undefined) return;
-      simFleets[side][Number(i)].count = Math.max(0, Math.min(1000, Math.floor(Number(e.target.value) || 0)));
+      simFleets[side][Number(i)].count = simCount(e.target.value);
       syncSimTotals(side); saveSim();
+    });
+    // When the box is left, show the number really used (so a cut is never silent).
+    box.querySelector('.sim-fleet').addEventListener('change', (e) => {
+      const i = e.target.dataset.count;
+      if (i === undefined) return;
+      const n = simFleets[side][Number(i)].count;
+      if (Number(e.target.value) > SIM_MAX) toast(`At most ${fmt(SIM_MAX)} of one ship per row: set to ${fmt(SIM_MAX)}.`);
+      if (String(n) !== e.target.value) e.target.value = n;
     });
     box.querySelector('.sim-fleet').addEventListener('click', (e) => {
       const d = e.target.closest('[data-del]');

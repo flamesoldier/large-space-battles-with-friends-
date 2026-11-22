@@ -1535,7 +1535,12 @@ designer's numbers against the sim.
   top-right button reads Battle simulator in this mode and brings it back. Keys are ignored while it's open. Phones:
   sides stack. Checked in headless Chrome on `dist/galaxy.html` (search, add, fight, replay and back, phone, defences
   only on side 2, a defence row in the replay). **Live 22 Nov 2026** with the combat log change (owner: "make it live"; no
-  patch notes). The owner thought the log card's text line was "the battle number and the ships, redundant": that was the
+  patch notes). **Fixed 22 Nov 2026 (owner: "I added 1500 of a type of ship but it didn't add value to the total credits
+  after 1000 ships")**, on `v2-dev`, not live: each fleet row was cut to 1,000 silently (the box still showed 1,500,
+  totals and the fight used 1,000). Now `SIM_MAX` 20,000 per row (the biggest battles tested), `simCount()`; leaving a
+  box puts the number really used back in it, with a toast if it was cut. Checked in headless Chrome (1,500 counts
+  1,500; 25,000 → 20,000 shown). A huge fight runs in the player's own browser, so it can take minutes (Stop works).
+  The owner thought the log card's text line was "the battle number and the ships, redundant": that was the
   made-up text in the preview's fake battles; real entries carry the battle's story there, unchanged.
 - **Start positions** (owner, Nov 2026: "giving the player more strategy is always better"): a
   **Start** picker next to Stance in the ship and defence designers (also explained under "Start
