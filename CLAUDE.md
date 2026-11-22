@@ -928,6 +928,18 @@ Weapons (numbers in `blocks.js`):
       trail's centre points are worked out once per rift per frame; ~20 ms frame JS with two full rifts (software GL).
     - Test now 120 frigates (40 died during the first swirl at 1,000), checks the release against the drifted centre,
       counts swirl + released hits. Bench identical. Replay sent: "Doomsday Interdimensional Rift Engine" (seed 1).
+  - **Fourth round (owner, 22 Nov 2026: "the rift moving is to strong with proper targeting it should become balanced…
+    one rift has probably 15 nearby ships which is perfect, the other rift has maybe 2")**, on `v2-dev`, not live. Where
+    the lines above disagree, these win: **rifts no longer drift** (`driftRift` gone; the `rp*` columns stay in the
+    format, always empty, the viewer still reads them). **New aim** (`riftSpot`): the old one scored a ship's
+    surroundings by *value* and opened at their value-weighted middle, so one big ship pulled the spot into empty space
+    (v2's 1:30 rift: 3 enemies within 100). Now up to `RIFT_PICKS` 40 armed enemy ships are candidate centres, each
+    scored by `riftCrowd()` (enemy ships within `RIFT_REACH` 70 count 1, out to `RIFT_OUTER` 110 count ½; ×0.15 within 160
+    of an open rift; × random 0.9–1.1); the best moves to the middle of the ships round it (3 mean-shift steps), then to
+    the nearest clear spot (`RIFT_CLEAR` 15) within `RIFT_SHIFT` 40, else opens right there. Same demo battles (3 seeds,
+    13 rifts): enemies within 100 at open 15–44 (one late rift 7, when few were left); of those ~60% are destroyed before
+    release, the rest fly out of reach. Test checks no drift points and ≥ 12 enemies within 100 at open. Bench identical.
+    Replay sent: "Doomsday Rift Engine v4" (seed 1).
 - Future weapons the owner wants: bigger cannons, a medium laser.
 
 Combat rules:

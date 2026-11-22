@@ -55,11 +55,10 @@ const FLAK_STAND = [2, 6]; // a burst goes off this many blocks short of the hul
 const FLAK_PICKS = 16, FLAK_RECENT = 30, FLAK_CROWD_R = 40, FLAK_CROWD_EVERY = 10; // flak: ships looked at per burst, ticks a target counts as just hit, crowd radius beyond its hull, crowd recount (ticks)
 const K_KINETIC = 0, K_SHELL = 1, K_MISSILE = 2, K_PLASMA = 3, K_FIGHTER = 4, K_FLAK = 5, K_FRAG = 6, K_AUTO = 7, K_RIFT = 8; // K_AUTO: auto gun bullets (20 Nov 2026), handled like shells; K_RIFT: the rift engine's green projectiles (22 Nov 2026)
 const RIFT_W = WEAPON[BT.RIFT];
-const RIFT_PICKS = 24, RIFT_NEAR = 150, RIFT_CLEAR = 15; // rift spot: enemy ships looked at, how far round each counts as its crowd, clear space wanted round the centre
-// An open rift drifts with the enemy ships round it (owner, 22 Nov 2026: rifts missed because the fleet flew on during
-// the swirl): every RIFT_TRACK ticks it heads for the value-weighted middle of the enemy ships within RIFT_FOLLOW of
-// it, at up to RIFT_DRIFT blocks/s, moving in a straight line between those moments (recorded, so the viewer matches).
-const RIFT_TRACK = 5, RIFT_FOLLOW = 150, RIFT_DRIFT = 15;
+// Rift spot (riftSpot; owner, 22 Nov 2026, fourth round: open among as many enemy ships as possible, and stay put):
+// enemy ships looked at as candidate centres, swirl reach (a ship this close to the centre counts 1), outer reach (counts
+// half), clear space wanted round the centre, how far from the crowd's middle it may move to find it.
+const RIFT_PICKS = 40, RIFT_REACH = 70, RIFT_OUTER = 110, RIFT_CLEAR = 15, RIFT_SHIFT = 40;
 // Fighters (owner, Nov 2026): launched by fighter bays, kept in their own list (this.Fi), not P.
 const FIGHTER = WEAPON[BT.BAY].fighter;
 const FIGHTER_R = 2; // how close a shot must pass to hit one (blocks)
@@ -163,7 +162,7 @@ export class Battle {
     this.fFoe = new Int32Array(nT); // enemy fighters alive, per side: 0 means nobody needs to look for any
     this._fCount = new Int32Array(nT);
     this._ft = 0;
-    this._ax = 0; this._ay = 0;
+    this._ax = 0; this._ay = 0; this._mx = 0; this._my = 0;
     this._near = []; // collision candidates, reused every call
     this._tbx = 0; this._tby = 0; // push direction from tileOverlap
     this._ntx = 0; this._nty = 0; // nearest block square from nearTile
@@ -1251,8 +1250,7 @@ export class Battle {
       const rec = R.rfT0.push(this.now);
       R.rfT1.push(0); R.rfX.push(q16(x, q)); R.rfY.push(q16(y, q)); R.rfN.push(n); R.rfSeed.push(seed); R.rfTeam.push(e.team);
       R.rfEnd.push(2); R.rfSrc.push(e.id); R.rfLX.push(q16(w.lx, q)); R.rfLY.push(q16(w.ly, q));
-      this.rifts.push({ e, w, x, y, n, seed, rec, t0: this.now, alive: new Uint8Array(n).fill(1), px: new Float32Array(n).fill(NaN), py: new Float32Array(n),
-        ts0: this.now, sx0: x, sy0: y, ts1: this.now, sx1: x, sy1: y, vx: 0, vy: 0 });
+      this.rifts.push({ e, w, x, y, n, seed, rec, t0: this.now, alive: new Uint8Array(n).fill(1), px: new Float32Array(n).fill(NaN), py: new Float32Array(n) });
       w.sq = 1; w.cd = W.swirl;
       return;
     }
@@ -1262,41 +1260,59 @@ export class Battle {
   }
 
   /**
-   * Where a rift opens: among up to RIFT_PICKS armed enemy ships, the one with the most enemy value
-   * within RIFT_NEAR of it (a spot near a rift already open counts far less, so several engines spread
-   * out), × random; the rift goes at the value-weighted middle of the enemy ships round it, moved out to
-   * the nearest point with RIFT_CLEAR blocks of open space round it. Sets _ax/_ay; false if no enemy.
+   * Where a rift opens (it never moves after): the crowdiest of up to RIFT_PICKS armed enemy ships (a spot
+   * near a rift already open counts far less, so several engines spread out), × random 0.9–1.1; then the
+   * middle of the enemy ships round it, moved to the nearest point within RIFT_SHIFT with RIFT_CLEAR blocks
+   * of open space round it. Sets _ax/_ay; false if no enemy.
    */
   riftSpot(e) {
-    const pool = this.foeArmed[e.team], n = pool.length, fr = this.fr, T = e.team << 4, N2 = RIFT_NEAR * RIFT_NEAR;
+    // Owner, 22 Nov 2026 (fourth round): one rift opened by ~15 ships, another by ~2. The old pick scored a ship's
+    // surroundings by value and took their value-weighted middle, so one big ship dragged it into empty space.
+    // Now: every candidate (an enemy ship) scores the enemy ships within the swirl's reach (1 each, half out to
+    // RIFT_OUTER); the best is moved to the middle of the ships in its reach (mean shift, 3 steps), then to the
+    // nearest clear spot within RIFT_SHIFT of that, else it opens right there.
+    const pool = this.foeArmed[e.team], n = pool.length;
     if (!n) return false;
     let best = null, bs = -1;
-    for (let k = 0; k < Math.min(RIFT_PICKS, n); k++) {
+    const m = Math.min(RIFT_PICKS, n);
+    for (let k = 0; k < m; k++) {
       const o = n <= RIFT_PICKS ? pool[k] : pool[(this.rng() * n) | 0];
       if (o.dead) continue;
-      let v = 0;
-      this.grid.queryBox(o.x - RIFT_NEAR, o.y - RIFT_NEAR, o.x + RIFT_NEAR, o.y + RIFT_NEAR, (s) => {
-        if (s.kind === SHIP && !s.dead && !fr[T | s.team] && (s.x - o.x) ** 2 + (s.y - o.y) ** 2 < N2) v += s.worth;
-      });
+      let v = this.riftCrowd(e.team, o.x, o.y);
       for (const r of this.rifts) if ((r.x - o.x) ** 2 + (r.y - o.y) ** 2 < 160 * 160) v *= 0.15;
-      v *= 0.8 + 0.4 * this.rng();
+      v *= 0.9 + 0.2 * this.rng();
       if (v > bs) { bs = v; best = o; }
     }
     if (!best) return false;
-    let sx = 0, sy = 0, sw = 0;
-    this.grid.queryBox(best.x - RIFT_NEAR, best.y - RIFT_NEAR, best.x + RIFT_NEAR, best.y + RIFT_NEAR, (s) => {
-      if (s.kind === SHIP && !s.dead && !fr[T | s.team] && (s.x - best.x) ** 2 + (s.y - best.y) ** 2 < N2) { sx += s.x * s.worth; sy += s.y * s.worth; sw += s.worth; }
-    });
-    const cx = sw ? sx / sw : best.x, cy = sw ? sy / sw : best.y;
-    for (let ring = 0; ring <= 24; ring++) {
-      const rad = ring * 8, m = ring ? ring * 6 : 1, a0 = this.rng() * TWO_PI;
-      for (let j = 0; j < m; j++) {
-        const a = a0 + (j * TWO_PI) / m, x = cx + Math.cos(a) * rad, y = cy + Math.sin(a) * rad;
+    let cx = best.x, cy = best.y;
+    for (let it = 0; it < 3; it++) {
+      if (!this.riftCrowd(e.team, cx, cy, true)) break;
+      cx = this._mx; cy = this._my;
+    }
+    for (let ring = 0; ring * 8 <= RIFT_SHIFT; ring++) {
+      const rad = ring * 8, k = ring ? ring * 6 : 1, a0 = this.rng() * TWO_PI;
+      for (let j = 0; j < k; j++) {
+        const a = a0 + (j * TWO_PI) / k, x = cx + Math.cos(a) * rad, y = cy + Math.sin(a) * rad;
         if (this.riftClear(x, y)) { this._ax = x; this._ay = y; return true; }
       }
     }
     this._ax = cx; this._ay = cy; // packed solid: open it in the middle anyway
     return true;
+  }
+
+  /** Enemy ships of `team` round (x, y): 1 each within RIFT_REACH, ½ out to RIFT_OUTER. With mean, their middle (counted the same way) goes in _mx/_my. */
+  riftCrowd(team, x, y, mean) {
+    const fr = this.fr, T = team << 4, R = RIFT_OUTER, R2 = R * R, N2 = RIFT_REACH * RIFT_REACH;
+    let v = 0, sx = 0, sy = 0;
+    this.grid.queryBox(x - R, y - R, x + R, y + R, (s) => {
+      if (s.kind !== SHIP || s.dead || fr[T | s.team]) return;
+      const d2 = (s.x - x) ** 2 + (s.y - y) ** 2;
+      if (d2 >= R2) return;
+      const w = d2 < N2 ? 1 : 0.5;
+      v += w; sx += s.x * w; sy += s.y * w;
+    });
+    if (mean && v) { this._mx = sx / v; this._my = sy / v; }
+    return v;
   }
 
   /** No ship or wreck within RIFT_CLEAR of (x, y)? (Boxes round their live blocks.) */
@@ -1309,7 +1325,6 @@ export class Battle {
 
   /** The swirl is over: every projectile flies off from where the swirl has it now (see rift.js). */
   releaseRift(r) {
-    this.driftRift(r); // fire() runs before stepRifts: bring the centre up to this tick first
     const W = RIFT_W, a = (this.now - r.t0) * DT, p = this._rp, life = Math.round(W.life / DT);
     for (let k = 0; k < r.n; k++) {
       if (!r.alive[k] || !riftParticle(k, r.n, r.seed, a, p)) continue;
@@ -1331,7 +1346,6 @@ export class Battle {
   stepRifts() {
     const p = this._rp, R = this.R;
     for (const r of this.rifts) {
-      this.driftRift(r);
       const a = (this.now - r.t0) * DT, team = r.e.team;
       for (let k = 0; k < r.n; k++) {
         if (!riftParticle(k, r.n, r.seed, a, p)) break; // they appear in order
@@ -1346,35 +1360,6 @@ export class Battle {
         R.rkRift.push(r.rec); R.rkK.push(k); R.rkT.push(this.now);
       }
     }
-  }
-
-  /**
-   * Move an open rift's centre (r.x, r.y) to where it is this tick. Every RIFT_TRACK ticks it picks a new
-   * heading toward the middle of the enemy ships round it and records the point it will reach RIFT_TRACK
-   * ticks later (rpRift/rpT/rpX/rpY, on the replay grid); between those it moves in a straight line, so the
-   * viewer, joining the recorded points with straight lines, has the centre exactly where the sim had it.
-   */
-  driftRift(r) {
-    if (this.now >= r.ts1) {
-      r.ts0 = r.ts1; r.sx0 = r.sx1; r.sy0 = r.sy1;
-      const fr = this.fr, T = r.e.team << 4, F2 = RIFT_FOLLOW * RIFT_FOLLOW, x = r.sx0, y = r.sy0;
-      let sx = 0, sy = 0, sw = 0;
-      this.grid.queryBox(x - RIFT_FOLLOW, y - RIFT_FOLLOW, x + RIFT_FOLLOW, y + RIFT_FOLLOW, (o) => {
-        if (o.kind === SHIP && !o.dead && !fr[T | o.team] && (o.x - x) ** 2 + (o.y - y) ** 2 < F2) { sx += o.x * o.worth; sy += o.y * o.worth; sw += o.worth; }
-      });
-      let dvx = 0, dvy = 0;
-      if (sw) { dvx = (sx / sw - x) / 1.5; dvy = (sy / sw - y) / 1.5; }
-      r.vx = 0.5 * r.vx + 0.5 * dvx; r.vy = 0.5 * r.vy + 0.5 * dvy;
-      const sp = Math.hypot(r.vx, r.vy);
-      if (sp > RIFT_DRIFT) { r.vx *= RIFT_DRIFT / sp; r.vy *= RIFT_DRIFT / sp; }
-      const q = this.evQ;
-      r.ts1 = r.ts0 + RIFT_TRACK;
-      r.sx1 = Math.round((x + r.vx * RIFT_TRACK * DT) * q) / q; r.sy1 = Math.round((y + r.vy * RIFT_TRACK * DT) * q) / q;
-      const R = this.R;
-      R.rpRift.push(r.rec); R.rpT.push(r.ts1); R.rpX.push(q16(r.sx1, q)); R.rpY.push(q16(r.sy1, q));
-    }
-    const f = (this.now - r.ts0) / (r.ts1 - r.ts0);
-    r.x = r.sx0 + (r.sx1 - r.sx0) * f; r.y = r.sy0 + (r.sy1 - r.sy0) * f;
   }
 
   /** end: 0 released, 1 collapsed (its engine was lost), 2 still open when the battle ended. */
@@ -2900,8 +2885,8 @@ export class Battle {
       rfTeam: C(Uint8Array), rfEnd: C(Uint8Array), rfSrc: C(Uint32Array), rfLX: C(Int16Array), rfLY: C(Int16Array),
       // Swirling rift projectiles that flew into an enemy ship: rift record rkRift's projectile rkK, at tick rkT.
       rkRift: C(Uint32Array), rkK: C(Uint16Array), rkT: C(Uint16Array),
-      // Where an open rift's centre is (it drifts with the enemy ships round it): rift record rpRift at tick rpT is at
-      // rpX/rpY (1/EV_Q block), in a straight line from its previous point (the first is rfX/rfY at rfT0).
+      // Rift drift points (third round only, never live: rift record rpRift at tick rpT at rpX/rpY, 1/EV_Q block).
+      // Rifts stay where they open since the fourth round, so these stay empty; the viewer still reads them.
       rpRift: C(Uint32Array), rpT: C(Uint16Array), rpX: C(Int16Array), rpY: C(Int16Array),
     };
   }

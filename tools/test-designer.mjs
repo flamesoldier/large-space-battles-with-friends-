@@ -743,8 +743,15 @@ for (let k = 0; k < FORTRESSES.length; k++) {
   assert.equal(c.rfEnd[0], 0, 'first rift released');
   assert.ok(Math.abs(c.rfT1[0] - c.rfT0[0] - RW.swirl * 10) <= 1, 'it swirls 30 s');
   const m = new ReplayModel(packReplay(rep.meta, rep.cols));
-  const [x0, y0] = m.rift.at(0, c.rfT1[0], [0, 0]), age = (c.rfT1[0] - c.rfT0[0]) / 10, P = {}; // the rift drifts with the enemy: its centre at release
-  assert.ok(m.rift.path[0].length > 3 * 50, 'the rift recorded where it drifted');
+  const [x0, y0] = m.rift.at(0, c.rfT1[0], [0, 0]), age = (c.rfT1[0] - c.rfT0[0]) / 10, P = {};
+  assert.equal(c.rpRift.length, 0, 'rifts stay where they open (owner, fourth round)');
+  assert.ok(x0 === m.rift.x[0] && y0 === m.rift.y[0], 'the centre at release is where it opened');
+  { // it opens in the thick of the enemy (owner: one rift had ~15 ships round it, another ~2)
+    let near = 0;
+    const tr = { x: 0, y: 0, a: 0 };
+    for (const en of m.ents) { if (en.kind !== 0 || en.team !== 1 || c.rfT0[0] > en.t1) continue; m.transform(en, c.rfT0[0], tr); if (Math.hypot(tr.x - x0, tr.y - y0) < 100) near++; }
+    assert.ok(near >= 12, `the rift opened among the enemy (${near} ships within 100)`);
+  }
   // swirling projectiles that flew into an enemy ship (owner: they hit ships while circling too) aren't released
   const dead = new Set();
   for (let j = 0; j < c.rkRift.length; j++) if (c.rkRift[j] === 0) { dead.add(c.rkK[j]); assert.ok(c.rkT[j] > c.rfT0[0] && c.rkT[j] <= c.rfT1[0]); }
