@@ -201,7 +201,20 @@ table.grid td:first-child { text-align: left; white-space: nowrap; }
 .fight { border: 1px solid var(--line); border-left: 3px solid var(--dim); padding: 8px 10px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; }
 .fight.good { border-left-color: var(--azure); }
 .fight.bad { border-left-color: var(--bad); }
-.fight.new { background: rgba(255,179,92,0.06); }
+.fight.new { background-color: rgba(255,179,92,0.06); }
+/* Battle size, compared with every other battle in the galaxy (owner, 22 Nov 2026). */
+.size-epic { --sz: #e879f9; --sza: rgba(232,121,249,0.55); --szb: rgba(232,121,249,0.16); }
+.size-huge { --sz: #ff7a45; --sza: rgba(255,122,69,0.5); --szb: rgba(255,122,69,0.13); }
+.size-large { --sz: #ffd35c; --sza: rgba(255,211,92,0.42); --szb: rgba(255,211,92,0.09); }
+.size-medium { --sz: #5fd39a; --sza: rgba(95,211,154,0.35); --szb: rgba(95,211,154,0.06); }
+.size-small { --sz: #8b98ad; --sza: rgba(140,170,210,0.18); --szb: transparent; }
+.fight[class*="size-"] { border-top-color: var(--sza); border-right-color: var(--sza); border-bottom-color: var(--sza); background-image: linear-gradient(90deg, var(--szb), transparent 70%); }
+.fight.size-epic { box-shadow: 0 0 14px rgba(232,121,249,0.22); }
+.fight .size { font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--sz); border: 1px solid var(--sza); background: var(--szb); padding: 1px 6px; border-radius: 3px; white-space: nowrap; }
+#events li[class*="size-"] { border-left-color: var(--sz); }
+#events li.size-epic, #events li.size-huge { background-image: linear-gradient(90deg, var(--szb), transparent 80%); }
+.size-key { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; color: var(--dim); margin: 0 0 10px; align-items: center; }
+.size-key i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; background: var(--sz); margin-right: 4px; vertical-align: -1px; }
 .fight .fhead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
 .fight .res { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; }
 .fight.good .res { color: var(--azure); } .fight.bad .res { color: var(--bad); }
@@ -437,6 +450,7 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
       </div>
       <button class="small" id="combat-close">Close</button>
     </div>
+    <p class="size-key" title="Size = ships on all sides, compared with every other battle in this galaxy">Size: <span class="size-epic"><i></i>Epic (top 5%)</span><span class="size-huge"><i></i>Huge (top 20%)</span><span class="size-large"><i></i>Large (top half)</span><span class="size-medium"><i></i>Medium</span><span class="size-small"><i></i>Small (bottom 20%)</span></p>
     <div id="combat-list"></div>
     <p class="hint">Replays are saved in this browser (the last 80 battles).</p>
   </dialog>

@@ -6,14 +6,14 @@ import { BT, BLOCKS, WEAPON, MULTIBLOCK, HULL_CLASSES, COOKOFF, SHIELD, FLAK_POP
 import { ARC_BINS, binAngle, binOpen, arcCentre } from '../shared/arcs.js';
 import { openDir, unitDir, lookAngle } from '../shared/weaponLook.js';
 import { routeLength } from '../shared/bayRoute.js';
-import { analyzeDesign, encodeDesign, decodeDesign, designCost, STANCE_INFO, PLACE_INFO } from '../shared/shipStats.js';
+import { analyzeDesign, encodeDesign, decodeDesign, designCost, countBlocks, hullClassFor, STANCE_INFO, PLACE_INFO } from '../shared/shipStats.js';
 import { shipyardPrice, shipyardPriceAt, crowdingSurcharge, SHIPYARD_INTERVAL_MIN, SHIPS_PER_BUILD, SHIPYARD_PRICE_MULT, defensePrice, DEFENSE_PRICE_SHARE, DEFENSE_BUILD_HOURS } from '../shared/economy.js';
 import { makeDesign, CLASSES } from '../shared/designs.js';
 import { FORTRESSES, loadFortress } from '../shared/fortresses.js';
 import { Battle, DT } from '../sim/battle.js';
 import { packReplay } from '../shared/replayFormat.js';
 import { ShipEditor } from './editor.js';
-import { makeTestScenario, summarise, DEFAULT_COPIES } from './testBattle.js';
+import { makeTestScenario, makeVersusScenario, summarise, DEFAULT_COPIES } from './testBattle.js';
 import { BATTLE_MAX_TIME } from '../world/rules.js';
 
 const $ = (id) => document.getElementById(id);
@@ -924,7 +924,7 @@ $('zoom-out').addEventListener('click', () => zoomCentre(1 / 1.5));
 $('zoom-fit').addEventListener('click', fit);
 
 addEventListener('keydown', (e) => {
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || document.querySelector('dialog[open]')) return;
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || document.querySelector('dialog[open]') || !$('sim').hidden) return;
   const k = e.key.toLowerCase();
   if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); (e.shiftKey ? ed.redo() : ed.undo()) && syncFields(); return; }
   if ((e.ctrlKey || e.metaKey) && k === 'y') { e.preventDefault(); ed.redo() && syncFields(); return; }
@@ -1076,7 +1076,7 @@ function openTest() {
   $('t-run').disabled = false;
   $('test').showModal();
 }
-$('test-btn').addEventListener('click', openTest);
+$('test-btn').addEventListener('click', () => (simMode() ? openSim() : openTest()));
 $('t-close').addEventListener('click', () => $('test').close());
 
 let running = false;
@@ -1139,7 +1139,8 @@ $('t-run').addEventListener('click', async () => {
 // test battle plays in an overlay: no second file, no pop-up window.
 /* global __VIEWER_PAGE__ */
 const VIEWER_PAGE = typeof __VIEWER_PAGE__ === 'string' ? __VIEWER_PAGE__ : '';
-$('t-watch').addEventListener('click', () => {
+let replayBack = 'test'; // where Back goes after watching: the test dialog or the simulator's result
+function playReplay(back) {
   if (!lastReplay) return;
   if (!VIEWER_PAGE) return toast('This build has no replay viewer. Run npm run build.');
   const frame = $('replay-frame');
@@ -1150,14 +1151,234 @@ $('t-watch').addEventListener('click', () => {
     frame.contentWindow.postMessage({ type: 'lsb-replay', bytes: copy.buffer, computeMs: lastReplay.computeMs, sides: lastReplay.sides }, '*', [copy.buffer]);
   };
   addEventListener('message', send);
-  $('test').close();
+  replayBack = back;
+  $('test').close(); $('sim-res').close();
+  $('replay-close').textContent = back === 'sim' ? 'Back to the simulator' : 'Back to designer';
   $('replay').hidden = false;
   frame.srcdoc = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0">${VIEWER_PAGE}</body></html>`;
-});
+}
+$('t-watch').addEventListener('click', () => playReplay('test'));
 $('replay-close').addEventListener('click', () => {
   $('replay').hidden = true;
   $('replay-frame').srcdoc = ''; // stop rendering and free the replay
-  $('test').showModal();
+  $(replayBack === 'sim' ? 'sim-res' : 'test').showModal();
+});
+
+// ------------------------------------------------------------ battle simulator
+// Owner, 22 Nov 2026: the galaxy's Battle simulator button opens a screen where you pick the ships
+// for both sides, several designs each, from every ship in the game, with a search box ("gob"
+// finds Goblin). Defences aren't listed: they never move, so they can't join a fleet.
+let simChoices = [];
+const simFleets = [[], []]; // per side: [{ key, count }]
+const SIM_KEY = 'lsb.sim.fleets.v1';
+const thumbCache = new Map();
+function smallThumb(d) {
+  const key = d.w + 'x' + d.h + ':' + d.cells.length + ':' + (d.name || '');
+  if (thumbCache.has(key)) return thumbCache.get(key);
+  const W = 64, H = 32, s = Math.min(W / d.w, H / d.h, 4);
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.ceil(d.w * s)); c.height = Math.max(1, Math.ceil(d.h * s));
+  const x = c.getContext('2d'), px = Math.max(1, s);
+  for (let i = 0; i < d.cells.length; i++) if (d.cells[i]) { x.fillStyle = COLOR[d.cells[i]] || '#888'; x.fillRect((i % d.w) * s, ((i / d.w) | 0) * s, px, px); }
+  const url = c.toDataURL();
+  thumbCache.set(key, url);
+  return url;
+}
+const strHash = (t) => { let h = 2166136261; for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
+function simChoice(group, name, owner, d, keyPart) {
+  const n = countBlocks(d);
+  return { key: `${group}|${owner}|${name}|${keyPart}`, group, name, owner, design: d, cost: designCost(d), cls: hullClassFor(n)?.id || d.cls || '', blocks: n };
+}
+function buildSimChoices() {
+  simChoices = [];
+  const ok = (d) => { try { const a = analyzeDesign(d); return a.ok && a.weapons.length > 0; } catch { return false; } };
+  // Every ship in this galaxy, yours and everyone else's (designs in play are valid already).
+  (embed?.designs || []).forEach((o) => {
+    if (o.fixed || o.defence) return;
+    try {
+      const d = { ...decodeDesign(o.data), name: o.name };
+      if (d.cells.includes(BT.THRUSTER)) simChoices.push(simChoice('In this game', o.name, o.mine ? 'yours' : o.owner, d, strHash(String(o.data.cells ?? ''))));
+    } catch { /* skip */ }
+  });
+  if (design && info?.ok && info.weapons.length && !defenseMode()) simChoices.push(simChoice('On the designer screen', design.name || 'Your design', 'designer', { ...design, name: design.name || 'Your design' }, 'now'));
+  library().forEach((o) => { try { const d = decodeDesign(o); if (ok(d)) simChoices.push(simChoice('Saved in this browser', d.name || 'Unnamed', 'saved', d, strHash(String(o.cells ?? '')))); } catch { /* skip */ } });
+  for (const cls of Object.keys(CLASSES)) simChoices.push(simChoice('Samples', `Sample ${cls}`, 'sample', { ...makeDesign(cls, 7), name: `Sample ${cls}` }, cls));
+}
+const simByKey = (k) => simChoices.find((c) => c.key === k);
+function saveSim() { store.set(SIM_KEY, simFleets.map((f) => f.map(({ key, count }) => ({ key, count })))); }
+function loadSim() {
+  const saved = store.get(SIM_KEY, null);
+  if (!Array.isArray(saved)) return;
+  saved.slice(0, 2).forEach((f, side) => { simFleets[side] = (Array.isArray(f) ? f : []).filter((x) => simByKey(x.key)).map((x) => ({ key: x.key, count: Math.max(0, Math.min(1000, Math.floor(x.count) || 0)) })); });
+}
+const hl = (text, q) => {
+  const t = escapeHtml(text);
+  if (!q) return t;
+  const i = text.toLowerCase().indexOf(q);
+  return i < 0 ? t : escapeHtml(text.slice(0, i)) + '<mark>' + escapeHtml(text.slice(i, i + q.length)) + '</mark>' + escapeHtml(text.slice(i + q.length));
+};
+const SIM_SHOW = 80;
+function renderSimResults(side) {
+  const box = document.querySelector(`.sim-side[data-side="${side}"]`);
+  const q = box.querySelector('.sim-search').value.trim().toLowerCase();
+  // Name matches first (starting with what you typed, then containing it), then owner or class.
+  const scored = [];
+  simChoices.forEach((c, k) => {
+    const nm = c.name.toLowerCase();
+    const s = !q ? 2 : nm.startsWith(q) ? 0 : nm.includes(q) ? 1 : (c.owner.toLowerCase().includes(q) || c.cls.includes(q)) ? 2 : -1;
+    if (s >= 0) scored.push([s, k]);
+  });
+  scored.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  let html = '', grp = null, shown = 0;
+  for (const [, k] of scored) {
+    if (shown >= SIM_SHOW) break;
+    const c = simChoices[k];
+    if (q === '' && c.group !== grp) { grp = c.group; html += `<div class="grp">${escapeHtml(grp)}</div>`; }
+    html += `<button type="button" class="sim-pick" data-add="${k}"><img alt="" data-thumb="${k}"><span><b>${hl(c.name, q)}</b><small>${escapeHtml(c.owner === 'yours' ? 'Yours' : c.group === 'In this game' ? c.owner : c.group)} · ${escapeHtml(c.cls)} · ${fmt(c.cost)} cr</small></span><span class="add">+ Add</span></button>`;
+    shown++;
+  }
+  if (scored.length > shown) html += `<div class="more">${fmt(scored.length - shown)} more: type to narrow the list.</div>`;
+  if (!scored.length) html = `<div class="more">No ship matches “${escapeHtml(q)}”.</div>`;
+  const list = box.querySelector('.sim-results');
+  list.innerHTML = html;
+  list.querySelectorAll('img[data-thumb]').forEach((img) => { img.src = smallThumb(simChoices[Number(img.dataset.thumb)].design); });
+}
+function renderSimFleet(side) {
+  const box = document.querySelector(`.sim-side[data-side="${side}"]`);
+  const f = simFleets[side];
+  const el = box.querySelector('.sim-fleet');
+  el.innerHTML = f.length ? f.map((x, i) => {
+    const c = simByKey(x.key);
+    return `<div class="sim-row"><img alt="" src="${smallThumb(c.design)}"><span><b>${escapeHtml(c.name)}</b><small>${escapeHtml(c.owner === 'yours' ? 'Yours' : c.group === 'In this game' ? c.owner : c.group)} · ${escapeHtml(c.cls)} · ${fmt(c.cost)} cr each</small></span><input type="number" min="0" max="1000" value="${x.count}" data-count="${i}" title="How many" aria-label="How many ${escapeHtml(c.name)}"><button type="button" class="small" data-del="${i}" title="Remove">✕</button></div>`;
+  }).join('') : '<div class="empty">No ships yet: search above and press + Add.</div>';
+  syncSimTotals(side);
+}
+function syncSimTotals(side) {
+  let ships = 0, cr = 0;
+  for (const x of simFleets[side]) { const c = simByKey(x.key); ships += x.count; cr += x.count * c.cost; }
+  const box = document.querySelector(`.sim-side[data-side="${side}"]`);
+  box.querySelector('h3 span').textContent = ships ? `${fmt(ships)} ships · ${fmt(cr)} cr` : '';
+  $('sim-run').disabled = simRunning ? false : !(simFleets[0].some((x) => x.count > 0) && simFleets[1].some((x) => x.count > 0));
+  $('sim-run').title = $('sim-run').disabled ? 'Add ships to both sides first' : '';
+}
+function setupSim() {
+  if ($('sim-sides').children.length) return;
+  $('sim-sides').innerHTML = [0, 1].map((side) => `<div class="sim-side" data-side="${side}">
+    <h3>Side ${side + 1} <span></span></h3>
+    <input type="search" class="sim-search" placeholder="Search ships, e.g. “gob” for Goblin" aria-label="Search ships for side ${side + 1}" autocomplete="off">
+    <div class="sim-results"></div>
+    <div class="sim-fleet-head"><span>In this fleet</span><button type="button" class="small" data-clear>Clear</button></div>
+    <div class="sim-fleet"></div>
+  </div>`).join('');
+  document.querySelectorAll('.sim-side').forEach((box) => {
+    const side = Number(box.dataset.side);
+    box.querySelector('.sim-search').addEventListener('input', () => renderSimResults(side));
+    box.querySelector('.sim-search').addEventListener('keydown', (e) => {
+      // Enter adds the top match.
+      if (e.key === 'Enter') { const b = box.querySelector('[data-add]'); if (b) b.click(); }
+    });
+    box.querySelector('.sim-results').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-add]');
+      if (!b) return;
+      const c = simChoices[Number(b.dataset.add)], f = simFleets[side];
+      const have = f.findIndex((x) => x.key === c.key);
+      if (have < 0) f.push({ key: c.key, count: DEFAULT_COPIES[c.cls] ?? 10 });
+      renderSimFleet(side); saveSim();
+      const k = have < 0 ? f.length - 1 : have;
+      const input = box.querySelector(`[data-count="${k}"]`);
+      input?.scrollIntoView({ block: 'nearest' });
+      if (have >= 0) { input?.focus(); input?.select(); }
+      else toast(`Added ${c.name} to side ${side + 1}.`);
+    });
+    box.querySelector('.sim-fleet').addEventListener('input', (e) => {
+      const i = e.target.dataset.count;
+      if (i === undefined) return;
+      simFleets[side][Number(i)].count = Math.max(0, Math.min(1000, Math.floor(Number(e.target.value) || 0)));
+      syncSimTotals(side); saveSim();
+    });
+    box.querySelector('.sim-fleet').addEventListener('click', (e) => {
+      const d = e.target.closest('[data-del]');
+      if (!d) return;
+      simFleets[side].splice(Number(d.dataset.del), 1);
+      renderSimFleet(side); saveSim();
+    });
+    box.querySelector('[data-clear]').addEventListener('click', () => { simFleets[side].length = 0; renderSimFleet(side); saveSim(); });
+  });
+}
+function openSim() {
+  refresh(true);
+  setupSim();
+  buildSimChoices();
+  loadSim();
+  // First time: a sample fight to start from, your newest ship against a sample destroyer.
+  if (!simFleets[0].length && !simFleets[1].length) {
+    const first = simChoices.find((c) => c.owner === 'yours') || simChoices.find((c) => c.group === 'Samples' && c.cls === 'destroyer');
+    const other = simChoices.find((c) => c.group === 'Samples' && c.cls === 'cruiser');
+    if (first) simFleets[0].push({ key: first.key, count: DEFAULT_COPIES[first.cls] ?? 10 });
+    if (other) simFleets[1].push({ key: other.key, count: DEFAULT_COPIES[other.cls] ?? 10 });
+  }
+  for (const side of [0, 1]) { renderSimResults(side); renderSimFleet(side); }
+  if (!simRunning) $('sim-status').textContent = `${fmt(simChoices.filter((c) => c.group === 'In this game').length)} ships in this game to choose from.`;
+  $('sim').hidden = false;
+}
+$('sim-designer').addEventListener('click', () => { $('sim').hidden = true; toast('Press Battle simulator (top right) to go back to the simulator.'); });
+$('sim-swap').addEventListener('click', () => {
+  const a = simFleets[0].splice(0), b = simFleets[1].splice(0);
+  simFleets[0].push(...b); simFleets[1].push(...a);
+  renderSimFleet(0); renderSimFleet(1); saveSim();
+});
+$('sim-res-close').addEventListener('click', () => $('sim-res').close());
+$('sim-watch').addEventListener('click', () => playReplay('sim'));
+let simRunning = false, simStop = false;
+$('sim-run').addEventListener('click', async () => {
+  if (simRunning) { simStop = true; return; }
+  const sides = simFleets.map((f) => f.filter((x) => x.count > 0).map((x) => { const c = simByKey(x.key); return { design: { ...c.design }, count: x.count, label: c.name, owner: c.owner, group: c.group }; }));
+  if (!sides[0].length || !sides[1].length) return toast('Add ships to both sides first.');
+  const seed = Math.max(1, Number($('sim-seed').value) || 1);
+  const scen = makeVersusScenario(sides, seed);
+  simRunning = true; simStop = false;
+  $('sim-run').textContent = 'Stop'; $('sim-run').classList.remove('go');
+  $('sim-status').innerHTML = '<span id="sim-st"></span><div class="bar"><i id="sim-bar"></i></div>';
+  const b = new Battle({ designs: scen.designs, ships: scen.ships, seed, maxTime: BATTLE_MAX_TIME }); // same limit as real battles
+  const t0 = performance.now();
+  while (!b.done && !simStop) {
+    const end = performance.now() + 30;
+    while (!b.done && performance.now() < end) b.step();
+    $('sim-st').textContent = `${(b.tick * DT).toFixed(0)} s · ${fmt(b.teamAlive[0])} vs ${fmt(b.teamAlive[1])} ships`;
+    $('sim-bar').style.width = `${Math.min(100, (b.tick / b.maxTicks) * 100)}%`;
+    await new Promise((r) => requestAnimationFrame(r));
+  }
+  const computeMs = performance.now() - t0;
+  simRunning = false;
+  $('sim-run').textContent = 'Fight'; $('sim-run').classList.add('go');
+  syncSimTotals(0);
+  if (!b.done) { $('sim-status').textContent = 'Stopped.'; return; }
+  $('sim-status').textContent = 'Done. Press Fight again for another go (change the seed for a different battle).';
+  const s = summarise(b, scen);
+  const rep = b.toReplay();
+  lastReplay = { bytes: packReplay(rep.meta, rep.cols), computeMs, sides: ['Side 1', 'Side 2'] };
+  const per = scen.designs.map(() => ({ n: 0, alive: 0, value: 0, lost: 0 }));
+  scen.ships.forEach((sh, k) => {
+    const e = b.byId[k], c = designCost(scen.designs[sh.design]), out = e.dead || e.hubDead || !e.weapons.length, r = per[sh.design];
+    r.n++; r.value += c; if (out) r.lost += c; else r.alive++;
+  });
+  const pct = (a, t) => `${t ? Math.round((a / t) * 100) : 0}%`;
+  const sideRows = (team) => {
+    const sub = scen.rows[team].map((di, j) => {
+      const r = per[di], x = sides[team][j];
+      return `<tr><td class="sub">${escapeHtml(x.label)}</td><td>${fmt(r.n)}</td><td>${fmt(r.alive)}</td><td>${fmt(r.value)}</td><td>${fmt(r.lost)} (${pct(r.lost, r.value)})</td></tr>`;
+    }).join('');
+    return `<tr><td>Side ${team + 1}</td><td>${fmt(s.startCount[team])}</td><td>${fmt(s.alive[team])}</td><td>${fmt(s.start[team])}</td><td>${fmt(s.lost[team])} (${pct(s.lost[team], s.start[team])})</td></tr>${sub}`;
+  };
+  const verdict = s.winner === 0 ? ['s0', 'Side 1 wins'] : s.winner === 1 ? ['s1', 'Side 2 wins'] : ['', 'Draw'];
+  $('sim-res-body').innerHTML = `
+    <div class="verdict ${verdict[0]}">${verdict[1]}</div>
+    <table>
+      <thead><tr><th></th><th>Ships</th><th>Survived</th><th>Fleet value</th><th>Lost</th></tr></thead>
+      <tbody>${sideRows(0)}${sideRows(1)}</tbody>
+    </table>
+    <p class="hint">Battle lasted ${s.seconds.toFixed(0)} s (seed ${seed}). Ships that lost every weapon count as lost. Try a few seeds: one battle can be luck.</p>`;
+  $('sim-res').showModal();
 });
 
 // ------------------------------------------------------------ shipyard mode
@@ -1199,11 +1420,9 @@ let simShown = false;
 /** Opened from the galaxy's Battle simulator button: no shipyard to build, straight into a test battle. */
 function enterSimMode() {
   refresh(true);
-  // A blank design can't fight: start the simulator from a sample destroyer instead.
-  if (!design || !info.ok || !info.weapons.length) { ed.load({ ...makeDesign('destroyer', 7), name: 'Sample destroyer' }); ed.resetHistory(); syncFields(); fit(); refresh(true); }
-  document.querySelector('#test h3').textContent = 'Battle simulator';
-  $('t-hint').textContent = 'Battle simulator: your side is the design on screen (pick another from Start from, or build one) plus anything you add below; the enemy is worth the same number of credits. Real battle sim, nothing is spent.';
-  openTest();
+  $('test-btn').textContent = 'Battle simulator';
+  $('test-btn').title = 'Back to the battle simulator';
+  openSim();
 }
 function syncEmbed() {
   if (!embed || !design) return;

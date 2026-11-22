@@ -96,3 +96,31 @@ export function summarise(battle, scen) {
   const winner = alive[0] && !alive[1] ? 0 : alive[1] && !alive[0] ? 1 : lost[1] / start[1] > lost[0] / start[0] ? 0 : lost[0] / start[0] > lost[1] / start[1] ? 1 : -1;
   return { winner, alive: [...alive], startCount: [...battle.teamStart], lost, start, seconds: battle.tick * 0.1 };
 }
+
+/**
+ * Battle simulator (owner, 22 Nov 2026): any ships against any ships, several designs a side.
+ * `sides` = [[{ design, count }], [{ design, count }]] (side 1 is team 0 on the left, side 2 team 1
+ * on the right). Ships start spread out exactly like the test battle's flying ships (fleetSpots).
+ * Returns { designs, ships, rows } where rows[team] lists the design indexes of that side's rows.
+ */
+export function makeVersusScenario(sides, seed = 1) {
+  const r = mulberry32(seed * 977 + 5);
+  const designs = [], ships = [], rows = [[], []];
+  sides.forEach((list, team) => {
+    const idx = [];
+    for (const x of list) {
+      if (!(x.count > 0)) continue;
+      designs.push(x.design);
+      const di = designs.length - 1;
+      rows[team].push(di);
+      for (let k = 0; k < x.count; k++) idx.push(di);
+    }
+    const dir = team === 0 ? 1 : -1;
+    const spots = fleetSpots(idx.map((di) => designs[di]), r, team === 0 ? -1 : 1);
+    idx.forEach((di, i) => {
+      const { depth, across } = spots[i];
+      ships.push({ design: di, team, x: -dir * (220 + depth), y: across, a: team === 0 ? 0 : Math.PI });
+    });
+  });
+  return { designs, ships, rows };
+}

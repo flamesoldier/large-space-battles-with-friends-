@@ -1287,7 +1287,7 @@ function designerInfo(withDesigns = false) {
   // against the ships people are really building. Sent once, when the designer opens.
   if (withDesigns) {
     const myYards = new Set(world.planets.filter((p) => p.owner === ui.me).flatMap((p) => p.yards.map((y) => y.design)));
-    info.designs = Object.values(world.designs).map((d) => ({ name: d.name, owner: d.owner === null ? 'Militia' : playerName(world, d.owner), mine: d.owner === ui.me, yard: myYards.has(d.id), defence: d.owner === ui.me && !!d.fixed, data: d.data }));
+    info.designs = Object.values(world.designs).map((d) => ({ name: d.name, owner: d.owner === null ? 'Militia' : playerName(world, d.owner), mine: d.owner === ui.me, yard: myYards.has(d.id), defence: d.owner === ui.me && !!d.fixed, fixed: !!d.fixed, data: d.data }));
   }
   return info;
 }
@@ -1295,7 +1295,7 @@ function openDesigner(planetId, mode = 'yard') {
   if (!DESIGNER_PAGE) return toast('This build has no ship designer. Run npm run build.', true);
   designerFor = planetId; designerMode = mode;
   $('designer-for').textContent = mode === 'sim'
-    ? 'Battle simulator: pick your side and the enemy, then Fight. A practice battle with the real battle sim; nothing is spent and nothing happens in the galaxy.'
+    ? 'Battle simulator: pick any ships in the game for each side, then Fight. A practice battle with the real battle sim; nothing is spent and nothing happens in the galaxy.'
     : mode === 'defense'
     ? `Designing a defence for ${world.planets[planetId].name}: no thrusters, it never moves. Nothing is spent until you press Build defence.`
     : `Designing a ship for a new shipyard at ${world.planets[planetId].name}. Nothing is spent until you press Build shipyard.`;
@@ -1398,7 +1398,8 @@ function renderEvents() {
   list.innerHTML = items.map((e) => {
     const c = colorOf(e.players?.[0]);
     const btn = e.battle && hasReplay(e.battle.id) ? `<button class="small" data-watch="${e.battle.id}">Watch</button>` : '';
-    return `<li class="${e.kind}" style="${e.kind === 'battle' ? '' : `border-left-color:${hexA(c, 0.6)}`}" ${e.planet !== undefined ? `data-planet="${e.planet}"` : ''}><span>${esc(e.text)}</span>${btn}<time>${clockText(e.t)}</time></li>`;
+    const sz = e.battle ? battleSize(e.battle) : null;
+    return `<li class="${e.kind}${sz ? ` size-${sz.tier}` : ''}" ${sz ? `title="${sz.label} battle: ${fmt(sz.ships)} ships"` : ''} style="${e.kind === 'battle' || sz ? '' : `border-left-color:${hexA(c, 0.6)}`}" ${e.planet !== undefined ? `data-planet="${e.planet}"` : ''}><span>${esc(e.text)}</span>${btn}<time>${clockText(e.t)}</time></li>`;
   }).join('') || `<li><span class="hint">${all ? 'Nothing yet' : 'No battles yet'}${ui.mine ? ' involving you or your allies' : ''}.</span></li>`;
 }
 $('events').addEventListener('click', (e) => {
@@ -1505,9 +1506,35 @@ $('dip-list').addEventListener('click', async (e) => {
 });
 
 // ------------------------------------------------------------ combat log
-// Every battle and every world that changed hands, from the chosen player's point of view, with
-// the replay where this browser still has it.
-const isCombat = (e) => !!(e.battle || e.capture || e.siege);
+// Every battle, from the chosen player's point of view, with the replay where this browser still
+// has it. Battles only (owner, 22 Nov 2026: "i only want battles in combat log"): sieges starting
+// and worlds taken without a fight are left out (they're still in the Battles window's All).
+const isCombat = (e) => !!e.battle;
+// Colour by size compared with every other battle in this galaxy (owner, 22 Nov 2026): ships on
+// all sides, ranked against all battles in the log (not just the ones shown), so a battle keeps its
+// colour whatever the filter. Tiers by share of battles it's bigger than.
+const SIZE_TIERS = [
+  [0.95, 'epic', 'Epic'], [0.8, 'huge', 'Huge'], [0.5, 'large', 'Large'], [0.2, 'medium', 'Medium'], [-1, 'small', 'Small'],
+];
+const battleShips = (B) => B.players ? B.players.reduce((t, q) => t + (q.ships || 0), 0) : (B.ships || []).reduce((t, n) => t + (n || 0), 0);
+const ordinal = (n) => `${n}${[11, 12, 13].includes(n % 100) ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th'}`;
+let sizeCache = { n: -1, last: -1, sorted: [] };
+/** { tier, label, ships, rank } for a battle log entry, compared with every battle in the galaxy. */
+function battleSize(B) {
+  const last = world.log.length ? world.log[world.log.length - 1].id : -1;
+  if (sizeCache.n !== world.log.length || sizeCache.last !== last) {
+    sizeCache = { n: world.log.length, last, sorted: world.log.filter((x) => x.battle).map((x) => battleShips(x.battle)).sort((a, b) => a - b) };
+  }
+  const all = sizeCache.sorted, ships = battleShips(B);
+  let lo = 0, hi = all.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (all[m] < ships) lo = m + 1; else hi = m; } // battles smaller than this one
+  let eq = lo; while (eq < all.length && all[eq] === ships) eq++;
+  // Share of the other battles this one is bigger than (ties count half); the biggest is always Epic.
+  const p = all.length <= 1 ? 0.5 : (lo + (eq - lo - 1) / 2) / (all.length - 1);
+  const top = ships >= all[all.length - 1] && all.length > 1;
+  const [, tier, label] = top ? SIZE_TIERS[0] : SIZE_TIERS.find(([min]) => p >= min);
+  return { tier, label, ships, rank: all.length - eq + 1, of: all.length };
+}
 function involves(e, pid) {
   if (e.battle) return [e.battle.attacker, ...(e.battle.attackers || []), e.battle.defender, ...(e.battle.defenders || [])].some((x) => allied(world, x, pid));
   if (e.siege) return allied(world, e.siege.by, pid) || allied(world, e.siege.against, pid);
@@ -1552,7 +1579,7 @@ function unreadCombat() {
 function syncCombatBadge() {
   const n = unreadCombat(), b = $('combat-badge');
   b.hidden = !n; b.textContent = n > 99 ? '99+' : String(n);
-  $('combat-btn').title = n ? `${n} new since you last looked` : 'Every battle and captured world, with replays';
+  $('combat-btn').title = n ? `${n} new since you last looked` : 'Every battle, with replays, coloured by how big it was';
 }
 function renderCombat() {
   const seen = ui.seen?.[ui.me] ?? 0;
@@ -1569,12 +1596,14 @@ function renderCombat() {
         : `${att}: ${side(0)} · ${B.defender === null ? 'Militia' : esc(playerName(world, B.defender))}${(B.defenders || []).length > 1 ? ' and allies' : ''}: ${side(1)} · ${B.seconds} s`;
     } else if (e.capture?.yards) nums = `${e.capture.yards} shipyard${e.capture.yards > 1 ? 's' : ''} destroyed`;
     const can = e.battle && hasReplay(e.battle.id);
-    return `<div class="fight ${tone}${e.id > seen && involves(e, ui.me) ? ' new' : ''}">
-      <div class="fhead"><span class="res">${label}</span><span class="where">${esc(P?.name ?? '')}</span><time>${clockText(e.t)}</time></div>
+    const sz = battleSize(e.battle);
+    const szTip = `${fmt(sz.ships)} ships in all: ${sz.of > 1 ? `the ${sz.rank === 1 ? 'biggest' : `${ordinal(sz.rank)} biggest`} of ${fmt(sz.of)} battles in this galaxy` : 'the only battle so far'}`;
+    return `<div class="fight ${tone} size-${sz.tier}${e.id > seen && involves(e, ui.me) ? ' new' : ''}">
+      <div class="fhead"><span class="res">${label}</span><span class="size" title="${szTip}">${sz.label} · ${fmt(sz.ships)} ships</span><span class="where">${esc(P?.name ?? '')}</span><time>${clockText(e.t)}</time></div>
       <p>${esc(e.text)}</p>${nums ? `<div class="nums">${nums}</div>` : ''}
       <div class="acts">${e.battle ? `<button class="small ${can ? 'go' : ''}" data-watch="${e.battle.id}" ${can ? '' : `disabled title="${ONLINE ? 'No replay for this battle' : 'This replay is no longer saved in this browser'}"`}>Watch</button>` : ''}${can ? `<button class="small" data-dl="${e.battle.id}" title="Save this replay as a web page you can open in any browser, keep, or send to a friend">Download</button>` : ''}<button class="small" data-planet="${e.planet}">Map</button></div>
     </div>`;
-  }).join('') || `<p class="empty">${combatFilter === 'mine' ? 'No battles involving you yet. Battles, and worlds you take or lose, show up here.' : 'No battles yet.'}</p>`;
+  }).join('') || `<p class="empty">${combatFilter === 'mine' ? 'No battles involving you yet. Every battle you or your allies fight shows up here.' : 'No battles yet.'}</p>`;
 }
 function openCombat() {
   renderCombat();

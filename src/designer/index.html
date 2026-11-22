@@ -155,6 +155,53 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
 .verdict { font-size: 18px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 8px; }
 .verdict.win { color: var(--azure); } .verdict.loss { color: var(--ember); }
 
+/* Battle simulator (owner, 22 Nov 2026): pick any ships in the game for each side. */
+#sim { position: fixed; inset: 0; z-index: 5; background: radial-gradient(ellipse at 50% 20%, rgba(60, 90, 160, 0.14), transparent 60%), var(--void); display: flex; flex-direction: column; }
+#sim .sim-top { display: flex; align-items: flex-start; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+#sim .sim-top div { flex: 1; min-width: 0; }
+#sim h2 { margin: 0; font-size: 16px; letter-spacing: 0.1em; text-transform: uppercase; }
+#sim .sim-top p { margin: 4px 0 0; }
+#sim-sides { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; }
+.sim-side { display: flex; flex-direction: column; min-height: 0; padding: 12px 16px; gap: 8px; }
+.sim-side + .sim-side { border-left: 1px solid var(--line); }
+.sim-side h3 { margin: 0; font-size: 14px; letter-spacing: 0.1em; text-transform: uppercase; display: flex; align-items: baseline; gap: 10px; }
+.sim-side[data-side="0"] h3 { color: var(--azure); } .sim-side[data-side="1"] h3 { color: var(--ember); }
+.sim-side h3 span { font-family: var(--mono); font-size: 11.5px; color: var(--dim); letter-spacing: 0; text-transform: none; font-weight: 400; }
+.sim-search { width: 100%; font-size: 14px; padding: 8px 10px; }
+.sim-results { flex: 1 1 50%; min-height: 80px; overflow-y: auto; border: 1px solid var(--line); background: rgba(255,255,255,0.015); }
+.sim-results .grp { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); padding: 8px 8px 3px; }
+.sim-results .more { font-size: 12px; color: var(--dim); padding: 8px; }
+.sim-pick { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 10px; align-items: center; width: 100%; text-align: left; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: none; padding: 5px 8px; }
+.sim-pick:hover { background: rgba(255,255,255,0.05); }
+.sim-pick, .sim-pick * { text-transform: none; letter-spacing: normal; }
+.sim-pick b { display: block; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sim-pick b mark { background: rgba(255, 207, 92, 0.3); color: inherit; }
+.sim-pick small, .sim-row small { display: block; font-family: var(--mono); font-size: 11px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sim-pick .add { font-family: var(--mono); font-size: 12px; color: var(--azure); }
+.sim-side img { width: 64px; height: 32px; object-fit: contain; image-rendering: pixelated; }
+.sim-fleet-head { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); display: flex; justify-content: space-between; gap: 8px; }
+.sim-fleet { flex: 0 1 auto; max-height: 40%; overflow-y: auto; display: grid; gap: 4px; align-content: start; }
+.sim-fleet .empty { font-size: 12.5px; color: var(--dim); padding: 6px 0; }
+.sim-row { display: grid; grid-template-columns: 64px minmax(0, 1fr) 82px auto; gap: 8px; align-items: center; border: 1px solid var(--line); padding: 4px 6px; }
+.sim-row b { display: block; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sim-row input { width: 100%; min-width: 0; }
+#sim .sim-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 16px max(10px, env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--line); background: var(--panel); }
+#sim .sim-bar label { gap: 6px; }
+#sim button.small { padding: 3px 8px; font-size: 12px; }
+#sim-seed { width: 70px; }
+#sim-status { font-family: var(--mono); font-size: 12px; color: var(--dim); flex: 1; min-width: 140px; }
+#sim-status .bar { max-width: 320px; }
+#sim-res .verdict.s0 { color: var(--azure); } #sim-res .verdict.s1 { color: var(--ember); }
+#sim-res td.sub { padding-left: 18px; opacity: 0.85; }
+@media (max-width: 640px) {
+  #sim-sides { grid-template-columns: 1fr; overflow-y: auto; }
+  .sim-side { min-height: auto; }
+  .sim-side + .sim-side { border-left: 0; border-top: 1px solid var(--line); }
+  .sim-results { flex: none; max-height: 40vh; }
+  .sim-fleet { max-height: none; }
+  .sim-search { font-size: 16px; }
+}
+
 #replay { position: fixed; inset: 0; z-index: 10; background: var(--void); }
 #replay iframe { width: 100%; height: 100%; border: 0; display: block; }
 #replay-close { position: absolute; left: 50%; transform: translateX(-50%); bottom: max(78px, calc(env(safe-area-inset-bottom, 0px) + 78px)); box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
@@ -326,6 +373,29 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
     <iframe id="replay-frame" title="Test battle replay"></iframe>
     <button id="replay-close" class="go">Back to designer</button>
   </div>
+
+  <section id="sim" hidden aria-label="Battle simulator">
+    <header class="sim-top">
+      <div><h2>Battle simulator</h2><p class="hint">Pick the ships for each side: any ship in this game, as many different designs as you like. A practice battle with the real battle sim; nothing is spent and nothing happens in the galaxy.</p></div>
+      <button id="sim-designer" type="button" title="Design a new ship, then come back here with the Battle simulator button">Ship designer</button>
+    </header>
+    <div id="sim-sides"></div>
+    <footer class="sim-bar">
+      <label for="sim-seed">Seed <input id="sim-seed" type="number" min="1" value="1" title="Same ships and seed = the same battle. Try a few: one battle can be luck."></label>
+      <div id="sim-status"></div>
+      <button id="sim-swap" type="button" title="Swap the two sides">⇄ Swap sides</button>
+      <button id="sim-run" class="go" type="button">Fight</button>
+    </footer>
+  </section>
+
+  <dialog id="sim-res">
+    <h3>Battle simulator</h3>
+    <div id="sim-res-body"></div>
+    <div class="actions">
+      <button id="sim-res-close">Close</button>
+      <button id="sim-watch" class="go">Watch replay</button>
+    </div>
+  </dialog>
 
   <dialog id="test">
     <h3>Test battle</h3>
