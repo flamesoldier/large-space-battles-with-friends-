@@ -1084,8 +1084,10 @@ export class Battle {
       const pen = Math.min(best, 4), share = e.fixed ? 0 : o.fixed ? 1 : o.mass / (o.mass + e.mass);
       const push = pen * share;
       e.x += bx * push * 0.5; e.y += by * push * 0.5; // positional correction
-      if (e.knife && o.kind === SHIP) {
+      if ((e.knife || (o.fixed && !e.fixed)) && o.kind === SHIP) {
         // Close-in ships slide along a ship they touched, keeping their speed past it, instead of bouncing off.
+        // Every ship slides along a defence the same way (owner, 23 Nov 2026: ships sometimes got stuck on defences):
+        // a defence never moves, so a ship pressed against it by the crowd used to sit there for 20-40 s.
         // (Wrecks they plough through like everyone else: sliding along wrecks too was tried and left them slower,
         // 89% → 77% of top speed for Charge ships in an all-close-in battle.)
         const vn = e.vx * bx + e.vy * by;

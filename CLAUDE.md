@@ -1703,6 +1703,19 @@ times 2,054 → 710 (mostly one turn to a new target); ships spinning in place 3
 flips between the fortress (~400 away, "angle in") and nearby enemies (~150, "turn away"), so they
 keep turning; that's the Skirmisher rule itself and was raised with the owner, not changed.
 
+**Ships slide along defences (owner, 23 Nov 2026: "sometime ships will get stuck in defences… ships need to weave
+through small gaps… is there a way to free those that get stuck without using to much compute")**, on `v2-dev`, **not
+live**: in `collide()` any ship touching a defence (`o.fixed`) slides along it keeping its speed, like close-in ships
+already did along hulls (`(e.knife || (o.fixed && !e.fixed)) && o.kind === SHIP`), instead of losing the speed going
+into it. Cause found (`/tmp`-style `stuck/run.mjs`: Aegis I/II with 30 battleships + 60 cruisers + 80 destroyers behind
+it vs 40 battleships + 120 destroyers, and 60 bot forts in rows with titans that don't fit through): Front line ships of
+the fortress's side outside their range, pressed into the wall by the crowd-spacing push, crawling at 0–2 blocks/s.
+Stuck = touching a defence, moved < 3 blocks in 5 s, wanting to move. 6 seeds each, live → now: runs with a stretch of
+30 s+ 6 of 18 → 0 of 18 (longest 51.5 → 26 s); rows: ships stuck 10 s+ 4 → 0. Tried and dropped: a committed slide
+direction kept for 2 s (worse in some seeds, up to 44 s). Only runs while a ship touches a defence: bench identical
+shot for shot. Test in `tools/test-designer.mjs` (fails on the old code). Replays sent: "Ships stuck on defences:
+BEFORE / AFTER".
+
 **Debris collides with ships too** (owner, Nov 2026: "debris should be part of the battle"): a
 ship and a wreck push each other apart by the same rule, so ships plough through light debris
 and bounce off big wreck halves. A wreck collides with the ship it broke off from too (owner
