@@ -85,7 +85,11 @@ const NEAR_MOVE = 8;
 const THREAD_EVERY = 10; // ticks between threadGap looks (a multiple of SPACING_EVERY)
 const GOAL_SAMPLE = 24; // enemy ships a flanker or raider looks at when picking its goal
 const THREAD_TRIES = 6, THREAD_STEP = 0.16, THREAD_LOOK = 2.5, GOAL_REACH = 900, GOAL_DEPTH = 100, RAID_OUT = 150, RAID_OUT_T = 10;
-const knifeStance = (st) => st === 'flank' || st === 'raid';
+// Close-in stances (owner, 22 Nov 2026, second round: "in battle scenes the coolest scenes the armies go straight into one
+// another and then break out into a chaotic melee… enemy ships can cooperate with each other to make the battle look good";
+// he chose: only the close-in stances dive in, Front line keeps holding): Charge (and the old Brawler) thread gaps, slide
+// along hulls and get room made for them too, and ships of BOTH sides on their path slide aside (threadGap).
+const knifeStance = (st) => st === 'flank' || st === 'raid' || st === 'charge' || st === 'brawl';
 // Debris still over the ship it broke off from is pushed out at up to this speed (blocks/s).
 const OWN_CLEAR_SPEED = 6;
 // Hulls with at least this many grid cells (80 × 80) get two exact checks that small ships don't
@@ -306,7 +310,7 @@ export class Battle {
       tiles: null, tw: 0, th: 0, // big hulls: which TILE × TILE squares hold a live block (see buildTiles)
       gapTo: -1, gapT: -1000, gap: 0, // cached distance to the first real block of a big target (see gapTo)
       tdist: null, tdistT: -1000, tdirty: false, // big hulls: distance from each tile to the nearest live one (see nearGap)
-      mass: 1, maxSpeed: 0, turn: 0, agility: 0, prefRange: 60, ward: null,
+      mass: 1, maxSpeed: 0, turn: 0, agility: 0, prefRange: 60, reach: 60, ward: null, // reach: main gun range (flankers and raiders turn their guns on their goal within it)
       face: null, faceMax: 0, faceIn: null, faceInMax: 0, // faceIn: face with the arc edges trimmed (holdFacing); firepower that bears on a target at each of the 64 directions round the ship (see refit / holdFacing)
       worth: 0, // credit value of the ship's design (rout check)
       light: 0, flakIn: -999, crowd: 0, crowdT: -999, crowdN: -1, // flak: how lightly armoured it is for its guns (see refit), tick a flak burst last went for it, enemy ships packed round it (counted at crowdT) and its nearest neighbour's id
@@ -453,6 +457,7 @@ export class Battle {
     e.maxSpeed = Math.max(2.5, Math.min(22, (30 * thrust) / e.mass));
     e.turn = Math.max(0.05, Math.min(2.5, (1.6 * e.maxSpeed) / e.w));
     e.agility = Math.max(0.25, Math.min(2, e.maxSpeed / 8));
+    e.reach = range || 60;
     e.prefRange = STANCES[e.stance].range(e, range || 60, shortest === Infinity ? 60 : shortest, longest || 60, far || 60, near === Infinity ? 60 : near);
   }
 
@@ -741,7 +746,7 @@ export class Battle {
     let desired = Math.atan2(dy, dx);
     if (disarmed) desired += Math.PI; // crippled: run away from the enemy fleet
     const pr = e.prefRange;
-    let slow = false, hold = false, backX = 0, backY = 0, thread = false;
+    let slow = false, hold = false, backX = 0, backY = 0, thread = false, face = null;
     let ward = e.stance === 'escort' && e.ward && !e.ward.dead ? e.ward : null;
     // Escorts break station to attack anything that gets within 250 of their ward.
     if (ward && tg && (tg.x - ward.x) ** 2 + (tg.y - ward.y) ** 2 < 250 * 250) ward = null;
@@ -759,6 +764,14 @@ export class Battle {
     } else if (!disarmed && (e.stance === 'flank' || e.stance === 'raid')) {
       [desired, slow] = this.steerGoal(e, desired, pr);
       thread = this._thread;
+      // Flying past or circling its goal, it turns its guns on it and keeps going the way it was (owner, 22 Nov 2026:
+      // "ships move past each other broadsiding each other"): the hull faces where most of its firepower bears on the
+      // goal (holdFacing), the ship travels along the run or the circle.
+      const g = e.goal;
+      if (g && !g.dead) {
+        const gdx = g.x - e.x, gdy = g.y - e.y, gd = Math.hypot(gdx, gdy) - g.radius * 0.8 - e.radius * 0.5;
+        if (gd < e.reach * 0.9) face = this.holdFacing(e, Math.atan2(gdy, gdx));
+      }
     } else if (tg && !disarmed && e.stance === 'skirmish') {
       // Skirmisher (owner, Nov 2026): the old artillery rule, kiting on purpose. Too close, it turns
       // away and opens the range (its forward guns stop bearing while it runs).
@@ -770,7 +783,7 @@ export class Battle {
       // fight"): close to its distance, then hold there, turned so the most firepower bears on
       // the target, braking to a stop. Pressed hard (under 60% of its distance) it backs off
       // slowly, still facing the enemy, instead of turning and running.
-      if (d > pr) { slow = d < pr * 1.15 && e.stance !== 'charge'; }
+      if (d > pr) { slow = d < pr * 1.15 && e.stance !== 'charge'; thread = e.knife && d > pr * 1.5; }
       else {
         desired = this.holdFacing(e, desired);
         hold = true;
@@ -786,6 +799,7 @@ export class Battle {
     let sx = e.sepX, sy = e.sepY;
     // A flanker or raider on its way in steers through the gap it found instead of being pushed round by the crowd.
     if (thread) desired += e.thrA; else e.thrA = 0;
+    if (face !== null) thread = true; // strafing: the crowd slides it, it doesn't turn it (as for holding ships)
     // A ship holding its distance only slides out of the crowd (below), it doesn't turn: holdFacing
     // picks the gun-bearing heading needing the least turn, so each bend from the crowd became its
     // next heading and it spun on the spot (owner, 14 Nov 2026, in front of an Aegis fortress).
@@ -794,9 +808,11 @@ export class Battle {
       if (dot < 0) { sx -= dot * fx; sy -= dot * fy; }
       desired = Math.atan2(fy + sy * SPACING_TURN, fx + sx * SPACING_TURN);
     }
-    const da = wrapAngle(desired - e.a), mt = e.turn * DT;
+    const da = wrapAngle((face !== null ? face : desired) - e.a), mt = e.turn * DT;
     e.a = wrapAngle(e.a + (da > mt ? mt : da < -mt ? -mt : da));
     e.c = Math.cos(e.a); e.s = Math.sin(e.a);
+    // Travelling one way while facing another (strafing past its goal): thrust along the way it's going.
+    const tc = face !== null ? Math.cos(desired) : e.c, ts = face !== null ? Math.sin(desired) : e.s;
     {
       const want = hold ? 0 : slow && !disarmed ? e.maxSpeed * 0.55 : e.maxSpeed;
       const k = 1 - Math.exp(-e.agility * DT);
@@ -805,8 +821,8 @@ export class Battle {
       // Holding ground: stop, or back away slowly (30% speed) without turning from the enemy.
       let bx = 0, by = 0;
       if (backX || backY) { const bl = Math.hypot(backX, backY) || 1, bs = e.maxSpeed * 0.3; bx = (backX / bl) * bs; by = (backY / bl) * bs; }
-      e.vx += (e.c * want + bx + sx * lat - e.vx) * k;
-      e.vy += (e.s * want + by + sy * lat - e.vy) * k;
+      e.vx += (tc * want + bx + sx * lat - e.vx) * k;
+      e.vy += (ts * want + by + sy * lat - e.vy) * k;
     }
     this.collide(e);
     e.x += e.vx * DT; e.y += e.vy * DT;
@@ -863,7 +879,8 @@ export class Battle {
    * at again every THREAD_EVERY ticks with its own grid query out to that distance.
    */
   threadGap(e, desired) {
-    const L = Math.max(40, e.maxSpeed * THREAD_LOOK), hw = e.bhh + 2, g = e.goal, ob = this._ob, near = this._near;
+    const L = Math.max(40, e.maxSpeed * THREAD_LOOK), hw = e.bhh + 2, ob = this._ob, near = this._near;
+    const g = e.goal || (e.stance === 'charge' || e.stance === 'brawl' ? e.targets[0] : null); // what it's going for doesn't count as in the way
     // Looks further than its neighbour list reaches: its own grid query, out to L ahead.
     const R = L + e.radius;
     near.length = 0;
@@ -891,11 +908,12 @@ export class Battle {
       if (cost < bc) { bc = cost; best = off; }
     }
     e.thrA = best;
-    // Friends in the way make room: each friendly ship (not another flanker or raider, not a defence) on the chosen
-    // path is asked to slide sideways off it (picked up in its next spacing), so our own lines open a lane.
-    const dx = Math.cos(desired + best), dy = Math.sin(desired + best), fr = this.fr, tb = e.team << 4;
+    // Ships in the way make room, friend AND foe (owner, 22 Nov 2026: "enemy ships can cooperate with each other to make
+    // the battle look good"): each ship on the chosen path (not another close-in ship, not a defence, not what it's going
+    // for) is asked to slide sideways off it (picked up in its next spacing), so lines open a lane and it flies through.
+    const dx = Math.cos(desired + best), dy = Math.sin(desired + best);
     for (const o of near) {
-      if (o.kind !== SHIP || o.dead || o.knife || o.fixed || !fr[tb | o.team]) continue;
+      if (o.kind !== SHIP || o.dead || o.knife || o.fixed || o === g) continue;
       const px = o.x - e.x, py = o.y - e.y, t = px * dx + py * dy;
       if (t < 0 || t > L) continue;
       const cr = px * dy - py * dx, rad = o.radius * 0.75 + hw + 6, lat = Math.abs(cr);

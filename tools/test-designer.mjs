@@ -739,6 +739,17 @@ for (let k = 0; k < FORTRESSES.length; k++) {
   assert.ok(reached > 0 && reached < 100, `and reaches it through both lines (${reached} s)`);
   assert.ok(out > 120, `the raider carries on ${out.toFixed(0)} blocks past its target before turning`);
   console.log(`  flankers/raiders: flanker reaches the ship at the back in ${reached} s, raider runs out ${out.toFixed(0)} blocks`);
+  // Enemy ships make way too (owner, 22 Nov 2026: "enemy ships can cooperate… to make the battle look good"): an enemy
+  // cruiser right across a charging corvette's path is asked to slide aside; the one it is going for is not.
+  {
+    const dsg = [mk('corvette', 21, 'charge'), mk('cruiser', 22, 'line')];
+    const b2 = new Battle({ designs: dsg, ships: [{ design: 0, team: 0, x: 0, y: 0, a: 0 }, { design: 1, team: 1, x: 30, y: 2, a: Math.PI }, { design: 1, team: 1, x: 120, y: 0, a: Math.PI }], seed: 1 });
+    const [ch, block, tgt] = b2.ents;
+    ch.targets = [tgt]; b2.refreshNear(ch);
+    b2.threadGap(ch, 0);
+    assert.ok(Math.hypot(block.wayX, block.wayY) > 0.1, 'an enemy ship in the way is asked to make room');
+    assert.equal(tgt.wayX, 0, 'the ship it is going for is not');
+  }
 }
 
 // Grids only clear and sum the cells their entities cover (22 Nov 2026); queries must still find exactly what a

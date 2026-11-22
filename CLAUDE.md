@@ -1017,6 +1017,23 @@ Combat rules:
     further). In normal battles they still mostly die on the way in (life ~same), raiders make ~2× the passes (0.3 →
     0.6), outcomes unchanged (value lost shares within ±0.05). Test in `tools/test-designer.mjs` (fails on the old code:
     the flanker went for the front row 96% of the time). Replays sent: "Flankers and raiders: BEFORE / AFTER".
+  - **Second round (owner, 22 Nov 2026: "in movies I see ships move past each other broadsiding each other… the armies go
+    straight into one another and then break out into a chaotic melee. Would it help if enemy ships also help move out
+    of the way… number one priority is that battles look good… enemy ships can cooperate… number 2 is that ships try to
+    win")**, on `v2-dev`, not live. Asked who charges in; **owner chose: only close-in stances** (Front line keeps holding
+    at 45%). Changes: `e.knife` now also covers **Charge** (and the old Brawler): it threads (`thread` while `d > pr ×
+    1.5`, its target counts as its goal in `threadGap`), slides along hulls and gets room made; **ships of both sides make
+    way** (threadGap's sideways push goes to any non-close-in, non-fixed ship on the path except what it's going for);
+    **strafing passes**: a flanker or raider whose goal's hull is within 0.9 × `e.reach` (main gun range, set in `refit`)
+    turns its hull to `holdFacing` on the goal while still travelling along its run / circle (`face` in `move()`: the turn
+    goes to `face`, thrust along `desired`; the crowd only slides it). Measured (same `eval.mjs` scenarios, 3 seeds): ships
+    within 40 of an enemy hull (both sides, all stances) ~5% of the time before and after, close-in ships ~15% before and
+    after: still not a melee, because the close-in ships die crossing the gap and Front line holds at range. Tried (not
+    kept, offered to the owner as option B): close-in ships fly in at 1.6× speed while on the way in + Auto start at the
+    front for close-in designs: close-in ships in contact 15% → 34% in the even test, inside the enemy formation 26% of
+    their time (was 5%), but they die sooner (life 61 → 32 s). Replays sent: "Even fight: live / A (enemies make way,
+    broadside passes) / B (A + charge speed + start at the front)". Test in `tools/test-designer.mjs` (an enemy cruiser
+    in a charging corvette's path gets a make-way push; its target doesn't).
   - An **Interceptor** (`guard`, defend the artillery) was tried and **removed** (owner: it just
     made big clumps of ships sitting at the back). Saved designs with an unknown stance load as
     `line`.
