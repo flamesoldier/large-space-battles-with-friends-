@@ -91,6 +91,9 @@ non-home world pays `PLANET_INCOME_BASE` 60 + `PLANET_INCOME_PER_LANE` 50 per la
 Measured over 200 galaxies (2–10 players): lanes 1–7, mean 3.4 (1: 2%, 2: 15%, 3: 37%, 4: 34%, 5: 10%, 6+: 2%), so 110–410
 cr/h, mean ~230 like the old random 130–330. The old random draws are still taken, so a seed makes the same map. New
 galaxies only (running games keep their incomes; lanes `upgradeWorld` adds don't change income). Test in `tools/test-world.mjs`.
+**Doubled the same day** (owner: "new players are going to want to build more shipyards in the first day… a 3 hyperlane
+planet should make at least 420"): base **120** + **100** per lane, so 220 / 320 / 420 / 520 / 620 for 1–5 lanes, mean ~460;
+homes still 500. Militia grows with it (20,000 + 12 h: ~25,000 at a 3-lane world instead of ~22,500). On `v2-dev`, not live.
 
 **Defences and selling, 5 minutes (owner, 18 Nov 2026, after 2.0 went live):** "building defences will be much more important and should be able to be done reactively": `DEFENSE_BUILD_HOURS` and `SELL_HOURS` = 5/60 (were 15 h), **selling a shipyard gives back 65%** (`SHIPYARD_SELL_REFUND`, was 95%). Texts use `fmtHours()` ("5 min"). Test: defences ordered 10 min before a battle are ready for it, ones ordered 2 min before are lost with the world. Live 18 Nov 2026. **No patch notes for now** (owner: nobody is playing; he'll say when to start again).
 
