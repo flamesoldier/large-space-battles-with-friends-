@@ -103,7 +103,7 @@ a { color: var(--azure); }
 
   <section id="storage" hidden>
     <h2>Storage</h2>
-    <p>The game and its battle replays are saved on Railway's disk (volume). When it gets nearly full, the oldest replays are deleted automatically so the game can always save.</p>
+    <p>The game and its battle replays are saved on Railway's disk (volume). Replays are kept up to 2 GB in all: past that (or if the disk gets nearly full) the oldest are deleted automatically, so the game can always save. Players who want to keep a battle can download its replay from the combat log.</p>
     <div class="kv" id="storage-kv"></div>
     <p id="save-error" class="err" hidden></p>
   </section>
@@ -205,7 +205,7 @@ function render(st) {
   $('storage').hidden = !D;
   if (D) {
     const gb = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(2)} GB` : `${Math.round(b / 1e6)} MB`);
-    $('storage-kv').innerHTML = (D.total ? `<span>Disk <b>${gb(D.total)}</b></span><span><b>${gb(D.free)}</b> free</span>` : '') + `<span>Replays <b>${gb(D.replayBytes)}</b> (${G.replays.toLocaleString('en')})</span>`;
+    $('storage-kv').innerHTML = (D.total ? `<span>Disk <b>${gb(D.total)}</b></span><span><b>${gb(D.free)}</b> free</span>` : '') + `<span>Replays <b>${gb(D.replayBytes)}</b>${D.replayCap ? ` of ${gb(D.replayCap)}` : ''} (${G.replays.toLocaleString('en')})</span>`;
     $('save-error').hidden = !D.saveError;
     if (D.saveError) $('save-error').textContent = `Saving the game is failing: ${D.saveError.message}. Nothing since then is saved yet.`;
   }

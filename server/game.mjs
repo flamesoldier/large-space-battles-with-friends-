@@ -29,7 +29,10 @@ const WORKER = new URL('./battleWorker.mjs', import.meta.url);
 // Disk (owner, 15 Nov 2026: the Railway volume filled up with replays, every save failed with ENOSPC
 // and players saw "Server error." on every order). The oldest replays are deleted whenever free space
 // drops under KEEP_FREE (or a fifth of a small disk), always keeping the newest MIN_REPLAYS.
+// Replays are also kept to REPLAY_CAP in all (owner, 23 Nov 2026: "maybe only keep 2 gig instead of 4.6", so the
+// disk never runs close to full; players who want to keep a replay can download it). LSB_REPLAY_CAP (bytes) changes it.
 const KEEP_FREE = 300e6, MIN_REPLAYS = 10;
+export const REPLAY_CAP = Number(process.env.LSB_REPLAY_CAP) > 0 ? Number(process.env.LSB_REPLAY_CAP) : 2e9;
 const battleNo = (id) => Number(id.slice(1));
 
 /** Whole number in [0, n), or null. Request bodies are untrusted, so everything is checked. */
@@ -50,6 +53,7 @@ export class Game {
     this.replays = new Set(readdirSync(this.replayDir).filter((f) => f.endsWith('.bin.gz')).map((f) => f.slice(0, -7)));
     this.replayBytes = new Map(); // id -> bytes on disk
     for (const id of this.replays) this.replayBytes.set(id, this.fileSize(`${id}.bin.gz`) + this.fileSize(`${id}.json`));
+    this.replayCap = REPLAY_CAP; // replays kept in all, in bytes
     this.replayVer = 1; // bumped when a replay is added or deleted, so clients know to fetch the list
     this.saveError = null; // { at, message } while saving fails
     this.lastSaveLog = 0;
@@ -130,20 +134,28 @@ export class Game {
    */
   pruneReplays(need = 0, force = false) {
     const d = this.disk();
-    if (!d && !force) return 0;
     const want = Math.min(KEEP_FREE, (d?.total ?? 0) / 5) + need;
-    let free = d ? d.free : 0, n = 0;
-    if (free >= want && !force) return 0;
+    let free = d ? d.free : Infinity, n = 0, used = 0;
+    for (const b of this.replayBytes.values()) used += b;
+    const over = () => used + need > this.replayCap || free < want; // too many replays, or the disk nearly full
+    if (!d && force) free = 0;
+    if (!over() && !force) return 0;
+    const full = free < want || force;
     const ids = [...this.replays].sort((a, b) => battleNo(a) - battleNo(b));
     for (const id of ids) {
-      if (free >= want && !(force && n === 0)) break;
+      if (!over() && !(force && n === 0)) break;
       if (this.replays.size <= MIN_REPLAYS) break;
       for (const f of [`${id}.bin.gz`, `${id}.json`]) { try { unlinkSync(join(this.replayDir, f)); } catch {} }
-      free += this.replayBytes.get(id) || 0;
+      const b = this.replayBytes.get(id) || 0;
+      free += b; used -= b;
       this.replays.delete(id); this.replayBytes.delete(id);
       n++;
     }
-    if (n) { this.replayVer++; this.log(`[${new Date().toISOString()}] Disk nearly full: deleted the ${n} oldest replay${n > 1 ? 's' : ''} (${this.replays.size} kept).`); }
+    if (n) {
+      this.replayVer++;
+      const why = full ? 'Disk nearly full' : `Replays over ${(this.replayCap / 1e9).toFixed(1)} GB`;
+      this.log(`[${new Date().toISOString()}] ${why}: deleted the ${n} oldest replay${n > 1 ? 's' : ''} (${this.replays.size} kept).`);
+    }
     return n;
   }
 

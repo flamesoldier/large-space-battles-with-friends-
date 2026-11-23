@@ -2055,6 +2055,11 @@ game in progress carries on because it lives on the volume (`/data`: `game.json`
   never throws: a replay that can't be written is dropped, not the battle). The replay list's version is
   `replayVer` (the page's `rc`), bumped on add and delete. `/admin` has a **Storage** section (disk size,
   free, replays). Test: `tools/test-storage.mjs`.
+  **Replays kept to 2 GB in all (owner, 23 Nov 2026: "I'm worried your cutting the line to close if players really want to
+  save a replay they can download it maybe only keep 2 gig instead of 4.6")**, on `v2-dev`, not live: `REPLAY_CAP` 2e9 in
+  `game.mjs` (`LSB_REPLAY_CAP` bytes overrides; `game.replayCap`), checked by the same `pruneReplays` (oldest first, newest 10
+  always kept; log "Replays over 2.0 GB: deleted…"); the disk-nearly-full rule stays as a backstop. `/admin` Storage shows
+  "Replays X of 2.00 GB" and says players can download replays they want to keep. Test in `tools/test-storage.mjs`.
 - **Never break the live save.** `game.json` is `{ world, anchor, speed }` (older: `{ world, wall }`).
   Any change to the world format must load an existing world: add defaults in `upgradeWorld()`
   (`src/world/world.js`) the way `sieges`, `proposals`, `relations` and `fleet.leg` were added.

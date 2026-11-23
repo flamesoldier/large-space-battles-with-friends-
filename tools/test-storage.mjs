@@ -30,6 +30,18 @@ free = 0;
 g.pruneReplays();
 ok(g.replays.size === 10 && g.replays.has('b30'), 'the newest 10 are always kept');
 
+// replays are kept to 2 GB in all (owner, 23 Nov 2026), whatever room the disk has
+ok(g.replayCap === 2e9, 'the replay limit is 2 GB');
+for (let i = 31; i <= 50; i++) { writeFileSync(join(dir, 'replays', `b${i}.bin.gz`), Buffer.alloc(1000)); writeFileSync(join(dir, 'replays', `b${i}.json`), '{}'); g.replays.add(`b${i}`); g.replayBytes.set(`b${i}`, 1002); }
+free = 1e9;
+g.replayCap = 15000; // 30 replays of 1,002 bytes are kept now, so 16 must go (14 fit)
+const m = g.pruneReplays();
+const kept = [...g.replayBytes.values()].reduce((a, b) => a + b, 0);
+ok(m === 16 && kept <= 15000 && g.replays.has('b50') && !g.replays.has('b36') && g.replays.has('b37'), `oldest go once replays pass the limit (${m} deleted, ${kept} bytes kept)`);
+ok(logs.some((l) => /Replays over/.test(l)), 'and the log says why');
+ok(g.pruneReplays(2000) === 2 && g.replays.has('b50'), 'room is made for the next replay too');
+g.replayCap = 2e9;
+
 // a save that fails never throws (the order still happened) and is shown to the admin
 g.file = join(dir, 'no-such-folder', 'game.json');
 g.save();
