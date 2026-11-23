@@ -2056,7 +2056,7 @@ game in progress carries on because it lives on the volume (`/data`: `game.json`
   `replayVer` (the page's `rc`), bumped on add and delete. `/admin` has a **Storage** section (disk size,
   free, replays). Test: `tools/test-storage.mjs`.
   **Replays kept to 2 GB in all (owner, 23 Nov 2026: "I'm worried your cutting the line to close if players really want to
-  save a replay they can download it maybe only keep 2 gig instead of 4.6")**, on `v2-dev`, not live: `REPLAY_CAP` 2e9 in
+  save a replay they can download it maybe only keep 2 gig instead of 4.6")**, **live 23 Nov 2026** (owner: "make it live"): `REPLAY_CAP` 2e9 in
   `game.mjs` (`LSB_REPLAY_CAP` bytes overrides; `game.replayCap`), checked by the same `pruneReplays` (oldest first, newest 10
   always kept; log "Replays over 2.0 GB: deleted…"); the disk-nearly-full rule stays as a backstop. `/admin` Storage shows
   "Replays X of 2.00 GB" and says players can download replays they want to keep. Test in `tools/test-storage.mjs`.
