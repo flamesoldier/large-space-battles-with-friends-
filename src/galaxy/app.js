@@ -32,6 +32,7 @@ import { openArrange, arrangeOpen } from './arrange.js';
 import { ReplayStore } from './replayStore.js';
 import { Net } from './net.js';
 import { PATCH_NOTES } from '../shared/patchNotes.js';
+import { tutorialPages } from './tutorial.js';
 import { endReport } from '../world/stats.js';
 import { endCardHTML, reportArt, savePicture, END_CARD_CSS } from './endCard.js';
 import { HOUR_MS, PLAYER_COLORS, NEUTRAL_COLOR, MIN_PLAYERS, MAX_PLAYERS, HYPERLANE_SPEEDUP, MIN_FLEET_SPEED } from '../world/rules.js';
@@ -1457,6 +1458,31 @@ function syncDipBadge() {
 // Battle simulator (owner, Nov 2026: new players might never find the designer's Test battle):
 // the designer opened with no world, straight into its test battle.
 $('sim-btn').addEventListener('click', () => openDesigner(-1, 'sim'));
+
+// ------------------------------------------------------------ tutorial
+// Owner, 23 Nov 2026: a step-by-step guide (src/galaxy/tutorial.js) that opens only from its
+// button, never by itself. Remembers the page it was left on in this visit.
+const TUT = tutorialPages(CLICK);
+let tutAt = 0;
+function showTutorial(i) {
+  tutAt = Math.max(0, Math.min(TUT.length - 1, i));
+  const pg = TUT[tutAt];
+  $('tut-page').innerHTML = `<h4>${esc(pg.title)}</h4>${pg.art}${pg.html}`;
+  $('tut-page').scrollTop = 0;
+  $('tut-count').textContent = `${tutAt + 1} of ${TUT.length}`;
+  $('tut-back').disabled = tutAt === 0;
+  $('tut-next').textContent = tutAt === TUT.length - 1 ? 'Done' : 'Next';
+  $('tut-dots').innerHTML = TUT.map((p, k) => `<button data-tut="${k}" title="${esc(p.title)}" aria-label="Page ${k + 1}: ${esc(p.title)}"${k === tutAt ? ' aria-current="step"' : ''}></button>`).join('');
+}
+$('tut-btn').addEventListener('click', () => { showTutorial(tutAt); $('tutorial').showModal(); $('tut-next').focus(); });
+$('tut-close').addEventListener('click', () => $('tutorial').close());
+$('tut-back').addEventListener('click', () => showTutorial(tutAt - 1));
+$('tut-next').addEventListener('click', () => { if (tutAt === TUT.length - 1) { $('tutorial').close(); tutAt = 0; } else showTutorial(tutAt + 1); });
+$('tut-dots').addEventListener('click', (e) => { const b = e.target.closest('[data-tut]'); if (b) showTutorial(Number(b.dataset.tut)); });
+$('tutorial').addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight') { e.preventDefault(); if (tutAt < TUT.length - 1) showTutorial(tutAt + 1); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); showTutorial(tutAt - 1); }
+});
 
 // ------------------------------------------------------------ patch notes
 // Owner, Nov 2026: every update is listed (src/shared/patchNotes.js). The button shows "new"

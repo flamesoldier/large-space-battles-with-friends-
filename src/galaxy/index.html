@@ -244,6 +244,23 @@ dialog {
 .notes h4 .tag { margin-left: 6px; }
 .notes ul { margin: 0 0 6px; padding-left: 18px; }
 .notes li { font-size: 13px; line-height: 1.45; margin-bottom: 4px; }
+/* tutorial (owner, 23 Nov 2026) */
+#tutorial { width: min(640px, 94vw); }
+#tutorial .head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+#tutorial .head h3 { margin: 0; flex: 1; }
+.tut-count { font: 11px var(--mono); color: var(--dim); letter-spacing: 0.04em; }
+.tut-page { max-height: 62vh; overflow-y: auto; padding-right: 6px; }
+.tut-page h4 { margin: 0 0 8px; font-size: 17px; color: var(--signal); }
+.tut-art { display: block; width: 100%; height: auto; max-height: 130px; margin: 2px 0 10px; background: rgba(140, 170, 210, 0.04); border: 1px solid var(--line); border-radius: 4px; }
+.tut-page p, .tut-page li { font-size: 13.5px; line-height: 1.5; }
+.tut-page p { margin: 0 0 8px; }
+.tut-page ul { margin: 0 0 8px; padding-left: 18px; }
+.tut-page li { margin-bottom: 5px; }
+.tut-nav { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.tut-nav > button { min-width: 76px; }
+.tut-dots { flex: 1; display: flex; justify-content: center; gap: 6px; flex-wrap: wrap; }
+.tut-dots button { width: 10px; height: 10px; min-width: 0; padding: 0; border-radius: 50%; background: var(--line); border: 0; }
+.tut-dots button[aria-current="step"] { background: var(--azure); }
 dialog::backdrop { background: rgba(2, 4, 8, 0.72); }
 dialog h3 { margin: 0 0 12px; font-size: 15px; letter-spacing: 0.08em; text-transform: uppercase; }
 dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; flex-wrap: wrap; }
@@ -363,6 +380,7 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
     <div class="readout"><small>Galaxy time</small><strong id="clock">Day 1</strong></div>
     <div class="group speed" role="group" aria-label="Game speed" id="speed"></div>
     <div class="topbtns">
+    <button id="tut-btn" title="How to play: a short step-by-step guide">Tutorial</button>
     <button id="sim-btn" title="Test any designs against each other in a practice battle. Nothing is spent.">Battle simulator</button>
     <button id="notes-btn" title="What's changed in each update">Patch notes<span class="badge" id="notes-badge" hidden>new</span></button>
     <button id="dip-btn" title="Allies and enemies">Diplomacy<span class="badge" id="dip-badge" hidden>0</span></button>
@@ -436,6 +454,20 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
     <h2>Who is allied with whom</h2>
     <div id="dip-grid" class="grid-wrap"></div>
     <p class="hint">Allies can station ships on each other's worlds, defend them together and join each other's attacks. Everyone else is an enemy. An alliance needs both players to agree; either one can break it, which sends their ships on each other's worlds home.</p>
+  </dialog>
+
+  <dialog id="tutorial" aria-labelledby="tut-title">
+    <div class="head">
+      <h3 id="tut-title">Tutorial</h3>
+      <span class="tut-count" id="tut-count"></span>
+      <button class="small" id="tut-close">Close</button>
+    </div>
+    <div id="tut-page" class="tut-page"></div>
+    <div class="tut-nav">
+      <button id="tut-back">Back</button>
+      <div class="tut-dots" id="tut-dots" role="group" aria-label="Pages"></div>
+      <button class="go" id="tut-next">Next</button>
+    </div>
   </dialog>
 
   <dialog id="notes">

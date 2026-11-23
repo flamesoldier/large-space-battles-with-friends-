@@ -8,6 +8,12 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-23-tutorial', date: '23 Nov 2026', title: 'A tutorial',
+    items: [
+      'New Tutorial button at the top of the screen: a short step-by-step guide to how the game works, from worlds and shipyards to designing ships, how fleets move by themselves, sieges, defences, diplomacy and watching replays. Use Next and Back (or the arrow keys) to step through it, and open it again whenever you like.',
+    ],
+  },
+  {
     id: '2026-11-v2', date: '18 Nov 2026', title: 'Version 2.0: the galaxy plays itself',
     items: [
       'Fleets now move by themselves, so you no longer need to be online to defend or attack. What matters is your ship designs, where you build shipyards, which way you push and your diplomacy.',
