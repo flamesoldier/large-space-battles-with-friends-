@@ -884,7 +884,9 @@ Weapons (numbers in `blocks.js`):
     frames (range 200 at 1× and 60 fps: 300 → 40 frames, 1,000 → 12, 2,000 → 6), so fewer tracers are in flight at once.
     **Owner chose 225** (same day, after the 300 / 600 / 1000 / 2000 replays: "it does look better but it's hard to tell what's
     going on… 300 is better than 150 for sure but I think the sweet spot is actually between them"); streak at 225 = 6.75 blocks.
-    Patch notes entry `2026-11-24-autogun` written. Test in `tools/test-designer.mjs` (bullets at 2,000 end within 2 blocks of the wall's
+    Patch notes entry `2026-11-24-autogun` written. **Live 24 Nov 2026** (owner: "make it live as long as the spark fix doesn't use
+    too much more compute or memory": it uses none, same Uint16 column, one meta flag) together with the 0.001 s flight times
+    and the streak cap. Test in `tools/test-designer.mjs` (bullets at 2,000 end within 2 blocks of the wall's
     face in the replay; 9 blocks with the old rounding). Bench identical. Replays sent: "Auto gun bullets at 300 / 600 / 1000 /
     2000".
   - Measured (16×10 hull, 3 auto gun units 1,113 cr vs 8 cannons 1,317 cr, 60k cr a side, 4 seeds; score =
