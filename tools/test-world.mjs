@@ -986,9 +986,19 @@ const resolve = (scen) => {
   const b = payBounties(w, per);
   // (2.0: BOUNTY_SHARE 10%, was 20%; the owner's example was at 20%.)
   const B = (x) => Math.floor(x * BOUNTY_SHARE);
-  ok(b[0] === B(200000) / 2 && b[1] === B(200000) / 2, `allies P1 and P2 split ${B(200000)} evenly (${b[0]}, ${b[1]})`);
+  ok(b[0] === B(200000) / 2 && b[1] === B(200000) / 2, `allies with no known value split ${B(200000)} evenly (${b[0]}, ${b[1]})`);
   ok(b[2] === B(250000) && b[3] === B(250000), `P3 and P4 each get ${BOUNTY_SHARE * 100}% of 250,000 (${b[2]}, ${b[3]})`);
   ok(w.players.every((p, i) => p.credits === before[i] + b[i]), 'bounties are paid into credits');
+  // Owner, 25 Nov 2026: allies split by the value they brought in, not by survivors. P1 brought
+  // 100k and P2 50k; P1 loses everything, P2 nothing: P1 still gets 2/3.
+  const v = payBounties(w, [
+    { id: 0, value: 100000, lost: 100000 }, { id: 1, value: 50000, lost: 0 }, { id: 2, value: 200000, lost: 60000 },
+  ]);
+  const pot = 60000 * BOUNTY_SHARE;
+  ok(v[0] === Math.floor((pot * 2) / 3) && v[1] === Math.floor(pot / 3), `allies split by value brought in: 2/3 and 1/3 of ${pot} (${v[0]}, ${v[1]})`);
+  ok(v[2] === B(100000), `P3 alone gets all of its share of the 100,000 its enemies lost (${v[2]})`);
+  const one = payBounties(w, [{ id: 0, value: 0, lost: 0 }, { id: 1, value: 40000, lost: 0 }, { id: 2, value: 1, lost: 50000 }]);
+  ok(one[0] === 0 && one[1] === B(50000), 'an ally that brought nothing gets nothing');
   // Militia losses pay too; militia is never paid.
   const m = payBounties(w, [{ id: 2, lost: 0 }, { id: null, lost: 30000 }]);
   ok(m[2] === B(30000) && !(null in m), `killing 30,000 cr of militia pays ${B(30000)}`);

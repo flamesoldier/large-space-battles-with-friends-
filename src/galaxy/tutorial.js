@@ -109,7 +109,7 @@ export function tutorialPages(click = 'Click') {
       <p>When a fleet reaches a world it attacks, it starts a <b>siege</b>. The battle waits <b>${holdText}</b>, so both sides can send more ships. A ring round the world counts down.</p>
       <ul><li>When it starts, <b>everyone there fights everyone they're at war with</b>, in one battle that lasts up to ${n(BATTLE_MAX_TIME / 60)} minutes. The server fights it out by itself.</li>
       <li>If the attackers win, they take the world. Its shipyards and defences are destroyed and its income goes to the winner. Beaten fleets fall back.</li>
-      <li>You earn a <b>bounty</b> of ${pct(BOUNTY_SHARE)} of the value of the enemy ships destroyed in your battles.</li>
+      <li>You earn a <b>bounty</b> of ${pct(BOUNTY_SHARE)} of the value of the enemy ships destroyed in your battles. Allies who fight together share it by the value of the ships each brought into the battle.</li>
       <li><b>Taking turns:</b> once a world beats off an attack, the world that attacked can't attack it again until it gets attacked back from there. The world panel shows this as <b>Can't attack</b> and <b>Safe from</b>.</li>
       <li><b>Militia</b> worlds are how everyone grows at the start. They're well defended (${n(NEUTRAL_GARRISON_BASE)} cr of ships plus ${NEUTRAL_GARRISON_HOURS} hours of the world's income), so the first attack often needs a second wave.</li></ul>` },
 

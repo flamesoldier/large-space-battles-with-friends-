@@ -1423,13 +1423,18 @@ function siegeEnds(world, s, plan, result) {
 
 /**
  * Pay the battle bounty (owner, Nov 2026). Players who fought are put in groups of mutual allies;
- * each group gets BOUNTY_SHARE of everything lost by the players (and militia) at war with it,
- * split evenly between its players, whatever each brought. `extra` adds losses after the battle
- * (defences razed with the world). Militia is never paid. Returns { playerId: credits }.
+ * each group gets BOUNTY_SHARE of everything lost by the players (and militia) at war with it.
+ * Owner, 25 Nov 2026: a group's bounty is split by the value each player brought into the battle
+ * (`q.value`: ships and defences at the start, survivors don't matter), so 100k + 50k allies get
+ * 2/3 and 1/3; evenly if nobody's value is known. `extra` adds losses after the battle (defences
+ * razed with the world). Militia is never paid. Returns { playerId: credits }.
  */
 export function payBounties(world, per, extra = new Map()) {
-  const lostBy = new Map();
-  for (const q of per) lostBy.set(q.id, (lostBy.get(q.id) || 0) + q.lost);
+  const lostBy = new Map(), sent = new Map();
+  for (const q of per) {
+    lostBy.set(q.id, (lostBy.get(q.id) || 0) + q.lost);
+    sent.set(q.id, (sent.get(q.id) || 0) + (q.value || 0));
+  }
   for (const [o, v] of extra) lostBy.set(o, (lostBy.get(o) || 0) + v);
   const players = [...lostBy.keys()].filter((o) => o !== null && world.players[o]);
   const groups = [];
@@ -1441,8 +1446,12 @@ export function payBounties(world, per, extra = new Map()) {
   for (const g of groups) {
     let enemyLoss = 0;
     for (const [o, v] of lostBy) if (!g.includes(o) && g.some((u) => hostile(world, u, o))) enemyLoss += v;
-    const each = Math.floor((enemyLoss * BOUNTY_SHARE) / g.length);
-    for (const o of g) { out[o] = each; if (each > 0) world.players[o].credits += each; }
+    const pot = enemyLoss * BOUNTY_SHARE;
+    const total = g.reduce((a, o) => a + (sent.get(o) || 0), 0);
+    for (const o of g) {
+      const c = Math.floor(total > 0 ? (pot * (sent.get(o) || 0)) / total : pot / g.length);
+      out[o] = c; if (c > 0) world.players[o].credits += c;
+    }
   }
   return out;
 }

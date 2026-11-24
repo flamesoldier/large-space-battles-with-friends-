@@ -8,6 +8,13 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-25-bounty', date: '25 Nov 2026', title: 'Fairer bounty between allies',
+    items: [
+      'When allies fight a battle together, their bounty is now shared by the value of the ships (and defences) each of them brought into the battle, instead of evenly. Bring 100,000 cr of ships alongside an ally who brings 50,000 and you get two thirds.',
+      'It counts what went into the battle, not what survived, so losing your ships doesn\'t cost you your share.',
+    ],
+  },
+  {
     id: '2026-11-24-hyperlane', date: '24 Nov 2026', title: 'A new hyperlane',
     items: [
       'Two outer worlds in the bottom-right of the map that sat side by side with no hyperlane between them are now joined. Fleets start using the new lane straight away.',
