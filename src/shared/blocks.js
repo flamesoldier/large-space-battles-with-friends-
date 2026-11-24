@@ -116,7 +116,7 @@ export const WEAPON = {
   // range, 55 damage each to the block it hits, every 0.2 s out to 200 (owner, 20 Nov 2026, third
   // round; was 0.1 s and 150). Bullets fly `life` s (not 30 like
   // cannon shells: at 3+ shots a second a long life would fill battles with spent bullets).
-  [BT.AUTO]: { kind: 'shell', auto: true, range: 200, damage: 55, cooldown: 0.2, speed: 150, life: 10, spread: 0.07 }, // each bullet damages only the block it hits
+  [BT.AUTO]: { kind: 'shell', auto: true, range: 200, damage: 55, cooldown: 0.2, speed: 300, life: 10, spread: 0.07 }, // each bullet damages only the block it hits; speed 300 (owner, 24 Nov 2026: was 150, "twice as fast")
   // Heavy missile: unguided, crawls across the map in a straight line, flies over friendly
   // ships, devastating blast. Has hit points, so point defence can shoot it down on the way in.
   // Blast damage falls off with distance: peak * (1 - d / splash)^2, applied to every ship

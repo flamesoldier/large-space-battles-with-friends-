@@ -864,6 +864,14 @@ Weapons (numbers in `blocks.js`):
     a little weaker (5/6/4/6 of 18 left vs 7/7/8/5; 110 overkills 45-hp frame); 712-ship mixed battle replay 8 →
     7 MB raw. Side-gun test now uses a heavy-armour target (a small armour one died in ~10 s) and checks bullets
     per second. Bench unchanged. Replay sent: "Auto gun: every 0.4 s, 110 damage, drawn as two tracers".
+  - **Bullets twice as fast (owner, 24 Nov 2026: "Auto guns don't look quite right to me what if the projectiles went
+    twice as fast?")**, on `v2-dev`, **not live**: `WEAPON[BT.AUTO].speed` 150 → **300** (life still 10 s, so misses fly
+    twice as far). Viewer `drawTracers`: the streak's longest length grows with speed (max(4.5, 0.3 × blocks a tick),
+    core max(3.2, 0.213 ×)), so old replays (speed 150 in their `meta.shotSpeed[7]`) look exactly as before. NB the code
+    has **55 every 0.2 s** with no `AUTO_GHOST`: the "fourth round" above (0.4 s / 110, ghost tracers) isn't in the live
+    code. Measured (`/tmp`-style `auto/run.mjs`: 60 gunboats from the auto gun test (2 units, 1 auto unit pair) vs the
+    equal-cost mixed fleet, Charge and Front line, 4 seeds): bullets hitting ~84% at both speeds, outcomes and compute the
+    same within noise. Bench unchanged (no auto guns in it). Replays sent: "Auto guns: BEFORE / AFTER".
   - Measured (16×10 hull, 3 auto gun units 1,113 cr vs 8 cannons 1,317 cr, 60k cr a side, 4 seeds; score =
     enemy ships lost share − own): auto charge vs cannon line −0.06, line vs line −0.03, line vs cannon
     standoff −0.16; starting at 120 apart auto guns win (27/54 left vs 9/46). A third of bullets hit allied
