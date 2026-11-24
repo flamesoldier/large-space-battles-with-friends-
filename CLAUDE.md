@@ -122,7 +122,7 @@ owner, 23 Nov 2026, friends playing again). Checked in headless Chrome at 1440×
 errors, dialog fits the screen (long pages scroll inside it).
 
 **Admin adds hyperlanes to a running game (owner, 24 Nov 2026: screenshot of the live map, "the 2 outside planets don't
-connect in the bottom right hand corner… i would like them to connect in my live game")**, on `v2-dev`, **not live**. The
+connect in the bottom right hand corner… i would like them to connect in my live game")**, **live 24 Nov 2026** (owner: "make it live"; patch notes entry written). The
 live save is only on the Railway volume, so instead of a one-off migration: `/admin` has a **Hyperlanes** section, an SVG map
 of the galaxy (same way up as the game, worlds in their owner's colour; `adminState().game.map` = planets {id, name, x, y,
 owner, home} + lanes + radius), click two worlds → dashed preview → **Add hyperlane** (click twice to confirm) →
