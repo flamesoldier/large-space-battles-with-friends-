@@ -544,6 +544,22 @@ for (let k = 0; k < FORTRESSES.length; k++) {
   b.run();
   const K = b.R.shotKind, kinds = K.a.slice(0, K.n ?? K.length);
   assert.ok(Array.from(kinds).filter((k) => k === 7).length > 50, 'auto guns fire bullets (replay shot kind 7)');
+  // Fast bullets end where they really hit (owner, 24 Nov 2026: bullets are meant to be very fast). Flight times of
+  // auto gun bullets are stored in 0.001 s; at the old 0.01 s a 2,000-block/s bullet's end point was up to ~10 blocks off.
+  {
+    const keep = WEAPON[BT.AUTO].speed;
+    WEAPON[BT.AUTO].speed = 2000;
+    const sw = 40, sc = new Uint8Array(sw * sw).fill(BT.HEAVY); sc[20 * sw + 20] = BT.HUB;
+    const wall = { name: 'Wall', cls: 'cruiser', w: sw, h: sw, cells: sc, hub: 20 * sw + 20, stance: 'line' };
+    const fb = new Battle({ designs: [{ ...boat([1, 5]), stance: 'line' }, wall], ships: [{ design: 0, team: 0, x: 0, y: 0, a: 0 }, { design: 1, team: 1, x: 120, y: 0, a: 0, fixed: true }], seed: 3, maxTime: 8 });
+    fb.run();
+    const rep = fb.toReplay(); // the replay's meta takes the bullet speed, so restore it after
+    WEAPON[BT.AUTO].speed = keep;
+    const S = new ReplayModel(unpackReplay(packReplay(rep.meta, rep.cols))).auto;
+    let worst = 0, n = 0;
+    for (let i = 0; i < S.t0.length; i++) if (S.hit[i]) { const f = S.t1[i] - S.t0[i]; worst = Math.max(worst, Math.abs(S.x[i] + S.vx[i] * f - (120 - sw / 2))); n++; }
+    assert.ok(n > 10 && worst < 2, `fast auto gun bullets end on the hull they hit in the replay (${n} hits, worst ${worst.toFixed(2)} blocks off)`);
+  }
   // An auto gun works from whatever side it's on (owner, 20 Nov 2026): a ship holding its range
   // turns so the target sits well inside the gun's arc, not on its edge (where it hardly fired).
   for (const side of ['back', 'top', 'bottom']) {

@@ -1373,8 +1373,8 @@ export class Renderer {
       if (!vis(x, y, 10)) continue;
       const fade = S.hit[i] ? 1 : Math.min(1, (S.t1[i] - t) / 6);
       // Streak grows with bullet speed (owner, 24 Nov 2026: bullets twice as fast): 4.5 / 3.2 blocks at the old
-      // 15 blocks a tick, so replays recorded before keep exactly their old look.
-      const len = Math.min(Math.max(4.5, sp * 0.3), age * sp * 0.5 + 0.4), core = Math.min(Math.max(3.2, sp * 0.213), age * sp * 0.4 + 0.3);
+      // 15 blocks a tick, so replays recorded before keep exactly their old look; capped at 14 so very fast bullets don't read as beams.
+      const len = Math.min(Math.min(14, Math.max(4.5, sp * 0.3)), age * sp * 0.5 + 0.4), core = Math.min(Math.min(10, Math.max(3.2, sp * 0.213)), age * sp * 0.4 + 0.3);
       g.push(x - c * len, y - s * len, a, len, Math.max(0.6, minW * 1.6), 4, alpha2(C.autoHalo, 0.35 * fade));
       g.push(x - c * core, y - s * core, a, core, Math.max(0.24, minW * 0.8), 4, alpha2(C.tracer, fade));
       g.push(x, y, 0, Math.max(0.5, minW * 1.1), Math.max(0.5, minW * 1.1), 1, alpha2(C.tracerHot, fade));

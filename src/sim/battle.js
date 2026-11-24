@@ -2705,7 +2705,9 @@ export class Battle {
   /** hit: 0 expired, 1 hit something, 2 shot down by point defence. */
   shotEnd(rec, t1, hit) {
     const R = this.R;
-    R.shotFlight.set(rec, Math.min(65535, Math.round((t1 - R.shotT0.a[rec]) * 10)));
+    // Auto gun bullets (kind 7) are stored in 0.001 s (owner, 24 Nov 2026: bullets meant to be very fast; at 0.01 s a
+    // 1,000-block/s bullet's end point was up to 5 blocks off); meta.autoFlightMs tells the viewer. Up to 65 s.
+    R.shotFlight.set(rec, Math.min(65535, Math.round((t1 - R.shotT0.a[rec]) * (R.shotKind.a[rec] === 7 ? 100 : 10))));
     R.shotHit.set(rec, hit);
   }
   recExplosion(x, y, size) {
@@ -3381,7 +3383,7 @@ export class Battle {
     const meta = {
       version: 1, friendlyFire: this.friendlyFire, trackTotal: total, evQ: this.evQ, dt: DT, trackEvery: TRACK_EVERY, shoveEvery: SHOVE_EVERY, velQ: VEL_Q, missileEvery: MISSILE_EVERY, posQ: POS_Q, angQ: ANG_Q,
       ticks: this.tick, shipCount: S, chunkCount: this.byId.length - S,
-      shotSpeed: [WEAPON[BT.CANNON].speed, WEAPON[BT.MISSILE].speed, WEAPON[BT.LANCE].speed, WEAPON[BT.GUIDED].speed, FIGHTER.speed, WEAPON[BT.FLAK].speed, WEAPON[BT.FLAK].fragSpeed, WEAPON[BT.AUTO].speed, RIFT_W.speed], fighterSpeed: FIGHTER.speed,
+      autoFlightMs: 1, shotSpeed: [WEAPON[BT.CANNON].speed, WEAPON[BT.MISSILE].speed, WEAPON[BT.LANCE].speed, WEAPON[BT.GUIDED].speed, FIGHTER.speed, WEAPON[BT.FLAK].speed, WEAPON[BT.FLAK].fragSpeed, WEAPON[BT.AUTO].speed, RIFT_W.speed], fighterSpeed: FIGHTER.speed,
       designs: this.designs.map((d) => ({ name: d.name, cls: d.cls, stance: d.stance, w: d.w, h: d.h, hub: d.hub, cells: Array.from(d.cells) })),
       survivors: [...this.teamAlive], teams: this.nT,
     };

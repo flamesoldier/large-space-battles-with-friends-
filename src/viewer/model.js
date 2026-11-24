@@ -294,7 +294,7 @@ export class ReplayModel {
       const S = { n, t0: new Float32Array(n), t1: new Float32Array(n), x: new Float32Array(n), y: new Float32Array(n),
         vx: new Float32Array(n), vy: new Float32Array(n), hit: new Uint8Array(n), team: new Uint8Array(n), a0: new Float32Array(n), maxFlight: 0 };
       for (let k = 0; k < n; k++) {
-        const i = idx[k], f = c.shotFlight[i] / 10, a = (c.shotAng[i] / 65536) * Math.PI * 2;
+        const i = idx[k], f = c.shotFlight[i] / (kind === 7 && meta.autoFlightMs ? 100 : 10), a = (c.shotAng[i] / 65536) * Math.PI * 2;
         S.t0[k] = c.shotT0[i]; S.t1[k] = c.shotT0[i] + f; S.x[k] = c.shotX[i] / q; S.y[k] = c.shotY[i] / q;
         const v = c.shotSpd && c.shotSpd[i] ? (spd * c.shotSpd[i]) / 200 : spd; // shrapnel speeds vary (shotSpd, 15 Nov 2026)
         S.vx[k] = Math.cos(a) * v; S.vy[k] = Math.sin(a) * v; // units per tick

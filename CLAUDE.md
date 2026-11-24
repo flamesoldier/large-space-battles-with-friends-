@@ -872,6 +872,19 @@ Weapons (numbers in `blocks.js`):
     code. Measured (`/tmp`-style `auto/run.mjs`: 60 gunboats from the auto gun test (2 units, 1 auto unit pair) vs the
     equal-cost mixed fleet, Charge and Front line, 4 seeds): bullets hitting ~84% at both speeds, outcomes and compute the
     same within noise. Bench unchanged (no auto guns in it). Replays sent: "Auto guns: BEFORE / AFTER".
+    **Owner, same day: the 21 Nov "fourth round" was him hunting for why auto guns looked wrong; it was the speed ("2 times looks
+    a lot better… how much faster can we go… bullets are very fast").** Measured (`/tmp`-style `auto/speed.mjs`: 150 line vs
+    150 charge gunboats, and 60 vs the mixed fleet; speeds 150 → 3,000, life 10 s): **compute flat at every speed** (~1.0 s
+    for a 48 s 300-ship battle; sweeps test the whole segment, so no tunnelling), hits 88% throughout, replay size flat, peak
+    bullets in flight 2,191 → 1,404. The limits were drawing: (1) **flight times rounded to 0.01 s** put a hit's end point up to
+    speed × 0.005 off the hull (300: 1.4, 1,000: 4.9, 3,000: 14.9 blocks, measured on a still heavy wall); now **auto bullets
+    (shot kind 7) store flight in 0.001 s** (`shotEnd` ×100, Uint16 so ≤ 65 s), `meta.autoFlightMs` 1 tells the viewer
+    (`straight()` divides by 100; replays without it keep /10): worst 0.25 / 0.49 / 1.37 blocks. (2) the streak is **capped at
+    14 blocks** (core 10) so very fast bullets don't read as beams. (3) Can't be fixed: a faster bullet is on screen for fewer
+    frames (range 200 at 1× and 60 fps: 300 → 40 frames, 1,000 → 12, 2,000 → 6), so fewer tracers are in flight at once.
+    Speed left at 300 pending the owner. Test in `tools/test-designer.mjs` (bullets at 2,000 end within 2 blocks of the wall's
+    face in the replay; 9 blocks with the old rounding). Bench identical. Replays sent: "Auto gun bullets at 300 / 600 / 1000 /
+    2000".
   - Measured (16×10 hull, 3 auto gun units 1,113 cr vs 8 cannons 1,317 cr, 60k cr a side, 4 seeds; score =
     enemy ships lost share − own): auto charge vs cannon line −0.06, line vs line −0.03, line vs cannon
     standoff −0.16; starting at 120 apart auto guns win (27/54 left vs 9/46). A third of bullets hit allied
