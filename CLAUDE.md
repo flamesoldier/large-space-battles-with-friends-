@@ -1489,7 +1489,7 @@ All money numbers are in `src/shared/economy.js` (placeholders until balanced in
   called from `siegeEnds`): after every battle the players who fought are put in groups of mutual
   allies; each group is paid 20% of everything lost there by the players and militia at war with
   it, split **evenly** between the group's players whatever each brought (owner turned down an
-  underdog multiplier as favouritism). Nobody tracks who killed whom: in a free-for-all every
+  underdog multiplier as favouritism). **Since 25 Nov 2026 (owner: "split bounty by the credit value of ships sent into battle… not based on survivors"; live 25 Nov 2026, patch notes `2026-11-25-bounty`): split within the group by each player's `q.value` (ships and defences at the start of the battle, at worth); evenly only if none is known; tutorial line updated; test in `tools/test-world.mjs`.** Nobody tracks who killed whom: in a free-for-all every
   enemy group is paid for the same losses, and losers are paid too. Militia kills pay (owner:
   "keeps the rule consistent"); militia is never paid. Defences razed when the world falls count
   as lost. Log entry text ends "Bounty (20% of enemy losses): A +n cr, …"; `battle.bounty` =
