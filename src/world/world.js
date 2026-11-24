@@ -22,15 +22,15 @@ import { mulberry32 } from '../shared/rng.js';
 import {
   SHIPYARD_INTERVAL_MIN, SHIPS_PER_BUILD, shipyardPrice, crowdingSurcharge, SHIPYARD_SELL_REFUND,
   defensePrice, MAX_DEFENSE_ORDER, BOUNTY_SHARE, STARTING_CREDITS, NEUTRAL_GARRISON_HOURS, NEUTRAL_GARRISON_BASE, SELL_HOURS, DEFENSE_BUILD_HOURS,
-  BOT_INCOME_MULT,
+  BOT_INCOME_MULT, planetIncome,
 } from '../shared/economy.js';
-import { generateGalaxy, linkHomesInward } from './galaxyGen.js';
+import { generateGalaxy, linkHomesInward, segmentsCross, pointSegDist } from './galaxyGen.js';
 import { planRoute, travelSpeed, laneMap, laneSpeed } from './routes.js';
 import { makeBattleScenario } from './battleSetup.js';
 import { cleanLayout, shapeOf } from './defenceLayout.js';
 import { botsDue, runBots } from './bots.js';
 import { backfillStats, finalize, noteIncome, noteBuilt, noteCapture, noteBattle, playerStats } from './stats.js';
-import { HOUR_MS, MIN_FLEET_SPEED, NEUTRAL_COLOR, PLAYER_COLORS, CHOOSABLE_COLORS, MIN_PLAYERS, MAX_PLAYERS, BATTLE_MAX_TIME, BATTLE_HOLD_MIN, SPACE_VS_LANE } from './rules.js';
+import { HOUR_MS, MIN_FLEET_SPEED, NEUTRAL_COLOR, PLAYER_COLORS, CHOOSABLE_COLORS, MIN_PLAYERS, MAX_PLAYERS, BATTLE_MAX_TIME, BATTLE_HOLD_MIN, SPACE_VS_LANE, PLANET_SPACING } from './rules.js';
 
 export const YARD_MS = SHIPYARD_INTERVAL_MIN * 60 * 1000;
 export const HOLD_MS = BATTLE_HOLD_MIN * 60 * 1000;
@@ -583,6 +583,33 @@ export function runWorld(world, t, resolveBattle) {
 
 const laneCache = new WeakMap();
 const lanesOf = (world) => { let m = laneCache.get(world); if (!m) laneCache.set(world, (m = laneMap(world.lanes))); return m; };
+
+/**
+ * Owner, 24 Nov 2026 ("two outside planets don't connect… I would like them to connect in my live game"):
+ * the admin can join two worlds of a running galaxy with a new hyperlane. Refused if they're the same
+ * world, already joined, or the lane would cross another lane or pass right by a third world (the same
+ * rules as map generation, so the map stays readable). Worlds other than homes earn by their lanes, so
+ * both get the new lane's income and map size (`planetIncome`, as generated maps do). Militia
+ * garrisons are left as they are. Returns { ok, error? }.
+ */
+export function addLane(world, a, b) {
+  const A = world.planets[a], B = world.planets[b];
+  if (!Number.isInteger(a) || !Number.isInteger(b) || !A || !B) return { ok: false, error: 'No such world.' };
+  if (a === b) return { ok: false, error: 'Pick two different worlds.' };
+  if (world.lanes.some(([x, y]) => (x === a && y === b) || (x === b && y === a))) return { ok: false, error: `${A.name} and ${B.name} are already joined.` };
+  const cross = world.lanes.find(([c, d]) => segmentsCross(A, B, world.planets[c], world.planets[d]));
+  if (cross) return { ok: false, error: `That lane would cross the hyperlane ${world.planets[cross[0]].name} ↔ ${world.planets[cross[1]].name}.` };
+  const near = world.planets.find((p) => p !== A && p !== B && pointSegDist(p, A, B) < PLANET_SPACING * 0.35);
+  if (near) return { ok: false, error: `That lane would pass right by ${near.name}.` };
+  world.lanes.push(a < b ? [a, b] : [b, a]);
+  world.lanes.sort((x, y) => x[0] - y[0] || x[1] - y[1]);
+  laneCache.delete(world); // routes and the fleet brain must see the new lane at once
+  const deg = (id) => world.lanes.filter(([x, y]) => x === id || y === id).length;
+  for (const P of [A, B]) if (!(P.home >= 0)) { P.income = planetIncome(deg(P.id)); P.size = Math.min(1, 0.5 + 0.1 * (deg(P.id) - 1)); }
+  log(world, 'lane', `New hyperlane: ${A.name} ↔ ${B.name}.`, { planet: a });
+  if (world.auto) dispatchAll(world); // ships waiting for a way to a target may have one now
+  return { ok: true };
+}
 
 /** Slowest ship's battle speed in a { designId: n } set. */
 export const fleetSpeed = (world, ships) => Math.min(...Object.keys(ships).filter((d) => ships[d] > 0).map((d) => world.designs[d].speed));

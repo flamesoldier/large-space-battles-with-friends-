@@ -9,7 +9,7 @@ import {
   shipsAt, incomeOf, allied, YARD_MS, HOLD_MS, designOf, upgradeWorld,
   proposeAlliance, acceptAlliance, breakAlliance, proposalsFor, dueEvent, siegeAt, renameDesign, renamePlanet,
   buildDefense, setLayout, saveBlueprint, deleteBlueprint, planEvent, applyEvent, registerDesign, cancelSale, jobsAt, payBounties, giveCredits, worthOf, fleetValue, stopFleet, setRally, rallyAll,
-  checkWin, nextHop, pinned, dispatchAll, holdReason, addShips, setDestination, destinationAll, countShips, makeBot, fleetSpeed, retreatPlan,
+  checkWin, nextHop, pinned, dispatchAll, holdReason, addShips, setDestination, destinationAll, countShips, makeBot, fleetSpeed, retreatPlan, addLane,
 } from '../src/world/world.js';
 import { writeFileSync } from 'node:fs';
 import { packReplay } from '../src/shared/replayFormat.js';
@@ -1409,6 +1409,36 @@ const lanePlanHours = (W, a, b, d) => { const A = W.planets[a], B = W.planets[b]
   ok(toAlly > 0, `fleets fly to and through allied worlds (${toAlly} fleet-quarter-hours)`);
   ok(joint > 0, `allies fight side by side (${joint} battles)`);
   ok(!idle, `with allies too, no ship sits at a world without a reason (${idle})`);
+}
+
+// ---- 24 Nov 2026: the admin joins two worlds of a running galaxy with a new hyperlane
+{
+  const g = createAutoWorld({ players: ['Ann', 'Ben', 'Cat', 'Dan'], seed: 11 });
+  g.planets.forEach((P) => { P.owner = null; }); // seeking: every world a target
+  const linked = (a, b) => g.lanes.some(([x, y]) => (x === a && y === b) || (x === b && y === a));
+  // a pair of non-home worlds not yet joined that the rules allow
+  let pair = null;
+  for (const A of g.planets) for (const B of g.planets) {
+    if (pair || A.id >= B.id || A.home >= 0 || B.home >= 0 || linked(A.id, B.id) || Math.hypot(A.x - B.x, A.y - B.y) > PLANET_SPACING * 3) continue;
+    const h = JSON.stringify(g); const r = addLane(g, A.id, B.id);
+    if (r.ok) pair = [A.id, B.id]; else ok(JSON.stringify(g) === h, 'a refused lane changes nothing');
+  }
+  ok(pair, 'found two worlds to join');
+  const [a, b] = pair, A = g.planets[a];
+  const deg = (id) => g.lanes.filter(([x, y]) => x === id || y === id).length;
+  ok(linked(a, b) && A.income === 120 + 100 * deg(a), `joined, and income follows the lanes (${A.income})`);
+  ok(g.log.at(-1).text.startsWith('New hyperlane:'), 'players are told');
+  ok(nextHop(g, a, 0, b)?.hop === b, 'routes use the new lane at once (lane cache refreshed)');
+  ok(!addLane(g, a, b).ok && !addLane(g, b, a).ok && !addLane(g, a, a).ok && !addLane(g, a, 999).ok, 'no duplicates, loops or made-up worlds');
+  const [c, d] = g.lanes.find(([x, y]) => x !== a && y !== a && x !== b && y !== b);
+  const mids = g.planets.filter((P) => P.id !== c && P.id !== d);
+  let crossRefused = false;
+  for (const P of mids) for (const Q of mids) if (P.id < Q.id && !linked(P.id, Q.id)) {
+    const r = addLane(g, P.id, Q.id); if (!r.ok && /cross/.test(r.error)) crossRefused = true; if (crossRefused) break;
+  }
+  ok(crossRefused, 'a lane crossing another is refused');
+  const re = upgradeWorld(JSON.parse(JSON.stringify(g)));
+  ok(re.lanes.length === g.lanes.length, 'the save keeps the new lanes');
 }
 
 console.log(`world: ${checks} checks passed`);

@@ -8,6 +8,13 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-24-hyperlane', date: '24 Nov 2026', title: 'A new hyperlane',
+    items: [
+      'Two outer worlds in the bottom-right of the map that sat side by side with no hyperlane between them are now joined. Fleets start using the new lane straight away.',
+      'Worlds earn income for each hyperlane they have, so both of those worlds now earn 100 cr/h more.',
+    ],
+  },
+  {
     id: '2026-11-24-autogun', date: '24 Nov 2026', title: 'Faster auto gun bullets',
     items: [
       'Auto gun bullets now fly half as fast again (225 instead of 150), with longer tracer streaks, so they look and feel like real bullets. Damage, range and fire rate are unchanged.',

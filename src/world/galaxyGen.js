@@ -27,14 +27,14 @@ function nameGen(r) {
 }
 
 /** Do segments ab and cd cross (sharing an endpoint doesn't count)? */
-function segmentsCross(a, b, c, d) {
+export function segmentsCross(a, b, c, d) {
   if (a === c || a === d || b === c || b === d) return false;
   const o = (p, q, r) => Math.sign((q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x));
   return o(a, b, c) * o(a, b, d) < 0 && o(c, d, a) * o(c, d, b) < 0;
 }
 
 /** Distance from point p to segment ab. */
-function pointSegDist(p, a, b) {
+export function pointSegDist(p, a, b) {
   const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy;
   const t = l2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2)) : 0;
   return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));

@@ -57,6 +57,9 @@ td { padding: 8px 0; border-top: 1px solid var(--line); vertical-align: middle; 
 td.num { font-family: var(--mono); color: var(--dim); }
 td:last-child, th:last-child { text-align: right; }
 .out { opacity: 0.5; }
+#lane-map { width: 100%; max-width: 560px; aspect-ratio: 1; display: block; margin: 0 auto 12px; background: rgba(0,0,0,0.25); border: 1px solid var(--line); touch-action: manipulation; }
+#lane-map circle.w { cursor: pointer; }
+#lane-map text { font: 500 11px var(--mono); fill: var(--ink); pointer-events: none; paint-order: stroke; stroke: #05070c; stroke-width: 3px; }
 .dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 8px; vertical-align: -1px; }
 #passwords { border-color: var(--ember); }
 #passwords h2 { color: var(--ember); }
@@ -99,6 +102,15 @@ a { color: var(--azure); }
       <tbody id="players"></tbody>
     </table>
     <p style="margin-top:14px">"New password" logs that player out everywhere and shows their new password above.</p>
+  </section>
+
+  <section id="lanes" hidden>
+    <h2>Hyperlanes</h2>
+    <p>Join two worlds of the running game with a new hyperlane. <b>Click one world, then another</b> (the map is the same way up as in the game). A lane can't cross another lane or pass right by a third world. Both worlds earn the extra income a hyperlane brings (home worlds stay the same), and players see "New hyperlane" in their log.</p>
+    <svg id="lane-map" role="img" aria-label="Galaxy map: click two worlds to join them"></svg>
+    <div class="row"><span id="lane-pick" style="font-size:14px;color:var(--dim)">No worlds picked.</span></div>
+    <div class="row" style="margin-top:10px"><button class="go" id="lane-add" disabled>Add hyperlane</button><button id="lane-clear">Clear</button></div>
+    <p class="err" id="lane-err" role="alert"></p>
   </section>
 
   <section id="storage" hidden>
@@ -193,7 +205,7 @@ let armed = null, armedBot = null;
 function render(st) {
   $('login').hidden = true; $('logout').hidden = false; $('create').hidden = false;
   const G = st.game;
-  $('game').hidden = !G; $('time').hidden = !G; if (!G) { $('traffic').hidden = true; $('storage').hidden = true; }
+  $('game').hidden = !G; $('time').hidden = !G; $('lanes').hidden = !G?.map; if (!G) { $('traffic').hidden = true; $('storage').hidden = true; }
   $('replace-row').hidden = !G;
   $('create-title').textContent = G ? 'Start a new game instead' : 'Create the game';
   $('create-go').textContent = G ? 'Replace with a new game' : 'Create the game';
@@ -201,6 +213,7 @@ function render(st) {
   if (!G) return;
   const h = G.clock / 3600e3, clock = `Day ${Math.floor(h / 24) + 1} · ${String(Math.floor(h % 24)).padStart(2, '0')}:${String(Math.floor((h * 60) % 60)).padStart(2, '0')}`;
   $('game-kv').innerHTML = `<span><b>${clock}</b></span><span><b>${G.worlds}</b> worlds</span><span>seed <b>${G.seed}</b></span><span>speed <b>${G.speed === 0 ? 'paused' : `${G.speed}×`}</b></span><span><b>${G.replays}</b> replays</span>`;
+  if (G.map) { lanePick = lanePick.filter((i) => i < G.map.planets.length); drawLanes(G); }
   const D = G.disk;
   $('storage').hidden = !D;
   if (D) {
@@ -263,8 +276,50 @@ $('create-form').addEventListener('submit', async (e) => {
   render(r); showPasswords(r.passwords);
 });
 
+let lanePick = [], laneArmed = false, laneGame = null;
+function drawLanes(G) {
+  laneGame = G;
+  const M = G.map, svg = $('lane-map');
+  const pad = M.radius * 0.08, R = M.radius + pad, c = {};
+  for (const p of G.players) c[p.id] = p.color;
+  const name = (id) => M.planets[id].name;
+  svg.setAttribute('viewBox', `${-R} ${-R} ${2 * R} ${2 * R}`);
+  const pr = M.radius / 55;
+  let h = M.lanes.map(([a, b]) => `<line x1="${M.planets[a].x}" y1="${M.planets[a].y}" x2="${M.planets[b].x}" y2="${M.planets[b].y}" stroke="rgba(120,190,210,0.45)" stroke-width="${pr * 0.35}"/>`).join('');
+  if (lanePick.length === 2) { const [A, B] = lanePick.map((i) => M.planets[i]); h += `<line x1="${A.x}" y1="${A.y}" x2="${B.x}" y2="${B.y}" stroke="#ffb35c" stroke-width="${pr * 0.6}" stroke-dasharray="${pr} ${pr * 0.7}"/>`; }
+  h += M.planets.map((p) => {
+    const sel = lanePick.includes(p.id), col = p.owner === null || c[p.owner] === undefined ? '#8a8f99' : c[p.owner];
+    return `<circle class="w" data-w="${p.id}" cx="${p.x}" cy="${p.y}" r="${pr * (p.home ? 1.5 : 1)}" fill="${esc(col)}" stroke="${sel ? '#ffb35c' : '#05070c'}" stroke-width="${sel ? pr * 0.6 : pr * 0.25}"><title>${esc(p.name)}</title></circle>`
+      + (sel ? `<text x="${p.x + (p.x > 0 ? -1.6 : 1.6) * pr}" y="${p.y + pr * 0.5}" text-anchor="${p.x > 0 ? 'end' : 'start'}" style="font-size:${pr * 1.6}px;stroke-width:${pr * 0.4}px">${esc(p.name)}</text>` : '');
+  }).join('');
+  svg.innerHTML = h;
+  $('lane-pick').innerHTML = lanePick.length === 0 ? 'No worlds picked.' : lanePick.length === 1 ? `<b style="color:var(--ink)">${esc(name(lanePick[0]))}</b>: now click the world to join it to.` : `<b style="color:var(--ink)">${esc(name(lanePick[0]))}</b> ↔ <b style="color:var(--ink)">${esc(name(lanePick[1]))}</b>`;
+  $('lane-add').disabled = lanePick.length !== 2;
+  $('lane-add').textContent = laneArmed ? 'Click again to confirm' : 'Add hyperlane';
+}
+$('lane-map').addEventListener('click', (e) => {
+  const w = e.target.closest('[data-w]'); if (!w || !laneGame) return;
+  const id = Number(w.dataset.w);
+  laneArmed = false; $('lane-err').textContent = '';
+  if (lanePick.includes(id)) lanePick = lanePick.filter((x) => x !== id);
+  else lanePick = lanePick.length >= 2 ? [id] : [...lanePick, id];
+  drawLanes(laneGame);
+});
+$('lane-clear').addEventListener('click', () => { lanePick = []; laneArmed = false; $('lane-err').textContent = ''; if (laneGame) drawLanes(laneGame); });
+$('lane-add').addEventListener('click', async () => {
+  if (lanePick.length !== 2) return;
+  if (!laneArmed) { laneArmed = true; drawLanes(laneGame); setTimeout(() => { if (laneArmed) { laneArmed = false; drawLanes(laneGame); } }, 5000); return; }
+  laneArmed = false; $('lane-add').disabled = true;
+  const r = await api('/api/admin/add-lane', { a: lanePick[0], b: lanePick[1] });
+  if (!r.ok) { $('lane-err').textContent = r.error; $('lane-add').disabled = false; $('lane-add').textContent = 'Add hyperlane'; return; }
+  const done = lanePick.map((i) => laneGame.map.planets[i].name).join(' ↔ ');
+  lanePick = []; render(r);
+  $('lane-err').style.color = 'var(--azure)'; $('lane-err').textContent = `Added: ${done}. Your friends see it after their page updates.`;
+  setTimeout(() => { $('lane-err').style.color = ''; }, 8000);
+});
+
 function showLogin(msg = '') {
-  for (const id of ['game', 'create', 'passwords']) $(id).hidden = true;
+  for (const id of ['game', 'create', 'passwords', 'lanes']) $(id).hidden = true;
   $('logout').hidden = true; $('login').hidden = false; $('login-err').textContent = msg;
   $('login-pw').focus();
 }

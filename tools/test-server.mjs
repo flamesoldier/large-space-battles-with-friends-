@@ -157,6 +157,21 @@ try {
     ok(mb.body.ok && mb.body.game.players[3].bot && mb.body.game.players[3].name === 'Bot 1', 'admin turns the open seat into Bot 1');
     ok((await p4.state()).status === 401 && (await client().json('POST', '/api/login', { password: seats.body.passwords[3].password })).status === 401, 'its password and session stop working');
     ok(!(await boss.json('POST', '/api/admin/make-bot', { player: 3 })).body.ok && !(await boss.json('POST', '/api/admin/reset-password', { player: 3 })).body.ok, 'no second time, and no password for a bot');
+    {
+      const st = (await boss.json('GET', '/api/admin/state')).body.game;
+      ok(st.map && st.map.planets.length === st.worlds && st.map.lanes.length, 'admin state has the map');
+      ok((await p2.json('POST', '/api/admin/add-lane', { a: 0, b: 1 })).status === 401, 'players can\'t add hyperlanes');
+      const has = new Set(st.map.lanes.map(([x, y]) => `${x}-${y}`));
+      let added = null;
+      for (let x = 0; x < st.worlds && !added; x++) for (let y = x + 1; y < st.worlds && !added; y++) {
+        if (has.has(`${x}-${y}`)) continue;
+        const r = await boss.json('POST', '/api/admin/add-lane', { a: x, b: y });
+        if (r.body.ok) added = [x, y, r.body.game.map.lanes.length];
+      }
+      ok(added && added[2] === st.map.lanes.length + 1, 'admin adds a hyperlane');
+      ok((await p2.state()).body.world.lanes.some(([x, y]) => x === added[0] && y === added[1]), 'players get it');
+      ok((await boss.json('POST', '/api/admin/add-lane', { a: added[0], b: added[1] })).status === 400, 'not twice');
+    }
     await boss.json('POST', '/api/admin/jump', { hours: 1 });
     ok((await p2.state()).body.world.planets.some((P) => P.owner === 3 && P.yards.length), 'the bot buys a shipyard by itself');
 

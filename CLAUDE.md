@@ -121,6 +121,19 @@ name changes, update the wording there too. Patch notes entry `2026-11-23-tutori
 owner, 23 Nov 2026, friends playing again). Checked in headless Chrome at 1440×900 and a 412×915 phone: every page, no
 errors, dialog fits the screen (long pages scroll inside it).
 
+**Admin adds hyperlanes to a running game (owner, 24 Nov 2026: screenshot of the live map, "the 2 outside planets don't
+connect in the bottom right hand corner… i would like them to connect in my live game")**, on `v2-dev`, **not live**. The
+live save is only on the Railway volume, so instead of a one-off migration: `/admin` has a **Hyperlanes** section, an SVG map
+of the galaxy (same way up as the game, worlds in their owner's colour; `adminState().game.map` = planets {id, name, x, y,
+owner, home} + lanes + radius), click two worlds → dashed preview → **Add hyperlane** (click twice to confirm) →
+`POST /api/admin/add-lane { a, b }` → `addLane(world, a, b)` in `world.js` (under the game lock, after `catchUp`, then save +
+`changed`). Refused: same world, already joined, crosses a lane, passes within `PLANET_SPACING × 0.35` of a third world (the
+generator's rules; `segmentsCross`/`pointSegDist` now exported from `galaxyGen.js`). It clears the `laneCache` (WeakMap keyed
+on the world object, which the server keeps), sets both non-home worlds' income/size from their new lane count
+(`planetIncome`; owner's lane-income rule; militia left as is), logs "New hyperlane: A ↔ B." and runs `dispatchAll` in 2.0
+worlds. Patch notes entry `2026-11-24-hyperlane` written (names the bottom-right of the map, not the worlds). Tests in
+`tools/test-world.mjs` and `tools/test-server.mjs`. Checked in headless Chrome.
+
 **Defences and selling, 5 minutes (owner, 18 Nov 2026, after 2.0 went live):** "building defences will be much more important and should be able to be done reactively": `DEFENSE_BUILD_HOURS` and `SELL_HOURS` = 5/60 (were 15 h), **selling a shipyard gives back 65%** (`SHIPYARD_SELL_REFUND`, was 95%). Texts use `fmtHours()` ("5 min"). Test: defences ordered 10 min before a battle are ready for it, ones ordered 2 min before are lost with the world. Live 18 Nov 2026. **No patch notes for now** (owner: nobody is playing; he'll say when to start again).
 
 **Bots (owner, 18 Nov 2026: "they don't have to be good, just basic bots"):** `src/world/bots.js`. A bot is a player with `bot: true` (no password; sessions refused). Every `BOT_EVERY_MIN` (10) game minutes a world event `'bots'` (`dueEvent`, after anything else due then; `world.botNext`) runs `runBots()`: alliance proposals to it are declined; any of its worlds `pinned()` by an enemy gets defences (a generated cruiser with thrusters turned to armour, up to half its credits, ≤ 200, once per world per 3 h); then shipyards for its own generated frigate/destroyer/cruiser/battleship (random, weighted to mid sizes) on the cheapest world, keeping 2 h of income back. Works on the server and the hot-seat page alike (it's an ordinary event); the server saves bot turns once per catch-up. Admin page: **Bots** field when making a game (extra seats "Bot 1"…, after the people; 1+ person, 2–10 seats in all; `bots` in `/api/admin/new-game`, `--bots` on the command line) and **Make it a bot** per seat (`makeBot()` in `world.js`, `/api/admin/make-bot`: an open seat becomes "Bot N", a named one keeps its name; its password is deleted). Diplomacy window tags bots and hides Propose. Names "Bot N" are reserved. Tests in `tools/test-world.mjs` and `tools/test-server.mjs`. Live 18 Nov 2026.
