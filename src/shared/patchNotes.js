@@ -8,6 +8,13 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-24-autogun', date: '24 Nov 2026', title: 'Faster auto gun bullets',
+    items: [
+      'Auto gun bullets now fly half as fast again (225 instead of 150), with longer tracer streaks, so they look and feel like real bullets. Damage, range and fire rate are unchanged.',
+      'In replays, auto gun bullets now spark exactly where they hit the hull.',
+    ],
+  },
+  {
     id: '2026-11-23-tutorial', date: '23 Nov 2026', title: 'A tutorial',
     items: [
       'New Tutorial button at the top of the screen: a short step-by-step guide to how the game works, from worlds and shipyards to designing ships, how fleets move by themselves, sieges, defences, diplomacy and watching replays. Use Next and Back (or the arrow keys) to step through it, and open it again whenever you like.',
