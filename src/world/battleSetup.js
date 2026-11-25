@@ -21,6 +21,8 @@ import { assignSpots } from './defenceLayout.js';
  * opts, team = side and side 0 attacks side 1, as before.
  * Returns { designs, ships, groups (with start), seed, teams }.
  */
+const CAMP_GAP = 200; // blocks between neighbouring camps' nearest ships at the start (3+ camps)
+
 export function makeBattleScenario(groups, designOf, seed, opts = null) {
   const r = mulberry32(seed * 7703 + 11);
   const designs = [], index = new Map();
@@ -47,7 +49,11 @@ export function makeBattleScenario(groups, designOf, seed, opts = null) {
   // Every fleet then starts clear of the rows. No random draws, so battles without defences start
   // exactly as before.
   const attackAngles = [];
-  for (let c = 1; c < nCamps; c++) attackAngles.push((2 * Math.PI * c) / nCamps);
+  // Camps of the owner's own allies (opts.guestCamps: allied with the owner but at war with another
+  // defender, so they start apart) get no rows of defences facing them.
+  const guests = new Set(opts?.guestCamps || []);
+  for (let c = 1; c < nCamps; c++) if (!guests.has(c)) attackAngles.push((2 * Math.PI * c) / nCamps);
+  if (!attackAngles.length) for (let c = 1; c < nCamps; c++) attackAngles.push((2 * Math.PI * c) / nCamps);
   if (!attackAngles.length) attackAngles.push(Math.PI);
   const fixedShips = ships.filter((s) => s.fixed);
   // Defences the world's owner has arranged (opts.layout = layoutAt(world, P), owner, 20 Nov 2026) stand where
@@ -66,7 +72,14 @@ export function makeBattleScenario(groups, designOf, seed, opts = null) {
     const k = c < 0 ? -1 : 1; // spread sideways (same layout as before for two sides)
     // k is also which way "top" is across this camp, for the flank start positions.
     const spots = fleetSpots(list.map((s) => designs[s.design]), r, k);
-    const clear = Math.max(220, defenceReach(fixedShips, designs, phi) + 60);
+    // With three or more camps round the world (owner, 26 Nov 2026: enemy camps started with their
+    // wings touching), each camp also starts far enough out that its whole width stays inside its
+    // own slice of the circle, CAMP_GAP clear of the next camp's. Two camps face each other head
+    // on, so this never applies to them.
+    let half = 0;
+    for (const sp of spots) half = Math.max(half, Math.abs(sp.across));
+    const wedge = nCamps > 2 ? CAMP_GAP / 2 / Math.sin(Math.PI / nCamps) + half / Math.tan(Math.PI / nCamps) : 0;
+    const clear = Math.max(220, defenceReach(fixedShips, designs, phi) + 60, wedge);
     list.forEach((s, i) => {
       const { depth, across } = spots[i];
       const along = clear + depth;

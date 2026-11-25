@@ -1392,6 +1392,43 @@ const lanePlanHours = (W, a, b, d) => { const A = W.planets[a], B = W.planets[b]
   }
 }
 
+// ---- Enemies never start mixed together (owner, 26 Nov 2026): Ann at war with everyone, Bo allied with
+// Cy and Di, Cy and Di allied only with Bo (so at war with each other). At Bo's world Cy's and Di's
+// ships both defended it and started mixed with Bo's, then fought each other at point blank.
+{
+  const names = ['Ann', 'Bo', 'Cy', 'Di'];
+  const closest = {};
+  for (const holder of [0, 1, 2]) {
+    const w = createWorld({ players: names.map((name) => ({ name })), seed: 91 });
+    const [A, B, C, D] = w.players.map((p) => p.id);
+    for (const [x, y] of [[B, C], [B, D]]) { proposeAlliance(w, x, y); acceptAlliance(w, y, x); }
+    ok(allied(w, B, C) && allied(w, B, D) && !allied(w, C, D) && !allied(w, A, B), 'Bo+Cy, Bo+Di, Cy and Di at war, Ann alone');
+    const des = [A, B, C, D].map((k) => { w.players[k].credits = 1e8; return buildShipyard(w, k, w.players[k].home, { ...makeDesign('destroyer', 30), name: `Ship ${names[k]}` }).yard.design; });
+    for (const P of w.planets) for (const y of P.yards) y.next = Infinity;
+    for (const P of w.planets) P.garrison = [];
+    const T = w.planets[w.players[holder].home];
+    const defenders = [A, B, C, D].filter((k) => k === holder || allied(w, k, holder));
+    T.garrison = defenders.map((k) => ({ owner: k, design: des[k], n: 25 }));
+    const stage = w.planets.filter((p) => p.home < 0).sort((p, q) => Math.hypot(p.x - T.x, p.y - T.y) - Math.hypot(q.x - T.x, q.y - T.y))[0];
+    const atk = [A, B, C, D].filter((k) => !defenders.includes(k));
+    stage.owner = atk[0]; stage.garrison = atk.map((k) => ({ owner: k, design: des[k], n: 25 }));
+    for (const k of atk) ok(sendFleet(w, k, stage.id, T.id, { [des[k]]: 25 }, { lanes: false }).ok, 'attack launched');
+    runWorld(w, Math.max(...w.fleets.map((f) => f.arrive)), resolve);
+    const sg = siegeAt(w, T.id)[0];
+    ok(sg, 'a siege at the world');
+    const plan = planEvent(w, { kind: 'siege', siege: sg });
+    const sc = plan.battle, own = sc.groups.flatMap((g) => Array.from({ length: g.n }, () => g.owner));
+    let near = Infinity;
+    for (let i = 0; i < sc.ships.length; i++) for (let j = i + 1; j < sc.ships.length; j++) {
+      if (own[i] === own[j] || allied(w, own[i], own[j])) continue;
+      near = Math.min(near, Math.hypot(sc.ships[i].x - sc.ships[j].x, sc.ships[i].y - sc.ships[j].y));
+    }
+    closest[names[holder]] = Math.round(near);
+    ok(near > 150, `at ${names[holder]}'s world no two enemies start within 150 blocks (closest ${near.toFixed(0)})`);
+  }
+  console.log(`  enemies apart at the start (closest enemy pair, blocks): ${Object.entries(closest).map(([k, v]) => `${k}'s world ${v}`).join(', ')}`);
+}
+
 // ---- 2.0 with allies (owner, 22 Nov 2026: "does that work with allies?"): two allies against two
 // enemies, both sending every fleet at the same enemy home. Stand-in battles (the bigger side wins).
 // Also checks no ship waits without a reason: dispatchAll goes round again while it sends anything

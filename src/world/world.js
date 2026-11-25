@@ -1282,20 +1282,28 @@ export function planEvent(world, ev) {
     for (const f of q.fleets) for (const [design, n] of Object.entries(f.ships)) if (n > 0) groups.push({ team, side, owner: q.owner, design, n, fleet: f.id, color });
   });
   // Starting positions: the owner's side holds the world; attackers come in from around it, each
-  // group of mutual allies together (see makeBattleScenario).
+  // group of mutual allies together (see makeBattleScenario). A camp only ever holds players who
+  // are all allied with each other (owner, 26 Nov 2026: two allies of the owner who are at war
+  // with each other started mixed together at the world and tore into each other at point blank).
+  // So camp 0 is the owner (or militia) plus the owner's allies who are allied with everyone
+  // already in it; an ally of the owner at war with one of those gets a camp of its own round the
+  // world ("guest" camp: the owner's defences don't face it).
   const owners = fighters.map((q) => q.owner);
-  const camps = [], campOf = new Array(fighters.length);
-  const defCamp = [];
-  fighters.forEach((q, t) => { if (defends(q.owner)) { defCamp.push(t); campOf[t] = 0; } });
-  camps.push(defCamp);
-  fighters.forEach((q, t) => {
-    if (defends(q.owner)) return;
-    let c = camps.findIndex((m, k) => k > 0 && m.every((u) => allied(world, owners[u], q.owner)));
+  const camps = [[]], campOf = new Array(fighters.length), guestCamps = [];
+  const fits = (m, t) => m.every((u) => allied(world, owners[u], owners[t]));
+  const holder = fighters.findIndex((q) => q.owner === P.owner);
+  const defOrder = fighters.map((_, t) => t).filter((t) => defends(owners[t]));
+  if (holder >= 0) defOrder.sort((a, b) => (b === holder) - (a === holder));
+  const loose = [];
+  for (const t of defOrder) { if (fits(camps[0], t)) { camps[0].push(t); campOf[t] = 0; } else loose.push(t); }
+  for (const t of [...loose, ...fighters.map((_, t) => t).filter((t) => !defends(owners[t]))]) {
+    let c = camps.findIndex((m, k) => k > 0 && fits(m, t));
     if (c < 0) { c = camps.length; camps.push([]); }
     camps[c].push(t); campOf[t] = c;
-  });
+  }
+  camps.forEach((m, c) => { if (c > 0 && m.every((t) => defends(owners[t]))) guestCamps.push(c); });
   const battle = makeBattleScenario(groups, (id) => designOf(world, id), (world.seed * 1000003 + s.id * 131) >>> 0,
-    { teams: fighters.length, campOf, camps: camps.length, layout: layoutAt(world, P.id) });
+    { teams: fighters.length, campOf, camps: camps.length, guestCamps, layout: layoutAt(world, P.id) });
   const attackers = owners.filter((o) => !defends(o));
   Object.assign(battle, {
     maxTime: BATTLE_MAX_TIME, planet: P.id, attacker: s.leader, defender: P.owner, attackers, owners, camps: camps.length,
