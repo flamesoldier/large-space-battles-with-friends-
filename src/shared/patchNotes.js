@@ -8,6 +8,13 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-25-stacked-fleets', date: '25 Nov 2026', title: 'See every fleet under an arrow',
+    items: [
+      'Ships that leave a world together often fly as several fleets along the same lane, drawn on top of each other, so clicking the arrow only showed one of them. Now hovering or clicking a fleet shows how many fleets are there and how many ships they have in all, and the fleet panel lists each one so you can click through them.',
+      'Nothing about how fleets move has changed: no ships were going missing.',
+    ],
+  },
+  {
     id: '2026-11-25-bounty', date: '25 Nov 2026', title: 'Fairer bounty between allies',
     items: [
       'When allies fight a battle together, their bounty is now shared by the value of the ships (and defences) each of them brought into the battle, instead of evenly. Bring 100,000 cr of ships alongside an ally who brings 50,000 and you get two thirds.',

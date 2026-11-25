@@ -197,6 +197,27 @@ function fleetWorldPos(f) {
   return { x: P.x + Math.cos(a) * r, y: P.y + Math.sin(a) * r, angle: a + Math.PI, leg: f.leg, holding: true };
 }
 
+// Fleets drawn on top of each other (owner, 25 Nov 2026: survivors that leave a world together fly as
+// several fleets along the same lane, and clicking the arrow showed only the top one). Everything within
+// STACK_PX of this fleet's arrow on screen, this fleet first. Display only: fleets still move as before.
+const STACK_PX = 8;
+function fleetsStackedWith(f) {
+  const p = fleetWorldPos(f), [x, y] = toScreen(p.x, p.y);
+  const near = world.fleets.filter((o) => {
+    if (o === f) return false;
+    const q = fleetWorldPos(o), [a, b] = toScreen(q.x, q.y);
+    return Math.hypot(a - x, b - y) < STACK_PX;
+  });
+  return [f, ...near];
+}
+function stackSummary(stack) {
+  const by = new Map();
+  for (const o of stack) by.set(o.owner, (by.get(o.owner) || 0) + countShips(o.ships));
+  const total = [...by.values()].reduce((a, n) => a + n, 0);
+  const each = by.size > 1 ? [...by].map(([o, n]) => `${o === null ? 'Militia' : esc(playerName(world, o))} ${fmt(n)}`).join(', ') : '';
+  return { total, each };
+}
+
 // ------------------------------------------------------------ drawing
 function draw(now) {
   g.setTransform(1, 0, 0, 1, 0, 0);
@@ -571,7 +592,9 @@ function showTip(sx, sy) {
     const f = world.fleets.find((x) => x.id === hover.id);
     if (!f) { tip.hidden = true; return; }
     const holdAt = f.wait != null ? world.planets[f.legs[f.leg].to] : null, sg = holdAt && world.sieges.find((x) => x.id === f.wait);
-    html = `<b>Fleet</b> ${f.retreat ? '<span class="tag">retreating</span>' : ''}${holdAt ? '<span class="tag">in a siege</span>' : ''}<br>${who(f.owner)}<br><span class="m">${countShips(f.ships)} ships${holdAt ? ` at ${esc(holdAt.name)}, battle in ${inText(sg.startsAt - world.clock)}` : ` → ${esc(world.planets[f.to].name)} in ${inText(f.arrive - world.clock)}`}</span>`;
+    html = `<b>Fleet</b> ${f.retreat ? '<span class="tag">retreating</span>' : ''}${holdAt ? '<span class="tag">in a siege</span>' : ''}<br>${who(f.owner)}<br><span class="m">${countShips(f.ships)} ship${countShips(f.ships) === 1 ? '' : 's'}${holdAt ? ` at ${esc(holdAt.name)}, battle in ${inText(sg.startsAt - world.clock)}` : ` → ${esc(world.planets[f.to].name)} in ${inText(f.arrive - world.clock)}`}</span>`;
+    const stack = fleetsStackedWith(f);
+    if (stack.length > 1) { const S = stackSummary(stack); html += `<br><span class="m" style="color:var(--azure)">${stack.length} fleets here · ${fmt(S.total)} ships in all${S.each ? ` (${S.each})` : ''}</span>`; }
   }
   tip.innerHTML = html; tip.hidden = false;
   const r = tip.getBoundingClientRect(), mr = canvas.getBoundingClientRect();
@@ -607,7 +630,7 @@ function panelSignature() {
   if (sel?.kind === 'planet') {
     const P = world.planets[sel.id];
     s.push(P.owner, JSON.stringify(P.garrison), P.yards.map((y) => `${y.id}:${y.sellAt ?? ''}`).join(), jobsAt(world, P.id).map((j) => j.id).join(), Math.floor(me().credits / 500), JSON.stringify(siegeAt(world, P.id).map((x) => x.fleets)), JSON.stringify(world.relations));
-  } else if (sel?.kind === 'fleet') s.push(world.fleets.length, world.fleets.find((f) => f.id === sel.id)?.wait, world.fleets.find((f) => f.id === sel.id)?.leg);
+  } else if (sel?.kind === 'fleet') { const f = world.fleets.find((x) => x.id === sel.id); s.push(world.fleets.length, f?.wait, f?.leg, f ? fleetsStackedWith(f).map((o) => `${o.id}:${countShips(o.ships)}`).join() : ''); }
   else s.push(world.log.length, Object.keys(world.relations).join(), world.planets.map((p) => p.owner).join(), world.fleets.length, world.planets.reduce((a, p) => a + shipTotal(p), 0));
   return s.join('|');
 }
@@ -846,8 +869,12 @@ function fleetPanel(f) {
   const N = world.planets[f.legs[f.leg].to];
   const canStop = !world.auto && f.owner === ui.me && !f.retreat && f.leg < f.legs.length - 1;
   const G = f.goal != null ? world.planets[f.goal] : null;
+  const stack = fleetsStackedWith(f), S = stack.length > 1 ? stackSummary(stack) : null;
+  const stackHtml = S ? `<h2>${stack.length} fleets here · ${fmt(S.total)} ships in all</h2>
+    <p class="hint">These fleets are drawn on top of each other on the map.${S.each ? ` By player: ${S.each}.` : ''} ${CLICK} one to see it.</p>
+    <div class="list">${stack.map((o) => `<button data-act="fleet" data-fleet="${o.id}"${o === f ? ' aria-current="true" style="outline:1px solid var(--line)"' : ''}><span class="swatch" style="background:${colorOf(o.owner)}"></span><span>${fmt(countShips(o.ships))} ship${countShips(o.ships) === 1 ? '' : 's'} → ${esc(world.planets[o.legs[o.leg].to].name)}${o === f ? ' (this one)' : ''}</span><em>${o.owner === null ? 'Militia' : esc(playerName(world, o.owner))}</em></button>`).join('')}</div>` : '';
   return `<h1><span class="swatch" style="background:${colorOf(f.owner)}"></span>Fleet${f.retreat ? ' <span class="tag">retreating</span>' : ''}${f.turned != null ? ' <span class="tag">turned back</span>' : ''}</h1>
-    <div class="sub">${who(f.owner)}</div>
+    <div class="sub">${who(f.owner)}${S ? ` · <span style="color:var(--azure)">1 of ${stack.length} fleets here, ${fmt(S.total)} ships in all</span>` : ''}</div>
     <dl class="kv">
       <dt>From</dt><dd>${esc(F.name)}</dd>
       <dt>To</dt><dd>${esc(T.name)}</dd>
@@ -861,6 +888,7 @@ function fleetPanel(f) {
       <dt>Value</dt><dd>${fmt(fleetValue(world, f.ships))} cr</dd>
     </dl>
     <h2>Ships</h2><table><tbody>${rows}</tbody></table>
+    ${stackHtml}
     ${f.legs.length > 1 ? `<p class="hint">Route: ${[f.from, ...f.legs.map((l) => l.to)].map((id, k) => { const N = esc(world.planets[id].name); return k === f.leg + 1 ? `<b>${N}</b>` : N; }).join(' → ')}</p>` : ''}
     <p class="hint">${world.auto
       ? `Fleets move by themselves, one hyperlane at a time, and decide again at every world where to go next. At an enemy world the battle starts ${fmtHours(HOLD_MS / HOUR_MS)} after they arrive, so both sides can bring reinforcements; winning takes the world. A fleet that loses falls back to a friendly world nearby.`

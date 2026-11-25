@@ -134,6 +134,19 @@ on the world object, which the server keeps), sets both non-home worlds' income/
 worlds. Patch notes entry `2026-11-24-hyperlane` written (names the bottom-right of the map, not the worlds). Tests in
 `tools/test-world.mjs` and `tools/test-server.mjs`. Checked in headless Chrome.
 
+**Stacked fleets shown under one click (owner, 25 Nov 2026: a friend thought ships went missing, "took arisvex with 29 ships
+surviving and only 1 ship is attacking the next planet"; then "is there a way to see all fleets under a click i still want things
+to work the way they are now")**, on `v2-dev`, **not live**. Checked first: no ships vanish (`/tmp`-style audit, 6 bot games with
+stand-in battles, 4–10 players, 5 days: every player's ships = built + defences − battle losses after each of 30,889 events).
+Why it looked that way: after a capture the winner's fleets are released and each wave moves on as its own fleet (`moveOn` per
+fleet; only garrison stacks are merged by `dispatchAll`), so survivors usually leave as several fleets on one lane at the same
+moment (most often 3, up to 14), drawn exactly on top of each other, and clicking showed only one; 76% of survivors flew on at
+once, 18% stayed pinned (an enemy heading for the world just taken), 6% waited for a siege elsewhere. Owner chose display only
+(merging fleets was offered and declined). `fleetsStackedWith(f)` in `galaxy/app.js` (every fleet within `STACK_PX` 8 screen px
+of its arrow), `stackSummary()`: the hover tooltip adds "N fleets here · X ships in all (per player if several)", the fleet panel's
+sub line says "1 of N fleets here" and a list of each fleet (click to select); the stack is in the panel signature. Also "1 ship"
+not "1 ships" there. Patch notes `2026-11-25-stacked-fleets`. Checked in headless Chrome (1300×850 and a 412×915 phone).
+
 **Defences and selling, 5 minutes (owner, 18 Nov 2026, after 2.0 went live):** "building defences will be much more important and should be able to be done reactively": `DEFENSE_BUILD_HOURS` and `SELL_HOURS` = 5/60 (were 15 h), **selling a shipyard gives back 65%** (`SHIPYARD_SELL_REFUND`, was 95%). Texts use `fmtHours()` ("5 min"). Test: defences ordered 10 min before a battle are ready for it, ones ordered 2 min before are lost with the world. Live 18 Nov 2026. **No patch notes for now** (owner: nobody is playing; he'll say when to start again).
 
 **Bots (owner, 18 Nov 2026: "they don't have to be good, just basic bots"):** `src/world/bots.js`. A bot is a player with `bot: true` (no password; sessions refused). Every `BOT_EVERY_MIN` (10) game minutes a world event `'bots'` (`dueEvent`, after anything else due then; `world.botNext`) runs `runBots()`: alliance proposals to it are declined; any of its worlds `pinned()` by an enemy gets defences (a generated cruiser with thrusters turned to armour, up to half its credits, ≤ 200, once per world per 3 h); then shipyards for its own generated frigate/destroyer/cruiser/battleship (random, weighted to mid sizes) on the cheapest world, keeping 2 h of income back. Works on the server and the hot-seat page alike (it's an ordinary event); the server saves bot turns once per catch-up. Admin page: **Bots** field when making a game (extra seats "Bot 1"…, after the people; 1+ person, 2–10 seats in all; `bots` in `/api/admin/new-game`, `--bots` on the command line) and **Make it a bot** per seat (`makeBot()` in `world.js`, `/api/admin/make-bot`: an open seat becomes "Bot N", a named one keeps its name; its password is deleted). Diplomacy window tags bots and hides Propose. Names "Bot N" are reserved. Tests in `tools/test-world.mjs` and `tools/test-server.mjs`. Live 18 Nov 2026.
