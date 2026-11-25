@@ -10,8 +10,8 @@ export const PATCH_NOTES = [
   {
     id: '2026-11-25-gun-balance', date: '25 Nov 2026', title: 'Auto guns toned down, cannons fire faster',
     items: [
-      'Auto guns were too strong. Each bullet now does 45 damage (was 55) and their range is 130 (was 200), so they have to get much closer to do their work.',
-      'Cannons still miss a lot (that\'s their weakness), so to make up for it they now fire every 7 seconds (was 10) and reach 360 (was 340).',
+      'Auto guns were too strong. Each bullet now does 50 damage (was 55) and their range is 170 (was 200), so they have to get closer to do their work.',
+      'Cannons still miss a lot (that\'s their weakness), so to make up for it they now fire every 8 seconds (was 10) and reach 360 (was 340).',
       'This changes ships already in play from their next battle.',
     ],
   },

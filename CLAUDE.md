@@ -945,18 +945,21 @@ Weapons (numbers in `blocks.js`):
     `tools/test-designer.mjs` (2 heavy / 11 frame, whole units, bullets fired).
 - **Auto gun nerf, cannon buff (owner, 25 Nov 2026: "I've accidentally made auto guns way op… damage to 45 and range to
   130, cannons are under powered because they miss so much which is fine its their weakness but to make up for it change
-  their fire rate to 7 seconds and increase their range to 360")**, on `v2-dev`, **not live** (patch notes entry
-  `2026-11-25-gun-balance` written). Where the cannon and auto gun lines above disagree, these win: auto gun **45** damage
-  (was 55), range **130** (was 200), still every 0.2 s at 225 blocks/s; cannon every **7 s** (was 10, so +43% damage per
-  second), range **360** (was 340), still 500 a shell. Measured (`/tmp`-style `duel.mjs`: an 18×10 frigate hull with 3 nose
-  auto units (2,053 cr, Charge) or 8 nose cannons (1,513 cr, Front line), 60k cr a side, 4 seeds, score = enemy value lost
-  share − own; before → after): auto charge vs cannon line −0.18 → −0.79, auto line vs cannon line −0.18 → −0.65, auto
-  charge vs the generated mixed fleet −0.51 → −0.56, cannon line vs mixed +0.10 → +0.41, cannon standoff vs mixed +0.15 →
-  +0.42. Each change alone (auto / cannon): auto charge vs cannon line −0.66 / −0.62, auto line vs cannon line −0.35 /
-  −0.45. Generated designs use cannons, so the mixed fleet gets stronger too. Test fix: the flanker test's battleship is
-  now unkillable as well (with faster cannons it died at 61 s, before the flanker reached it). Bench 1,000 vs 1,000: 168 s,
-  8.2 s compute, 4.7 ms a tick, 206:77. Replays sent: "Gun changes: BEFORE / AFTER" (300 v 300 generated + 30 auto
-  brawlers and 30 cannon boats a side, seed 4).
+  their fire rate to 7 seconds and increase their range to 360"; then after the pure-fleet tests below: "auto gun range 170
+  50 damage, cannon 8 second 360 range")**, on `v2-dev`, **not live** (patch notes entry `2026-11-25-gun-balance` written).
+  Where the cannon and auto gun lines above disagree, these win: auto gun **50** damage (was 55), range **170** (was 200),
+  still every 0.2 s at 225 blocks/s; cannon every **8 s** (was 10, +25% damage per second), range **360** (was 340), still
+  500 a shell. Measured (`/tmp`-style `pairs.mjs`: pure fleets of one 18×10 frigate hull, 60k cr a side, 4 seeds; "armoured"
+  = heavy skin + armour core: 25 auto boats (3 auto units, Charge) / 32 cannon boats (8 cannons, Front line) / 32 laser
+  boats (8 lasers, Front line); "thin" = armour rows + frame core: 29 / 39 / 40 ships). Wins of 4, live → 45/130 & 7 s →
+  chosen 50/170 & 8 s: armoured auto vs cannon **4 → 0 → 0** (cannons keep ~5 → ~27 → ~22), auto vs laser 0 → 0 → 1,
+  cannon vs laser 0 → 4 → 3; thin: lasers win everything at every setting (one 400 laser shot burns a frame core to the
+  hub). Auto vs cannon is knife-edge for pure fleets: cannons win 3–4 of 4 at every nearby setting tried (cannon 8–10 s at
+  range 360 with auto 50/170, 50/200 or 55/200), so the 20 → 0 swing comes from small changes. An earlier mixed harness
+  (`duel.mjs`, thin hull vs the generated mixed fleet) gave cannon line vs mixed +0.10 → +0.41 at 7 s. Test fix: the flanker
+  test's battleship is now unkillable as well (with faster cannons it died before the flanker reached it). Replays sent:
+  "Gun changes: BEFORE / AFTER" (7 s version), "<A> boats vs <B> boats: BEFORE / AFTER" for 45/130 & 7 s and again for
+  the chosen numbers.
 - **Doomsday Interdimensional Rift Engine** (`BT.RIFT` = 16, weapon kind `'rift'`; owner, 22 Nov 2026, inspired by his
   Elenris Minor replay b28350, where 1,440 guided missiles circled a hollow fortress's courtyard, the bug fixed 14 Nov:
   "a 100*100 sized weapon fragile and explosive but can be put inside ships… doesn't need line of sight… 30 seconds to
