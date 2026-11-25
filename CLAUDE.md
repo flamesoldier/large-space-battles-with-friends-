@@ -1600,6 +1600,12 @@ designer's numbers against the sim.
   `designs`). Template designs are named "My <class>" by default. The "Start from" menu also
   gets a **"Your shipyards"** group: the designs your own shipyards build (`yard: true` in that
   message), loaded under their own names.
+- **Your credits in the designers (owner, 25 Nov 2026: "it would be really handy if the ship designer and defence designer had your
+  available credits too")**, **live 25 Nov 2026**, patch notes `2026-11-25-designer-credits`. The galaxy already re-sends
+  `lsb-designer-embed` (with `credits`) every 2 s; `showCredits(price)` in `designer/app.js` (called from `syncEmbed`) fills a
+  **Credits** chip in the top bar (`#credits-chip`, before Test battle; first in the phone row; red when short) and a full-width
+  **Your credits** box under Ship cost / Shipyard (`#have-box`: "N left after building" or "N short" in red). Battle simulator
+  mode: chip only. Checked in headless Chrome (ship and defence designer, 1400×880 and a 412×915 phone; the number rises with income).
 - **Test with your other designs** (owner, Nov 2026: a friend wanted to test a new design together
   with the rest of his fleet): the test dialog's "Also on your side" list adds any number of rows
   (design + count, default count by hull class) from your designs in this game (yours only;

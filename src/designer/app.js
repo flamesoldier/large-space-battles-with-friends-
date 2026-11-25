@@ -1463,9 +1463,25 @@ function enterSimMode() {
   $('test-btn').title = 'Back to the battle simulator';
   openSim();
 }
+/**
+ * Your credits (owner, 25 Nov 2026: "it would be really handy if the ship designer and defence designer had your
+ * available credits"): a chip in the top bar and, when building something, what's left after it (red if short).
+ * The galaxy re-sends the embed message every 2 s, so this keeps up as credits come in.
+ */
+function showCredits(price) {
+  const c = Math.floor(embed.credits ?? 0), short = price != null && price > c;
+  $('credits-chip').hidden = false;
+  $('credits').textContent = fmt(c);
+  $('credits-chip').classList.toggle('short', short);
+  $('have-box').hidden = price == null;
+  if (price == null) return;
+  $('have').textContent = fmt(c);
+  $('have-box').classList.toggle('short', short);
+  $('have-after').textContent = short ? `${fmt(price - c)} short` : `${fmt(c - price)} left after building`;
+}
 function syncEmbed() {
   if (!embed || !design) return;
-  if (simMode()) { $('use-design').hidden = true; return; }
+  if (simMode()) { $('use-design').hidden = true; showCredits(null); return; }
   if (defenseMode()) {
     const price = defensePrice(design), thr = (info.byType[BT.THRUSTER] || 0) + (info.byType[BT.MEGA] || 0);
     const b = $('use-design');
@@ -1477,6 +1493,7 @@ function syncEmbed() {
     $('yard').textContent = fmt(price);
     $('yard-hint').textContent = `At ${embed.planet}: takes ${DEFENSE_BUILD_HOURS < 1 ? `${Math.round(DEFENSE_BUILD_HOURS * 60)} minutes` : `${DEFENSE_BUILD_HOURS} hours`} to build and costs ${Math.round(DEFENSE_PRICE_SHARE * 100)}% of the blocks' price. It never moves, and when it's destroyed it's gone.`;
     $('stance-row').hidden = true; $('stance-hint').hidden = true; $('stance-head').hidden = true;
+    showCredits(price);
     return;
   }
   const price = shipyardPriceAt(design, embed.existing || 0), extra = crowdingSurcharge(shipyardPrice(design), embed.existing || 0);
@@ -1484,6 +1501,7 @@ function syncEmbed() {
   b.hidden = false;
   b.textContent = `Build shipyard · ${fmt(price)} cr`;
   b.disabled = !info.ok || price > embed.credits;
+  showCredits(price);
   b.title = !info.ok ? 'Fix the red issues first' : price > embed.credits ? `You have ${fmt(embed.credits)} credits` : `Build a shipyard for this design at ${embed.planet}`;
   $('yard').textContent = fmt(price);
   $('yard-hint').textContent = extra

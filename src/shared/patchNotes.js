@@ -8,6 +8,13 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-25-designer-credits', date: '25 Nov 2026', title: 'Your credits in the designers',
+    items: [
+      'The Ship Designer and Defence Designer now show your credits at the top, kept up to date while you design.',
+      'Under the price you can also see how many credits you\'ll have left after building, or how many you\'re short (in red).',
+    ],
+  },
+  {
     id: '2026-11-25-stack-list', date: '25 Nov 2026', title: 'Fleet list under an arrow fixed',
     items: [
       'Clicking a fleet in the "fleets here" list seemed to do nothing: the panel did switch to that fleet, but the list moved it to the top, so everything looked the same. The list now stays in the same order, the fleet you are looking at is clearly highlighted, and the panel says which one it is ("Fleet 2 of 3").',

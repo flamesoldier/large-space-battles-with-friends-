@@ -101,6 +101,14 @@ main { grid-area: grid; position: relative; min-width: 0; min-height: 0; }
 .price strong { font-family: var(--mono); font-size: 22px; font-weight: 500; color: var(--azure); font-variant-numeric: tabular-nums; }
 .price .yard strong { color: var(--ember); }
 .price span { font-size: 11px; color: var(--dim); }
+.price .have { grid-column: 1 / -1; }
+.price .have strong { color: var(--signal); }
+.price .have em { font-style: normal; font-size: 11px; color: var(--dim); margin-left: 6px; }
+.price .have.short strong, .price .have.short em { color: var(--bad); }
+.credits-chip { display: inline-flex; align-items: baseline; gap: 6px; padding: 4px 10px; border: 1px solid var(--line); white-space: nowrap; }
+.credits-chip small { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
+.credits-chip b { font-family: var(--mono); font-weight: 500; color: var(--signal); font-variant-numeric: tabular-nums; }
+.credits-chip.short b { color: var(--bad); }
 .cls { margin-top: 12px; }
 .cls header { display: flex; justify-content: space-between; align-items: baseline; }
 .cls b { font-size: 15px; letter-spacing: 0.04em; }
@@ -222,7 +230,8 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
   .top::-webkit-scrollbar, .blocks::-webkit-scrollbar, .tools::-webkit-scrollbar { display: none; }
   .top .group { display: contents; }
   .top .grow, .brand { display: none; }
-  #test-btn, #use-design { order: -1; }
+  #test-btn, #use-design, #credits-chip { order: -1; }
+  .credits-chip { flex: none; }
   .top input, .top select, .top button, .top label { flex: none; white-space: nowrap; }
   #template { width: 150px; }
   #name { width: 140px; }
@@ -283,6 +292,7 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
       <button id="export">Export</button>
       <button id="import">Import</button>
       <input id="import-file" type="file" accept=".json,application/json" hidden>
+      <span id="credits-chip" class="credits-chip" hidden title="Your credits right now (kept up to date while the designer is open)"><small>Credits</small><b id="credits">0</b></span>
       <button id="test-btn" class="go">Test battle</button>
       <button id="use-design" class="go" hidden>Build shipyard</button>
     </div>
@@ -334,6 +344,7 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
     <div class="price">
       <div><small id="cost-label">Ship cost</small><strong id="cost">0</strong> <span>cr</span></div>
       <div class="yard"><small id="yard-label">Shipyard</small><strong id="yard">0</strong> <span>cr</span></div>
+      <div class="have" id="have-box" hidden><small>Your credits</small><strong id="have">0</strong> <span>cr</span> <em id="have-after"></em></div>
     </div>
     <p class="hint" id="yard-hint" style="margin:6px 0 0"></p>
     <div class="cls">
