@@ -943,23 +943,19 @@ Weapons (numbers in `blocks.js`):
     hulls in a crowd (allied hulls block shots, owner's rule). Bench 1,000 vs 1,000: 11.6 → 11.8 s compute,
     cannon shells 95k → 26k, replay 3.42 → 2.69 MB gzip, survivors 200:75 → 206:79. Tests in
     `tools/test-designer.mjs` (2 heavy / 11 frame, whole units, bullets fired).
-- **Auto gun nerf, cannon buff (owner, 25 Nov 2026: "I've accidentally made auto guns way op… damage to 45 and range to
-  130, cannons are under powered because they miss so much which is fine its their weakness but to make up for it change
-  their fire rate to 7 seconds and increase their range to 360"; then after the pure-fleet tests below: "auto gun range 170
-  50 damage, cannon 8 second 360 range")**, on `v2-dev`, **not live** (patch notes entry `2026-11-25-gun-balance` written).
-  Where the cannon and auto gun lines above disagree, these win: auto gun **50** damage (was 55), range **170** (was 200),
-  still every 0.2 s at 225 blocks/s; cannon every **8 s** (was 10, +25% damage per second), range **360** (was 340), still
-  500 a shell. Measured (`/tmp`-style `pairs.mjs`: pure fleets of one 18×10 frigate hull, 60k cr a side, 4 seeds; "armoured"
-  = heavy skin + armour core: 25 auto boats (3 auto units, Charge) / 32 cannon boats (8 cannons, Front line) / 32 laser
-  boats (8 lasers, Front line); "thin" = armour rows + frame core: 29 / 39 / 40 ships). Wins of 4, live → 45/130 & 7 s →
-  chosen 50/170 & 8 s: armoured auto vs cannon **4 → 0 → 0** (cannons keep ~5 → ~27 → ~22), auto vs laser 0 → 0 → 1,
-  cannon vs laser 0 → 4 → 3; thin: lasers win everything at every setting (one 400 laser shot burns a frame core to the
-  hub). Auto vs cannon is knife-edge for pure fleets: cannons win 3–4 of 4 at every nearby setting tried (cannon 8–10 s at
-  range 360 with auto 50/170, 50/200 or 55/200), so the 20 → 0 swing comes from small changes. An earlier mixed harness
-  (`duel.mjs`, thin hull vs the generated mixed fleet) gave cannon line vs mixed +0.10 → +0.41 at 7 s. Test fix: the flanker
-  test's battleship is now unkillable as well (with faster cannons it died before the flanker reached it). Replays sent:
-  "Gun changes: BEFORE / AFTER" (7 s version), "<A> boats vs <B> boats: BEFORE / AFTER" for 45/130 & 7 s and again for
-  the chosen numbers.
+- **Cannons every 9 s, range 360 (owner, 25 Nov 2026: "I've accidentally made auto guns way op… damage to 45 and range to
+  130… cannons… fire rate to 7 seconds and… range to 360"; after pure-fleet tests he tried 50/170 & 8 s, then the cannon
+  change alone, then chose "9 s / 360 range for cannons")**, **live 25 Nov 2026** (owner: "go live"; patch notes
+  `2026-11-25-gun-balance`). Cannon `cooldown` **9** (was 10, +11% damage per second), `range` **360** (was 340), 500 a shell.
+  **Auto guns unchanged** (55, range 200). Measured (`/tmp`-style `pairs.mjs`: pure fleets of one 18×10 frigate hull, 60k cr a
+  side, 4 seeds; "armoured" = heavy skin + armour core: 25 auto boats (3 auto units, Charge) / 32 cannon boats (8 cannons,
+  Front line) / 32 laser boats (8 lasers, Front line); "thin" = armour rows + frame core). Armoured, wins of 4 (auto vs cannon
+  / cannon vs laser): live 10 s/340 autos 4 / lasers 4; 10 s/360 autos 3 / cannons 2; 9 s/340 autos 3 / cannons 2; **9 s/360
+  cannons 3 / cannons 3**; 8 s/340 cannons 4 / cannons 3; 8 s/360 cannons 4 / cannons 3; 7 s/360 with auto 45/130 cannons 4 /
+  cannons 4. Fire rate decides it more than range. Auto vs laser: lasers win 4 of 4 at every setting. Thin hulls: lasers win
+  everything at every setting (one 400 laser shot burns a frame core to the hub). Pure-fleet results are knife-edge, so small
+  changes swing them a lot. Test fix kept: the flanker test's battleship is unkillable too (with faster cannons it died
+  before the flanker reached it). Replays sent: pure-fleet BEFORE / AFTER pages for each tried version.
 - **Doomsday Interdimensional Rift Engine** (`BT.RIFT` = 16, weapon kind `'rift'`; owner, 22 Nov 2026, inspired by his
   Elenris Minor replay b28350, where 1,440 guided missiles circled a hollow fortress's courtyard, the bug fixed 14 Nov:
   "a 100*100 sized weapon fragile and explosive but can be put inside ships… doesn't need line of sight… 30 seconds to
