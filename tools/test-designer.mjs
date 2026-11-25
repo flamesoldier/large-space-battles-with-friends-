@@ -951,5 +951,34 @@ for (let k = 0; k < FORTRESSES.length; k++) {
   assert.ok(off.through < 8, `(without route finding only ${off.through} of 8 do)`);
   console.log(`  maze of own defences: ${on.through}/8 through in ${on.t} s (without route finding ${off.through}/8)`);
 }
+// Guided missiles keep steering (owner, 25 Nov 2026: "sometimes guided missiles stop being guided").
+{
+  const d = makeDesign('corvette', 3), W = WEAPON[BT.GUIDED], DT = 0.1;
+  const gb = new Battle({ designs: [d], ships: [{ design: 0, team: 0, x: -2000, y: 0, a: 0 }, { design: 0, team: 1, x: 5, y: 30, a: 0 }, { design: 0, team: 1, x: 170, y: 0, a: 0 }] });
+  const [, beside, ahead] = gb.ents;
+  // A target just beside it, inside its turning circle: it used to give up for good (target -2).
+  gb.addProjectile(2, BT.GUIDED, 0, 0, W.speed, 0, 900, gb.ents[0].id, 0, beside.id, W.damage, W.hp, -1);
+  gb.setMissileAim(0, beside, beside.x, beside.y);
+  const P = gb.P;
+  let turned = 0, gaveUp = false, minD = Infinity, wasOver = false;
+  for (let k = 0; k < 400; k++) {
+    gb.now = k;
+    const h0 = Math.atan2(P.vy[0], P.vx[0]);
+    gb.steerMissile(0);
+    if (P.over[0]) wasOver = true;
+    if (P.target[0] === -2) { gaveUp = true; break; }
+    let dh = Math.atan2(P.vy[0], P.vx[0]) - h0; dh -= Math.round(dh / (2 * Math.PI)) * 2 * Math.PI; turned += Math.abs(dh);
+    P.x[0] += P.vx[0] * DT; P.y[0] += P.vy[0] * DT;
+    if (k > 20) minD = Math.min(minD, Math.hypot(P.x[0] - beside.x, P.y[0] - beside.y));
+    if (minD < 6) break; // a real missile would hit the hull here
+  }
+  assert.ok(wasOver && !gaveUp, 'a guided missile that can\'t make the turn flies past instead of giving up');
+  assert.ok(turned > Math.PI / 2 && minD < 6, `and comes round for another pass (turned ${turned.toFixed(2)} rad, came within ${minD.toFixed(1)})`);
+  // Its target gone, it picks the enemy it can reach (ahead), not the nearest one beside it.
+  gb.removeProjectile(0);
+  gb.addProjectile(2, BT.GUIDED, 0, 0, W.speed, 0, 900, gb.ents[0].id, 0, -1, W.damage, W.hp, -1);
+  assert.equal(gb.missileSeek(0, W), ahead, 'a new target it can turn onto beats a nearer one beside it');
+  console.log(`  guided missiles: come round for another pass (turned ${turned.toFixed(1)} rad), re-target ahead`);
+}
 console.log(`designer stats match the sim for ${checked} generated designs; validation ok`);
 console.log(`${FORTRESSES.length} Aegis fortresses are valid 150,000 cr defences`);

@@ -8,6 +8,13 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-25-guided', date: '25 Nov 2026', title: 'Guided missiles keep steering',
+    items: [
+      'Guided missiles sometimes stopped steering and flew straight on. That happened when their target was too close beside them to turn onto, often right after they picked a new target. Now they fly past, turn round and come back for another pass.',
+      'When a guided missile\'s target is destroyed, it now looks twice as far for a new one, and picks the enemy it can reach soonest rather than simply the nearest.',
+    ],
+  },
+  {
     id: '2026-11-25-selling', date: '25 Nov 2026', title: 'Selling shipyards: full price, one at a time',
     items: [
       'Selling a shipyard now gives back everything you paid for it (it was 65%), so swapping a design that didn\'t work out no longer costs you a third of it.',

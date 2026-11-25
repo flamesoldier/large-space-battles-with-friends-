@@ -125,7 +125,7 @@ export const WEAPON = {
   [BT.MISSILE]: { kind: 'missile', range: 700, damage: 150, cooldown: 30, speed: 23, life: 90, splash: 9, hp: 150, spread: 0.02, maxLead: 3 }, // life was 45: misses fly on; speed was 20 (owner, Nov 2026: +15%, too slow); hp 100 -> 150 when point defence went to range 80, a burst every 0.8 s (Nov 2026)
   // Guided missile (owner, Nov 2026): exactly the heavy missile, but in flight it turns toward its
   // target (leading it, up to `turn` rad/s), and picks the nearest enemy within `seek` if that dies.
-  [BT.GUIDED]: { kind: 'missile', guided: true, range: 700, damage: 150, cooldown: 30, speed: 23, life: 90, splash: 9, hp: 150, spread: 0.02, maxLead: 3, turn: 0.6, seek: 150 },
+  [BT.GUIDED]: { kind: 'missile', guided: true, range: 700, damage: 150, cooldown: 30, speed: 23, life: 90, splash: 9, hp: 150, spread: 0.02, maxLead: 3, turn: 0.6, seek: 300 }, // seek 150 → 300 (owner, 25 Nov 2026: missiles whose target died flew on unguided)
   // Point defence: shoots the nearest enemy missile in range, otherwise any enemy ship that close.
   // Owner, Nov 2026: range 80 against everything (was 30: it must outrange fighters), 15 damage a
   // burst every 0.2 s, to ships, fighters and missiles alike (was 32 / 25 to missiles).

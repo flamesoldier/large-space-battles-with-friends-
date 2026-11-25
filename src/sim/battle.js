@@ -144,6 +144,10 @@ export const STANCES = {
 // Every weapon object gets its line-of-fire fields up front (one object shape, see makeEntity).
 const arcFields = () => ({ popped: false, sq: 0, wv: 0, ft: -1, route: -1, rtT: 0, omni: false, buried: false, m0: 0, m1: 0, ox: 0, oy: 0, bx0: 1, by0: 1, bx1: 0, by1: 0, blk: null });
 
+// A guided missile that can't make the turn onto its target flies past and comes round again, at most
+// this many times, then gives up and flies straight (owner, 25 Nov 2026).
+const MISSILE_PASSES = 3;
+
 export class Battle {
   // maxTime: 4 minutes while testing; the plan for launch is 30 minutes so every battle resolves.
   // teams: how many sides (each player in a free-for-all is its own side, up to MAX_TEAMS).
@@ -1528,6 +1532,9 @@ export class Battle {
       life: new Int32Array(cap), kind: new Uint8Array(cap), owner: new Int32Array(cap), team: new Uint8Array(cap),
       // Guided missiles: the point they steer for, in the target's own frame (ax, ay; see steerMissile).
       ax: new Float32Array(cap), ay: new Float32Array(cap),
+      // Guided missiles that couldn't make a turn: `over` 1 while flying straight past to come round
+      // again, `pass` = how many times that has happened (see steerMissile).
+      over: new Uint8Array(cap), pass: new Uint8Array(cap),
       target: new Int32Array(cap), dmg: new Float32Array(cap), rec: new Int32Array(cap), t0: new Int32Array(cap),
       wtype: new Uint8Array(cap), hp: new Float32Array(cap),
     };
@@ -1545,6 +1552,7 @@ export class Battle {
     const i = P.n++;
     P.x[i] = x; P.y[i] = y; P.vx[i] = vx; P.vy[i] = vy; P.life[i] = life; P.kind[i] = kind; P.wtype[i] = wtype;
     P.owner[i] = owner; P.team[i] = team; P.target[i] = target; P.dmg[i] = dmg; P.hp[i] = hp; P.rec[i] = rec; P.t0[i] = this.now;
+    P.over[i] = 0; P.pass[i] = 0;
   }
 
   removeProjectile(i) {
@@ -2298,21 +2306,41 @@ export class Battle {
     return false;
   }
 
+  /**
+   * A guided missile whose target is gone picks a new one (owner, 25 Nov 2026: "sometimes guided missiles
+   * stop being guided"): the enemy ship within W.seek it can reach soonest, counting the turn it needs
+   * (distance + turning radius × bearing), not simply the nearest. The nearest was often right beside
+   * it, inside its turning circle, and it gave up at once (2/3 of all give-ups came within 3 s of a new
+   * target). Ships it can't turn onto still count, but well behind any it can.
+   */
+  missileSeek(i, W) {
+    const P = this.P, team = P.team[i], x = P.x[i], y = P.y[i], R = W.seek, r = W.speed / W.turn;
+    const cur = Math.atan2(P.vy[i], P.vx[i]);
+    let best = Infinity, tg = null;
+    this.grid.queryBox(x - R, y - R, x + R, y + R, (o) => {
+      if (o.dead || o.retired || o.kind !== SHIP || this.fr[(team << 4) | o.team]) return;
+      const dx = o.x - x, dy = o.y - y, D = Math.hypot(dx, dy);
+      if (D > R + o.radius) return;
+      let b = Math.atan2(dy, dx) - cur;
+      b -= Math.round(b / (2 * Math.PI)) * 2 * Math.PI;
+      const near = Math.max(0, D - o.radius * 0.8); // to its hull, roughly, so a big ship isn't "far"
+      let cost = near + r * Math.abs(b);
+      if (near < 2 * r * Math.abs(Math.sin(b)) && Math.abs(b) > 0.3) cost += 4 * r; // can't turn onto it from here
+      if (cost < best) { best = cost; tg = o; }
+    });
+    return tg;
+  }
+
   steerMissile(i) {
     const P = this.P, W = WEAPON[P.wtype[i]], team = P.team[i];
-    if (P.target[i] === -2) return; // gave up (see below): flies straight on
+    if (P.target[i] === -2) return; // gave up after MISSILE_PASSES missed passes: flies straight on
     let tg = this.byId[P.target[i]];
     if (!tg || tg.dead || tg.retired || tg.kind !== SHIP || this.fr[(team << 4) | tg.team]) {
       tg = null;
       if ((this.now - P.t0[i]) % 5 === 0) { // look for a new target now and then, not every tick
-        const x = P.x[i], y = P.y[i], R = W.seek;
-        let best = R * R;
-        this.grid.queryBox(x - R, y - R, x + R, y + R, (o) => {
-          if (o.dead || o.retired || o.kind !== SHIP || this.fr[(team << 4) | o.team]) return;
-          const d2 = (o.x - x) ** 2 + (o.y - y) ** 2;
-          if (d2 < best) { best = d2; tg = o; }
-        });
+        tg = this.missileSeek(i, W);
         P.target[i] = tg ? tg.id : -1;
+        P.over[i] = 0; P.pass[i] = 0;
         // New target: its centre, or for a big hull the nearest square of it that holds a block.
         if (tg) { if (tg.tiles && this.nearTile(tg, P.x[i], P.y[i], W.seek) >= 0) this.setMissileAim(i, tg, this._ntx, this._nty); else this.setMissileAim(i, tg, tg.x, tg.y); }
       }
@@ -2328,12 +2356,22 @@ export class Battle {
     const want = Math.atan2(gy + tg.vy * t - y, gx + tg.vx * t - x), cur = Math.atan2(vy, vx);
     let d = want - cur;
     d -= Math.round(d / (2 * Math.PI)) * 2 * Math.PI;
-    // Inside the circle it can't turn tighter than (radius speed / turn, ~38 blocks): it would chase
-    // the target round and round (owner, 14 Nov 2026: missiles "dancing in a circle" in front of an
-    // Aegis fortress). A point at distance D and bearing d is out of reach when D < 2r·sin|d|. It has
-    // missed: give up and fly straight on, like any other miss (it can still hit what's ahead).
-    const D = Math.hypot(gx + tg.vx * t - x, gy + tg.vy * t - y);
-    if (D < 2 * (W.speed / W.turn) * Math.abs(Math.sin(d)) && Math.abs(d) > 0.3) { P.target[i] = -2; return; }
+    // Inside the circle it can't turn tighter than (radius speed / turn, ~38 blocks) it would chase the
+    // target round and round (owner, 14 Nov 2026: missiles "dancing in a circle" in front of an Aegis
+    // fortress). A point at distance D and bearing d is out of reach when D < 2r·sin|d|. It flies
+    // straight on past (it can still hit what's ahead) until the point is in reach again, then turns
+    // round for another pass (owner, 25 Nov 2026: it used to give up for good and look unguided). After
+    // MISSILE_PASSES such passes it does give up.
+    // Once flying past it keeps straight until it's two turning circles away, so it comes round in one
+    // clean turn (at the edge of reach it would otherwise flip between turning and not every tick).
+    const D = Math.hypot(gx + tg.vx * t - x, gy + tg.vy * t - y), r2 = 2 * (W.speed / W.turn);
+    if (P.over[i] && D < r2) return;
+    if (D < r2 * Math.abs(Math.sin(d)) && Math.abs(d) > 0.3) {
+      P.over[i] = 1;
+      if (++P.pass[i] > MISSILE_PASSES) P.target[i] = -2;
+      return;
+    }
+    P.over[i] = 0;
     const step = W.turn * DT, a = cur + Math.max(-step, Math.min(step, d));
     P.vx[i] = Math.cos(a) * W.speed; P.vy[i] = Math.sin(a) * W.speed;
   }

@@ -243,6 +243,20 @@ Weapons (numbers in `blocks.js`):
   launcher with a green seeker eye; designer key G. Measured (8 all-missile cruisers vs an
   equal-cost mixed fleet, 4 seeds): unguided 28% of missiles hit, score −0.30; guided 85% hit,
   score +0.35 even at 110 cr; the owner then set 135.
+- **Guided missiles keep steering (owner, 25 Nov 2026: "sometimes guided missiles stop being guided"; "once this is fixed
+  can you make it live")**, **live 25 Nov 2026**, patch notes `2026-11-25-guided`. Measured first (`/tmp`-style `gm/run.mjs`:
+  `makeScenario` 300 v 300 with every missile launcher turned guided, 3 seeds): ~1 missile in 6 gave up for good (the 14 Nov
+  "D < 2r·sin|θ|" rule set `target` −2), **2/3 of those within 3 s of picking a new target** (the nearest enemy within `seek`
+  150, often right beside it inside its ~38-block turning circle), and ~22% of flight time had no target at all (none within
+  150). Steering 61–69% of flight time. Now: (1) a missile that can't make the turn **flies straight past and comes round
+  again** (`P.over` = flying past, kept until it's 2 turning circles away so it turns round in one clean turn; at the edge of
+  reach it otherwise flipped every tick and used up its passes in seconds) and only gives up after `MISSILE_PASSES` (3) passes
+  (`P.pass`; both reset on a new target); (2) **`missileSeek()`** picks the new target by distance to its hull + turning radius ×
+  bearing, ships it can't turn onto +4r; **`seek` 150 → 300** in `blocks.js`. After: steering 95–97% of flight time, give-ups
+  ~210 → 0 a battle, missiles that loop once 1–10 a battle, never 3 times; hits on ships / wrecks the same as before (most end
+  on debris in big battles), compute per battle second the same. Bench identical shot for shot (it has no guided missiles).
+  Test in `tools/test-designer.mjs` (a target beside the missile: flies past and comes back within 6 blocks; new target ahead
+  beats a nearer one beside it; fails on the old code). Replay sent: "Guided missiles keep steering".
 - **Point defence** (named **Anti-missile point defence** since Nov 2026: a friend didn't know it
   shoots missiles down; its palette tooltip now says so first): **range 80 against everything, 15 damage
   every 0.2 s** to ships, fighters and missiles alike (owner, Nov 2026, third round; see below;
