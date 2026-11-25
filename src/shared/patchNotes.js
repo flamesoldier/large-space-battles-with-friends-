@@ -8,6 +8,16 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-26-start-spots', date: '26 Nov 2026', title: 'Every player starts a battle in their own spot',
+    items: [
+      'In battles with three or more players, everyone now starts in a spot of their own round the world: the world\'s owner at the world, everyone else spread evenly round it, allies included.',
+      'Before, all the owner\'s allies started together at the world, even two allies who were at war with each other, so they started mixed together and tore into each other straight away. That can\'t happen any more.',
+      'Each player\'s spot also starts far enough out that neighbouring fleets don\'t touch at the start.',
+      'Start positions (Front, Middle, Back, Top and Bottom flank) work the same in every spot.',
+      'Allies still never shoot each other and head for the same enemies, they just come in from different directions.',
+    ],
+  },
+  {
     id: '2026-11-25-line-tool', date: '25 Nov 2026', title: 'Line tool in the ship and defence designers',
     items: [
       'New Line tool next to Pencil (shortcut L): press on one block, drag to another and let go, and it draws a straight line of the selected block between them. You see where it will go while you drag.',

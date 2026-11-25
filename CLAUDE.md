@@ -157,7 +157,7 @@ not "1 ships" there. Patch notes `2026-11-25-stacked-fleets`. Checked in headles
 
 **Enemies never start mixed together (owner, 26 Nov 2026: "player 1 enemies with everyone, player 2 allies with player 3
 and player 4, player 3 only allied to player 2, player 4 only allied to player 2… player 3 and 4 get spawned intermixed with
-player 2 and then their fleets basically get cannibalized into immediate close combat")**, on `v2-dev`, **not live**. Cause:
+player 2 and then their fleets basically get cannibalized into immediate close combat")**, **live 26 Nov 2026**. Cause:
 `planEvent` put every player who `defends` the world (owner + owner's allies) in camp 0, though two of those allies can be at
 war with each other (relations aren't transitive); at Bo's world Cy and Di started mixed in with Bo, 64 blocks apart. Now camp 0
 = the owner (first) plus allies allied with everyone already in it; an ally that conflicts goes to its own camp round the world
@@ -175,7 +175,7 @@ there, the first defender), everyone else round the world, allies included; owne
 "N-way" still counts groups of mutual allies (`sides`, `battle.camps`). Start positions checked with 2/3/4/6 camps (Front <
 Middle < Back toward the world, Top/Bottom flank on the designer-top/bottom wing, all facing the world); test in
 `tools/test-world.mjs`. Closest enemy pair at the start: 304 / 282 / 289. Replay sent: "4-way at Bo's world: every player in
-their own spot".
+their own spot". **Both changes live 26 Nov 2026** (owner: "that works really well good job, make it live"); patch notes `2026-11-26-start-spots`.
 
 **Defences and selling, 5 minutes (owner, 18 Nov 2026, after 2.0 went live):** "building defences will be much more important and should be able to be done reactively": `DEFENSE_BUILD_HOURS` and `SELL_HOURS` = 5/60 (were 15 h), **selling a shipyard gives back 65%** (`SHIPYARD_SELL_REFUND`, was 95%). Texts use `fmtHours()` ("5 min"). Test: defences ordered 10 min before a battle are ready for it, ones ordered 2 min before are lost with the world. Live 18 Nov 2026. **No patch notes for now** (owner: nobody is playing; he'll say when to start again).
 
