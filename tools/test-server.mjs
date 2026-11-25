@@ -254,7 +254,7 @@ try {
   r = await ann.act({ type: 'defend', planet: annHome, design: fort, count: 'lots' });
   ok(!r.body.ok, 'defence counts must be whole numbers');
   r = await ann.act({ type: 'defend', planet: annHome, design: fort, count: 2 });
-  const fortId = r.body.ok && Object.values(r.body.state.world.designs).find((d) => d.fixed && d.name === 'Test Fort')?.id;
+  const fortId = r.body.ok && Object.values(r.body.state.world.designs).find((d) => d.fixed)?.id;
   ok(fortId && r.body.state.world.jobs.some((j) => j.kind === 'defence' && j.design === fortId && j.count === 2 && j.owner === 0 && j.planet === annHome), 'Ann orders 2 defences on her world');
   // 2.0: nobody commands fleets; worlds get destinations.
   for (const order of [{ type: 'fleet', from: annHome, to: benHome, ships: { [after.planets[annHome].yards[0].design]: 1 } }, { type: 'stop', fleet: 1 }, { type: 'rally', planet: annHome, to: null }, { type: 'rallyAll', to: annHome }])

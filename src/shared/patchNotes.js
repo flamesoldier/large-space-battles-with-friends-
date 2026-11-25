@@ -8,13 +8,6 @@
 
 export const PATCH_NOTES = [
   {
-    id: '2026-11-25-starter-defence', date: '25 Nov 2026', title: 'A starter defence for every home world',
-    items: [
-      'Every home world now gets a free starter defence, "The Defender", so a new player isn\'t wiped out in the first days. It stands with the world\'s other defences and fights in every battle there.',
-      'In this game it has been added to every home world still held by the player who started there.',
-    ],
-  },
-  {
     id: '2026-11-25-stacked-fleets', date: '25 Nov 2026', title: 'See every fleet under an arrow',
     items: [
       'Ships that leave a world together often fly as several fleets along the same lane, drawn on top of each other, so clicking the arrow only showed one of them. Now hovering or clicking a fleet shows how many fleets are there and how many ships they have in all, and the fleet panel lists each one so you can click through them.',

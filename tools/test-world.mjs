@@ -5,11 +5,11 @@ import assert from 'node:assert/strict';
 import { generateGalaxy } from '../src/world/galaxyGen.js';
 import { planRoute, fleetPosition, laneMap, laneSpeed, travelSpeed } from '../src/world/routes.js';
 import {
-  createWorld as createWorldWithStarters, advanceTo, runWorld, buildShipyard, sellShipyard, quoteShipyard, sendFleet, previewFleet,
+  createWorld as createAutoWorld, advanceTo, runWorld, buildShipyard, sellShipyard, quoteShipyard, sendFleet, previewFleet,
   shipsAt, incomeOf, allied, YARD_MS, HOLD_MS, designOf, upgradeWorld,
   proposeAlliance, acceptAlliance, breakAlliance, proposalsFor, dueEvent, siegeAt, renameDesign, renamePlanet,
   buildDefense, setLayout, saveBlueprint, deleteBlueprint, planEvent, applyEvent, registerDesign, cancelSale, jobsAt, payBounties, giveCredits, worthOf, fleetValue, stopFleet, setRally, rallyAll,
-  checkWin, nextHop, pinned, dispatchAll, holdReason, addShips, setDestination, destinationAll, countShips, makeBot, fleetSpeed, retreatPlan, addLane, grantStarterDefences,
+  checkWin, nextHop, pinned, dispatchAll, holdReason, addShips, setDestination, destinationAll, countShips, makeBot, fleetSpeed, retreatPlan, addLane,
 } from '../src/world/world.js';
 import { writeFileSync } from 'node:fs';
 import { packReplay } from '../src/shared/replayFormat.js';
@@ -25,10 +25,6 @@ import { HOUR_MS, HYPERLANE_SPEEDUP, MAX_PLAYERS, PLANET_SPACING } from '../src/
 
 // The 1.0 tests below drive fleets by hand (sieges, captures, bounties and so on all still apply in
 // 2.0), so they use a world with the fleet brain off. The 2.0 tests at the end use createAutoWorld.
-// Most tests are about ships moving and fighting and expect home worlds to start empty, so they take the
-// owner's starter defence (25 Nov 2026) away again; the starter defence test uses createWorldWithStarters.
-const noStarters = (w) => { for (const P of w.planets) P.garrison = P.garrison.filter((s) => s.owner === null || w.designs[s.design]?.name !== 'The Defender'); return w; };
-const createAutoWorld = (o) => noStarters(createWorldWithStarters(o));
 const createWorld = (o) => Object.assign(createAutoWorld(o), { auto: false });
 
 let checks = 0;
@@ -1052,7 +1048,7 @@ const lanePlanHours = (W, a, b, d) => { const A = W.planets[a], B = W.planets[b]
   const out = w.fleets.filter((f) => f.owner === 0);
   ok(out.length === 1 && out[0].ships[y1.design] === SHIPS_PER_BUILD && out[0].ships[y2.design] === SHIPS_PER_BUILD, 'everything built there leaves at once, as one fleet');
   ok(out[0].legs.length === 1 && out[0].legs[0].lane && out[0].to === nb.hop && out[0].depart === t1, '…one hyperlane hop, to the nearest enemy');
-  ok(!H.garrison.some((s) => s.owner === 0 && s.n > 0 && !w.designs[s.design].fixed), 'no ship is left sitting at home (defences stay)');
+  ok(!countShipsT(shipsAt(H, 0)), 'nothing is left sitting at home');
   // Destinations: any world; fleets head there along the lanes.
   const far = w.planets.filter((p) => p.owner === null).sort((a, b) => Math.hypot(b.x - H.x, b.y - H.y) - Math.hypot(a.x - H.x, a.y - H.y))[0];
   ok(!setDestination(w, 1, home, far.id).ok && !setDestination(w, 0, home, home).ok, 'only the owner sets it, and not to the world itself');
@@ -1453,27 +1449,6 @@ const lanePlanHours = (W, a, b, d) => { const A = W.planets[a], B = W.planets[b]
   ok(crossRefused, 'a lane crossing another is refused');
   const re = upgradeWorld(JSON.parse(JSON.stringify(g)));
   ok(re.lanes.length === g.lanes.length, 'the save keeps the new lanes');
-}
-
-// ---- 25 Nov 2026: every home world gets the owner's starter defence
-{
-  const g = createWorldWithStarters({ players: ['Ann', 'Ben', 'Cat'], seed: 4 });
-  const homeDef = (W, pl) => W.planets[pl.home].garrison.filter((s) => s.owner === pl.id && W.designs[s.design].fixed && W.designs[s.design].name === 'The Defender').reduce((a, s) => a + s.n, 0);
-  ok(g.starterDefences && g.players.every((pl) => homeDef(g, pl) === 1), 'a new galaxy: one starter defence at every home world, owned by its player');
-  ok(grantStarterDefences(g) === 0 && g.players.every((pl) => homeDef(g, pl) === 1), 'never given twice');
-  // A running game from before the rule gets them once when it loads; a home world taken by someone else doesn't.
-  const old = createWorldWithStarters({ players: ['Ann', 'Ben', 'Cat'], seed: 6 });
-  for (const P of old.planets) P.garrison = P.garrison.filter((s) => !old.designs[s.design].fixed);
-  delete old.starterDefences;
-  old.planets[old.players[2].home].owner = 0; // Cat's home fell to Ann
-  const up = upgradeWorld(JSON.parse(JSON.stringify(old)));
-  ok(homeDef(up, up.players[0]) === 1 && homeDef(up, up.players[1]) === 1, 'a running game: home worlds still held by their first owner get one');
-  ok(!up.planets[up.players[2].home].garrison.some((s) => up.designs[s.design].fixed), 'a home world held by someone else gets none');
-  ok(up.log.at(-1).text.includes('starter defence'), 'players are told');
-  const again = upgradeWorld(JSON.parse(JSON.stringify(up)));
-  ok(homeDef(again, again.players[0]) === 1, 'loading again gives nothing more');
-  const D = up.designs[up.planets[up.players[0].home].garrison.find((s) => up.designs[s.design].fixed).design];
-  ok(D.fixed && D.speed === 0 && D.worth > D.cost, `it is a real defence (worth ${D.worth} cr, ${D.cost} cr to build)`);
 }
 
 console.log(`world: ${checks} checks passed`);
