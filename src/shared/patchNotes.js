@@ -8,6 +8,14 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-25-arrive-together', date: '25 Nov 2026', title: 'Allies arriving together: the world goes by lot',
+    items: [
+      'When allies take a world together, it normally goes to whoever got there first. But allied fleets often arrive at exactly the same moment (same speed, leaving the same battle together), and then it was down to chance in the code which of you got it.',
+      'Now, if allies arrive together (within a minute of the attack starting), the world goes by lot, weighted by the value of the ships each of you arrived with. If your fleet is worth 70,000 cr and your ally\'s 30,000 cr, you have a 70% chance and they have 30%. Only players who still have ships there at the end can win it.',
+      'The world panel shows the odds while the attack is waiting to start, and the battle log says how it went.',
+    ],
+  },
+  {
     id: '2026-11-25-designer-credits', date: '25 Nov 2026', title: 'Your credits in the designers',
     items: [
       'The Ship Designer and Defence Designer now show your credits at the top, kept up to date while you design.',

@@ -18,7 +18,7 @@
 import { analyzeDesign, decodeDesign, encodeDesign, designCost } from '../shared/shipStats.js';
 import { BT, isThruster } from '../shared/blocks.js';
 import { makeDesign } from '../shared/designs.js';
-import { mulberry32 } from '../shared/rng.js';
+import { mulberry32, hash32 } from '../shared/rng.js';
 import {
   SHIPYARD_INTERVAL_MIN, SHIPS_PER_BUILD, shipyardPrice, crowdingSurcharge, SHIPYARD_SELL_REFUND,
   defensePrice, MAX_DEFENSE_ORDER, BOUNTY_SHARE, STARTING_CREDITS, NEUTRAL_GARRISON_HOURS, NEUTRAL_GARRISON_BASE, SELL_HOURS, SELL_GAP_HOURS, DEFENSE_BUILD_HOURS,
@@ -30,7 +30,7 @@ import { makeBattleScenario } from './battleSetup.js';
 import { cleanLayout, shapeOf } from './defenceLayout.js';
 import { botsDue, runBots } from './bots.js';
 import { backfillStats, finalize, noteIncome, noteBuilt, noteCapture, noteBattle, playerStats } from './stats.js';
-import { HOUR_MS, MIN_FLEET_SPEED, NEUTRAL_COLOR, PLAYER_COLORS, CHOOSABLE_COLORS, MIN_PLAYERS, MAX_PLAYERS, BATTLE_MAX_TIME, BATTLE_HOLD_MIN, SPACE_VS_LANE, PLANET_SPACING } from './rules.js';
+import { HOUR_MS, MIN_FLEET_SPEED, NEUTRAL_COLOR, PLAYER_COLORS, CHOOSABLE_COLORS, MIN_PLAYERS, MAX_PLAYERS, BATTLE_MAX_TIME, BATTLE_HOLD_MIN, SPACE_VS_LANE, PLANET_SPACING, ARRIVE_TOGETHER_MIN } from './rules.js';
 
 export const YARD_MS = SHIPYARD_INTERVAL_MIN * 60 * 1000;
 export const HOLD_MS = BATTLE_HOLD_MIN * 60 * 1000;
@@ -1189,9 +1189,34 @@ export function siegeParties(world, s) {
   return list;
 }
 
-/** Who takes a world: the siege's leader if among `cands` (player ids), else the one with most ships (`ships(id)`). */
+/**
+ * Allies who arrived together (owner, 25 Nov 2026): if two or more of `cands` reached the world
+ * within ARRIVE_TOGETHER_MIN of the siege opening, one of them is drawn, weighted by the credit
+ * value of the ships each arrived with. The draw is seeded by the world and siege, so asking again
+ * gives the same answer (the page and the server agree). Returns { winner, odds: [[id, value]] } or null.
+ */
+export function togetherDraw(world, s, cands) {
+  const odds = (s.together || []).filter(([o, v]) => v > 0 && cands.includes(o));
+  if (odds.length < 2) return null;
+  const total = odds.reduce((a, [, v]) => a + v, 0);
+  let x = mulberry32(hash32(world.seed * 7919 + s.id))() * total;
+  let winner = odds[odds.length - 1][0];
+  for (const [o, v] of odds) { if (x < v) { winner = o; break; } x -= v; }
+  return { winner, odds };
+}
+
+/** Log sentence for a draw: " Ann and Bo arrived together, so the world went by lot, weighted by fleet value: Ann 70% (70,000 cr), Bo 30% (30,000 cr)." */
+function drawText(world, d) {
+  const total = d.odds.reduce((a, [, v]) => a + v, 0), odds = [...d.odds].sort((a, b) => b[1] - a[1]);
+  const parts = odds.map(([o, v]) => `${playerName(world, o)} ${Math.round((v / total) * 100)}% (${Math.round(v).toLocaleString()} cr)`);
+  return ` ${listNames(world, odds.map(([o]) => o))} arrived together, so the world went by lot, weighted by fleet value: ${parts.join(', ')}.`;
+}
+
+/** Who takes a world: allies who arrived together draw lots; else the siege's leader if among `cands` (player ids), else the one with most ships (`ships(id)`). */
 function pickWinner(world, s, cands, ships) {
   if (!cands.length) return null;
+  const d = togetherDraw(world, s, cands);
+  if (d) return d.winner;
   if (cands.includes(s.leader)) return s.leader;
   return [...cands].sort((a, b) => ships(b) - ships(a) || a - b)[0];
 }
@@ -1296,6 +1321,11 @@ function fleetArrives(world, f, plan) {
     s.fleets.push(f.id);
     f.wait = s.id; f.next = Infinity;
     const joining = allied(world, f.owner, s.leader);
+    // Arrived together with the siege's leader (same side): counts for the draw (togetherDraw).
+    if (s.together && (joining || f.owner === s.leader) && world.clock - s.opened <= ARRIVE_TOGETHER_MIN * 60000) {
+      const row = s.together.find(([o]) => o === f.owner), v = fleetValue(world, f.ships);
+      if (row) row[1] += v; else s.together.push([f.owner, v]);
+    }
     // 2.0 (owner, 19 Nov 2026): fleets join attacks all the time, so that isn't logged. A new
     // enemy turning up at a siege still is.
     if (world.auto && joining) return null;
@@ -1305,7 +1335,7 @@ function fleetArrives(world, f, plan) {
     return lastLog(world);
   }
   // A new siege.
-  const s = { id: newId(world), planet: P.id, leader: f.owner, fleets: [f.id], startsAt: world.clock + HOLD_MS, against: P.owner };
+  const s = { id: newId(world), planet: P.id, leader: f.owner, fleets: [f.id], startsAt: world.clock + HOLD_MS, against: P.owner, opened: world.clock, together: [[f.owner, fleetValue(world, f.ships)]] };
   world.sieges.push(s);
   f.wait = s.id; f.next = Infinity;
   if (world.auto) turnBackLate(world, s);
@@ -1351,7 +1381,9 @@ function siegeEnds(world, s, plan, result) {
   world.sieges.splice(world.sieges.indexOf(s), 1);
   if (plan.kind === 'release') { for (const f of all) release(world, f); return null; }
   if (plan.kind === 'capture') {
+    const d = togetherDraw(world, s, parties.filter((q) => q.fleets.length && !allied(world, q.owner, P.owner)).map((q) => q.owner));
     const entry = capture(world, P, plan.winner, {}, null);
+    if (d && d.winner === plan.winner) entry.text += drawText(world, d);
     for (const f of all) release(world, f); // the winner and its allies garrison it or fly on
     return entry;
   }
@@ -1411,6 +1443,8 @@ function siegeEnds(world, s, plan, result) {
     const foes = per.map((q) => q.id).filter((o) => o !== B.defender && hostile(world, o, winner));
     const vs = foes.length && per.length > 2 ? `, also fighting ${listNames(world, foes)}` : '';
     entry.text = `${playerName(world, winner)} won the battle for ${P.name}${ownerTxt}${way}${vs}. ${entry.text.split('. ').slice(1).join('. ')}`.replace(/\s+$/, '');
+    const d = togetherDraw(world, s, cands);
+    if (d) entry.text += drawText(world, d);
   }
   // Fleets: the winner's side (or, if the owner held, the owner's side) garrisons or flies on;
   // everyone who fought against them falls back. Fleets that sat it out arrive again.

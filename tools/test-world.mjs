@@ -9,7 +9,7 @@ import {
   shipsAt, incomeOf, allied, YARD_MS, HOLD_MS, designOf, upgradeWorld,
   proposeAlliance, acceptAlliance, breakAlliance, proposalsFor, dueEvent, siegeAt, renameDesign, renamePlanet,
   buildDefense, setLayout, saveBlueprint, deleteBlueprint, planEvent, applyEvent, registerDesign, cancelSale, jobsAt, payBounties, giveCredits, worthOf, fleetValue, stopFleet, setRally, rallyAll,
-  checkWin, nextHop, pinned, dispatchAll, holdReason, addShips, setDestination, destinationAll, countShips, makeBot, fleetSpeed, retreatPlan, addLane,
+  checkWin, nextHop, pinned, togetherDraw, dispatchAll, holdReason, addShips, setDestination, destinationAll, countShips, makeBot, fleetSpeed, retreatPlan, addLane,
 } from '../src/world/world.js';
 import { writeFileSync } from 'node:fs';
 import { packReplay } from '../src/shared/replayFormat.js';
@@ -1459,6 +1459,58 @@ const lanePlanHours = (W, a, b, d) => { const A = W.planets[a], B = W.planets[b]
   ok(crossRefused, 'a lane crossing another is refused');
   const re = upgradeWorld(JSON.parse(JSON.stringify(g)));
   ok(re.lanes.length === g.lanes.length, 'the save keeps the new lanes');
+}
+
+// ---- 25 Nov 2026 (owner: allies arriving at a world together; "the player with 70k of fleet has a
+// 70% chance of taking the planet"): the world goes by lot, weighted by the value each arrived with.
+{
+  // The draw itself: 70k vs 30k over many sieges comes out about 70 / 30, and is the same when asked again.
+  const g = createWorld({ players: [{ name: 'Ann', team: 'A' }, { name: 'Bo', team: 'A' }, { name: 'Cy' }], seed: 4 });
+  let ann = 0; const N = 4000;
+  for (let id = 1; id <= N; id++) {
+    const s = { id, leader: 1, together: [[0, 70000], [1, 30000]] };
+    const d = togetherDraw(g, s, [0, 1]);
+    if (d.winner === 0) ann++;
+    ok(togetherDraw(g, s, [0, 1]).winner === d.winner, 'same siege, same draw');
+  }
+  ok(Math.abs(ann / N - 0.7) < 0.03, `70k vs 30k: the 70k player wins about 70% (${(ann / N * 100).toFixed(1)}%)`);
+  ok(togetherDraw(g, { id: 9, leader: 0, together: [[0, 70000], [1, 30000]] }, [0]) === null, 'no draw if only one of them is still there');
+  ok(togetherDraw(g, { id: 9, leader: 0 }, [0, 1]) === null, 'sieges from before this rule: no draw');
+
+  // In a game: Ann's and Bo's fleets leave Ann's home together for an undefended militia world
+  // (same design, same speed: same arrival). Played over many seeds, the world goes to each by lot.
+  const play = (seed, nAnn, nBo, emptyWorld, gap = 0) => {
+    const w = createWorld({ players: [{ name: 'Ann', team: 'A' }, { name: 'Bo', team: 'A' }, { name: 'Cy' }], seed });
+    const did = registerDesign(w, 0, { ...makeDesign('destroyer', 4), name: 'Runner' });
+    const bid = registerDesign(w, 1, { ...makeDesign('destroyer', 4), name: 'Runner' });
+    const home = w.players[0].home, H = w.planets[home];
+    const T = w.planets.filter((p) => p.owner === null).sort((a, b) => Math.hypot(a.x - H.x, a.y - H.y) - Math.hypot(b.x - H.x, b.y - H.y))[0];
+    if (emptyWorld) T.garrison = []; else T.garrison = [{ owner: null, design: did, n: 1 }];
+    addShips(H, 0, did, nAnn); addShips(H, 1, bid, nBo);
+    const fb = sendFleet(w, 1, home, T.id, { [bid]: nBo });
+    if (gap) advanceTo(w, w.clock + gap);
+    const fa = sendFleet(w, 0, home, T.id, { [did]: nAnn });
+    ok(fa.ok && fb.ok, `both fleets sent (${fa.error || fb.error || ''})`);
+    // stand-in battle: militia's one ship dies, everyone else survives
+    const res = (scen) => ({ groups: scen.groups.map((q) => ({ ...q, survived: q.owner === null ? 0 : q.n })), routed: [], seconds: 60 });
+    runWorld(w, Math.max(fa.fleet.arrive, fb.fleet.arrive) + HOLD_MS + 1, res);
+    const e = w.log.filter((x) => x.capture && x.capture.from === null && x.planet === T.id).at(-1);
+    return { owner: T.owner, text: e?.text || '' };
+  };
+  for (const empty of [true, false]) {
+    let annWins = 0, texts = 0; const runs = 200;
+    for (let seed = 1; seed <= runs; seed++) {
+      const r = play(seed, 7, 3, empty);
+      if (r.owner === 0) annWins++;
+      if (/Ann and Bo arrived together, so the world went by lot, weighted by fleet value: Ann 70% .*Bo 30%/.test(r.text)) texts++;
+    }
+    ok(annWins / runs > 0.58 && annWins / runs < 0.82, `${empty ? 'empty world' : 'after a battle'}: Ann (70% of the value) takes it ${annWins} of ${runs} times`);
+    ok(texts === runs, `${empty ? 'empty world' : 'after a battle'}: the log says it went by lot, with the odds (${texts} of ${runs})`);
+  }
+  // Not together: Bo got there first (an hour ahead), so Bo started the siege and keeps it as before.
+  let boWins = 0;
+  for (let seed = 1; seed <= 30; seed++) { const r = play(seed, 7, 3, true, HOUR_MS); if (r.owner === 1 && !/by lot/.test(r.text)) boWins++; }
+  ok(boWins === 30, `an ally who arrives first still takes the world (${boWins} of 30)`);
 }
 
 console.log(`world: ${checks} checks passed`);

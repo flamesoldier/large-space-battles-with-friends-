@@ -38,6 +38,12 @@ export const BATTLE_MAX_TIME = 900;
 // reinforcements and fleets a few hyperlane hops away still make it.
 export const BATTLE_HOLD_MIN = 180;
 
+// Allies arriving together (owner, 25 Nov 2026): when allied attackers' fleets reach a world within
+// this many game minutes of the siege opening, the world they take goes to one of them by lot,
+// each one's chance = the credit value of the ships they arrived with (70k vs 30k: 70% / 30%).
+// Otherwise the player who started the siege takes it, as before.
+export const ARRIVE_TOGETHER_MIN = 1;
+
 export const HOUR_MS = 3600 * 1000;
 
 // Ten easy-to-tell-apart faction colours, in the order players get them by default.

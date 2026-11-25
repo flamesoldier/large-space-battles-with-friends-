@@ -124,6 +124,7 @@ export function tutorialPages(click = 'Click') {
       <p>Open <b>Diplomacy</b> at the top of the screen. Every other player is either an ally or an enemy, and that can change during the game.</p>
       <ul><li>An alliance needs both players: one proposes, the other accepts.</li>
       <li>Allies' ships defend each other's worlds and join each other's attacks.</li>
+      <li>A world taken together goes to whoever got there first. If allies arrive at the same moment, it goes by lot, weighted by the value of the ships each brought: 70,000 cr against 30,000 cr is a 70% chance.</li>
       <li>Either side can break an alliance alone. Each side's ships on the other's worlds then fly home.</li>
       <li>You can also gift credits to another player.</li>
       <li><b>How to win:</b> the galaxy is won the moment one alliance holds every world, militia worlds included. Everyone in that alliance wins.</li></ul>` },

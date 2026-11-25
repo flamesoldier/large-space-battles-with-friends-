@@ -587,7 +587,15 @@ function showTip(sx, sy) {
   if (hover.kind === 'planet') {
     const P = world.planets[hover.id];
     html = `<b>${esc(P.name)}</b>${P.home >= 0 ? ' <span class="tag">spawn</span>' : ''}<br>${who(P.owner)}<br><span class="m">${fmt(P.income)} cr/h · ${shipTotal(P)} ships · ${P.yards.length} shipyard${P.yards.length === 1 ? '' : 's'}</span>`;
-    for (const sg of siegeAt(world, P.id)) html += `<br><span class="m" style="color:var(--ember)">Under attack by ${esc(playerName(world, sg.leader))}: battle in ${inText(sg.startsAt - world.clock)}</span>`;
+    for (const sg of siegeAt(world, P.id)) {
+      html += `<br><span class="m" style="color:var(--ember)">Under attack by ${esc(playerName(world, sg.leader))}: battle in ${inText(sg.startsAt - world.clock)}</span>`;
+      // Allies who arrived together share the odds of taking it (owner, 25 Nov 2026).
+      const tog = (sg.together || []).filter(([, v]) => v > 0);
+      if (tog.length > 1) {
+        const tot = tog.reduce((a, [, v]) => a + v, 0);
+        html += `<br><span class="m">Arrived together: if they win, the world goes by lot (${tog.sort((a, b) => b[1] - a[1]).map(([o, v]) => `${esc(playerName(world, o))} ${Math.round((v / tot) * 100)}%`).join(', ')})</span>`;
+      }
+    }
     if (move?.picking && move.preview?.ok && move.to === P.id) html += `<br><span class="m">Arrives in ${fmtHours(move.preview.hours)}</span>`;
   } else {
     const f = world.fleets.find((x) => x.id === hover.id);
