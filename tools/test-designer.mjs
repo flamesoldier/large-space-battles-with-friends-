@@ -743,7 +743,8 @@ for (let k = 0; k < FORTRESSES.length; k++) {
   ships.push({ design: 3, team: 1, x: 450, y: 0, a: Math.PI });
   const b = new Battle({ designs, ships, seed: 3, maxTime: 150 });
   const fl = b.ents[0], rd = b.ents[1], big = b.ents[ships.length - 1];
-  for (const e of [fl, rd]) for (let i = 0; i < e.hp.length; i++) e.hp[i] *= 1e4;
+  // the battleship too (25 Nov 2026: with cannons every 7 s it died at 61 s, before the flanker got there)
+  for (const e of [fl, rd, big]) for (let i = 0; i < e.hp.length; i++) e.hp[i] *= 1e4;
   let onBig = 0, reached = -1, out = 0, g0 = null;
   while (b.step() && b.tick < 1200) {
     if (fl.goal === big) onBig++;

@@ -111,12 +111,15 @@ export const WEAPON = {
   // shell every 10 s (was 100 damage every 2 s). On impact the explosion spends `damage` on the hit
   // ship's blocks nearest the impact first (`budget`, out to `splash` blocks), so one shell kills
   // 2 heavy armour (240 hp) or 11 frame (45 hp). Same damage per second as before.
-  [BT.CANNON]: { kind: 'shell', range: 340, damage: 500, cooldown: 10, speed: 45, life: 30, splash: 8, budget: true, spread: 0.05 },
+  // Owner, 25 Nov 2026: cannons miss a lot (their weakness, kept) so to make up for it every 7 s
+  // (was 10) and range 360 (was 340).
+  [BT.CANNON]: { kind: 'shell', range: 360, damage: 500, cooldown: 7, speed: 45, life: 30, splash: 8, budget: true, spread: 0.05 },
   // Auto gun (owner, 20 Nov 2026): a 2x2 unit spraying fast, fairly inaccurate bullets at close
   // range, 55 damage each to the block it hits, every 0.2 s out to 200 (owner, 20 Nov 2026, third
-  // round; was 0.1 s and 150). Bullets fly `life` s (not 30 like
+  // round; was 0.1 s and 150). Owner, 25 Nov 2026 ("way op"): 45 damage (was 55), range 130 (was 200).
+  // Bullets fly `life` s (not 30 like
   // cannon shells: at 3+ shots a second a long life would fill battles with spent bullets).
-  [BT.AUTO]: { kind: 'shell', auto: true, range: 200, damage: 55, cooldown: 0.2, speed: 225, life: 10, spread: 0.07 }, // each bullet damages only the block it hits; speed 225 (owner, 24 Nov 2026: was 150; tried 300–2,000, "the sweet spot is actually between them")
+  [BT.AUTO]: { kind: 'shell', auto: true, range: 130, damage: 45, cooldown: 0.2, speed: 225, life: 10, spread: 0.07 }, // each bullet damages only the block it hits; speed 225 (owner, 24 Nov 2026: was 150; tried 300–2,000, "the sweet spot is actually between them")
   // Heavy missile: unguided, crawls across the map in a straight line, flies over friendly
   // ships, devastating blast. Has hit points, so point defence can shoot it down on the way in.
   // Blast damage falls off with distance: peak * (1 - d / splash)^2, applied to every ship

@@ -943,6 +943,20 @@ Weapons (numbers in `blocks.js`):
     hulls in a crowd (allied hulls block shots, owner's rule). Bench 1,000 vs 1,000: 11.6 → 11.8 s compute,
     cannon shells 95k → 26k, replay 3.42 → 2.69 MB gzip, survivors 200:75 → 206:79. Tests in
     `tools/test-designer.mjs` (2 heavy / 11 frame, whole units, bullets fired).
+- **Auto gun nerf, cannon buff (owner, 25 Nov 2026: "I've accidentally made auto guns way op… damage to 45 and range to
+  130, cannons are under powered because they miss so much which is fine its their weakness but to make up for it change
+  their fire rate to 7 seconds and increase their range to 360")**, on `v2-dev`, **not live** (patch notes entry
+  `2026-11-25-gun-balance` written). Where the cannon and auto gun lines above disagree, these win: auto gun **45** damage
+  (was 55), range **130** (was 200), still every 0.2 s at 225 blocks/s; cannon every **7 s** (was 10, so +43% damage per
+  second), range **360** (was 340), still 500 a shell. Measured (`/tmp`-style `duel.mjs`: an 18×10 frigate hull with 3 nose
+  auto units (2,053 cr, Charge) or 8 nose cannons (1,513 cr, Front line), 60k cr a side, 4 seeds, score = enemy value lost
+  share − own; before → after): auto charge vs cannon line −0.18 → −0.79, auto line vs cannon line −0.18 → −0.65, auto
+  charge vs the generated mixed fleet −0.51 → −0.56, cannon line vs mixed +0.10 → +0.41, cannon standoff vs mixed +0.15 →
+  +0.42. Each change alone (auto / cannon): auto charge vs cannon line −0.66 / −0.62, auto line vs cannon line −0.35 /
+  −0.45. Generated designs use cannons, so the mixed fleet gets stronger too. Test fix: the flanker test's battleship is
+  now unkillable as well (with faster cannons it died at 61 s, before the flanker reached it). Bench 1,000 vs 1,000: 168 s,
+  8.2 s compute, 4.7 ms a tick, 206:77. Replays sent: "Gun changes: BEFORE / AFTER" (300 v 300 generated + 30 auto
+  brawlers and 30 cannon boats a side, seed 4).
 - **Doomsday Interdimensional Rift Engine** (`BT.RIFT` = 16, weapon kind `'rift'`; owner, 22 Nov 2026, inspired by his
   Elenris Minor replay b28350, where 1,440 guided missiles circled a hollow fortress's courtyard, the bug fixed 14 Nov:
   "a 100*100 sized weapon fragile and explosive but can be put inside ships… doesn't need line of sight… 30 seconds to

@@ -8,6 +8,14 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-25-gun-balance', date: '25 Nov 2026', title: 'Auto guns toned down, cannons fire faster',
+    items: [
+      'Auto guns were too strong. Each bullet now does 45 damage (was 55) and their range is 130 (was 200), so they have to get much closer to do their work.',
+      'Cannons still miss a lot (that\'s their weakness), so to make up for it they now fire every 7 seconds (was 10) and reach 360 (was 340).',
+      'This changes ships already in play from their next battle.',
+    ],
+  },
+  {
     id: '2026-11-25-filters-totals', date: '25 Nov 2026', title: 'Mine / Allies filters, shorter battle reports, fleet values',
     items: [
       'The Combat log and the Battles window now have separate filters: Mine shows only battles you fought in, Allies shows yours and your allies\', and Everyone shows them all. (Mine used to include your allies.) In the Battles window, click Mine or Allies again to go back to everyone\'s.',
