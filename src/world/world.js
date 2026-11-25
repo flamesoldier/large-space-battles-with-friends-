@@ -21,7 +21,7 @@ import { makeDesign } from '../shared/designs.js';
 import { mulberry32 } from '../shared/rng.js';
 import {
   SHIPYARD_INTERVAL_MIN, SHIPS_PER_BUILD, shipyardPrice, crowdingSurcharge, SHIPYARD_SELL_REFUND,
-  defensePrice, MAX_DEFENSE_ORDER, BOUNTY_SHARE, STARTING_CREDITS, NEUTRAL_GARRISON_HOURS, NEUTRAL_GARRISON_BASE, SELL_HOURS, DEFENSE_BUILD_HOURS,
+  defensePrice, MAX_DEFENSE_ORDER, BOUNTY_SHARE, STARTING_CREDITS, NEUTRAL_GARRISON_HOURS, NEUTRAL_GARRISON_BASE, SELL_HOURS, SELL_GAP_HOURS, DEFENSE_BUILD_HOURS,
   BOT_INCOME_MULT, planetIncome,
 } from '../shared/economy.js';
 import { generateGalaxy, linkHomesInward, segmentsCross, pointSegDist } from './galaxyGen.js';
@@ -223,7 +223,19 @@ export function buildShipyard(world, pid, planetId, design) {
 // world.jobs, { id, kind: 'sell' | 'defence', planet, owner, done, ... }, finished by a 'job'
 // event (dueEvent) at `done`. If the world changes hands first, capture() cancels them: the
 // shipyard is destroyed with the rest and the defences under construction are lost.
-const SELL_MS = SELL_HOURS * HOUR_MS, DEFENSE_BUILD_MS = DEFENSE_BUILD_HOURS * HOUR_MS;
+const SELL_MS = SELL_HOURS * HOUR_MS, DEFENSE_BUILD_MS = DEFENSE_BUILD_HOURS * HOUR_MS, SELL_GAP_MS = SELL_GAP_HOURS * HOUR_MS;
+
+// One sale every SELL_GAP_HOURS per player (owner, 25 Nov 2026). `pl.sellReady` = game time the next
+// sale may start (absent: now). Each sale job keeps the value before it (`prevReady`), so a sale called
+// off or lost with its world gives the turn back.
+/** Game time when this player may start selling another shipyard (<= world.clock: now). */
+export const nextSaleAt = (world, pid) => world.players[pid]?.sellReady ?? -Infinity;
+function giveSaleBack(world, job) {
+  const pl = world.players[job.owner];
+  if (pl && pl.sellReady === job.started + SELL_GAP_MS) {
+    if (job.prevReady == null) delete pl.sellReady; else pl.sellReady = job.prevReady;
+  }
+}
 
 /** Jobs under way at a world (all, or one kind). */
 export const jobsAt = (world, planetId, kind) => (world.jobs || []).filter((j) => j.planet === planetId && (!kind || j.kind === kind));
@@ -238,9 +250,13 @@ export function sellShipyard(world, pid, planetId, yardId) {
   const y = p.yards.find((x) => x.id === yardId);
   if (!y) return { ok: false, error: 'No such shipyard.' };
   if (y.sellAt != null) return { ok: false, error: 'That shipyard is already being sold.' };
+  const ready = nextSaleAt(world, pid);
+  if (ready > world.clock) return { ok: false, error: `You can sell one shipyard every ${SELL_GAP_HOURS} hours. Your next sale can start in ${fmtHours((ready - world.clock) / HOUR_MS)}.` };
   const refund = sellValue(y);
   y.sellAt = world.clock + SELL_MS;
-  const job = { id: newId(world), kind: 'sell', planet: p.id, owner: pid, yard: y.id, refund, done: y.sellAt };
+  const job = { id: newId(world), kind: 'sell', planet: p.id, owner: pid, yard: y.id, refund, done: y.sellAt, started: world.clock };
+  if (pl.sellReady != null) job.prevReady = pl.sellReady;
+  pl.sellReady = world.clock + SELL_GAP_MS;
   world.jobs.push(job);
   log(world, 'yard', `${pl.name} started selling the ${world.designs[y.design].name} shipyard at ${p.name}: +${refund.toLocaleString()} cr in ${fmtHours(SELL_HOURS)}.`, { planet: p.id, players: [pid] });
   return { ok: true, refund, done: y.sellAt, job };
@@ -252,6 +268,7 @@ export function cancelSale(world, pid, planetId, yardId) {
   if (!p || p.owner !== pid) return { ok: false, error: 'You don\'t hold that world.' };
   const y = p.yards.find((x) => x.id === yardId);
   if (!y || y.sellAt == null) return { ok: false, error: 'That shipyard isn\'t being sold.' };
+  for (const j of world.jobs) if (j.kind === 'sell' && j.yard === yardId) giveSaleBack(world, j);
   world.jobs = world.jobs.filter((j) => !(j.kind === 'sell' && j.yard === yardId));
   delete y.sellAt;
   y.next = nextBuildAt(world, p, y); // joins the world's build clock again (alone: a full interval)
@@ -1469,6 +1486,7 @@ function capture(world, P, owner, ships, battleInfo) {
   // payout) and defences still being built (already paid for).
   const lostJobs = (world.jobs || []).filter((j) => j.planet === P.id);
   const unbuilt = lostJobs.reduce((s, j) => s + (j.kind === 'defence' ? j.count : 0), 0);
+  for (const j of lostJobs) if (j.kind === 'sell') giveSaleBack(world, j); // a sale lost with its world doesn't use up the turn
   if (lostJobs.length) world.jobs = world.jobs.filter((j) => j.planet !== P.id);
   P.owner = owner;
   noteCapture(world, owner);

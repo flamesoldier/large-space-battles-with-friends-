@@ -53,7 +53,13 @@ export const MAX_DEFENSE_ORDER = 1000;
 export const BOUNTY_SHARE = 0.1; // 2.0 (owner, 18 Nov 2026: more ships, more fighting); was 0.2
 
 // Selling a shipyard gives back this share of what was actually paid for it.
-export const SHIPYARD_SELL_REFUND = 0.65; // 2.0 (owner, 18 Nov 2026); 1.0: 0.95 (before that 0.5)
+// Owner, 25 Nov 2026: full price, but only one sale per player every SELL_GAP_HOURS ("hard to sell bad
+// designs but when attacked they can sell everything and not lose shipyards"). Was 0.65 (2.0, 18 Nov
+// 2026); 1.0: 0.95 (before that 0.5).
+export const SHIPYARD_SELL_REFUND = 1;
+// A player can start selling one shipyard every this many hours (game time), counted from the moment
+// the sale starts. A sale called off (Keep it) or lost with its world gives the turn back.
+export const SELL_GAP_HOURS = 8;
 
 // Selling a shipyard and building defences take time. 1.0 (owner, Nov 2026): 5 h, so neither could
 // be done as a reaction to an attack. 2.0 (owner, 18 Nov 2026): 5 minutes, so defences CAN be built

@@ -5,7 +5,7 @@
 
 import {
   SHIPYARD_INTERVAL_MIN, SHIPS_PER_BUILD, SHIPYARD_PRICE_MULT, SHIPYARD_CROWDING_VALUE, DEFENSE_PRICE_SHARE,
-  BOUNTY_SHARE, SHIPYARD_SELL_REFUND, SELL_HOURS, DEFENSE_BUILD_HOURS, HOME_INCOME, PLANET_INCOME_BASE,
+  BOUNTY_SHARE, SHIPYARD_SELL_REFUND, SELL_HOURS, SELL_GAP_HOURS, DEFENSE_BUILD_HOURS, HOME_INCOME, PLANET_INCOME_BASE,
   PLANET_INCOME_PER_LANE, STARTING_CREDITS, NEUTRAL_GARRISON_BASE, NEUTRAL_GARRISON_HOURS,
 } from '../shared/economy.js';
 import { BATTLE_HOLD_MIN, BATTLE_MAX_TIME } from '../world/rules.js';
@@ -80,7 +80,7 @@ export function tutorialPages(click = 'Click') {
       <li>Every ${buildText}, <b>all the shipyards on a world build at the same moment, ${SHIPS_PER_BUILD} ships each</b>, and everything built there leaves together as one fleet. The world panel's <b>Next fleet</b> row shows how long until it leaves and where it's going.</li>
       <li>A shipyard costs ${SHIPYARD_PRICE_MULT}× the price of its ship.</li>
       <li><b>Spread your yards out.</b> Each world's yards make the next one there dearer: +100% for every ${n(SHIPYARD_CROWDING_VALUE)} cr of yards already on it.</li>
-      <li>If an enemy takes the world, <b>its shipyards are destroyed</b>. You can sell one for ${pct(SHIPYARD_SELL_REFUND)} of what you paid (it takes ${mins(SELL_HOURS)}).</li></ul>` },
+      <li>If an enemy takes the world, <b>its shipyards are destroyed</b>. You can sell a shipyard for ${pct(SHIPYARD_SELL_REFUND)} of what you paid (it takes ${mins(SELL_HOURS)}), but only <b>one every ${SELL_GAP_HOURS} hours</b>, so you can't sell everything when an attack is coming.</li></ul>` },
 
     { title: 'Designing ships', art: ART.design, html: `
       <p>In the shipyard window choose <b>Design a new ship…</b> to open the <b>Ship Designer</b>. You paint the ship block by block, and its price is the price of its blocks.</p>

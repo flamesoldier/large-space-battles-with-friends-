@@ -14,14 +14,14 @@
 import { replayPageParts } from './replayFile.js';
 import { BT } from '../shared/blocks.js';
 import { decodeDesign, encodeDesign, analyzeDesign, designCost } from '../shared/shipStats.js';
-import { SHIPYARD_INTERVAL_MIN, SHIPS_PER_BUILD, SHIPYARD_PRICE_MULT, SHIPYARD_CROWDING_VALUE, SHIPYARD_SELL_REFUND, crowdingMult, defensePrice, DEFENSE_PRICE_SHARE, MAX_DEFENSE_ORDER, SELL_HOURS, DEFENSE_BUILD_HOURS } from '../shared/economy.js';
+import { SHIPYARD_INTERVAL_MIN, SHIPS_PER_BUILD, SHIPYARD_PRICE_MULT, SHIPYARD_CROWDING_VALUE, SHIPYARD_SELL_REFUND, crowdingMult, defensePrice, DEFENSE_PRICE_SHARE, MAX_DEFENSE_ORDER, SELL_HOURS, SELL_GAP_HOURS, DEFENSE_BUILD_HOURS } from '../shared/economy.js';
 import { Battle, DT } from '../sim/battle.js';
 import { packReplay } from '../shared/replayFormat.js';
 import { mulberry32 } from '../shared/rng.js';
 import {
   createWorld, advanceTo, dueEvent, planEvent, applyEvent, siegeAt, siegeParties, hostile, defendersAt, buildShipyard, sellShipyard, quoteShipyard,
   sendFleet, stopFleet, setRally, rallyAll, setDestination, destinationAll, nextHop, pinned, holdReason, previewFleet, shipsAt, incomeOf, allied, playerName, designOf, fleetValue, worthOf, countShips, fmtHours,
-  sellValue, yardListValue, YARD_MS, HOLD_MS, upgradeWorld,
+  sellValue, nextSaleAt, yardListValue, YARD_MS, HOLD_MS, upgradeWorld,
   proposeAlliance, acceptAlliance, declineAlliance, breakAlliance, proposalsFor, hasProposed, giveCredits,
   isOpenSeat, freeColors, renameDesign, renamePlanet, setLayout, layoutAt, saveBlueprint, deleteBlueprint, buildDefense, defenseProblem, cancelSale, jobsAt,
 } from '../world/world.js';
@@ -629,7 +629,7 @@ function panelSignature() {
   const s = [ui.me, sel?.kind, sel?.id, destPick, move ? `${move.from}>${move.to}:${move.picking}:${move.lanes}:${move.avoid}:${JSON.stringify(move.ships)}` : '', busy];
   if (sel?.kind === 'planet') {
     const P = world.planets[sel.id];
-    s.push(P.owner, JSON.stringify(P.garrison), P.yards.map((y) => `${y.id}:${y.sellAt ?? ''}`).join(), jobsAt(world, P.id).map((j) => j.id).join(), Math.floor(me().credits / 500), JSON.stringify(siegeAt(world, P.id).map((x) => x.fleets)), JSON.stringify(world.relations));
+    s.push(P.owner, JSON.stringify(P.garrison), P.yards.map((y) => `${y.id}:${y.sellAt ?? ''}`).join(), jobsAt(world, P.id).map((j) => j.id).join(), Math.floor(me().credits / 500), nextSaleAt(world, ui.me) > world.clock ? nextSaleAt(world, ui.me) : 0, JSON.stringify(siegeAt(world, P.id).map((x) => x.fleets)), JSON.stringify(world.relations));
   } else if (sel?.kind === 'fleet') { const f = world.fleets.find((x) => x.id === sel.id); s.push(world.fleets.length, f?.wait, f?.leg, f ? fleetsStackedWith(f).map((o) => `${o.id}:${countShips(o.ships)}`).join() : ''); }
   else s.push(world.log.length, Object.keys(world.relations).join(), world.planets.map((p) => p.owner).join(), world.fleets.length, world.planets.reduce((a, p) => a + shipTotal(p), 0));
   return s.join('|');
@@ -750,11 +750,13 @@ function planetPanel(P) {
     html += `<h2><button class="fold" data-act="fold-yards" aria-expanded="${open}">${open ? '▾' : '▸'} Shipyards (${P.yards.length})</button>${mine ? `<button class="small go" data-act="yard" ${busy || me().eliminated ? 'disabled' : ''}>Build</button>` : ''}</h2>`;
     if (open) {
       if (!P.yards.length) html += `<p class="hint">None yet. A shipyard builds ${SHIPS_PER_BUILD} ships of its design every ${SHIPYARD_INTERVAL_MIN} min, for free, forever. All the shipyards on a world build at the same moment.</p>`;
+      const saleAt = nextSaleAt(world, ui.me), waitSale = saleAt > world.clock;
+      if (mine && P.yards.length) html += `<p class="hint">You can sell <b>one shipyard every ${SELL_GAP_HOURS} hours</b>, for ${Math.round(SHIPYARD_SELL_REFUND * 100)}% of what you paid. ${waitSale ? `Your next sale can start in <b><span data-arrive="${saleAt}"></span></b>.` : 'You can sell one now.'}</p>`;
       for (const y of P.yards) {
         const d = world.designs[y.design], selling = y.sellAt != null;
         const sellBtn = !mine ? ''
-          : selling ? `<button class="small" data-act="unsell" data-yard="${y.id}" ${busy ? 'disabled' : ''} title="Call off the sale: the shipyard starts building again">Keep it</button>`
-          : `<button class="small danger" data-act="sell" data-yard="${y.id}" ${busy ? 'disabled' : ''} title="Sell for ${Math.round(SHIPYARD_SELL_REFUND * 100)}% of what you paid. Selling takes ${fmtHours(SELL_HOURS)}: the shipyard stops building now and pays out at the end, unless the world falls first.">Sell +${fmt(sellValue(y))}</button>`;
+          : selling ? `<button class="small" data-act="unsell" data-yard="${y.id}" ${busy ? 'disabled' : ''} title="Call off the sale: the shipyard starts building again, and you get your sale back">Keep it</button>`
+          : `<button class="small danger" data-act="sell" data-yard="${y.id}" ${busy || waitSale ? 'disabled' : ''} title="${waitSale ? `You can sell one shipyard every ${SELL_GAP_HOURS} hours. Your next sale can start in ${fmtHours((saleAt - world.clock) / 3600000)}.` : `Sell for ${Math.round(SHIPYARD_SELL_REFUND * 100)}% of what you paid. Selling takes ${fmtHours(SELL_HOURS)}: the shipyard stops building now and pays out at the end, unless the world falls first. After this you can't sell another shipyard for ${SELL_GAP_HOURS} hours.`}">Sell +${fmt(sellValue(y))}</button>`;
         const status = selling ? `<span class="selling">selling: +${fmt(sellValue(y))} cr in <span data-arrive="${y.sellAt}"></span></span>` : `next in <span data-next="${y.next}"></span>`;
         html += `<div class="yard${selling ? ' sold' : ''}"><b>${esc(d.name)}</b>${mine && d.owner === ui.me ? `<button class="small" data-act="rename" data-design="${esc(y.design)}" ${busy ? 'disabled' : ''} title="Rename this ship design (everywhere it appears)">Rename</button>` : ''}${sellBtn}
         <span>${esc(d.cls)} · ${status} · ${fmt(y.built)} built${mine ? ` · paid ${fmt(y.paid)}` : ''}</span></div>`;
@@ -1117,21 +1119,21 @@ async function sellYard(planetId, yardId) {
   if (armedSell !== yardId) {
     armedSell = yardId;
     const b = $('panel').querySelector(`[data-act=sell][data-yard="${yardId}"]`);
-    if (b) b.textContent = `${CLICK} again: sell in ${fmtHours(SELL_HOURS)}`;
+    if (b) b.textContent = `${CLICK} again: sell (next sale in ${SELL_GAP_HOURS} h)`;
     setTimeout(() => { if (armedSell === yardId) { armedSell = null; renderPanel(true); } }, 3000);
     return;
   }
   armedSell = null;
   const r = await perform({ type: 'sell', planet: planetId, yard: yardId }, () => sellShipyard(world, ui.me, planetId, yardId));
   if (!r.ok) return toast(r.error, true);
-  toast(`Selling: it has stopped building, and ${fmt(r.refund)} credits come in ${fmtHours(SELL_HOURS)}.`);
+  toast(`Selling: it has stopped building, and ${fmt(r.refund)} credits come in ${fmtHours(SELL_HOURS)}. Your next sale can start in ${SELL_GAP_HOURS} hours.`);
   save(); renderPanel(true); renderEvents(); updateTop();
 }
 async function keepYard(planetId, yardId) {
   if (busy) return;
   const r = await perform({ type: 'unsell', planet: planetId, yard: yardId }, () => cancelSale(world, ui.me, planetId, yardId));
   if (!r.ok) return toast(r.error, true);
-  toast('Sale called off: the shipyard is building again.');
+  toast('Sale called off: the shipyard is building again, and you can sell one again as before.');
   save(); renderPanel(true); renderEvents(); updateTop();
 }
 

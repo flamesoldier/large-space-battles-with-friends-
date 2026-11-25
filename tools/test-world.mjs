@@ -20,7 +20,7 @@ import { makeDesign } from '../src/shared/designs.js';
 import { makeTestScenario } from '../src/designer/testBattle.js';
 import { BT } from '../src/shared/blocks.js';
 import { designCost, encodeDesign, decodeDesign } from '../src/shared/shipStats.js';
-import { STARTING_CREDITS, HOME_INCOME, SHIPYARD_SELL_REFUND, SHIPYARD_CROWDING_VALUE, SHIPS_PER_BUILD, BOUNTY_SHARE, shipyardPrice, defensePrice, SELL_HOURS, DEFENSE_BUILD_HOURS } from '../src/shared/economy.js';
+import { STARTING_CREDITS, HOME_INCOME, SHIPYARD_SELL_REFUND, SHIPYARD_CROWDING_VALUE, SHIPS_PER_BUILD, BOUNTY_SHARE, shipyardPrice, defensePrice, SELL_HOURS, SELL_GAP_HOURS, DEFENSE_BUILD_HOURS } from '../src/shared/economy.js';
 import { HOUR_MS, HYPERLANE_SPEEDUP, MAX_PLAYERS, PLANET_SPACING } from '../src/world/rules.js';
 
 // The 1.0 tests below drive fleets by hand (sieges, captures, bounties and so on all still apply in
@@ -164,11 +164,20 @@ const resolve = (scen) => {
   const earned = (inc * (w.clock - t0)) / HOUR_MS;
   ok(P.yards.length === 1 && Math.abs(w.players[0].credits - c0 - earned - Math.round(r2.yard.paid * SHIPYARD_SELL_REFUND)) < 1e-3, 'the sale pays out when the time is up and the yard is gone');
   ok(!w.jobs.length, 'the sale job is finished');
-  // Calling a sale off: it builds again, a full interval later, and no refund comes.
+  ok(SHIPYARD_SELL_REFUND === 1 && w.log.at(-1).text.includes(`for ${r2.yard.paid.toLocaleString()} cr`), 'owner, 25 Nov 2026: a sale pays back the full price');
+  // One sale every SELL_GAP_HOURS per player, counted from when the sale started (owner, 25 Nov 2026).
   const keep = P.yards[0];
-  ok(sellShipyard(w, 0, home, keep.id).ok && cancelSale(w, 0, home, keep.id).ok, 'a sale can be called off');
+  const early2 = sellShipyard(w, 0, home, keep.id);
+  ok(!early2.ok && /one shipyard every 8 hours/.test(early2.error) && keep.sellAt === undefined, `a second sale straight after is refused (${early2.error})`);
+  runWorld(w, s.job.started + SELL_GAP_HOURS * HOUR_MS - 60000, resolve);
+  ok(!sellShipyard(w, 0, home, keep.id).ok, 'and still a minute before the 8 hours are up');
+  runWorld(w, s.job.started + SELL_GAP_HOURS * HOUR_MS, resolve);
+  // Calling a sale off: it builds again, a full interval later, no refund comes, and the turn comes back.
+  ok(sellShipyard(w, 0, home, keep.id).ok && cancelSale(w, 0, home, keep.id).ok, 'a sale can be called off once the 8 hours are up');
+  ok(!(w.players[0].sellReady > w.clock), 'calling it off gives the sale back');
   ok(keep.sellAt === undefined && keep.next === w.clock + YARD_MS && !w.jobs.length, 'the kept yard builds again');
   ok(!cancelSale(w, 0, home, keep.id).ok, 'nothing to call off now');
+  ok(sellShipyard(w, 0, home, keep.id).ok && cancelSale(w, 0, home, keep.id).ok, 'so another sale can start at once');
   ok(!sellShipyard(w, 1, home, keep.id).ok && !cancelSale(w, 1, home, keep.id).ok, 'can\'t sell or keep another player\'s yard');
   // The other yard kept building during those 5 hours: put its stack back to 10 for the fleet checks below.
   P.garrison.find((g) => g.owner === 0 && g.design === did).n = 10;
@@ -860,6 +869,7 @@ const resolve = (scen) => {
   runWorld(w, sg.startsAt + 1, resolve);
   ok(P.owner === 1, 'B takes the world');
   ok(!jobsAt(w, P.id).length && !(shipsAt(P, 0)[def.design] > 0), 'the jobs are cancelled');
+  ok(!(w.players[0].sellReady > w.clock), 'a sale lost with its world gives the sale back');
   const capLog = w.log.filter((e) => e.capture).at(-1).text;
   ok(/20 unfinished defences lost/.test(capLog), `the log says the unfinished defences were lost (${capLog})`);
   const c1 = w.players[0].credits, t1 = w.clock, inc1 = incomeOf(w, 0);
