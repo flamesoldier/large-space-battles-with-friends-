@@ -168,12 +168,12 @@ const resolve = (scen) => {
   // One sale every SELL_GAP_HOURS per player, counted from when the sale started (owner, 25 Nov 2026).
   const keep = P.yards[0];
   const early2 = sellShipyard(w, 0, home, keep.id);
-  ok(!early2.ok && /one shipyard every 8 hours/.test(early2.error) && keep.sellAt === undefined, `a second sale straight after is refused (${early2.error})`);
+  ok(!early2.ok && new RegExp(`one shipyard every ${SELL_GAP_HOURS} hours`).test(early2.error) && keep.sellAt === undefined, `a second sale straight after is refused (${early2.error})`);
   runWorld(w, s.job.started + SELL_GAP_HOURS * HOUR_MS - 60000, resolve);
-  ok(!sellShipyard(w, 0, home, keep.id).ok, 'and still a minute before the 8 hours are up');
+  ok(!sellShipyard(w, 0, home, keep.id).ok, 'and still a minute before the gap is up');
   runWorld(w, s.job.started + SELL_GAP_HOURS * HOUR_MS, resolve);
   // Calling a sale off: it builds again, a full interval later, no refund comes, and the turn comes back.
-  ok(sellShipyard(w, 0, home, keep.id).ok && cancelSale(w, 0, home, keep.id).ok, 'a sale can be called off once the 8 hours are up');
+  ok(sellShipyard(w, 0, home, keep.id).ok && cancelSale(w, 0, home, keep.id).ok, 'a sale can be called off once the gap is up');
   ok(!(w.players[0].sellReady > w.clock), 'calling it off gives the sale back');
   ok(keep.sellAt === undefined && keep.next === w.clock + YARD_MS && !w.jobs.length, 'the kept yard builds again');
   ok(!cancelSale(w, 0, home, keep.id).ok, 'nothing to call off now');

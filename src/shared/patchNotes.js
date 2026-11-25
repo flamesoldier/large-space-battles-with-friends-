@@ -11,7 +11,7 @@ export const PATCH_NOTES = [
     id: '2026-11-25-selling', date: '25 Nov 2026', title: 'Selling shipyards: full price, one at a time',
     items: [
       'Selling a shipyard now gives back everything you paid for it (it was 65%), so swapping a design that didn\'t work out no longer costs you a third of it.',
-      'But you can only sell one shipyard every 8 hours. Selling still takes 5 minutes, so you can no longer sell off a whole world\'s shipyards when an attack is coming.',
+      'But you can only sell one shipyard every 12 hours, counted across all your worlds (shipyards for the same design are sold one at a time too). Selling still takes 5 minutes, so you can no longer sell off a whole world\'s shipyards when an attack is coming.',
       'The world panel shows when your next sale can start. If you call a sale off with Keep it, or the world falls before the sale finishes, you get your sale back straight away.',
     ],
   },
