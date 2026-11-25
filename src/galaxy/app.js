@@ -199,16 +199,17 @@ function fleetWorldPos(f) {
 
 // Fleets drawn on top of each other (owner, 25 Nov 2026: survivors that leave a world together fly as
 // several fleets along the same lane, and clicking the arrow showed only the top one). Everything within
-// STACK_PX of this fleet's arrow on screen, this fleet first. Display only: fleets still move as before.
+// STACK_PX of this fleet's arrow on screen, this fleet included. Display only: fleets still move as before.
+// In a fixed order (oldest fleet first), not "this fleet first" (owner, 25 Nov 2026: the list's buttons
+// "don't work": the fleet you clicked jumped to the top of the list, so the list looked unchanged).
 const STACK_PX = 8;
 function fleetsStackedWith(f) {
   const p = fleetWorldPos(f), [x, y] = toScreen(p.x, p.y);
-  const near = world.fleets.filter((o) => {
-    if (o === f) return false;
+  return world.fleets.filter((o) => {
+    if (o === f) return true;
     const q = fleetWorldPos(o), [a, b] = toScreen(q.x, q.y);
     return Math.hypot(a - x, b - y) < STACK_PX;
-  });
-  return [f, ...near];
+  }).sort((a, b) => a.id - b.id);
 }
 function stackSummary(stack) {
   const by = new Map();
@@ -610,12 +611,13 @@ function select(hit) {
   renderPanel(true);
 }
 
-let panelSig = '';
+let panelSig = '', panelPress = false; // panelPress: a pointer is down on the panel (see its pointerdown listener)
 function renderPanel(force = false) {
   if (!world) return;
   const panel = $('panel');
   // Don't rebuild under the player's fingers while they're typing a number.
   if (!force && panel.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') return;
+  if (!force && panelPress) return; // a mouse button or finger is down on the panel: a rebuild now would swallow the click
   const sig = panelSignature();
   if (!force && sig === panelSig) return updateLive();
   panelSig = sig;
@@ -872,11 +874,12 @@ function fleetPanel(f) {
   const canStop = !world.auto && f.owner === ui.me && !f.retreat && f.leg < f.legs.length - 1;
   const G = f.goal != null ? world.planets[f.goal] : null;
   const stack = fleetsStackedWith(f), S = stack.length > 1 ? stackSummary(stack) : null;
+  const k = stack.indexOf(f) + 1;
   const stackHtml = S ? `<h2>${stack.length} fleets here · ${fmt(S.total)} ships in all</h2>
     <p class="hint">These fleets are drawn on top of each other on the map.${S.each ? ` By player: ${S.each}.` : ''} ${CLICK} one to see it.</p>
-    <div class="list">${stack.map((o) => `<button data-act="fleet" data-fleet="${o.id}"${o === f ? ' aria-current="true" style="outline:1px solid var(--line)"' : ''}><span class="swatch" style="background:${colorOf(o.owner)}"></span><span>${fmt(countShips(o.ships))} ship${countShips(o.ships) === 1 ? '' : 's'} → ${esc(world.planets[o.legs[o.leg].to].name)}${o === f ? ' (this one)' : ''}</span><em>${o.owner === null ? 'Militia' : esc(playerName(world, o.owner))}</em></button>`).join('')}</div>` : '';
-  return `<h1><span class="swatch" style="background:${colorOf(f.owner)}"></span>Fleet${f.retreat ? ' <span class="tag">retreating</span>' : ''}${f.turned != null ? ' <span class="tag">turned back</span>' : ''}</h1>
-    <div class="sub">${who(f.owner)}${S ? ` · <span style="color:var(--azure)">1 of ${stack.length} fleets here, ${fmt(S.total)} ships in all</span>` : ''}</div>
+    <div class="list">${stack.map((o, i) => `<button data-act="fleet" data-fleet="${o.id}"${o === f ? ' aria-current="true" style="outline:2px solid var(--azure);background:rgba(110,190,255,.14)"' : ''}><span class="swatch" style="background:${colorOf(o.owner)}"></span><span>${o === f ? '<b>▶ ' : ''}Fleet ${i + 1}: ${fmt(countShips(o.ships))} ship${countShips(o.ships) === 1 ? '' : 's'} → ${esc(world.planets[o.legs[o.leg].to].name)}${o === f ? ' (showing)</b>' : ''}</span><em>${o.owner === null ? 'Militia' : esc(playerName(world, o.owner))}</em></button>`).join('')}</div>` : '';
+  return `<h1><span class="swatch" style="background:${colorOf(f.owner)}"></span>Fleet${S ? ` ${k} of ${stack.length}` : ''}${f.retreat ? ' <span class="tag">retreating</span>' : ''}${f.turned != null ? ' <span class="tag">turned back</span>' : ''}</h1>
+    <div class="sub">${who(f.owner)}${S ? ` · <span style="color:var(--azure)">fleet ${k} of ${stack.length} here, ${fmt(S.total)} ships in all</span>` : ''}</div>
     <dl class="kv">
       <dt>From</dt><dd>${esc(F.name)}</dd>
       <dt>To</dt><dd>${esc(T.name)}</dd>
@@ -927,6 +930,10 @@ function overviewPanel() {
   return html + '</tbody></table>';
 }
 
+// While a pointer is pressed on the panel, the periodic redraw waits (owner, 25 Nov 2026: buttons in lists
+// that change often, like stacked fleets, could be rebuilt between press and release and the click was lost).
+$('panel').addEventListener('pointerdown', () => { panelPress = true; });
+for (const ev of ['pointerup', 'pointercancel']) addEventListener(ev, () => { if (panelPress) { panelPress = false; setTimeout(() => renderPanel(), 0); } });
 $('panel').addEventListener('click', (e) => {
   const b = e.target.closest('[data-act]');
   if (!b || b.tagName === 'INPUT') return;

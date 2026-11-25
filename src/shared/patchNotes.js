@@ -8,6 +8,13 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-25-stack-list', date: '25 Nov 2026', title: 'Fleet list under an arrow fixed',
+    items: [
+      'Clicking a fleet in the "fleets here" list seemed to do nothing: the panel did switch to that fleet, but the list moved it to the top, so everything looked the same. The list now stays in the same order, the fleet you are looking at is clearly highlighted, and the panel says which one it is ("Fleet 2 of 3").',
+      'Works for every fleet, yours or anyone else\'s.',
+    ],
+  },
+  {
     id: '2026-11-25-guided', date: '25 Nov 2026', title: 'Guided missiles keep steering',
     items: [
       'Guided missiles sometimes stopped steering and flew straight on. That happened when their target was too close beside them to turn onto, often right after they picked a new target. Now they fly past, turn round and come back for another pass.',
