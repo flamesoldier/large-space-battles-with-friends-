@@ -25,6 +25,7 @@ import {
   BOT_INCOME_MULT, planetIncome,
 } from '../shared/economy.js';
 import { generateGalaxy, linkHomesInward, segmentsCross, pointSegDist } from './galaxyGen.js';
+import { STARTER_DEFENCE, STARTER_DEFENCE_COUNT } from '../shared/starterDefence.js';
 import { planRoute, travelSpeed, laneMap, laneSpeed } from './routes.js';
 import { makeBattleScenario } from './battleSetup.js';
 import { cleanLayout, shapeOf } from './defenceLayout.js';
@@ -85,8 +86,30 @@ export function createWorld({ players, seed = 1, planetsPerPlayer, clock = 0 }) 
   // Starting teams only decide who begins allied; diplomacy can change it later.
   for (const a of world.players) for (const b of world.players) if (a.id < b.id && a.team && a.team === b.team) world.relations[`${a.id}|${b.id}`] = 'ally';
   addMilitia(world);
+  grantStarterDefences(world);
   log(world, 'start', `A new galaxy: ${world.planets.length} worlds, ${world.lanes.length} hyperlanes, ${players.length} players.`);
   return world;
+}
+
+/**
+ * Owner, 25 Nov 2026: every home world gets the owner's starter defence (STARTER_DEFENCE_COUNT of
+ * them, free) so a new player isn't wiped out at once. Once per galaxy (`world.starterDefences`):
+ * new galaxies when made, a running 2.0 game the first time it loads with this rule. Only home worlds
+ * still held by the player who started there; it joins their garrison as a defence of their own.
+ */
+export function grantStarterDefences(world) {
+  if (world.starterDefences) return 0;
+  world.starterDefences = true;
+  let given = 0;
+  const design = decodeDesign(STARTER_DEFENCE);
+  for (const pl of world.players) {
+    const P = world.planets[pl.home];
+    if (!P || P.owner !== pl.id) continue;
+    const id = registerDesign(world, pl.id, design, true);
+    addShips(P, pl.id, id, STARTER_DEFENCE_COUNT);
+    given++;
+  }
+  return given;
 }
 
 /** Unclaimed worlds get a militia garrison worth NEUTRAL_GARRISON_BASE + NEUTRAL_GARRISON_HOURS of their income. */
@@ -751,6 +774,11 @@ export function upgradeWorld(world) {
   // 16 Nov 2026: victory became "one alliance holds every world"; a game already there ends on load.
   if (world.winner === null) checkPlayers(world);
   if (world.winner && !world.final) finalize(world);
+  // 25 Nov 2026: a running 2.0 game gets the starter defences once (new galaxies get them when made).
+  if (world.auto && !world.starterDefences) {
+    const n = grantStarterDefences(world);
+    if (n) log(world, 'yard', `Every home world still held by its first owner gets a free starter defence, “${STARTER_DEFENCE.name}” (${n} worlds).`);
+  }
   world.version = 3;
   return world;
 }
