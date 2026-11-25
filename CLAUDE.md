@@ -136,7 +136,7 @@ worlds. Patch notes entry `2026-11-24-hyperlane` written (names the bottom-right
 
 **Stacked fleets shown under one click (owner, 25 Nov 2026: a friend thought ships went missing, "took arisvex with 29 ships
 surviving and only 1 ship is attacking the next planet"; then "is there a way to see all fleets under a click i still want things
-to work the way they are now")**, on `v2-dev`, **not live**. Checked first: no ships vanish (`/tmp`-style audit, 6 bot games with
+to work the way they are now")**, **live 25 Nov 2026** (owner: "make it live"). Checked first: no ships vanish (`/tmp`-style audit, 6 bot games with
 stand-in battles, 4–10 players, 5 days: every player's ships = built + defences − battle losses after each of 30,889 events).
 Why it looked that way: after a capture the winner's fleets are released and each wave moves on as its own fleet (`moveOn` per
 fleet; only garrison stacks are merged by `dispatchAll`), so survivors usually leave as several fleets on one lane at the same
