@@ -98,6 +98,29 @@ f.rect(fx + 2, fy - 2, fx + 8, fy + 2, BT.ARMOR); f.rect(fx + 3, fy - 1, fx + 7,
 assert.ok(!f.fill(0, 0, BT.FRAME), 'fill refuses open space');
 assert.ok(f.fill(fx + 5, fy, BT.FRAME)); assert.equal(f.get(fx + 4, fy), BT.FRAME);
 assert.equal(f.toDesign().w, 9, 'crop keeps hub to nose');
+// Line tool: a staircase whose blocks all share an edge, mirrored, one undo step.
+{
+  const L = new ShipEditor(); L.mirror = false;
+  const h0 = L.hub(), lx = h0 % L.w, ly = (h0 / L.w) | 0;
+  for (const [bx, by] of [[lx + 9, ly + 4], [lx - 7, ly - 7], [lx + 12, ly], [lx, ly - 5], [lx + 3, ly + 11]]) {
+    const pts = ShipEditor.linePoints(lx, ly, bx, by);
+    assert.deepEqual(pts[0], [lx, ly]); assert.deepEqual(pts[pts.length - 1], [bx, by], 'line ends where it was dragged to');
+    assert.equal(pts.length, Math.abs(bx - lx) + Math.abs(by - ly) + 1, 'no corner-only steps');
+    for (let k = 1; k < pts.length; k++) assert.equal(Math.abs(pts[k][0] - pts[k - 1][0]) + Math.abs(pts[k][1] - pts[k - 1][1]), 1);
+  }
+  assert.deepEqual(ShipEditor.snapLine(0, 0, 10, 3), [10, 0]); assert.deepEqual(ShipEditor.snapLine(0, 0, 2, -9), [0, -9]);
+  assert.deepEqual(ShipEditor.snapLine(0, 0, 7, -6), [7, -7]);
+  L.checkpoint(); L.line(lx + 1, ly, lx + 10, ly - 6, BT.ARMOR);
+  const d = L.toDesign(), info = analyzeDesign(d);
+  assert.equal(info.loose.length, 0, 'a diagonal line from the hub stays attached');
+  assert.equal(L.get(lx + 10, ly - 6), BT.ARMOR);
+  const M = new ShipEditor(); M.mirror = true;
+  const m0 = M.hub(), mx = m0 % M.w, my = (m0 / M.w) | 0;
+  M.checkpoint(); M.line(mx + 1, my - 1, mx + 6, my - 4, BT.FRAME);
+  assert.equal(M.get(mx + 6, my + 4), BT.FRAME, 'mirrored');
+  assert.equal(M.line(mx, my, mx + 9, my, BT.LANCE), 0, 'no lines of 10x10 units');
+  M.undo(); assert.equal(M.get(mx + 6, my - 4), 0, 'one undo removes the line'); assert.equal(M.get(mx + 6, my + 4), 0);
+}
 // Test battle scenarios cost the same on both sides.
 const sc = makeTestScenario(makeDesign('cruiser', 5), 6, null, 2);
 assert.ok(Math.abs(sc.enemyCost - sc.budget) / sc.budget < 0.1, `budgets ${sc.enemyCost} vs ${sc.budget}`);

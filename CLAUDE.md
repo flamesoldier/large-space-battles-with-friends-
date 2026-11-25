@@ -1711,6 +1711,13 @@ designer's numbers against the sim.
   Put back button. Kept per browser, per game and player (`lsb.yardlist.v1.<online|local>.<seed>.<player>`
   in localStorage: `{ fav, hidden }` lists of `name|cells` keys); nothing on the server changes.
   New designs get onto the list by being built or saved to the designer library.
+- **Line tool (owner, 25 Nov 2026, a friend's request: "a line tool… drag from point A to point B"; owner: "once you finished it
+  make it live")**, **live 25 Nov 2026**, patch notes `2026-11-25-line-tool`. Tool button **Line** (key **L**) between Pencil and
+  Rect: press, drag, release draws a 1-block line of the selected block (right drag = erase), previewed while dragging, mirrored,
+  one undo step. `ShipEditor.linePoints()` makes it **4-connected** (a diagonal is a staircase; blocks only join edge to edge, so
+  a Bresenham diagonal would fall off the ship), `snapLine()` = **Shift** snaps to straight or exactly 45°, `line()` refuses
+  multi-block units and the hub (like Rect). Controls hint mentions it. Test in `tools/test-designer.mjs`. Checked in headless
+  Chrome (1300×850 and a 412×915 phone).
 - The **Thruster** palette tooltip (and the Top speed stat's hover text) says thrusters also set
   galaxy map speed: a fleet travels at its slowest ship's top speed (owner, Nov 2026).
 - Plasma cannon tooltips (palette and weapon table) end with a capitals warning about friendly

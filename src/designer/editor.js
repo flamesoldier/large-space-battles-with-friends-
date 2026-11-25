@@ -178,6 +178,40 @@ export class ShipEditor {
   }
 
   /**
+   * The cells of a straight line from A to B, each one sharing an edge with the one before
+   * (a diagonal is drawn as a staircase), because blocks only join edge to edge: a line of
+   * corner-touching blocks would fall off the ship.
+   */
+  static linePoints(ax, ay, bx, by) {
+    const dx = Math.abs(bx - ax), dy = Math.abs(by - ay), sx = ax < bx ? 1 : -1, sy = ay < by ? 1 : -1;
+    const out = [[ax, ay]];
+    let x = ax, y = ay, ix = 0, iy = 0;
+    while (ix < dx || iy < dy) {
+      // Step along whichever axis keeps the cell closest to the true line.
+      if ((0.5 + ix) / dx < (0.5 + iy) / dy || iy >= dy) { x += sx; ix++; } else { y += sy; iy++; }
+      out.push([x, y]);
+    }
+    return out;
+  }
+
+  /** Snap B so A→B is horizontal, vertical or exactly 45° (whichever is nearest). */
+  static snapLine(ax, ay, bx, by) {
+    const dx = bx - ax, dy = by - ay, adx = Math.abs(dx), ady = Math.abs(dy);
+    if (adx > 2 * ady) return [bx, ay];
+    if (ady > 2 * adx) return [ax, by];
+    const n = Math.max(adx, ady);
+    return [ax + Math.sign(dx) * n, ay + Math.sign(dy) * n];
+  }
+
+  /** Draw a 1-block-wide line of `type` from A to B (mirrored). Units and the hub can't be drawn as lines. */
+  line(ax, ay, bx, by, type) {
+    if (MULTIBLOCK[type] || type === BT.HUB) return 0;
+    let n = 0;
+    for (const [x, y] of ShipEditor.linePoints(ax, ay, bx, by)) if (this.idx(x, y) >= 0) { this.paint(x, y, type); n++; }
+    return n;
+  }
+
+  /**
    * Flood fill the region of same-type cells at (x, y) with `type` (mirrored).
    * Filling empty space only works inside a closed outline, so it can't flood the whole grid.
    * Returns false if nothing was filled.

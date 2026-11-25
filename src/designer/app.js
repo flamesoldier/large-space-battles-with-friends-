@@ -393,7 +393,14 @@ function draw() {
   // Cursor preview (none when no block is selected, unless erasing a rectangle with a right drag).
   if (hover && !panning && !touchInspect && (block !== null || drag)) {
     const [hx, hy] = hover;
-    if (drag && tool === 'rect') {
+    if (drag && tool === 'line') {
+      const [ex, ey] = lineEnd(hx, hy);
+      for (const [px, py] of ShipEditor.linePoints(drag.x, drag.y, ex, ey)) {
+        if (ed.idx(px, py) < 0) continue;
+        previewRect(px, py, 1, 1, drag.type);
+        if (ed.mirror && ed.mirrorY(py) !== py) previewRect(px, ed.mirrorY(py), 1, 1, drag.type, true);
+      }
+    } else if (drag && tool === 'rect') {
       const x0 = Math.min(drag.x, hx), y0 = Math.min(drag.y, hy), x1 = Math.max(drag.x, hx), y1 = Math.max(drag.y, hy);
       previewRect(x0, y0, x1 - x0 + 1, y1 - y0 + 1, drag.type);
       if (ed.mirror) { const my0 = ed.mirrorY(y1), my1 = ed.mirrorY(y0); previewRect(x0, my0, x1 - x0 + 1, my1 - my0 + 1, drag.type, true); }
@@ -436,6 +443,9 @@ function minimapJump(e) {
 }
 mm.addEventListener('pointerdown', (e) => { mm.setPointerCapture(e.pointerId); minimapJump(e); });
 mm.addEventListener('pointermove', (e) => { if (e.buttons) minimapJump(e); });
+
+/** Where a line being dragged ends: the cell under the pointer, snapped straight or to 45° while Shift is held. */
+function lineEnd(hx, hy) { return drag && drag.snap ? ShipEditor.snapLine(drag.x, drag.y, hx, hy) : [hx, hy]; }
 
 function previewRect(x, y, w, h, t, faint) {
   const z = cam.zoom * dpr();
@@ -806,14 +816,14 @@ canvas.addEventListener('pointerdown', (e) => {
   }
   if (e.button === 2 && !ed.get(x, y)) {
     // Right-click on an empty cell picks the Hand tool, and dragging moves the view. Picking a
-    // block from the palette (or B / R / F) goes back to building.
+    // block from the palette (or B / L / R / F) goes back to building.
     if (tool !== 'pan') { setTool('pan'); toast('Hand tool: drag to move around. Pick a block (or press B) to build again.'); }
     panning = true; canvas.style.cursor = 'grabbing';
     return;
   }
   if (e.button !== 2 && block === null) { toast('No block selected: pick one from the palette (or press 1–0).'); return; }
   const type = e.button === 2 ? 0 : block;
-  drag = { x, y, type, started: false };
+  drag = { x, y, type, started: false, snap: e.shiftKey };
   last = null;
   if (tool === 'pencil' || MULTIBLOCK[type] || type === BT.HUB) {
     ed.checkpoint(); drag.started = true;
@@ -847,6 +857,7 @@ canvas.addEventListener('pointermove', (e) => {
   }
   if (p) { p.x = e.clientX; p.y = e.clientY; }
   const [x, y] = toCell(e.clientX, e.clientY);
+  if (drag && drag.snap !== e.shiftKey) { drag.snap = e.shiftKey; dirty = true; }
   if (!hover || hover[0] !== x || hover[1] !== y) {
     hover = [x, y]; dirty = true;
     const el = $('hover');
@@ -858,6 +869,12 @@ canvas.addEventListener('pointermove', (e) => {
 const endPointer = (e) => {
   pointers.delete(e.pointerId);
   if (panning) { if (!pointers.size) { panning = false; canvas.style.cursor = tool === 'pan' || spaceDown ? 'grab' : ''; } return; }
+  if (drag && tool === 'line' && !drag.started && hover) {
+    drag.snap = e.shiftKey;
+    const [ex, ey] = lineEnd(hover[0], hover[1]);
+    ed.checkpoint();
+    ed.line(drag.x, drag.y, ex, ey, drag.type);
+  }
   if (drag && tool === 'rect' && !drag.started && hover) {
     ed.checkpoint();
     ed.rect(drag.x, drag.y, hover[0], hover[1], drag.type);
@@ -939,6 +956,7 @@ addEventListener('keydown', (e) => {
   if (p) return setBlock(p[0]);
   if (k === 'b') setTool('pencil');
   if (k === 'r') setTool('rect');
+  if (k === 'l') setTool('line');
   if (k === 'f') setTool('fill');
   if (k === 'm') { ed.mirror = !ed.mirror; syncMirror(); dirty = true; }
   if (k === 'q') { showArcs = !showArcs; syncArcs(); dirty = true; }

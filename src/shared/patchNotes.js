@@ -8,6 +8,15 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-25-line-tool', date: '25 Nov 2026', title: 'Line tool in the ship and defence designers',
+    items: [
+      'New Line tool next to Pencil (shortcut L): press on one block, drag to another and let go, and it draws a straight line of the selected block between them. You see where it will go while you drag.',
+      'Hold Shift while dragging to keep the line perfectly straight or at exactly 45°.',
+      'Diagonal lines are drawn as a staircase, so every block touches the next one side to side and stays attached to your ship.',
+      'Mirror works with it, a right-button drag draws a line of empty space (erasing), and one Undo removes the whole line.',
+    ],
+  },
+  {
     id: '2026-11-25-gun-balance', date: '25 Nov 2026', title: 'Cannons fire faster and reach further',
     items: [
       'Cannons still miss a lot (that\'s their weakness), so to make up for it they now fire every 9 seconds (was 10) and reach 360 (was 340).',
