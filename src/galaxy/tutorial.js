@@ -132,7 +132,7 @@ export function tutorialPages(click = 'Click') {
 
     { title: 'Watching the battles', art: ART.replays, html: `
       <p>Every battle is recorded so you can watch it like a film.</p>
-      <ul><li>The <b>Combat log</b> at the top lists your battles. Each is coloured by how much was destroyed compared with every other battle so far, from Small up to Legendary.</li>
+      <ul><li>The <b>Combat log</b> at the top lists your battles. Each is coloured by how much was destroyed compared with every other battle so far, from Small up to Legendary. <b>Mine</b> shows only your battles, <b>Allies</b> yours and your allies', <b>Everyone</b> all of them.</li>
       <li><b>Watch</b> plays the replay. <b>Download</b> saves it as a web page you can keep and open in any browser.</li>
       <li>The small <b>Battles</b> window on the map shows the latest fights. ${click} one to jump to its world.</li>
       <li><b>Patch notes</b> at the top lists what's changed in each update.</li></ul>

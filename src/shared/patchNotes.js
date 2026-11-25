@@ -8,6 +8,14 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-25-filters-totals', date: '25 Nov 2026', title: 'Mine / Allies filters, shorter battle reports, fleet values',
+    items: [
+      'The Combat log and the Battles window now have separate filters: Mine shows only battles you fought in, Allies shows yours and your allies\', and Everyone shows them all. (Mine used to include your allies.) In the Battles window, click Mine or Allies again to go back to everyone\'s.',
+      'Battle reports no longer list every beaten fleet and where it fell back to. They just say how many of each player\'s ships fell back.',
+      'Where several fleets fly together on one lane, and at worlds under attack, you now see the credit value as well as the number of ships: for each fleet, each player, each alliance and everyone there in all.',
+    ],
+  },
+  {
     id: '2026-11-25-fleet-stances', date: '25 Nov 2026', title: 'Fleet stances: change orders for ships already in play',
     items: [
       'New Fleet stances button at the top of the screen. It lists every design you have in play (ships, shipyards and defences) with its stance and start position.',

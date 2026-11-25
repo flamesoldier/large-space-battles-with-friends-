@@ -211,12 +211,44 @@ function fleetsStackedWith(f) {
     return Math.hypot(a - x, b - y) < STACK_PX;
   }).sort((a, b) => a.id - b.id);
 }
-function stackSummary(stack) {
+// Owner, 25 Nov 2026 (a friend's request): with several fleets together (stacked on one lane, or at a
+// siege), show the credit value as well as the ships, per player and per alliance.
+/** items: [{ owner, n, v }] → { n, v, players: [{ owner, n, v }], alliances: [{ owners, n, v }] (2+ allied players only) }. */
+function forceSummary(items) {
   const by = new Map();
-  for (const o of stack) by.set(o.owner, (by.get(o.owner) || 0) + countShips(o.ships));
-  const total = [...by.values()].reduce((a, n) => a + n, 0);
-  const each = by.size > 1 ? [...by].map(([o, n]) => `${o === null ? 'Militia' : esc(playerName(world, o))} ${fmt(n)}`).join(', ') : '';
-  return { total, each };
+  for (const it of items) {
+    if (!by.has(it.owner)) by.set(it.owner, { owner: it.owner, n: 0, v: 0 });
+    const r = by.get(it.owner); r.n += it.n; r.v += it.v;
+  }
+  const players = [...by.values()].sort((a, b) => b.v - a.v);
+  // Alliances: players linked by alliances (militia is never allied with anyone).
+  const groups = [];
+  for (const p of players) {
+    if (p.owner === null) continue;
+    const g = groups.find((x) => x.owners.some((o) => allied(world, o, p.owner)));
+    if (g) { g.owners.push(p.owner); g.n += p.n; g.v += p.v; } else groups.push({ owners: [p.owner], n: p.n, v: p.v });
+  }
+  return { n: players.reduce((a, p) => a + p.n, 0), v: players.reduce((a, p) => a + p.v, 0), players, alliances: groups.filter((g) => g.owners.length > 1) };
+}
+const nameOf = (o) => (o === null ? 'Militia' : esc(playerName(world, o)));
+const forceText = (n, v) => `${fmt(n)} ship${n === 1 ? '' : 's'} · ${fmtCr(v)}`;
+/** HTML lines for a summary: per player (if several) and per alliance (if any). */
+function forceLines(S, sep = '<br>') {
+  const out = [];
+  if (S.players.length > 1) out.push(`By player: ${S.players.map((p) => `${nameOf(p.owner)} ${forceText(p.n, p.v)}`).join(', ')}`);
+  for (const g of S.alliances) out.push(`Alliance ${g.owners.map(nameOf).join(' + ')}: ${forceText(g.n, g.v)}`);
+  return out.join(sep);
+}
+function stackSummary(stack) {
+  const S = forceSummary(stack.map((o) => ({ owner: o.owner, n: countShips(o.ships), v: fleetValue(world, o.ships) })));
+  return { ...S, total: S.n, each: forceLines(S, '; ') };
+}
+/** Everyone at a siege: ships and value per player (garrison stacks and siege fleets). */
+function siegeSummary(sg) {
+  return forceSummary(siegeParties(world, sg).map((q) => ({
+    owner: q.owner, n: q.ships,
+    v: q.stacks.reduce((a, g) => a + g.n * worthOf(world, g.design), 0) + q.fleets.reduce((a, f) => a + fleetValue(world, f.ships), 0),
+  })));
 }
 
 // ------------------------------------------------------------ drawing
@@ -589,6 +621,8 @@ function showTip(sx, sy) {
     html = `<b>${esc(P.name)}</b>${P.home >= 0 ? ' <span class="tag">spawn</span>' : ''}<br>${who(P.owner)}<br><span class="m">${fmt(P.income)} cr/h · ${shipTotal(P)} ships · ${P.yards.length} shipyard${P.yards.length === 1 ? '' : 's'}</span>`;
     for (const sg of siegeAt(world, P.id)) {
       html += `<br><span class="m" style="color:var(--ember)">Under attack by ${esc(playerName(world, sg.leader))}: battle in ${inText(sg.startsAt - world.clock)}</span>`;
+      const SS = siegeSummary(sg);
+      html += `<br><span class="m">Here now: ${forceText(SS.n, SS.v)}${SS.players.length > 1 ? `<br>${forceLines(SS)}` : ''}</span>`;
       // Allies who arrived together share the odds of taking it (owner, 25 Nov 2026).
       const tog = (sg.together || []).filter(([, v]) => v > 0);
       if (tog.length > 1) {
@@ -603,7 +637,7 @@ function showTip(sx, sy) {
     const holdAt = f.wait != null ? world.planets[f.legs[f.leg].to] : null, sg = holdAt && world.sieges.find((x) => x.id === f.wait);
     html = `<b>Fleet</b> ${f.retreat ? '<span class="tag">retreating</span>' : ''}${holdAt ? '<span class="tag">in a siege</span>' : ''}<br>${who(f.owner)}<br><span class="m">${countShips(f.ships)} ship${countShips(f.ships) === 1 ? '' : 's'}${holdAt ? ` at ${esc(holdAt.name)}, battle in ${inText(sg.startsAt - world.clock)}` : ` → ${esc(world.planets[f.to].name)} in ${inText(f.arrive - world.clock)}`}</span>`;
     const stack = fleetsStackedWith(f);
-    if (stack.length > 1) { const S = stackSummary(stack); html += `<br><span class="m" style="color:var(--azure)">${stack.length} fleets here · ${fmt(S.total)} ships in all${S.each ? ` (${S.each})` : ''}</span>`; }
+    if (stack.length > 1) { const S = stackSummary(stack); html += `<br><span class="m" style="color:var(--azure)">${stack.length} fleets here · ${forceText(S.n, S.v)} in all</span>${S.each ? `<br><span class="m">${forceLines(S)}</span>` : ''}`; }
   }
   tip.innerHTML = html; tip.hidden = false;
   const r = tip.getBoundingClientRect(), mr = canvas.getBoundingClientRect();
@@ -713,7 +747,10 @@ function planetPanel(P) {
     const parties = siegeParties(world, sg);
     const role = (q) => (!q.enemy ? 'no enemies here: sits out unless one arrives'
       : (P.owner === null ? q.owner === null : q.owner === P.owner || allied(world, q.owner, P.owner)) ? 'defending' : 'attacking');
-    const rows = parties.map((q) => `${q.owner === null ? 'Militia' : who(q.owner)} ${fmt(q.ships)} ships <span class="hint">· ${role(q)}</span>`).join('<br>');
+    const SS = siegeSummary(sg), valOf = (o) => SS.players.find((p) => p.owner === o)?.v ?? 0;
+    const rows = parties.map((q) => `${q.owner === null ? 'Militia' : who(q.owner)} ${forceText(q.ships, valOf(q.owner))} <span class="hint">· ${role(q)}</span>`).join('<br>')
+      + SS.alliances.map((g) => `<br><b>Alliance</b> ${g.owners.map(nameOf).join(' + ')}: ${forceText(g.n, g.v)}`).join('')
+      + (parties.length > 1 ? `<br><span class="hint">Everyone here: ${forceText(SS.n, SS.v)}</span>` : '');
     const mine = parties.find((q) => q.owner === ui.me);
     const foes = mine ? parties.filter((q) => q.owner !== ui.me && hostile(world, q.owner, ui.me)).map((q) => (q.owner === null ? 'militia' : esc(playerName(world, q.owner)))) : [];
     html += `<div class="route siege"><b>Battle in <span data-arrive="${sg.startsAt}"></span></b><br>${rows}<br>
@@ -883,11 +920,12 @@ function fleetPanel(f) {
   const G = f.goal != null ? world.planets[f.goal] : null;
   const stack = fleetsStackedWith(f), S = stack.length > 1 ? stackSummary(stack) : null;
   const k = stack.indexOf(f) + 1;
-  const stackHtml = S ? `<h2>${stack.length} fleets here · ${fmt(S.total)} ships in all</h2>
-    <p class="hint">These fleets are drawn on top of each other on the map.${S.each ? ` By player: ${S.each}.` : ''} ${CLICK} one to see it.</p>
-    <div class="list">${stack.map((o, i) => `<button data-act="fleet" data-fleet="${o.id}"${o === f ? ' aria-current="true" style="outline:2px solid var(--azure);background:rgba(110,190,255,.14)"' : ''}><span class="swatch" style="background:${colorOf(o.owner)}"></span><span>${o === f ? '<b>▶ ' : ''}Fleet ${i + 1}: ${fmt(countShips(o.ships))} ship${countShips(o.ships) === 1 ? '' : 's'} → ${esc(world.planets[o.legs[o.leg].to].name)}${o === f ? ' (showing)</b>' : ''}</span><em>${o.owner === null ? 'Militia' : esc(playerName(world, o.owner))}</em></button>`).join('')}</div>` : '';
+  const stackHtml = S ? `<h2>${stack.length} fleets here · ${forceText(S.n, S.v)}</h2>
+    ${S.each ? `<p class="hint">${forceLines(S)}</p>` : ''}
+    <p class="hint">These fleets are drawn on top of each other on the map. ${CLICK} one to see it.</p>
+    <div class="list">${stack.map((o, i) => `<button data-act="fleet" data-fleet="${o.id}"${o === f ? ' aria-current="true" style="outline:2px solid var(--azure);background:rgba(110,190,255,.14)"' : ''}><span class="swatch" style="background:${colorOf(o.owner)}"></span><span>${o === f ? '<b>▶ ' : ''}Fleet ${i + 1}: ${forceText(countShips(o.ships), fleetValue(world, o.ships))} → ${esc(world.planets[o.legs[o.leg].to].name)}${o === f ? ' (showing)</b>' : ''}</span><em>${o.owner === null ? 'Militia' : esc(playerName(world, o.owner))}</em></button>`).join('')}</div>` : '';
   return `<h1><span class="swatch" style="background:${colorOf(f.owner)}"></span>Fleet${S ? ` ${k} of ${stack.length}` : ''}${f.retreat ? ' <span class="tag">retreating</span>' : ''}${f.turned != null ? ' <span class="tag">turned back</span>' : ''}</h1>
-    <div class="sub">${who(f.owner)}${S ? ` · <span style="color:var(--azure)">fleet ${k} of ${stack.length} here, ${fmt(S.total)} ships in all</span>` : ''}</div>
+    <div class="sub">${who(f.owner)}${S ? ` · <span style="color:var(--azure)">fleet ${k} of ${stack.length} here, ${forceText(S.n, S.v)} in all</span>` : ''}</div>
     <dl class="kv">
       <dt>From</dt><dd>${esc(F.name)}</dd>
       <dt>To</dt><dd>${esc(T.name)}</dd>
@@ -1440,13 +1478,15 @@ function renderEvents() {
   const all = !!ui.allEvents;
   $('ev-title').textContent = all ? 'Events' : 'Battles';
   $('ev-all').setAttribute('aria-pressed', String(all));
-  const items = world.log.filter((e) => (all || e.battle) && (!ui.mine || (e.players || []).some((p) => allied(world, p, ui.me)))).slice(-120).reverse();
+  const evf = ui.evFilter ?? (ui.mine ? 'allies' : 'all'); // ui.mine: the old Mine button (you and allies)
+  document.querySelectorAll('[data-evf]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.evf === evf)));
+  const items = world.log.filter((e) => (all || e.battle) && passesFilter(e, evf)).slice(-120).reverse();
   list.innerHTML = items.map((e) => {
     const c = colorOf(e.players?.[0]);
     const btn = e.battle && hasReplay(e.battle.id) ? `<button class="small" data-watch="${e.battle.id}">Watch</button>` : '';
     const sz = e.battle ? battleSize(e.battle) : null;
     return `<li class="${e.kind}${sz ? ` size-${sz.tier}` : ''}" ${sz ? `title="${sz.label} battle: ${fmtCr(sz.destroyed)} of ships and defences destroyed, ${fmt(sz.ships)} ships in all"` : ''} style="${e.kind === 'battle' || sz ? '' : `border-left-color:${hexA(c, 0.6)}`}" ${e.planet !== undefined ? `data-planet="${e.planet}"` : ''}><span>${esc(e.text)}</span>${btn}<time>${clockText(e.t)}</time></li>`;
-  }).join('') || `<li><span class="hint">${all ? 'Nothing yet' : 'No battles yet'}${ui.mine ? ' involving you or your allies' : ''}.</span></li>`;
+  }).join('') || `<li><span class="hint">${all ? 'Nothing yet' : 'No battles yet'}${evf === 'mine' ? ' involving you' : evf === 'allies' ? ' involving you or your allies' : ''}.</span></li>`;
 }
 $('events').addEventListener('click', (e) => {
   const w = e.target.closest('[data-watch]');
@@ -1455,7 +1495,11 @@ $('events').addEventListener('click', (e) => {
   if (li) { const P = world.planets[Number(li.dataset.planet)]; cam.x = P.x; cam.y = P.y; select({ kind: 'planet', id: P.id }); }
 });
 $('ev-all').addEventListener('click', () => { ui.allEvents = !ui.allEvents; renderEvents(); store.set(UI_KEY, ui); });
-$('ev-mine').addEventListener('click', () => { ui.mine = !ui.mine; $('ev-mine').setAttribute('aria-pressed', String(ui.mine)); renderEvents(); store.set(UI_KEY, ui); });
+document.querySelectorAll('[data-evf]').forEach((b) => b.addEventListener('click', () => {
+  const cur = ui.evFilter ?? (ui.mine ? 'allies' : 'all');
+  ui.evFilter = cur === b.dataset.evf ? 'all' : b.dataset.evf; delete ui.mine;
+  renderEvents(); store.set(UI_KEY, ui);
+}));
 function syncEventsWin() {
   $('events-win').classList.toggle('closed', !ui.evOpen);
   $('ev-toggle').textContent = ui.evOpen ? 'Hide' : 'Show';
@@ -1654,12 +1698,20 @@ function battleSize(B) {
   const [, tier, label] = top ? SIZE_TIERS[0] : SIZE_TIERS.slice(1).find(([min]) => p >= min);
   return { tier, label, ships: battleShips(B), destroyed, rank: all.length - eq + 1, of: all.length };
 }
-function involves(e, pid) {
-  if (e.battle) return [e.battle.attacker, ...(e.battle.attackers || []), e.battle.defender, ...(e.battle.defenders || [])].some((x) => allied(world, x, pid));
-  if (e.siege) return allied(world, e.siege.by, pid) || allied(world, e.siege.against, pid);
-  if (e.capture) return allied(world, e.capture.by, pid) || allied(world, e.capture.from, pid);
-  return false;
+/** Players named in a log entry (battle sides, siege, capture, or its `players`). */
+function entryPlayers(e) {
+  const B = e.battle;
+  if (B) return [B.attacker, ...(B.attackers || []), B.defender, ...(B.defenders || []), ...(B.players || []).map((q) => q.id)];
+  if (e.siege) return [e.siege.by, e.siege.against];
+  if (e.capture) return [e.capture.by, e.capture.from];
+  return e.players || [];
 }
+/** Does a log entry involve pid or (alone = false) any of pid's allies? */
+function involves(e, pid, alone = false) {
+  return entryPlayers(e).some((x) => x !== null && x !== undefined && (alone ? x === pid : allied(world, x, pid)));
+}
+/** Owner, 25 Nov 2026 (a friend's request): Mine = only battles you fought in; Allies = you or any ally; all = everyone. */
+const passesFilter = (e, f) => f === 'all' || !f || involves(e, ui.me, f === 'mine');
 /** [tone, label] for a combat entry, seen by player pid. tone: 'good' | 'bad' | ''. */
 function verdict(e, pid) {
   if (e.battle) {
@@ -1702,7 +1754,8 @@ function syncCombatBadge() {
 }
 function renderCombat() {
   const seen = ui.seen?.[ui.me] ?? 0;
-  const items = world.log.filter((e) => isCombat(e) && (combatFilter === 'all' || involves(e, ui.me))).reverse();
+  if (['mine', 'allies', 'all'].includes(ui.combatFilter)) combatFilter = ui.combatFilter; // remembered per browser
+  const items = world.log.filter((e) => isCombat(e) && passesFilter(e, combatFilter)).reverse();
   document.querySelectorAll('[data-cfilter]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.cfilter === combatFilter)));
   $('combat-list').innerHTML = items.map((e) => {
     const [tone, label] = verdict(e, ui.me), P = world.planets[e.planet];
@@ -1722,7 +1775,7 @@ function renderCombat() {
       <p>${esc(e.text)}</p>${nums ? `<div class="nums">${nums}</div>` : ''}
       <div class="acts">${e.battle ? `<button class="small ${can ? 'go' : ''}" data-watch="${e.battle.id}" ${can ? '' : `disabled title="${ONLINE ? 'No replay for this battle' : 'This replay is no longer saved in this browser'}"`}>Watch</button>` : ''}${can ? `<button class="small" data-dl="${e.battle.id}" title="Save this replay as a web page you can open in any browser, keep, or send to a friend">Download</button>` : ''}<button class="small" data-planet="${e.planet}">Map</button></div>
     </div>`;
-  }).join('') || `<p class="empty">${combatFilter === 'mine' ? 'No battles involving you yet. Every battle you or your allies fight shows up here.' : 'No battles yet.'}</p>`;
+  }).join('') || `<p class="empty">${combatFilter === 'mine' ? 'No battles involving you yet. Every battle you fight shows up here.' : combatFilter === 'allies' ? 'No battles involving you or your allies yet.' : 'No battles yet.'}</p>`;
 }
 function openCombat() {
   renderCombat();
@@ -1733,7 +1786,7 @@ function openCombat() {
 }
 $('combat-btn').addEventListener('click', openCombat);
 $('combat-close').addEventListener('click', () => $('combat').close());
-document.querySelectorAll('[data-cfilter]').forEach((b) => b.addEventListener('click', () => { combatFilter = b.dataset.cfilter; renderCombat(); }));
+document.querySelectorAll('[data-cfilter]').forEach((b) => b.addEventListener('click', () => { combatFilter = ui.combatFilter = b.dataset.cfilter; store.set(UI_KEY, ui); renderCombat(); }));
 $('combat-list').addEventListener('click', (e) => {
   const w = e.target.closest('[data-watch]');
   if (w && !w.disabled) return watch(w.dataset.watch);
@@ -1959,7 +2012,7 @@ function start() {
   const H = world.planets[me().home];
   if (H) { cam.x = H.x * 0.5; cam.y = H.y * 0.5; }
   renderPanel(true); renderEvents(); updateTop(); syncCombatBadge(); syncDipBadge(); syncEventsWin();
-  $('ev-mine').setAttribute('aria-pressed', String(!!ui.mine));
+
 }
 
 addEventListener('resize', resize);

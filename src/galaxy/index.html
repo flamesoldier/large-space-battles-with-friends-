@@ -407,7 +407,8 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
       <header>
         <b id="ev-title">Battles</b>
         <button class="small" id="ev-all" aria-pressed="false" title="Show everything that happens, not just battles">All</button>
-        <button class="small" id="ev-mine" aria-pressed="false" title="Only battles involving you or your allies">Mine</button>
+        <button class="small" id="ev-mine" data-evf="mine" aria-pressed="false" title="Only battles you fought in (click again to show everyone's)">Mine</button>
+        <button class="small" id="ev-allies" data-evf="allies" aria-pressed="false" title="Battles you or any of your allies fought in (click again to show everyone's)">Allies</button>
         <button class="small" id="ev-toggle" aria-expanded="true" title="Hide or show battles">Hide</button>
       </header>
       <ul id="events"></ul>
@@ -502,7 +503,8 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
     <div class="head">
       <h3>Combat log</h3>
       <div class="group" role="group" aria-label="Show">
-        <button class="small" data-cfilter="mine" aria-pressed="true">Mine</button>
+        <button class="small" data-cfilter="mine" aria-pressed="true" title="Only battles you fought in">Mine</button>
+        <button class="small" data-cfilter="allies" aria-pressed="false" title="Battles you or any of your allies fought in">Allies</button>
         <button class="small" data-cfilter="all" aria-pressed="false">Everyone</button>
       </div>
       <button class="small" id="combat-close">Close</button>

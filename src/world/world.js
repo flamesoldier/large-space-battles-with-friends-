@@ -1386,9 +1386,23 @@ function fallBack(world, f, P) {
   if (!n) return null;
   const back = retreatTarget(world, f, P);
   const pv = back === null ? null : world.auto ? retreatPlan(world, f.owner, P.id, back, f.ships) : previewFleet(world, P.id, back, f.ships, { owner: f.owner, lanes: true, avoid: true });
-  const ships = `${n} of ${playerName(world, f.owner)}'s ships`, one = n === 1;
-  if (pv?.ok) { const r = launch(world, f.owner, P.id, back, f.ships, pv, true); if (world.auto) r.goal = f.goal ?? null; return `${ships} ${one ? 'falls' : 'fall'} back to ${world.planets[back].name}`; }
-  return `${ships} ${one ? 'has' : 'have'} nowhere to go and ${one ? 'is' : 'are'} lost`;
+  if (pv?.ok) { const r = launch(world, f.owner, P.id, back, f.ships, pv, true); if (world.auto) r.goal = f.goal ?? null; return { owner: f.owner, n, lost: false }; }
+  return { owner: f.owner, n, lost: true };
+}
+
+/**
+ * Owner, 25 Nov 2026 (a player spamming cheap fleets made battle reports a list of every fleet and
+ * where it fell back to): one short phrase per player, no destinations. "12 of Cy's ships fell back;
+ * 3 of Di's ships had nowhere to go and were lost".
+ */
+function fallBackText(world, outs) {
+  const by = new Map();
+  for (const o of outs) {
+    const k = `${o.owner}|${o.lost}`;
+    if (!by.has(k)) by.set(k, { owner: o.owner, lost: o.lost, n: 0 });
+    by.get(k).n += o.n;
+  }
+  return [...by.values()].map((g) => `${g.n.toLocaleString()} of ${playerName(world, g.owner)}'s ships ${g.lost ? (g.n === 1 ? 'had nowhere to go and was lost' : 'had nowhere to go and were lost') : 'fell back'}`).join('; ');
 }
 
 const listNames = (world, ids) => {
@@ -1479,11 +1493,12 @@ function siegeEnds(world, s, plan, result) {
       const t = fallBack(world, f, P); if (t) tails.push(t);
     }
   }
+  const back = tails.length ? ` ${fallBackText(world, tails)}.` : '';
   if (won) {
-    if (tails.length) entry.text += ` ${tails.join('; ')}.`;
+    entry.text += back;
     entry.text += sat;
   } else {
-    const tail = tails.length ? ` ${tails.join('; ')}.` : ' None of the attackers survived.';
+    const tail = back || ' None of the attackers survived.';
     const by = listNames(world, attackers);
     log(world, 'battle', `${by} attacked ${P.name}${ownerTxt}${way} and ${attackers.length > 1 ? 'were' : 'was'} beaten off.${tail}${sat}`, { planet: P.id, players: who, battle });
     entry = lastLog(world);

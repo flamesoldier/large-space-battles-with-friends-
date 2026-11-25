@@ -1429,6 +1429,24 @@ const lanePlanHours = (W, a, b, d) => { const A = W.planets[a], B = W.planets[b]
   ok(toAlly > 0, `fleets fly to and through allied worlds (${toAlly} fleet-quarter-hours)`);
   ok(joint > 0, `allies fight side by side (${joint} battles)`);
   ok(!idle, `with allies too, no ship sits at a world without a reason (${idle})`);
+  // Owner, 25 Nov 2026: battle reports say how many of each player's ships fell back, never where (one phrase per player).
+  const btxt = g.log.filter((e) => e.battle).map((e) => e.text);
+  ok(!btxt.some((t) => /back to /.test(t)), 'battle reports never say where fleets fell back to');
+}
+// Several beaten fleets of one player: one phrase with the total, no destinations.
+{
+  const w = createWorld({ players: [{ name: 'Ann' }, { name: 'Bo' }], seed: 8 });
+  const home = w.players[0].home, H = w.planets[home];
+  const did = registerDesign(w, 0, { ...makeDesign('frigate', 5), name: 'Scout' });
+  addShips(H, 0, did, 9);
+  const T = w.planets.filter((p) => p.owner === null).sort((a, b) => Math.hypot(a.x - H.x, a.y - H.y) - Math.hypot(b.x - H.x, b.y - H.y))[0];
+  const fs = [2, 3, 4].map((n) => sendFleet(w, 0, home, T.id, { [did]: n }));
+  ok(fs.every((x) => x.ok), 'three fleets sent');
+  // stand-in battle: militia holds, each attacking group keeps half
+  const res = (scen) => ({ groups: scen.groups.map((q) => ({ ...q, survived: q.owner === null ? q.n : Math.floor(q.n / 2) })), routed: [], seconds: 60 });
+  runWorld(w, Math.max(...fs.map((x) => x.fleet.arrive)) + HOLD_MS + 1, res);
+  const e = w.log.filter((x) => x.battle).at(-1);
+  ok(e && /4 of Ann's ships fell back\./.test(e.text) && !/back to/.test(e.text) && (e.text.match(/fell back/g) || []).length === 1, `one fall-back phrase with the total (${e?.text})`);
 }
 
 // ---- 24 Nov 2026: the admin joins two worlds of a running galaxy with a new hyperlane
