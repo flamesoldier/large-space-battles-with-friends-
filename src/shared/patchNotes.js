@@ -8,6 +8,15 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-25-fleet-stances', date: '25 Nov 2026', title: 'Fleet stances: change orders for ships already in play',
+    items: [
+      'New Fleet stances button at the top of the screen. It lists every design you have in play (ships, shipyards and defences) with its stance and start position.',
+      'Change either one and every ship of that design switches at once: in your shipyards, at your worlds and in fleets already flying. It counts from the next battle that starts; a battle already being fought keeps the old orders.',
+      'Defences never move, so they have no stance, but you can change which rows they stand in (front, back, a flank…).',
+      'Your stance changes are private: nothing is posted in the log.',
+    ],
+  },
+  {
     id: '2026-11-25-arrive-together', date: '25 Nov 2026', title: 'Allies arriving together: the world goes by lot',
     items: [
       'When allies take a world together, it normally goes to whoever got there first. But allied fleets often arrive at exactly the same moment (same speed, leaving the same battle together), and then it was down to chance in the code which of you got it.',

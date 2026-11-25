@@ -245,6 +245,15 @@ try {
   ok(r.body.ok && r.body.state.world.designs[dId].name === 'Ann Destroyer', 'Ann renames her own design');
   r = await ann.act({ type: 'rename', design: '__proto__', name: 'x' });
   ok(!r.body.ok, 'odd design ids are refused');
+  // Fleet stances (owner, 25 Nov 2026): only the owner changes a design's orders.
+  r = await ben.act({ type: 'orders', design: dId, stance: 'raid' });
+  ok(!r.body.ok, 'Ben can\'t change the stance of Ann\'s design');
+  r = await ann.act({ type: 'orders', design: dId, stance: 'raid', place: 'back' });
+  ok(r.body.ok && r.body.state.world.designs[dId].data.stance === 'raid' && r.body.state.world.designs[dId].data.place === 'back', 'Ann changes her design\'s stance and start position');
+  r = await ann.act({ type: 'orders', design: dId, stance: { bad: 1 } });
+  ok(!r.body.ok, 'a broken stance is refused');
+  r = await ann.act({ type: 'orders', design: '__proto__', stance: 'raid' });
+  ok(!r.body.ok, 'odd design ids are refused for orders too');
   const fortD = makeDesign('corvette', 7);
   const fort = encodeDesign({ ...fortD, cells: fortD.cells.map((t) => (t === 5 ? 2 : t)), name: 'Test Fort', stance: 'line' }); // thrusters → armour
   r = await ben.act({ type: 'defend', planet: annHome, design: fort, count: 2 });

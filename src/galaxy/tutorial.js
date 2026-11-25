@@ -88,6 +88,7 @@ export function tutorialPages(click = 'Click') {
       <li><b>Thrusters</b> move it; <b>weapons</b> fight; <b>armour</b> and frame hold it together. Hover over (or ${click.toLowerCase()}) a block in the palette to see what it does.</li>
       <li>The <b>nose</b> is the right-hand side of the grid. A gun can fire in any direction where its shot wouldn't pass through its own ship, so guns on the edge cover more.</li>
       <li>Pick a <b>stance</b>: how the ship behaves in battle (Front line, Artillery, Flanker, Raider, Charge, Skirmisher).</li>
+      <li>Changed your mind later? <b>Fleet stances</b> at the top of the screen changes the stance and start position of every ship of a design you already have in play, at once.</li>
       <li>Press <b>Test battle</b> to try the design before you pay. The <b>Battle simulator</b> button at the top pits any designs against each other, for free.</li></ul>` },
 
     { title: 'Fleets move by themselves', art: ART.fleets, html: `

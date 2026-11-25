@@ -15,7 +15,7 @@
 // (src/sim/battle.js) however it likes (Node worker, browser with a progress bar) and passes
 // readBattle()'s result to applyEvent().
 
-import { analyzeDesign, decodeDesign, encodeDesign, designCost } from '../shared/shipStats.js';
+import { analyzeDesign, decodeDesign, encodeDesign, designCost, STANCE_INFO, PLACE_INFO } from '../shared/shipStats.js';
 import { BT, isThruster } from '../shared/blocks.js';
 import { makeDesign } from '../shared/designs.js';
 import { mulberry32, hash32 } from '../shared/rng.js';
@@ -435,6 +435,27 @@ export function renameDesign(world, pid, designId, name) {
   decoded.get(world)?.delete(designId); // cached decoded copy carries the old name
   log(world, 'yard', `${world.players[pid].name} renamed the ${old} design to ${clean}.`, { players: [pid] });
   return { ok: true, name: clean };
+}
+
+/**
+ * Fleet stances (owner, 25 Nov 2026, a player's request): change a design's stance and start
+ * position for every ship of it in play at once (shipyards, garrisons, fleets, sieges). Battles read
+ * the design when they start, so the change counts from the next battle; one already being fought
+ * keeps the old orders. Defences have no stance (they never move), only a start position.
+ * No log entry (orders are private, like arranging defences).
+ */
+export function setDesignOrders(world, pid, designId, { stance, place } = {}) {
+  const d = world.designs[designId];
+  if (!d || !Object.hasOwn(world.designs, designId) || !d.data) return { ok: false, error: 'No such ship design.' };
+  if (d.owner !== pid) return { ok: false, error: 'You can only change your own designs.' };
+  if (stance !== undefined && (typeof stance !== 'string' || !Object.hasOwn(STANCE_INFO, stance))) return { ok: false, error: 'No such stance.' };
+  if (place !== undefined && (typeof place !== 'string' || !Object.hasOwn(PLACE_INFO, place))) return { ok: false, error: 'No such start position.' };
+  if (stance !== undefined && d.fixed) return { ok: false, error: 'Defences never move, so they have no stance. You can change where they stand.' };
+  if (stance !== undefined) d.data.stance = stance;
+  if (place !== undefined) { if (place === 'auto') delete d.data.place; else d.data.place = place; }
+  decoded.get(world)?.delete(designId); // battles decode the design afresh with the new orders
+  const now = designOf(world, designId);
+  return { ok: true, stance: now.stance, place: now.place || 'auto' };
 }
 
 // ---------------------------------------------------------------- time and events

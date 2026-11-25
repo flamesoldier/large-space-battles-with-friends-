@@ -17,7 +17,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSy
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import {
-  advanceTo, dueEvent, planEvent, applyEvent, upgradeWorld, sendFleet, stopFleet, setRally, rallyAll, setDestination, destinationAll, dispatchAll, buildShipyard, sellShipyard, cancelSale, renameDesign, renamePlanet, setLayout, saveBlueprint, deleteBlueprint, buildDefense, giveCredits,
+  advanceTo, dueEvent, planEvent, applyEvent, upgradeWorld, sendFleet, stopFleet, setRally, rallyAll, setDestination, destinationAll, dispatchAll, buildShipyard, sellShipyard, cancelSale, renameDesign, setDesignOrders, renamePlanet, setLayout, saveBlueprint, deleteBlueprint, buildDefense, giveCredits,
   proposeAlliance, acceptAlliance, declineAlliance, breakAlliance, playerName, claimPlayer,
 } from '../src/world/world.js';
 import { decodeDesign } from '../src/shared/shipStats.js';
@@ -348,6 +348,13 @@ export class Game {
       case 'rename': {
         if (typeof a.design !== 'string' || !Object.hasOwn(W.designs, a.design)) return { ok: false, error: 'No such ship design.' };
         return renameDesign(W, pid, a.design, typeof a.name === 'string' ? a.name.slice(0, 100) : '');
+      }
+      case 'orders': { // fleet stances: a design's stance and start position (owner, 25 Nov 2026)
+        if (typeof a.design !== 'string' || !Object.hasOwn(W.designs, a.design)) return { ok: false, error: 'No such ship design.' };
+        const o = {};
+        if (a.stance !== undefined) o.stance = a.stance;
+        if (a.place !== undefined) o.place = a.place;
+        return setDesignOrders(W, pid, a.design, o);
       }
       case 'layout': { // arrange defences at a world you hold (owner, 20 Nov 2026)
         const planet = index(a.planet, nP);

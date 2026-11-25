@@ -13,7 +13,7 @@
 
 import { replayPageParts } from './replayFile.js';
 import { BT } from '../shared/blocks.js';
-import { decodeDesign, encodeDesign, analyzeDesign, designCost } from '../shared/shipStats.js';
+import { decodeDesign, encodeDesign, analyzeDesign, designCost, STANCE_INFO, PLACE_INFO } from '../shared/shipStats.js';
 import { SHIPYARD_INTERVAL_MIN, SHIPS_PER_BUILD, SHIPYARD_PRICE_MULT, SHIPYARD_CROWDING_VALUE, SHIPYARD_SELL_REFUND, crowdingMult, defensePrice, DEFENSE_PRICE_SHARE, MAX_DEFENSE_ORDER, SELL_HOURS, SELL_GAP_HOURS, DEFENSE_BUILD_HOURS } from '../shared/economy.js';
 import { Battle, DT } from '../sim/battle.js';
 import { packReplay } from '../shared/replayFormat.js';
@@ -23,7 +23,7 @@ import {
   sendFleet, stopFleet, setRally, rallyAll, setDestination, destinationAll, nextHop, pinned, holdReason, previewFleet, shipsAt, incomeOf, allied, playerName, designOf, fleetValue, worthOf, countShips, fmtHours,
   sellValue, nextSaleAt, yardListValue, YARD_MS, HOLD_MS, upgradeWorld,
   proposeAlliance, acceptAlliance, declineAlliance, breakAlliance, proposalsFor, hasProposed, giveCredits,
-  isOpenSeat, freeColors, renameDesign, renamePlanet, setLayout, layoutAt, saveBlueprint, deleteBlueprint, buildDefense, defenseProblem, cancelSale, jobsAt,
+  isOpenSeat, freeColors, renameDesign, setDesignOrders, renamePlanet, setLayout, layoutAt, saveBlueprint, deleteBlueprint, buildDefense, defenseProblem, cancelSale, jobsAt,
 } from '../world/world.js';
 import { readBattle, shipColors, battleOptions } from '../world/battleSetup.js';
 import { fleetPosition } from '../world/routes.js';
@@ -1503,6 +1503,47 @@ function syncDipBadge() {
 // Battle simulator (owner, Nov 2026: new players might never find the designer's Test battle):
 // the designer opened with no world, straight into its test battle.
 $('sim-btn').addEventListener('click', () => openDesigner(-1, 'sim'));
+
+// ------------------------------------------------------------ fleet stances
+// Owner, 25 Nov 2026 (a player's request): change the stance and start position of every ship of a
+// design in play at once. Lists your designs with ships, shipyards or defences anywhere.
+function ordersInPlay() {
+  const by = new Map(), row = (id) => { if (!by.has(id)) by.set(id, { id, ships: 0, yards: 0 }); return by.get(id); };
+  for (const P of world.planets) {
+    for (const g of P.garrison) if (g.owner === ui.me && g.n > 0) row(g.design).ships += g.n;
+    if (P.owner === ui.me) for (const y of P.yards) row(y.design).yards++;
+  }
+  for (const f of world.fleets) if (f.owner === ui.me) for (const [d, n] of Object.entries(f.ships)) if (n > 0) row(d).ships += n;
+  return [...by.values()].filter((r) => world.designs[r.id]?.owner === ui.me)
+    .sort((a, b) => b.yards - a.yards || b.ships - a.ships || world.designs[a.id].name.localeCompare(world.designs[b.id].name));
+}
+function renderOrders() {
+  const rows = ordersInPlay();
+  if (!rows.length) { $('orders-list').innerHTML = '<p class="hint">You have no ships, shipyards or defences in play yet.</p>'; return; }
+  const opts = (info, cur, hint) => Object.entries(info).map(([k, v]) => `<option value="${k}" title="${esc(v[hint] || v.hint)}"${k === cur ? ' selected' : ''}>${esc(v.label)}</option>`).join('');
+  $('orders-list').innerHTML = rows.map((r) => {
+    const D = world.designs[r.id], d = designOf(world, r.id), fixed = !!D.fixed;
+    const what = [r.ships ? `${fmt(r.ships)} ${fixed ? (r.ships === 1 ? 'defence' : 'defences') : (r.ships === 1 ? 'ship' : 'ships')}` : '', r.yards ? `${r.yards} shipyard${r.yards === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ');
+    const place = PLACE_INFO[d.place] ? d.place : 'auto';
+    const stance = fixed ? '<label>Stance<select disabled title="Defences never move"><option>None</option></select></label>'
+      : `<label>Stance<select data-ord="stance" data-d="${esc(r.id)}" title="${esc(STANCE_INFO[d.stance]?.hint || '')}">${opts(STANCE_INFO, d.stance)}</select></label>`;
+    return `<div class="order"><div class="nm"><b title="${esc(D.name)}">${esc(D.name)}</b><span class="hint">${esc(D.cls || '')}${fixed ? ' defence' : ''} · ${what}</span></div>${stance}<label>Start<select data-ord="place" data-d="${esc(r.id)}" title="${esc(PLACE_INFO[place][fixed ? 'defHint' : 'hint'])}">${opts(PLACE_INFO, place, fixed ? 'defHint' : 'hint')}</select></label></div>`;
+  }).join('');
+}
+$('orders-btn').addEventListener('click', () => { renderOrders(); $('orders').showModal(); });
+$('orders-close').addEventListener('click', () => $('orders').close());
+$('orders-list').addEventListener('change', async (e) => {
+  const el = e.target.closest('[data-ord]');
+  if (!el) return;
+  const id = el.dataset.d, key = el.dataset.ord, value = el.value, o = { [key]: value };
+  el.disabled = true;
+  const r = await perform({ type: 'orders', design: id, ...o }, () => setDesignOrders(world, ui.me, id, o));
+  if (!r.ok) { toast(r.error, true); renderOrders(); return; }
+  const D = world.designs[id];
+  toast(key === 'stance' ? `Every ${D?.name ?? 'ship'} now fights as ${STANCE_INFO[r.stance]?.label ?? r.stance}, from its next battle.`
+    : `Every ${D?.name ?? 'ship'} now starts at ${(PLACE_INFO[r.place]?.label ?? r.place).toLowerCase()}, from its next battle.`);
+  save(); renderOrders(); renderPanel(true);
+});
 
 // ------------------------------------------------------------ tutorial
 // Owner, 23 Nov 2026: a step-by-step guide (src/galaxy/tutorial.js) that opens only from its

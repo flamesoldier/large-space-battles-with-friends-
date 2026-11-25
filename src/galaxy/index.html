@@ -236,6 +236,15 @@ dialog {
   max-height: calc(100% - 48px);
 }
 #notes { width: min(640px, 94vw); }
+#orders { width: min(720px, 94vw); }
+#orders .head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+#orders .head h3 { margin: 0; flex: 1; }
+.orders { display: grid; gap: 6px; margin: 10px 0; max-height: 60vh; overflow: auto; }
+.order { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr); gap: 10px; align-items: center; border: 1px solid var(--line); padding: 7px 10px; }
+.order label { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--muted, #9aa); }
+.order select { width: 100%; }
+.order .nm b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 640px) { .order { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .order .nm { grid-column: 1 / -1; } }
 .notes { max-height: 70vh; overflow-y: auto; padding-right: 6px; }
 .notes section { border-top: 1px solid var(--line); padding: 10px 0 4px; }
 .notes section:first-child { border-top: 0; padding-top: 0; }
@@ -382,6 +391,7 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
     <div class="topbtns">
     <button id="tut-btn" title="How to play: a short step-by-step guide">Tutorial</button>
     <button id="sim-btn" title="Test any designs against each other in a practice battle. Nothing is spent.">Battle simulator</button>
+    <button id="orders-btn" title="Change the stance and start position of every ship of a design you have in play">Fleet stances</button>
     <button id="notes-btn" title="What's changed in each update">Patch notes<span class="badge" id="notes-badge" hidden>new</span></button>
     <button id="dip-btn" title="Allies and enemies">Diplomacy<span class="badge" id="dip-badge" hidden>0</span></button>
     <button id="combat-btn" title="Every battle and captured world, with replays">Combat log<span class="badge" id="combat-badge" hidden>0</span></button>
@@ -454,6 +464,16 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
     <h2>Who is allied with whom</h2>
     <div id="dip-grid" class="grid-wrap"></div>
     <p class="hint">Allies can station ships on each other's worlds, defend them together and join each other's attacks. Everyone else is an enemy. An alliance needs both players to agree; either one can break it, which sends their ships on each other's worlds home.</p>
+  </dialog>
+
+  <dialog id="orders" aria-labelledby="orders-title">
+    <div class="head">
+      <h3 id="orders-title">Fleet stances</h3>
+      <button class="small" id="orders-close">Close</button>
+    </div>
+    <p class="sub">Every design you have in play. A change applies to every ship of that design at once (in shipyards, at your worlds and in flight) from the next battle that starts. A battle already being fought keeps the old orders.</p>
+    <div id="orders-list" class="orders"></div>
+    <p class="hint">Hover a stance or start position for what it does. Defences never move, so they only have a start position (which rows they stand in).</p>
   </dialog>
 
   <dialog id="tutorial" aria-labelledby="tut-title">

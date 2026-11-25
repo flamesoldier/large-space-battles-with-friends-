@@ -9,7 +9,7 @@ import {
   shipsAt, incomeOf, allied, YARD_MS, HOLD_MS, designOf, upgradeWorld,
   proposeAlliance, acceptAlliance, breakAlliance, proposalsFor, dueEvent, siegeAt, renameDesign, renamePlanet,
   buildDefense, setLayout, saveBlueprint, deleteBlueprint, planEvent, applyEvent, registerDesign, cancelSale, jobsAt, payBounties, giveCredits, worthOf, fleetValue, stopFleet, setRally, rallyAll,
-  checkWin, nextHop, pinned, togetherDraw, dispatchAll, holdReason, addShips, setDestination, destinationAll, countShips, makeBot, fleetSpeed, retreatPlan, addLane,
+  checkWin, nextHop, pinned, togetherDraw, setDesignOrders, dispatchAll, holdReason, addShips, setDestination, destinationAll, countShips, makeBot, fleetSpeed, retreatPlan, addLane,
 } from '../src/world/world.js';
 import { writeFileSync } from 'node:fs';
 import { packReplay } from '../src/shared/replayFormat.js';
@@ -1511,6 +1511,41 @@ const lanePlanHours = (W, a, b, d) => { const A = W.planets[a], B = W.planets[b]
   let boWins = 0;
   for (let seed = 1; seed <= 30; seed++) { const r = play(seed, 7, 3, true, HOUR_MS); if (r.owner === 1 && !/by lot/.test(r.text)) boWins++; }
   ok(boWins === 30, `an ally who arrives first still takes the world (${boWins} of 30)`);
+}
+
+// ---- 25 Nov 2026 (owner, a player's request): fleet stances. A design's stance and start position
+// change for every ship of it in play at once, from the next battle.
+{
+  const w = createWorld({ players: [{ name: 'Ann' }, { name: 'Bo' }], seed: 6 });
+  const home = w.players[0].home, H = w.planets[home];
+  const did = registerDesign(w, 0, { ...makeDesign('destroyer', 4), name: 'Runner', stance: 'line' });
+  const fort = { ...makeDesign('cruiser', 2), name: 'Wall' };
+  fort.cells = fort.cells.map((c) => (c === BT.THRUSTER ? BT.ARMOR : c));
+  const fid = registerDesign(w, 0, fort, true);
+  addShips(H, 0, did, 6); addShips(H, 0, fid, 2, undefined);
+  const T = w.planets.filter((p) => p.owner === null).sort((a, b) => Math.hypot(a.x - H.x, a.y - H.y) - Math.hypot(b.x - H.x, b.y - H.y))[0];
+  const f = sendFleet(w, 0, home, T.id, { [did]: 3 });
+  ok(f.ok, 'fleet sent');
+  ok(designOf(w, did).stance === 'line', 'starts as Front line');
+  const r = setDesignOrders(w, 0, did, { stance: 'flank', place: 'top' });
+  ok(r.ok && r.stance === 'flank' && r.place === 'top', `stance and start set (${r.error || ''})`);
+  ok(designOf(w, did).stance === 'flank' && designOf(w, did).place === 'top', 'the decoded design has the new orders (cache cleared)');
+  ok(w.designs[did].data.stance === 'flank' && w.designs[did].data.place === 'top', 'stored in the world');
+  ok(setDesignOrders(w, 0, did, { place: 'auto' }).ok && !('place' in w.designs[did].data) && designOf(w, did).stance === 'flank', 'Auto stored as no place; stance kept');
+  // The fleet already flying fights with the new orders: the battle reads the design when it starts.
+  runWorld(w, f.fleet.arrive + 1, resolve);
+  const sg = w.sieges.find((x) => x.planet === T.id);
+  const plan = planEvent(w, { kind: 'siege', siege: sg });
+  const scenD = plan.battle.designs.find((d) => d.name === 'Runner');
+  ok(scenD && scenD.stance === 'flank', 'a fleet already in flight fights with the new stance');
+  ok(!setDesignOrders(w, 1, did, { stance: 'raid' }).ok, "can't change another player's design");
+  ok(!setDesignOrders(w, 0, did, { stance: 'dance' }).ok && !setDesignOrders(w, 0, did, { place: 'left' }).ok && !setDesignOrders(w, 0, did, { stance: 'constructor' }).ok, 'unknown stances and positions refused');
+  ok(!setDesignOrders(w, 0, 'nope', { stance: 'raid' }).ok, 'unknown design refused');
+  ok(!setDesignOrders(w, 0, fid, { stance: 'raid' }).ok, 'defences have no stance');
+  ok(setDesignOrders(w, 0, fid, { place: 'back' }).ok && designOf(w, fid).place === 'back', 'a defence can change where it stands');
+  ok(!w.log.some((e) => /stance/i.test(e.text)), 'nothing logged (orders are private)');
+  const re = upgradeWorld(JSON.parse(JSON.stringify(w)));
+  ok(designOf(re, did).stance === 'flank' && designOf(re, fid).place === 'back', 'the save keeps the new orders');
 }
 
 console.log(`world: ${checks} checks passed`);
