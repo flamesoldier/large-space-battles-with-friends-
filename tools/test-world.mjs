@@ -1426,6 +1426,24 @@ const lanePlanHours = (W, a, b, d) => { const A = W.planets[a], B = W.planets[b]
     closest[names[holder]] = Math.round(near);
     ok(near > 150, `at ${names[holder]}'s world no two enemies start within 150 blocks (closest ${near.toFixed(0)})`);
   }
+  // Every player has a spot of their own (owner, 26 Nov 2026), and start positions work in each: Front nearest
+  // the world, then Middle, then Back; Top / Bottom flank on the right wings (designer top, nose to the world).
+  const places = ['front', 'middle', 'back', 'top', 'bottom', 'auto'], base = makeDesign('destroyer', 4), pd = {};
+  for (const p of places) pd[p] = { ...base, place: p === 'auto' ? undefined : p };
+  for (const nC of [3, 4, 6]) {
+    const groups = [];
+    for (let t = 0; t < nC; t++) for (const p of places) groups.push({ team: t, side: t ? 0 : 1, owner: t, design: p, n: 8 });
+    const sc = makeBattleScenario(groups, (id) => pd[id], 7, { teams: nC, campOf: [...Array(nC).keys()], camps: nC });
+    for (let t = 0; t < nC; t++) {
+      const phi = 2 * Math.PI * t / nC, a = (phi + Math.PI) % (2 * Math.PI), st = {};
+      for (const g of sc.groups.filter((g) => g.team === t)) {
+        const sh = sc.ships.slice(g.start, g.start + g.n), mean = (f) => sh.reduce((q, x) => q + f(x), 0) / sh.length;
+        st[g.design] = { out: mean((x) => x.x * Math.cos(phi) + x.y * Math.sin(phi)), top: mean((x) => x.x * Math.sin(a) - x.y * Math.cos(a)) };
+      }
+      ok(st.front.out < st.middle.out && st.middle.out < st.back.out, `${nC} camps, camp ${t}: Front, Middle, Back in order`);
+      ok(st.top.top > st.auto.top + 30 && st.bottom.top < st.auto.top - 30, `${nC} camps, camp ${t}: flanks on the right wings`);
+    }
+  }
   console.log(`  enemies apart at the start (closest enemy pair, blocks): ${Object.entries(closest).map(([k, v]) => `${k}'s world ${v}`).join(', ')}`);
 }
 

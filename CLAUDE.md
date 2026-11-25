@@ -167,7 +167,15 @@ hundreds wide, so neighbouring enemy camps' wings nearly touched (Ann's world in
 starts at least `CAMP_GAP` (200)/2 / sin(π/n) + its widest |across| / tan(π/n) out, so it stays inside its slice of the
 circle (`battleSetup.js`; two camps unaffected, no extra random draws). Closest enemy pair at the start (4 players as above,
 25 ships each): Ann's / Bo's / Cy's world 89 / 64 / 106 → 303 / 304 / 340. Test in `tools/test-world.mjs` (fails on the old
-code). Replays sent: "4-way at Bo's world: BEFORE / AFTER".
+code). Replays sent: "4-way at Bo's world: BEFORE / AFTER". **Then every player in their own spot (owner, same day: "why does player 3 get mixed in and player 4
+doesn't perhaps it would be easier if all players just spawn with their own fleets and do positions work correctly in a 4
+player battle?")**, on `v2-dev`, not live: which of the owner's two warring allies shared the owner's spot was just list
+order, so now `planEvent` gives **every fighting player a camp of their own**: camp 0 = the holder (or, with no holder ships
+there, the first defender), everyone else round the world, allies included; owner's allies' camps are `guestCamps`. The log's
+"N-way" still counts groups of mutual allies (`sides`, `battle.camps`). Start positions checked with 2/3/4/6 camps (Front <
+Middle < Back toward the world, Top/Bottom flank on the designer-top/bottom wing, all facing the world); test in
+`tools/test-world.mjs`. Closest enemy pair at the start: 304 / 282 / 289. Replay sent: "4-way at Bo's world: every player in
+their own spot".
 
 **Defences and selling, 5 minutes (owner, 18 Nov 2026, after 2.0 went live):** "building defences will be much more important and should be able to be done reactively": `DEFENSE_BUILD_HOURS` and `SELL_HOURS` = 5/60 (were 15 h), **selling a shipyard gives back 65%** (`SHIPYARD_SELL_REFUND`, was 95%). Texts use `fmtHours()` ("5 min"). Test: defences ordered 10 min before a battle are ready for it, ones ordered 2 min before are lost with the world. Live 18 Nov 2026. **No patch notes for now** (owner: nobody is playing; he'll say when to start again).
 

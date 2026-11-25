@@ -1281,32 +1281,35 @@ export function planEvent(world, ev) {
     for (const g of q.stacks) groups.push({ team, side, owner: q.owner, design: g.design, n: g.n, garrison: true, color, ...(world.designs[g.design]?.fixed ? { fixed: true } : {}), ...(g.goal !== undefined ? { goal: g.goal } : {}) });
     for (const f of q.fleets) for (const [design, n] of Object.entries(f.ships)) if (n > 0) groups.push({ team, side, owner: q.owner, design, n, fleet: f.id, color });
   });
-  // Starting positions: the owner's side holds the world; attackers come in from around it, each
-  // group of mutual allies together (see makeBattleScenario). A camp only ever holds players who
-  // are all allied with each other (owner, 26 Nov 2026: two allies of the owner who are at war
-  // with each other started mixed together at the world and tore into each other at point blank).
-  // So camp 0 is the owner (or militia) plus the owner's allies who are allied with everyone
-  // already in it; an ally of the owner at war with one of those gets a camp of its own round the
-  // world ("guest" camp: the owner's defences don't face it).
+  // Starting positions (owner, 26 Nov 2026: "all players just spawn with their own fleets"): every
+  // player starts in a spot of their own round the world. The world's holder (or, if the holder has
+  // no ships there, the first player defending it) stands at the world (camp 0); everyone else is
+  // spread evenly round it, allies included, so nobody ever starts mixed in with anyone else
+  // (two of the owner's allies at war with each other used to start mixed together and tear into
+  // each other at point blank). Camps of the owner's allies are `guestCamps`: the owner's defences
+  // don't face them.
   const owners = fighters.map((q) => q.owner);
-  const camps = [[]], campOf = new Array(fighters.length), guestCamps = [];
-  const fits = (m, t) => m.every((u) => allied(world, owners[u], owners[t]));
-  const holder = fighters.findIndex((q) => q.owner === P.owner);
-  const defOrder = fighters.map((_, t) => t).filter((t) => defends(owners[t]));
-  if (holder >= 0) defOrder.sort((a, b) => (b === holder) - (a === holder));
-  const loose = [];
-  for (const t of defOrder) { if (fits(camps[0], t)) { camps[0].push(t); campOf[t] = 0; } else loose.push(t); }
-  for (const t of [...loose, ...fighters.map((_, t) => t).filter((t) => !defends(owners[t]))]) {
-    let c = camps.findIndex((m, k) => k > 0 && fits(m, t));
-    if (c < 0) { c = camps.length; camps.push([]); }
-    camps[c].push(t); campOf[t] = c;
+  const campOf = new Array(fighters.length), guestCamps = [];
+  let home = fighters.findIndex((q) => q.owner === P.owner);
+  if (home < 0) home = fighters.findIndex((q) => defends(q.owner));
+  let nCamps = 1;
+  fighters.forEach((q, t) => {
+    if (t === home) { campOf[t] = 0; return; }
+    campOf[t] = nCamps;
+    if (defends(q.owner)) guestCamps.push(nCamps);
+    nCamps++;
+  });
+  // The log's "N-way battle" still counts groups of mutual allies, not players.
+  const sides = [];
+  for (let t = 0; t < fighters.length; t++) {
+    const m = sides.find((g) => g.every((u) => allied(world, owners[u], owners[t])));
+    if (m) m.push(t); else sides.push([t]);
   }
-  camps.forEach((m, c) => { if (c > 0 && m.every((t) => defends(owners[t]))) guestCamps.push(c); });
   const battle = makeBattleScenario(groups, (id) => designOf(world, id), (world.seed * 1000003 + s.id * 131) >>> 0,
-    { teams: fighters.length, campOf, camps: camps.length, guestCamps, layout: layoutAt(world, P.id) });
+    { teams: fighters.length, campOf, camps: nCamps, guestCamps, layout: layoutAt(world, P.id) });
   const attackers = owners.filter((o) => !defends(o));
   Object.assign(battle, {
-    maxTime: BATTLE_MAX_TIME, planet: P.id, attacker: s.leader, defender: P.owner, attackers, owners, camps: camps.length,
+    maxTime: BATTLE_MAX_TIME, planet: P.id, attacker: s.leader, defender: P.owner, attackers, owners, camps: Math.max(2, sides.length),
     // hostile pairs as a list of [a, b] team indexes (plain data, so it can go to a worker)
     hostile: owners.flatMap((a, i) => owners.map((b, j) => (i < j && hostile(world, a, b) ? [i, j] : null)).filter(Boolean)),
     passing: fighters.filter((q) => !defends(q.owner)).every((q) => q.fleets.every((f) => f.leg < f.legs.length - 1)),
