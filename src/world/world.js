@@ -856,12 +856,18 @@ export function upgradeWorld(world) {
 /** Designs at a world that can fly (not defences, real engines). */
 const canFly = (world, d) => { const D = world.designs[d]; return !!D && !D.fixed && D.speed >= MIN_FLEET_SPEED; };
 
-/** Is an enemy of `who` heading to world P (its next stop) or besieging it? */
+/**
+ * Is an enemy of `who` heading to world P (its next stop) to attack it, or besieging it? A fleet only
+ * attacks a world whose holder it isn't allied with: one allied with P's holder lands there as a guest
+ * and nothing is fought, even if it's at war with `who` (owner, 27 Nov 2026: a shared ally's world is
+ * neutral ground; before, two enemies who were both allied with its holder kept each other's ships
+ * waiting there and drew each other's fleets in to "defend" it).
+ */
 export function pinned(world, P, who, ignore = null) {
   for (const f of world.fleets) {
     if (f.wait != null || ignore?.includes(f)) continue;
     const L = f.legs[f.leg];
-    if (L && L.to === P.id && hostile(world, f.owner, who) && countShips(f.ships)) return true;
+    if (L && L.to === P.id && hostile(world, f.owner, who) && !allied(world, f.owner, P.owner) && countShips(f.ships)) return true;
   }
   return siegeAt(world, P.id).some((s) => siegeFleets(world, s).some((f) => hostile(world, f.owner, who) && countShips(f.ships)));
 }

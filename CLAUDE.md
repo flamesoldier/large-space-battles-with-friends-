@@ -86,6 +86,17 @@ Measured (5 games, 4–10 players, 5 days, stand-in battles): a second round sen
 731 → 787 ms per 5 game days (noise-level; battles are the server's cost); no change to what is sent to players. Test in
 `tools/test-world.mjs` ("2.0 with allies", fails with one round).
 
+**A shared ally's world is neutral ground (owner, 27 Nov 2026: asked what happens when two enemy fleets meet at a world
+owned by someone allied to both; chose "1", no fighting there: "fighting in a natural ally's home is often not allowed in real
+life")**, **live 27 Nov 2026** (owner: "make it live once you're done"), patch notes `2026-11-27-neutral-ground`. Arriving at a
+world allied with the fleet's owner was already join/pass with no siege, but `pinned(world, P, who)` counted any fleet hostile
+to `who` heading to P, so (Bo allied with Cy and Di, Cy and Di at war) Di's fleet flying in to Bo's world kept Cy's guests there
+waiting and, via `underThreat`, made Bo's world a target Cy's fleets flew to "defend". Now a fleet heading to P counts only if it
+isn't allied with P's holder (`!allied(world, f.owner, P.owner)`), i.e. only if it will really attack P; sieges at P count as
+before. After it, Cy and Di ignore each other there: targets are worlds, never fleets, so each goes for its own nearest enemy
+world. Test in `tools/test-world.mjs` (fails on the old code). Stand-in bot games with that alliance setup (3 seeds, 4 days):
+identical before and after (225 battles, no idle ships, no ally attacks).
+
 **Stronger militia (owner, 22 Nov 2026: "militia planets are too easy to take… a fleet worth 10,000 credits with its first
 attack… I don't want militia planets too strong though, enough for 1.5 attacks to take it")**, **live 22 Nov 2026**.
 `NEUTRAL_GARRISON_BASE` **20,000** in `economy.js`: militia = 20,000 + 12 h of income (was 12 h only: 1,560–3,960 cr).

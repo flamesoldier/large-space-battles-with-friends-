@@ -1488,6 +1488,39 @@ const lanePlanHours = (W, a, b, d) => { const A = W.planets[a], B = W.planets[b]
   const btxt = g.log.filter((e) => e.battle).map((e) => e.text);
   ok(!btxt.some((t) => /back to /.test(t)), 'battle reports never say where fleets fell back to');
 }
+// ---- 27 Nov 2026 (owner: a shared ally's world is neutral ground, "fighting in a natural ally's home is often not
+// allowed"): Bo is allied with Cy and Di, who are at war with each other. Di's fleet flying in to Bo's world lands
+// as a guest and fights nobody, so it must not keep Cy's ships waiting there or draw Cy's fleets in to "defend" it.
+// An enemy of Bo flying in still does both.
+{
+  const g = createAutoWorld({ players: ['Ann', 'Bo', 'Cy', 'Di'], seed: 4 });
+  const ally = (a, b) => { g.relations[a < b ? `${a}|${b}` : `${b}|${a}`] = 'ally'; };
+  ally(1, 2); ally(1, 3);
+  const H = g.planets[g.players[1].home];
+  const nb = g.lanes.filter(([x, y]) => x === H.id || y === H.id).map(([x, y]) => (x === H.id ? y : x)).filter((id) => g.planets[id].home < 0);
+  ok(nb.length >= 2, `Bo's home has two lane neighbours that aren't homes (${nb.length})`);
+  const [nDi, nAnn] = nb.map((id) => g.planets[id]);
+  nDi.owner = 3; nDi.garrison = []; nAnn.owner = 0; nAnn.garrison = [];
+  const dCy = registerDesign(g, 2, { ...makeDesign('destroyer', 21), name: 'CyD' });
+  const dDi = registerDesign(g, 3, { ...makeDesign('destroyer', 22), name: 'DiD' });
+  const dAnn = registerDesign(g, 0, { ...makeDesign('destroyer', 23), name: 'AnnD' });
+  ok(setDestination(g, 3, nDi.id, H.id).ok, "Di's world sends its fleets to Bo's world");
+  addShips(nDi, 3, dDi, 5);
+  dispatchAll(g);
+  ok(g.fleets.some((f) => f.owner === 3 && f.legs[f.leg].to === H.id), "Di's fleet is flying to Bo's world");
+  ok(!pinned(g, H, 2), "Di's fleet doesn't pin Cy's ships at Bo's world (it won't attack it)");
+  ok(!pinned(g, H, 1), "nor Bo's own (they're allies)");
+  addShips(H, 2, dCy, 4, null);
+  ok(holdReason(g, H, 2, { [dCy]: 4 }) !== 'pinned', "Cy's guests at Bo's world aren't held there by Di's fleet");
+  const hop = nextHop(g, H.id, 2, null);
+  ok(!hop || hop.target !== H.id, "Bo's world isn't a world Cy must defend");
+  // An enemy of Bo (and Cy) still counts.
+  ok(setDestination(g, 0, nAnn.id, H.id).ok, "Ann's world sends its fleets to Bo's world");
+  addShips(nAnn, 0, dAnn, 5);
+  dispatchAll(g);
+  ok(g.fleets.some((f) => f.owner === 0 && f.legs[f.leg].to === H.id), "Ann's fleet is flying to Bo's world");
+  ok(pinned(g, H, 2) && pinned(g, H, 1), "Ann's fleet, which will attack it, pins Bo's and Cy's ships there");
+}
 // Several beaten fleets of one player: one phrase with the total, no destinations.
 {
   const w = createWorld({ players: [{ name: 'Ann' }, { name: 'Bo' }], seed: 8 });

@@ -8,7 +8,14 @@
 
 export const PATCH_NOTES = [
   {
-    id: '2026-11-27-designer-buttons', date: '27 Nov 2026', title: 'Ship designer buttons stay put',
+    id: '2026-11-27-neutral-ground', date: '27 Nov 2026', title: "A shared ally's world is neutral ground",
+    items: [
+      "If two players at war with each other are both allied with a third, that third player's worlds are neutral ground: their fleets can both stop there without fighting.",
+      "Fixed: one of them flying in to such a world used to make the other's ships wait there to defend it, and draw the other's fleets in to defend it too, though nobody was going to attack. Now ships only stay to defend a world when a fleet is really coming to attack it.",
+    ],
+  },
+  {
+id: '2026-11-27-designer-buttons', date: '27 Nov 2026', title: 'Ship designer buttons stay put',
     items: [
       'The buttons along the top of the ship and defence designers (Start from, Credits, Build shipyard and the rest) no longer shuffle sideways while you place blocks. This was worst on phones.',
       'Start from → Sample frigate works again (it used to do nothing).',
