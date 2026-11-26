@@ -224,7 +224,7 @@ somewhere on the map". Test in `tools/test-world.mjs` (a spot within 0.4 × radi
 
 **Replay share links (owner, 26 Nov 2026: "one of my friends said it would be cool to send each other replays i downloaded a replay and
 sent it into the Facebook group chat but it doesn't open on my phone"; chose "Share links": anyone with the link can watch, no login)**,
-on `v2-dev`, **not live**. The downloaded `.html` can't work there (Messenger and phone file viewers don't run a local page's scripts), so:
+**live 26 Nov 2026** (owner: "Perfect, make it live!"). The downloaded `.html` can't work there (Messenger and phone file viewers don't run a local page's scripts), so:
 **Share** button in the combat log (online only, between Watch and Download) → `net.share(id)` → `GET /api/share/<id>` (session) →
 `{ url: '/watch/<id>/<key>' }`; on touch screens `navigator.share` (share sheet), else the link is copied (fallback `prompt`).
 `key` = HMAC-SHA256 of `${world.seed}:${id}` with `SHARE_SECRET` (32 random bytes in `DATA/share.key`, made on first start), 16 base64url
