@@ -101,6 +101,16 @@ export class Net {
     return r;
   }
 
+  /** A link anyone can open to watch this battle (owner, 26 Nov 2026): { ok, url } or { ok: false, error }. */
+  async share(id) {
+    try {
+      const res = await fetch(`/api/share/${encodeURIComponent(id)}`, { credentials: 'same-origin' });
+      if (res.status === 404) return { ok: false, error: 'That replay isn\'t on the server any more.' };
+      if (res.status === 401) return { ok: false, error: 'Please log in again.' };
+      return await res.json();
+    } catch { return { ok: false, error: 'Can\'t reach the server. Check your connection and try again.' }; }
+  }
+
   async replay(id) {
     const res = await fetch(`/api/replay/${encodeURIComponent(id)}`, { credentials: 'same-origin' });
     if (!res.ok) return null;

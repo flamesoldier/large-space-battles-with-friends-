@@ -21,7 +21,7 @@
 import { createServer } from 'node:http';
 import { readFileSync, existsSync, writeFileSync, unlinkSync, statSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { randomBytes, timingSafeEqual, createHash } from 'node:crypto';
+import { randomBytes, timingSafeEqual, createHash, createHmac } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import { Accounts, sha256, writeJsonAtomic } from './accounts.mjs';
 import { Game, gameExists } from './game.mjs';
@@ -40,6 +40,7 @@ const ADMIN_PW = String(env.LSB_ADMIN_PASSWORD || '').trim();
 const ADMIN_ON = ADMIN_PW.length >= 10;
 const PAGE_FILE = join(ROOT, 'dist', 'play.html');
 const ADMIN_FILE = join(ROOT, 'server', 'admin.html');
+const WATCH_FILE = join(ROOT, 'dist', 'watch.html');
 
 const SESSION_DAYS = 30, ADMIN_SESSION_HOURS = 12;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000, LOGIN_MAX_FAILS = 8;
@@ -145,7 +146,7 @@ const TRAFFIC = { since: Date.now(), bytes: { pages: 0, updates: 0, actions: 0, 
 function trafficKind(url) {
   if (url.startsWith('/api/state')) return 'updates';
   if (url.startsWith('/api/act')) return 'actions';
-  if (url.startsWith('/api/replay/')) return 'replays';
+  if (url.startsWith('/api/replay/') || url.startsWith('/api/watch/')) return 'replays';
   if (url.startsWith('/api/')) return 'other';
   return 'pages';
 }
@@ -211,6 +212,46 @@ const html = (req, res, file) => {
   if (req.headers['if-none-match'] === etag) return send(req, res, 304, Buffer.alloc(0), { 'Content-Type': 'text/html; charset=utf-8', ETag: etag, 'Cache-Control': 'no-cache' });
   return send(req, res, 200, gz, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Encoding': 'gzip', 'Cache-Control': 'no-cache', ETag: etag });
 };
+
+// ------------------------------------------------------------------ replay share links
+// Owner, 26 Nov 2026 ("send each other replays… it doesn't open on my phone"): the Share button gives
+// /watch/<battle>/<key>, which anyone can open with no login. The key is an HMAC of the game's seed and
+// the battle id with a secret kept on the volume, so links can't be guessed from battle numbers, and a
+// new game (new seed, battle ids start again) never plays an old link's id as a different battle.
+const SHARE_SECRET = (() => {
+  const f = join(DATA, 'share.key');
+  try { const k = readFileSync(f); if (k.length >= 32) return k; } catch { /* make one */ }
+  const k = randomBytes(32);
+  mkdirSync(DATA, { recursive: true });
+  writeFileSync(f, k, { mode: 0o600 });
+  return k;
+})();
+const shareKey = (g, id) => createHmac('sha256', SHARE_SECRET).update(`${g.world.seed}:${id}`).digest('base64url').slice(0, 16);
+function shareOk(g, id, key) {
+  if (!/^b\d{1,12}$/.test(id) || typeof key !== 'string' || key.length !== 16) return false;
+  const a = Buffer.from(shareKey(g, id)), b = Buffer.from(key);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+/** The battle's title and story from the galaxy log, for link previews (Messenger, WhatsApp…). */
+function shareInfo(g, id) {
+  const W = g.world, e = W.log.find((x) => x.battle?.id === id);
+  const P = e ? W.planets[e.planet] : null, B = e?.battle;
+  const colorOf = (p) => (p === null || p === undefined || !W.players[p] ? null : W.players[p].color);
+  return {
+    title: P ? `Battle at ${P.name}` : 'Battle replay',
+    text: e?.text ? e.text.replace(/\s*Bounty \(.*$/, '').slice(0, 280) : 'A battle from Large Space Battles with Friends.',
+    sideColors: B ? [colorOf(B.attacker), colorOf(B.defender)] : null,
+  };
+}
+const attr = (v) => String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+function watchHtml(req, res, id, key) {
+  let page;
+  try { page = readFileSync(WATCH_FILE, 'utf8'); } catch { return fail(req, res, 500, 'The replay page is missing. Run npm run build.'); }
+  const g = game, ok = g && shareOk(g, id, key), info = ok ? shareInfo(g, id) : null;
+  const og = info ? `<title>${attr(info.title)}</title><meta property="og:title" content="${attr(info.title)}"><meta property="og:description" content="${attr(info.text)}"><meta property="og:type" content="video.other"><meta name="description" content="${attr(info.text)}">`
+    : '<title>Battle replay</title>';
+  return send(req, res, 200, page.replace('<!--LSB-OG-->', () => og), { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+}
 
 // ------------------------------------------------------------------ admin
 function adminState() {
@@ -349,6 +390,8 @@ async function handle(req, res) {
   if (req.method === 'GET' && (path === '/' || path === '/index.html')) return html(req, res, PAGE_FILE);
   if (req.method === 'GET' && (path === '/admin' || path === '/admin/')) return html(req, res, ADMIN_FILE);
   if (req.method === 'GET' && path === '/healthz') return send(req, res, 200, { ok: true });
+  const wm = req.method === 'GET' && path.match(/^\/watch\/(b\d{1,12})\/([A-Za-z0-9_-]{1,40})\/?$/);
+  if (wm) return watchHtml(req, res, wm[1], wm[2]);
   if (!path.startsWith('/api/')) return fail(req, res, 404, 'Not found.');
 
   if (req.method === 'POST' || (req.method === 'GET' && path === '/api/admin/state')) {
@@ -393,6 +436,17 @@ async function handle(req, res) {
 
   if (req.method !== 'GET') return fail(req, res, 405, 'Method not allowed.');
   if (!game) return send(req, res, 503, { ok: false, noGame: true, error: 'The game hasn\'t been set up yet.' });
+  // A shared replay: no login, the key in the link is the permission.
+  const sw = path.match(/^\/api\/watch\/([a-z0-9]+)\/([A-Za-z0-9_-]+)$/);
+  if (sw) {
+    const g = game, r = shareOk(g, sw[1], sw[2]) ? g.replay(sw[1]) : null;
+    if (!r) return fail(req, res, 404, 'No such replay.');
+    const info = shareInfo(g, sw[1]);
+    return send(req, res, 200, r.gz, {
+      'Content-Type': 'application/octet-stream', 'Content-Encoding': 'gzip', 'Cache-Control': 'public, max-age=86400',
+      'X-Replay-Meta': encodeURIComponent(JSON.stringify({ title: info.title, ...r.meta, sideColors: info.sideColors })),
+    });
+  }
   const pid = sessionPlayer(req);
   if (pid === null) return fail(req, res, 401, 'Not logged in.');
   const g = game;
@@ -414,6 +468,11 @@ async function handle(req, res) {
     g.watchers.add(finish);
     req.on('close', () => { done = true; g.watchers.delete(finish); clearTimeout(timer); });
     return;
+  }
+  const sm = path.match(/^\/api\/share\/([a-z0-9]+)$/);
+  if (sm) {
+    if (!g.replays.has(sm[1])) return fail(req, res, 404, 'No such replay.');
+    return send(req, res, 200, { ok: true, url: `/watch/${sm[1]}/${shareKey(g, sm[1])}` });
   }
   const m = path.match(/^\/api\/replay\/([a-z0-9]+)$/);
   if (m) {

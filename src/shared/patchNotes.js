@@ -8,6 +8,14 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-26-share-replays', date: '26 Nov 2026', title: 'Share replays with a link',
+    items: [
+      'New Share button next to Watch in the combat log: it gives you a link to that battle. Paste it in a group chat and anyone can watch the replay in their browser, phones included, without logging in.',
+      'On a phone, Share opens your phone\'s share menu so you can send it straight to Messenger, WhatsApp or anywhere else. On a computer the link is copied, ready to paste.',
+      'Downloaded replay files still work on computers, but phones and chat apps can\'t open them, so use Share for those.',
+    ],
+  },
+  {
     id: '2026-11-26-late-join', date: '26 Nov 2026', title: 'Friends can join a game already under way',
     items: [
       'A new player can now join a running galaxy. They get a new home world of their own, in a gap somewhere on the map.',

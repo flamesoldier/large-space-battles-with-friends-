@@ -1464,6 +1464,25 @@ async function downloadReplay(id) {
   setTimeout(() => URL.revokeObjectURL(url), 60000);
   toast('Replay saved to your downloads: open the file in any web browser to watch it.');
 }
+/**
+ * Share a replay as a link (owner, 26 Nov 2026: a downloaded replay sent to the friends' Facebook group
+ * didn't open on a phone). The server gives /watch/<battle>/<key>; anyone with the link can watch that
+ * battle in a browser with no login. Phones get the share sheet (Messenger, WhatsApp…), computers a
+ * copied link.
+ */
+async function shareReplay(id) {
+  const r = await net.share(id);
+  if (!r?.ok) return toast(r?.error || 'Couldn\'t make a link for that replay.', true);
+  const url = location.origin + r.url;
+  const entry = world.log.find((x) => x.battle?.id === id);
+  const P = entry ? world.planets[entry.planet] : null;
+  const title = P ? `Battle at ${P.name}` : 'Battle replay';
+  if (TOUCH && navigator.share) {
+    try { await navigator.share({ title, url }); return; } catch (err) { if (err?.name === 'AbortError') return; }
+  }
+  try { await navigator.clipboard.writeText(url); toast('Link copied. Paste it anywhere: anyone with it can watch this battle, no login needed.'); }
+  catch { window.prompt('Copy this link to share the replay:', url); }
+}
 $('replay-close').addEventListener('click', () => {
   $('replay-overlay').hidden = true; $('replay-frame').srcdoc = '';
   if (backToCombat) { backToCombat = false; renderCombat(); $('combat').showModal(); }
@@ -1779,7 +1798,7 @@ function renderCombat() {
     return `<div class="fight ${tone} size-${sz.tier}${e.id > seen && involves(e, ui.me) ? ' new' : ''}">
       <div class="fhead"><span class="res">${label}</span><span class="size" title="${szTip}">${sz.label} · ${fmtCr(sz.destroyed)} destroyed</span><span class="where">${esc(P?.name ?? '')}</span><time>${clockText(e.t)}</time></div>
       <p>${esc(e.text)}</p>${nums ? `<div class="nums">${nums}</div>` : ''}
-      <div class="acts">${e.battle ? `<button class="small ${can ? 'go' : ''}" data-watch="${e.battle.id}" ${can ? '' : `disabled title="${ONLINE ? 'No replay for this battle' : 'This replay is no longer saved in this browser'}"`}>Watch</button>` : ''}${can ? `<button class="small" data-dl="${e.battle.id}" title="Save this replay as a web page you can open in any browser, keep, or send to a friend">Download</button>` : ''}<button class="small" data-planet="${e.planet}">Map</button></div>
+      <div class="acts">${e.battle ? `<button class="small ${can ? 'go' : ''}" data-watch="${e.battle.id}" ${can ? '' : `disabled title="${ONLINE ? 'No replay for this battle' : 'This replay is no longer saved in this browser'}"`}>Watch</button>` : ''}${can ? `${ONLINE ? `<button class="small" data-share="${e.battle.id}" title="Get a link to this replay that anyone can open in a browser, even on a phone, with no login">Share</button>` : ''}<button class="small" data-dl="${e.battle.id}" title="Save this replay as a web page to keep on a computer (phones and chat apps can't open the file: use Share for those)">Download</button>` : ''}<button class="small" data-planet="${e.planet}">Map</button></div>
     </div>`;
   }).join('') || `<p class="empty">${words.length ? `No battles match “${esc(words.join(' '))}”${combatFilter !== 'all' ? ' (try Everyone)' : ''}.` : combatFilter === 'mine' ? 'No battles involving you yet. Every battle you fight shows up here.' : combatFilter === 'allies' ? 'No battles involving you or your allies yet.' : 'No battles yet.'}</p>`;
 }
@@ -1811,6 +1830,8 @@ $('combat-list').addEventListener('click', (e) => {
   if (w && !w.disabled) return watch(w.dataset.watch);
   const dl = e.target.closest('[data-dl]');
   if (dl) return downloadReplay(dl.dataset.dl);
+  const sh = e.target.closest('[data-share]');
+  if (sh) return shareReplay(sh.dataset.share);
   const m = e.target.closest('[data-planet]');
   if (m) { $('combat').close(); const P = world.planets[Number(m.dataset.planet)]; cam.x = P.x; cam.y = P.y; cam.zoom = Math.max(cam.zoom, 1.6); select({ kind: 'planet', id: P.id }); }
 });

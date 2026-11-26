@@ -374,6 +374,28 @@ try {
   ok(rep.status === 200 && meta.title.includes(target.name) && rmeta && Object.keys(cols).length > 5, 'the replay downloads and unpacks');
   ok((await anon.req('GET', `/api/replay/${battle.battle.id}`)).status === 401, 'replays need a login');
   ok((await ann.req('GET', '/api/replay/..%2Fgame')).status === 404, 'replay ids are checked');
+  // ---- share links (owner, 26 Nov 2026): anyone with the link can watch, no login
+  {
+    const bid = battle.battle.id;
+    ok((await anon.req('GET', `/api/share/${bid}`)).status === 401, 'only players make share links');
+    const sh = await ann.json('GET', `/api/share/${bid}`);
+    ok(sh.body.ok && new RegExp(`^/watch/${bid}/[A-Za-z0-9_-]{16}$`).test(sh.body.url), `a share link: ${sh.body.url}`);
+    ok((await ben.json('GET', `/api/share/${bid}`)).body.url === sh.body.url, 'the same link for every player');
+    const key = sh.body.url.split('/').pop();
+    const page = await anon.req('GET', sh.body.url);
+    const html = await page.text();
+    ok(page.status === 200 && html.includes(`og:title" content="Battle at ${target.name}"`) && html.includes('lsb-viewer'), 'the link opens a page with no login, titled for link previews');
+    const w = await anon.req('GET', `/api/watch/${bid}/${key}`);
+    const wmeta = JSON.parse(decodeURIComponent(w.headers.get('x-replay-meta')));
+    const wb = new Uint8Array(await w.arrayBuffer());
+    ok(w.status === 200 && wb.length === bytes.length && wb.every((v, i) => v === bytes[i]) && wmeta.title.includes(target.name), 'and the replay plays from it, the same bytes');
+    const wrong = key.slice(0, 15) + (key[15] === 'A' ? 'B' : 'A');
+    ok((await anon.req('GET', `/api/watch/${bid}/${wrong}`)).status === 404, 'a wrong key gets nothing');
+    ok((await anon.req('GET', `/api/watch/b999999/${key}`)).status === 404, "another battle's number with this key gets nothing");
+    ok((await ann.json('GET', '/api/share/b999999')).status === 404, 'no link for a replay that isn\'t there');
+    const bad = await (await anon.req('GET', `/watch/${bid}/${wrong}`)).text();
+    ok(!bad.includes('og:title'), "a wrong link's page doesn't name the battle");
+  }
 
   // ---- sessions: logout, password reset
   const ben2 = client();

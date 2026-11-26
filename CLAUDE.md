@@ -222,6 +222,24 @@ with) and `LATE_LANE_GAP` = `PLANET_SPACING` × 0.35 (the `addLane` rule): 20 / 
 (45 / 15 would give 0.09, tighter than the map's own worlds; not offered). Admin map ring and wording follow; patch note says "in a gap
 somewhere on the map". Test in `tools/test-world.mjs` (a spot within 0.4 × radius, joined to 2+ neighbours). Checked in headless Chrome.
 
+**Replay share links (owner, 26 Nov 2026: "one of my friends said it would be cool to send each other replays i downloaded a replay and
+sent it into the Facebook group chat but it doesn't open on my phone"; chose "Share links": anyone with the link can watch, no login)**,
+on `v2-dev`, **not live**. The downloaded `.html` can't work there (Messenger and phone file viewers don't run a local page's scripts), so:
+**Share** button in the combat log (online only, between Watch and Download) → `net.share(id)` → `GET /api/share/<id>` (session) →
+`{ url: '/watch/<id>/<key>' }`; on touch screens `navigator.share` (share sheet), else the link is copied (fallback `prompt`).
+`key` = HMAC-SHA256 of `${world.seed}:${id}` with `SHARE_SECRET` (32 random bytes in `DATA/share.key`, made on first start), 16 base64url
+chars: links can't be guessed from battle numbers, and a replaced game (new seed, ids restart) never plays an old link as another battle.
+`GET /watch/<id>/<key>` serves `dist/watch.html` (built by `tools/build-viewer.mjs` from `watchPage(viewerDoc)` in
+`src/galaxy/replayFile.js`: the viewer in a blob iframe + a loader) with `<!--LSB-OG-->` replaced by og:title "Battle at X" /
+og:description (the log text without the bounty sentence) when the key is right, plain "Battle replay" when not. The page fetches
+`GET /api/watch/<id>/<key>` (no session; key checked with `timingSafeEqual`; 404 otherwise), the stored gzip with `X-Replay-Meta`
+(+ `sideColors` from the log), `Cache-Control: public, max-age=86400`, counted as replays traffic. Messages: no WebGL 2 → "open in Chrome…",
+404 → "isn't available… copied in full / newest battles / new game". Pruned replays (2 GB cap) stop playing. Each view downloads the
+replay (egress). Download's tooltip now says phones and chat apps can't open the file; tutorial (watching battles) and patch notes
+`2026-11-26-share-replays`. Tests in `tools/test-server.mjs` (players only make links, same link for everyone, page and replay with no
+login and the same bytes, wrong key / other battle 404, wrong link's page doesn't name the battle). Checked in headless Chrome: the link
+opened as a stranger at 412×915 with a Messenger in-app user agent plays the battle; combat log Share buttons.
+
 **Defences and selling, 5 minutes (owner, 18 Nov 2026, after 2.0 went live):** "building defences will be much more important and should be able to be done reactively": `DEFENSE_BUILD_HOURS` and `SELL_HOURS` = 5/60 (were 15 h), **selling a shipyard gives back 65%** (`SHIPYARD_SELL_REFUND`, was 95%). Texts use `fmtHours()` ("5 min"). Test: defences ordered 10 min before a battle are ready for it, ones ordered 2 min before are lost with the world. Live 18 Nov 2026. **No patch notes for now** (owner: nobody is playing; he'll say when to start again).
 
 **Bots (owner, 18 Nov 2026: "they don't have to be good, just basic bots"):** `src/world/bots.js`. A bot is a player with `bot: true` (no password; sessions refused). Every `BOT_EVERY_MIN` (10) game minutes a world event `'bots'` (`dueEvent`, after anything else due then; `world.botNext`) runs `runBots()`: alliance proposals to it are declined; any of its worlds `pinned()` by an enemy gets defences (a generated cruiser with thrusters turned to armour, up to half its credits, ≤ 200, once per world per 3 h); then shipyards for its own generated frigate/destroyer/cruiser/battleship (random, weighted to mid sizes) on the cheapest world, keeping 2 h of income back. Works on the server and the hot-seat page alike (it's an ordinary event); the server saves bot turns once per catch-up. Admin page: **Bots** field when making a game (extra seats "Bot 1"…, after the people; 1+ person, 2–10 seats in all; `bots` in `/api/admin/new-game`, `--bots` on the command line) and **Make it a bot** per seat (`makeBot()` in `world.js`, `/api/admin/make-bot`: an open seat becomes "Bot N", a named one keeps its name; its password is deleted). Diplomacy window tags bots and hides Propose. Names "Bot N" are reserved. Tests in `tools/test-world.mjs` and `tools/test-server.mjs`. Live 18 Nov 2026.
