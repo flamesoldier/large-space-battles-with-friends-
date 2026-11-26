@@ -232,7 +232,7 @@ palette colour to the new one (unless someone already has it; also `world.final.
 deploy; the viewer's `applyColors` recolours old replays' `meta.colors` / `sideColors`. Custom colours untouched. Patch notes
 `2026-11-26-colours`. Test in `tools/test-world.mjs`. Checked on an 18-player map in headless Chrome.
 **Four pairs swapped (owner, same evening: "swap the oranges, the greens, the purples and the (player 7/player17 one) so that my
-players get the colours they want")**, on `v2-dev`, **not live**: `COLOR_SWAP` in `rules.js` (#ff9a1f ↔ #b07840, #8fe04a ↔ #309800,
+players get the colours they want")**, **live 26 Nov 2026** (owner: "make it live"): `COLOR_SWAP` in `rules.js` (#ff9a1f ↔ #b07840, #8fe04a ↔ #309800,
 #b77cff ↔ #e800e8, #2fd1a0 ↔ #009878); `RECOLOR` now maps old #ffb35c → brown, old #ff9f1a → orange, etc. The live game was
 already moved by the first remap, so `upgradeWorld` swaps those pairs once (`world.colorFix`; `createWorld` sets it so new games
 aren't swapped; a world still on old colours has none of them, so the swap is a no-op there). Replays recorded between the two
