@@ -195,7 +195,7 @@ that they're valid (no exact 750,000 / 150,000). **Never regenerate the fortress
 
 **Late players (owner, 26 Nov 2026: "a 10 person game going but i have friend who wants to join late… create a new planet for him… more
 than the usual starting credits… this planet doesn't have any hyperlanes… then i can use the add hyperplane ability… let me know the
-limit")**, on `v2-dev`, **not live**. `/admin` **Add a late player** section: an SVG map (to `LATE_REACH` 1.4 × radius, dashed circle),
+limit")**, **live 26 Nov 2026** (owner: "make it live"). `/admin` **Add a late player** section: an SVG map (to `LATE_REACH` 1.4 × radius, dashed circle),
 click an empty spot (a ring of `HOME_CLEARANCE` round it, red with the reason if refused), Starting credits (default `STARTING_CREDITS`;
 the hint shows players' average income, worlds and unspent credits from `adminState` `players[].income/credits`), **Add player** (two
 clicks) → `POST /api/admin/add-player { x, y, credits }` → `addLatePlayer(world, …)` in `world.js` (lock, `catchUp`, save, `changed`),
