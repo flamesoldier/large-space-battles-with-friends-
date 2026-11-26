@@ -172,6 +172,27 @@ try {
       ok((await p2.state()).body.world.lanes.some(([x, y]) => x === added[0] && y === added[1]), 'players get it');
       ok((await boss.json('POST', '/api/admin/add-lane', { a: added[0], b: added[1] })).status === 400, 'not twice');
     }
+    {
+      // ---- 26 Nov 2026 (owner): a friend joins late, on a new home world with no hyperlanes
+      ok((await p2.json('POST', '/api/admin/add-player', { x: 0, y: 0, credits: 1 })).status === 401, "players can't add players");
+      const st = (await boss.json('GET', '/api/admin/state')).body.game, n0 = st.players.length;
+      ok(st.maxSeats === 18 && st.map.reach > 1 && st.players.every((p) => Number.isFinite(p.income)), 'admin state has what the page needs');
+      ok((await boss.json('POST', '/api/admin/add-player', { x: st.map.planets[0].x, y: st.map.planets[0].y, credits: 5 })).status === 400, 'not on top of a world');
+      let got = null;
+      for (let a = 0; a < 48 && !got; a++) for (const f of [1.1, 1.25]) {
+        if (got) break;
+        const r = await boss.json('POST', '/api/admin/add-player', { x: Math.cos(a / 48 * 6.2832) * st.map.radius * f, y: Math.sin(a / 48 * 6.2832) * st.map.radius * f, credits: 77777 });
+        if (r.body.ok) got = r.body;
+      }
+      ok(got && got.game.players.length === n0 + 1 && got.passwords.length === 1 && got.passwords[0].open, 'admin adds a late player and gets their password');
+      const late = client();
+      ok((await late.json('POST', '/api/login', { password: got.passwords[0].password })).status === 200, 'the new player can log in');
+      const lw = (await late.state()).body.world, me = lw.players[n0];
+      ok(me.credits >= 77777 && me.credits < 80000 && lw.planets[me.home].owner === n0 && !lw.lanes.some(([x, y]) => x === me.home || y === me.home), 'with their credits and a world with no hyperlanes');
+      const free = lw.players.length && ['#ff4d4d', '#4dff88', '#3d7bff', '#ffa3e0', '#b8ff3d', '#ff9f1a', '#00c2c7', '#a17cff', '#e8e8e8', '#7aa7ff'].find((c) => !lw.players.some((p) => p.color.toLowerCase() === c));
+      ok((await late.act({ type: 'claim', name: 'Latecomer', color: free })).body.ok, 'and pick their name and colour');
+      ok((await p2.state()).body.world.players.some((p) => p.name === 'Latecomer'), 'everyone sees them');
+    }
     await boss.json('POST', '/api/admin/jump', { hours: 1 });
     ok((await p2.state()).body.world.planets.some((P) => P.owner === 3 && P.yards.length), 'the bot buys a shipyard by itself');
 

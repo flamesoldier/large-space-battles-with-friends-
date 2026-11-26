@@ -26,7 +26,9 @@ import { gzipSync } from 'node:zlib';
 import { Accounts, sha256, writeJsonAtomic } from './accounts.mjs';
 import { Game, gameExists } from './game.mjs';
 import { makeNewGame } from './setup.mjs';
-import { makeBot, addLane } from '../src/world/world.js';
+import { makeBot, addLane, addLatePlayer, incomeOf, MAX_SEATS, LATE_REACH } from '../src/world/world.js';
+import { STARTING_CREDITS } from '../src/shared/economy.js';
+import { HOME_CLEARANCE, PLANET_SPACING } from '../src/world/rules.js';
 
 const ROOT = resolve(new URL('..', import.meta.url).pathname);
 const env = process.env;
@@ -221,8 +223,9 @@ function adminState() {
       seed: W.seed, worlds: W.planets.length, day: Math.floor(game.gameNow() / 864e5) + 1, speed: game.speed, clock: game.gameNow(),
       winner: W.winner, replays: game.replays.size, traffic: TRAFFIC,
       disk: { ...game.disk(), replayBytes: [...game.replayBytes.values()].reduce((a, b) => a + b, 0), replayCap: game.replayCap, saveError: game.saveError },
-      map: { radius: W.radius, planets: W.planets.map((p) => ({ id: p.id, name: p.name, x: p.x, y: p.y, owner: p.owner ?? null, home: p.home >= 0 })), lanes: W.lanes },
-      players: W.players.map((p) => ({ id: p.id, name: p.name, color: p.color, team: p.team, eliminated: p.eliminated, bot: !!p.bot, joined: p.claimed !== false, password: !!accounts.get(p.id), worlds: W.planets.filter((x) => x.owner === p.id).length })),
+      map: { radius: W.radius, reach: LATE_REACH, clearance: HOME_CLEARANCE, laneGap: PLANET_SPACING * 0.5, planets: W.planets.map((p) => ({ id: p.id, name: p.name, x: p.x, y: p.y, owner: p.owner ?? null, home: p.home >= 0, ...(p.late ? { late: true } : {}) })), lanes: W.lanes },
+      maxSeats: MAX_SEATS, startCredits: STARTING_CREDITS,
+      players: W.players.map((p) => ({ id: p.id, name: p.name, color: p.color, team: p.team, eliminated: p.eliminated, bot: !!p.bot, joined: p.claimed !== false, password: !!accounts.get(p.id), worlds: W.planets.filter((x) => x.owner === p.id).length, income: Math.round(incomeOf(W, p.id)), credits: Math.floor(p.credits) })),
     },
   };
 }
@@ -311,6 +314,21 @@ async function handleAdmin(req, res, path, body) {
     if (!r.ok) return fail(req, res, 400, r.error);
     console.log(`${stamp()} Admin added a hyperlane: ${game.world.planets[body.a].name} <-> ${game.world.planets[body.b].name}`);
     return send(req, res, 200, adminState());
+  }
+  if (path === '/api/admin/add-player') {
+    // Owner, 26 Nov 2026: a friend joins the running game late, on a new home world with no hyperlanes.
+    if (!game) return fail(req, res, 400, 'There is no game yet.');
+    const r = await game.locked(async () => {
+      await game.catchUp();
+      const r = addLatePlayer(game.world, { x: body.x, y: body.y, credits: body.credits });
+      if (r.ok) { game.save(); game.changed(); }
+      return r;
+    });
+    if (!r.ok) return fail(req, res, 400, r.error);
+    const p = game.world.players[r.player];
+    const pw = accounts.setPassword(p.id);
+    console.log(`${stamp()} Admin added a late player: ${p.name} at ${game.world.planets[r.planet].name}, ${p.credits} cr`);
+    return send(req, res, 200, { ...adminState(), added: { player: p.id, planet: game.world.planets[r.planet].name }, passwords: [{ id: p.id, name: p.name, open: true, password: pw }] });
   }
   if (path === '/api/admin/reset-password') {
     if (!game) return fail(req, res, 400, 'There is no game yet.');

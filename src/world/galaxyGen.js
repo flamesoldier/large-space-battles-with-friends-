@@ -15,8 +15,9 @@ const SYL_B = ['a', 'e', 'i', 'o', 'u', 'ae', 'io', 'ar', 'en', 'or', 'is', 'ux'
 const SYL_C = ['dis', 'nar', 'thos', 'vex', 'lon', 'mir', 'ra', 'tis', 'gon', 'ris', 'phe', 'ka', 'don', 'sca'];
 const SUFFIX = ['', '', '', '', ' Prime', ' II', ' III', ' IV', ' Minor', ' Major'];
 
-function nameGen(r) {
-  const used = new Set();
+/** World names; `taken` (names already in the galaxy) are never given out. */
+export function nameGen(r, taken = []) {
+  const used = new Set(taken);
   return () => {
     for (let k = 0; k < 50; k++) {
       const n = SYL_A[(r() * SYL_A.length) | 0] + SYL_B[(r() * SYL_B.length) | 0] + SYL_C[(r() * SYL_C.length) | 0] + SUFFIX[(r() * SUFFIX.length) | 0];
@@ -51,7 +52,9 @@ export function linkHomesInward(planets, lanes) {
   const R = (p) => Math.hypot(p.x, p.y), added = [];
   const has = new Set(lanes.map(([a, b]) => (a < b ? `${a}-${b}` : `${b}-${a}`)));
   for (const H of planets) {
-    if (!(H.home >= 0)) continue;
+    // A late player's home (addLatePlayer) gets only the lanes the admin gives it: this also runs on
+    // every load, and would otherwise link an isolated home world by itself.
+    if (!(H.home >= 0) || H.late) continue;
     const inner = (p) => R(p) < R(H) * 0.85;
     const nb = lanes.filter(([a, b]) => a === H.id || b === H.id).map(([a, b]) => planets[a === H.id ? b : a]);
     if (nb.some(inner)) continue;

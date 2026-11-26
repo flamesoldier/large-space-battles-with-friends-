@@ -9,7 +9,7 @@ import {
   shipsAt, incomeOf, allied, YARD_MS, HOLD_MS, designOf, upgradeWorld,
   proposeAlliance, acceptAlliance, breakAlliance, proposalsFor, dueEvent, siegeAt, renameDesign, renamePlanet,
   buildDefense, setLayout, saveBlueprint, deleteBlueprint, planEvent, applyEvent, registerDesign, cancelSale, jobsAt, payBounties, giveCredits, worthOf, fleetValue, stopFleet, setRally, rallyAll,
-  checkWin, nextHop, pinned, togetherDraw, setDesignOrders, dispatchAll, holdReason, addShips, setDestination, destinationAll, countShips, makeBot, fleetSpeed, retreatPlan, addLane,
+  checkWin, nextHop, pinned, togetherDraw, setDesignOrders, dispatchAll, holdReason, addShips, setDestination, destinationAll, countShips, makeBot, fleetSpeed, retreatPlan, addLane, addLatePlayer, lateSpotProblem, MAX_SEATS,
 } from '../src/world/world.js';
 import { writeFileSync } from 'node:fs';
 import { packReplay } from '../src/shared/replayFormat.js';
@@ -1619,6 +1619,68 @@ const lanePlanHours = (W, a, b, d) => { const A = W.planets[a], B = W.planets[b]
   ok(!w.log.some((e) => /stance/i.test(e.text)), 'nothing logged (orders are private)');
   const re = upgradeWorld(JSON.parse(JSON.stringify(w)));
   ok(designOf(re, did).stance === 'flank' && designOf(re, fid).place === 'back', 'the save keeps the new orders');
+}
+
+// ---- 26 Nov 2026 (owner: "a friend who wants to join late… create a new planet for him… doesn't have any
+// hyperlanes… then i can use the add hyperlane ability when he is ready"): a late player in a 10-player game.
+{
+  const g = createAutoWorld({ players: Array.from({ length: 10 }, (_, k) => `P${k}`), seed: 7 });
+  for (let k = 0; k < 10; k++) makeBot(g, k);
+  const half = (scen) => ({ groups: scen.groups.map((q) => ({ ...q, survived: Math.floor(q.n / 2) })), routed: [], seconds: 60 });
+  runWorld(g, 12 * HOUR_MS, half);
+  // a free spot just outside the rim
+  let spot = null;
+  for (let a = 0; a < 64 && !spot; a++) for (const f of [1.05, 1.15, 1.25]) {
+    const x = Math.cos(a / 64 * Math.PI * 2) * g.radius * f, y = Math.sin(a / 64 * Math.PI * 2) * g.radius * f;
+    if (!lateSpotProblem(g, x, y)) { spot = { x, y }; break; }
+  }
+  ok(spot, 'found a free spot at the edge');
+  const busy = g.planets.find((P) => P.home < 0);
+  ok(!addLatePlayer(g, { x: busy.x + 10, y: busy.y, credits: 1000 }).ok, 'not on top of another world');
+  ok(!addLatePlayer(g, { x: g.radius * 3, y: 0, credits: 1000 }).ok && !addLatePlayer(g, { ...spot, credits: -5 }).ok, 'not far off the map, credits checked');
+  const r = addLatePlayer(g, { ...spot, credits: 100000 });
+  ok(r.ok && r.player === 10 && g.players.length === 11, 'player 11 added');
+  const L = g.planets[r.planet], me = g.players[10];
+  ok(L.owner === 10 && L.home === 10 && me.home === L.id && me.credits === 100000 && me.claimed === false && me.name === 'Player 11', 'home world, credits, open seat');
+  ok(!g.players.slice(0, 10).some((p) => p.color === me.color), 'a colour nobody has');
+  ok(!g.lanes.some(([a, b]) => a === L.id || b === L.id), 'no hyperlanes');
+  ok(Math.hypot(L.x, L.y) < g.radius, 'the map grows to show it');
+  ok(g.log.at(-1).text.includes(L.name), 'everyone is told');
+  const save = upgradeWorld(JSON.parse(JSON.stringify(g)));
+  ok(!save.lanes.some(([a, b]) => a === L.id || b === L.id), 'loading the save gives it no lane by itself');
+  const des = { ...makeDesign('destroyer', 5), name: 'Late destroyer' };
+  ok(buildShipyard(g, 10, L.id, des).ok && buildShipyard(g, 10, L.id, des).ok, 'he can buy shipyards');
+  // another player points every fleet at the unreachable world: they mustn't freeze
+  const P0home = g.planets[g.players[0].home];
+  ok(setDestination(g, 0, P0home.id, L.id).ok, 'a destination can be the late world');
+  const t0 = g.clock;
+  let left0 = 0, touched = 0;
+  for (let h = 1; h <= 48; h++) {
+    runWorld(g, t0 + h * HOUR_MS, half);
+    left0 = Math.max(left0, g.fleets.filter((f) => f.owner === 0).length);
+    touched += g.fleets.filter((f) => f.to === L.id || f.from === L.id || f.owner === 10).length + g.sieges.filter((s) => s.planet === L.id).length;
+  }
+  ok(touched === 0, 'two days: no fleet flies to or from it, no siege');
+  ok(left0 > 0, "player 1's fleets still go out (the unreachable destination falls back to the nearest enemy)");
+  const piled = countShips(shipsAt(L, 10));
+  ok(piled >= 2 * 5 * 30, `his ships pile up at home (${piled})`);
+  ok(!me.eliminated && g.winner === null, 'still in the game');
+  // the admin links him in: his ships set off
+  const near = g.planets.filter((P) => P.id !== L.id).sort((a, b) => Math.hypot(a.x - L.x, a.y - L.y) - Math.hypot(b.x - L.x, b.y - L.y));
+  let linked = null;
+  for (const P of near) if (addLane(g, L.id, P.id).ok) { linked = P; break; }
+  ok(linked && L.income === HOME_INCOME, 'a hyperlane joins it (home income unchanged)');
+  ok(g.fleets.some((f) => f.owner === 10), 'his ships set off at once');
+  runWorld(g, g.clock + 24 * HOUR_MS, half);
+  ok(g.log.some((e) => e.battle && (e.players || []).includes(10)), 'and fight');
+  // up to one player per choosable colour
+  while (g.players.length < MAX_SEATS) {
+    let s2 = null;
+    for (let a = 0; a < 256 && !s2; a++) for (const f of [1.05, 1.15, 1.25, 1.35]) { const x = Math.cos(a / 256 * Math.PI * 2) * g.radius * f, y = Math.sin(a / 256 * Math.PI * 2) * g.radius * f; if (!lateSpotProblem(g, x, y)) { s2 = { x, y }; break; } }
+    ok(s2 && addLatePlayer(g, { ...s2, credits: 0 }).ok, `player ${g.players.length + 1} added`);
+  }
+  ok(new Set(g.players.map((p) => p.color)).size === MAX_SEATS, 'everyone has their own colour');
+  ok(!addLatePlayer(g, { x: 0, y: g.radius * 1.3, credits: 0 }).ok, `no more than ${MAX_SEATS}`);
 }
 
 console.log(`world: ${checks} checks passed`);

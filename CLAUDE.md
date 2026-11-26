@@ -193,6 +193,29 @@ bother about redesigning the fortress"**, live 26 Nov 2026: the menu group is no
 defence price (`defensePrice` of the loaded design, filled in when `loadFortress` resolves); `tools/test-designer.mjs` checks only
 that they're valid (no exact 750,000 / 150,000). **Never regenerate the fortresses for price changes.**
 
+**Late players (owner, 26 Nov 2026: "a 10 person game going but i have friend who wants to join late… create a new planet for him… more
+than the usual starting credits… this planet doesn't have any hyperlanes… then i can use the add hyperplane ability… let me know the
+limit")**, on `v2-dev`, **not live**. `/admin` **Add a late player** section: an SVG map (to `LATE_REACH` 1.4 × radius, dashed circle),
+click an empty spot (a ring of `HOME_CLEARANCE` round it, red with the reason if refused), Starting credits (default `STARTING_CREDITS`;
+the hint shows players' average income, worlds and unspent credits from `adminState` `players[].income/credits`), **Add player** (two
+clicks) → `POST /api/admin/add-player { x, y, credits }` → `addLatePlayer(world, …)` in `world.js` (lock, `catchUp`, save, `changed`),
+then `accounts.setPassword` and the password is shown like a new game's. The new seat is an open seat "Player N" (`claimed: false`,
+picks name and colour on first login), the first free `CHOOSABLE_COLORS` colour, at war with everyone; its home world (`nameGen` from
+`galaxyGen.js`, now exported with a `taken` list) has `HOME_INCOME`, **no lanes** and `late: true`; `world.radius` grows to keep it on
+the map; logged "A new player has joined the galaxy…". `lateSpotProblem()`: `HOME_CLEARANCE` from every world, ≥ `PLANET_SPACING`/2
+from every lane, inside `LATE_REACH`. **Limit `MAX_SEATS` = `CHOOSABLE_COLORS.length` (18)**: every player needs their own colour (late
+joins only; new games stay 2–10). Found and fixed with it: (1) **`linkHomesInward` runs in `upgradeWorld` on every load**, so a
+lane-less home would have got a lane by itself at the next deploy: it now skips `late` homes (always: the admin decides their lanes);
+(2) a fleet whose **goal no lane reaches** waited forever (another player setting Destination to the late world froze that world's
+fleets): `nextHop` now seeks the nearest target whenever a goal isn't found (was: only when locks cut it off); (3) beaten fleets
+retreating through normal space no longer pick a friendly world with no lanes (an ally of the late player would be stuck there) unless
+there's nothing else. While isolated his ships wait at home (`holdReason` 'nothing') and pile up; once `addLane` joins it they set off
+at once (`dispatchAll`). The Hyperlanes map marks lane-less late worlds with a dashed ring and lists them. Tests in
+`tools/test-world.mjs` (10 bots + a late player, 2 days: nothing flies to or from it, 300+ ships pile up, a destination at it falls
+back, the save gives it no lane, after a lane his ships fight; up to 18 players then refused) and `tools/test-server.mjs` (endpoint,
+login, claim). Checked in headless Chrome (admin section, game page as Player 11 with the name/colour dialog). Patch notes
+`2026-11-26-late-join` written.
+
 **Defences and selling, 5 minutes (owner, 18 Nov 2026, after 2.0 went live):** "building defences will be much more important and should be able to be done reactively": `DEFENSE_BUILD_HOURS` and `SELL_HOURS` = 5/60 (were 15 h), **selling a shipyard gives back 65%** (`SHIPYARD_SELL_REFUND`, was 95%). Texts use `fmtHours()` ("5 min"). Test: defences ordered 10 min before a battle are ready for it, ones ordered 2 min before are lost with the world. Live 18 Nov 2026. **No patch notes for now** (owner: nobody is playing; he'll say when to start again).
 
 **Bots (owner, 18 Nov 2026: "they don't have to be good, just basic bots"):** `src/world/bots.js`. A bot is a player with `bot: true` (no password; sessions refused). Every `BOT_EVERY_MIN` (10) game minutes a world event `'bots'` (`dueEvent`, after anything else due then; `world.botNext`) runs `runBots()`: alliance proposals to it are declined; any of its worlds `pinned()` by an enemy gets defences (a generated cruiser with thrusters turned to armour, up to half its credits, ≤ 200, once per world per 3 h); then shipyards for its own generated frigate/destroyer/cruiser/battleship (random, weighted to mid sizes) on the cheapest world, keeping 2 h of income back. Works on the server and the hot-seat page alike (it's an ordinary event); the server saves bot turns once per catch-up. Admin page: **Bots** field when making a game (extra seats "Bot 1"…, after the people; 1+ person, 2–10 seats in all; `bots` in `/api/admin/new-game`, `--bots` on the command line) and **Make it a bot** per seat (`makeBot()` in `world.js`, `/api/admin/make-bot`: an open seat becomes "Bot N", a named one keeps its name; its password is deleted). Diplomacy window tags bots and hides Propose. Names "Bot N" are reserved. Tests in `tools/test-world.mjs` and `tools/test-server.mjs`. Live 18 Nov 2026.
@@ -2231,6 +2254,7 @@ changing a decision listed under "Decisions the owner has made".
 
 Known issues and loose ends (not yet fixed):
 - `tools/test-server.mjs` "the bot buys a shipyard by itself" failed once in 5 runs on 25 Nov 2026 (passed on rerun, also without the change being tested): timing-sensitive, not looked into.
+- **Late players** (26 Nov 2026): their world counts for victory like any other, so an isolated late player at war with everyone stops anyone winning until linked in. Battles with 11–18 players are untested with real battles (rule tests use stand-in battles).
 - **Open seats nobody takes** still have a home world with income and no defenders, so they are
   free worlds for whoever reaches them first. Possible fix: an admin button that turns unclaimed
   seats into militia worlds. The owner was told to size games to the real group for now.

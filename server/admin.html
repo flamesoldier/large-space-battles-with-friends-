@@ -59,6 +59,8 @@ td:last-child, th:last-child { text-align: right; }
 .out { opacity: 0.5; }
 #lane-map { width: 100%; max-width: 560px; aspect-ratio: 1; display: block; margin: 0 auto 12px; background: rgba(0,0,0,0.25); border: 1px solid var(--line); touch-action: manipulation; }
 #lane-map circle.w { cursor: pointer; }
+#late-map { width: 100%; max-width: 560px; aspect-ratio: 1; display: block; margin: 0 auto 12px; background: rgba(0,0,0,0.25); border: 1px solid var(--line); cursor: crosshair; touch-action: manipulation; }
+#late-map text { font: 500 11px var(--mono); fill: var(--ink); pointer-events: none; paint-order: stroke; stroke: #05070c; stroke-width: 3px; }
 #lane-map text { font: 500 11px var(--mono); fill: var(--ink); pointer-events: none; paint-order: stroke; stroke: #05070c; stroke-width: 3px; }
 .dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 8px; vertical-align: -1px; }
 #passwords { border-color: var(--ember); }
@@ -109,8 +111,21 @@ a { color: var(--azure); }
     <p>Join two worlds of the running game with a new hyperlane. <b>Click one world, then another</b> (the map is the same way up as in the game). A lane can't cross another lane or pass right by a third world. Both worlds earn the extra income a hyperlane brings (home worlds stay the same), and players see "New hyperlane" in their log.</p>
     <svg id="lane-map" role="img" aria-label="Galaxy map: click two worlds to join them"></svg>
     <div class="row"><span id="lane-pick" style="font-size:14px;color:var(--dim)">No worlds picked.</span></div>
+    <p id="lane-lonely" style="margin:8px 0 0"></p>
     <div class="row" style="margin-top:10px"><button class="go" id="lane-add" disabled>Add hyperlane</button><button id="lane-clear">Clear</button></div>
     <p class="err" id="lane-err" role="alert"></p>
+  </section>
+
+  <section id="late" hidden>
+    <h2>Add a late player</h2>
+    <p>A friend can join the game while it's running. They get a <b>new home world with no hyperlanes</b>: nobody can attack it and its ships can't leave, so anything they build waits there. When they're ready, join their world to a neighbour in <b>Hyperlanes</b> above, and their ships set off by themselves. They start at war with everyone, pick their own name and colour the first time they log in, and can make alliances as usual.</p>
+    <p><b>Click an empty spot on the map</b> for their world (the edge of the galaxy works best: it's easier to join to a neighbour later). It needs room round it, like other home worlds, and can't sit on a hyperlane.</p>
+    <svg id="late-map" role="img" aria-label="Galaxy map: click an empty spot for the new player's world"></svg>
+    <div class="row"><span id="late-pick" style="font-size:14px;color:var(--dim)">No spot picked.</span></div>
+    <p id="late-hint" style="margin-top:10px"></p>
+    <div class="grid" style="margin-top:6px"><label>Starting credits<input id="late-credits" type="number" min="0" max="100000000" step="1000"></label></div>
+    <div class="row" style="margin-top:12px"><button class="go" id="late-add" disabled>Add player</button></div>
+    <p class="err" id="late-err" role="alert"></p>
   </section>
 
   <section id="storage" hidden>
@@ -205,7 +220,7 @@ let armed = null, armedBot = null;
 function render(st) {
   $('login').hidden = true; $('logout').hidden = false; $('create').hidden = false;
   const G = st.game;
-  $('game').hidden = !G; $('time').hidden = !G; $('lanes').hidden = !G?.map; if (!G) { $('traffic').hidden = true; $('storage').hidden = true; }
+  $('game').hidden = !G; $('time').hidden = !G; $('lanes').hidden = !G?.map; $('late').hidden = !G?.map; if (!G) { $('traffic').hidden = true; $('storage').hidden = true; }
   $('replace-row').hidden = !G;
   $('create-title').textContent = G ? 'Start a new game instead' : 'Create the game';
   $('create-go').textContent = G ? 'Replace with a new game' : 'Create the game';
@@ -213,7 +228,7 @@ function render(st) {
   if (!G) return;
   const h = G.clock / 3600e3, clock = `Day ${Math.floor(h / 24) + 1} · ${String(Math.floor(h % 24)).padStart(2, '0')}:${String(Math.floor((h * 60) % 60)).padStart(2, '0')}`;
   $('game-kv').innerHTML = `<span><b>${clock}</b></span><span><b>${G.worlds}</b> worlds</span><span>seed <b>${G.seed}</b></span><span>speed <b>${G.speed === 0 ? 'paused' : `${G.speed}×`}</b></span><span><b>${G.replays}</b> replays</span>`;
-  if (G.map) { lanePick = lanePick.filter((i) => i < G.map.planets.length); drawLanes(G); }
+  if (G.map) { lanePick = lanePick.filter((i) => i < G.map.planets.length); drawLanes(G); drawLate(G); }
   const D = G.disk;
   $('storage').hidden = !D;
   if (D) {
@@ -283,13 +298,17 @@ function drawLanes(G) {
   const pad = M.radius * 0.08, R = M.radius + pad, c = {};
   for (const p of G.players) c[p.id] = p.color;
   const name = (id) => M.planets[id].name;
+  const lonely = M.planets.filter((p) => p.late && !M.lanes.some(([a, b]) => a === p.id || b === p.id));
+  $('lane-lonely').innerHTML = lonely.length ? `Waiting for a hyperlane (dashed ring): ${lonely.map((p) => `<b style="color:var(--ink)">${esc(p.name)}</b> (${esc(G.players.find((q) => q.id === p.owner)?.name ?? '')})`).join(', ')}.` : '';
   svg.setAttribute('viewBox', `${-R} ${-R} ${2 * R} ${2 * R}`);
   const pr = M.radius / 55;
   let h = M.lanes.map(([a, b]) => `<line x1="${M.planets[a].x}" y1="${M.planets[a].y}" x2="${M.planets[b].x}" y2="${M.planets[b].y}" stroke="rgba(120,190,210,0.45)" stroke-width="${pr * 0.35}"/>`).join('');
   if (lanePick.length === 2) { const [A, B] = lanePick.map((i) => M.planets[i]); h += `<line x1="${A.x}" y1="${A.y}" x2="${B.x}" y2="${B.y}" stroke="#ffb35c" stroke-width="${pr * 0.6}" stroke-dasharray="${pr} ${pr * 0.7}"/>`; }
   h += M.planets.map((p) => {
     const sel = lanePick.includes(p.id), col = p.owner === null || c[p.owner] === undefined ? '#8a8f99' : c[p.owner];
-    return `<circle class="w" data-w="${p.id}" cx="${p.x}" cy="${p.y}" r="${pr * (p.home ? 1.5 : 1)}" fill="${esc(col)}" stroke="${sel ? '#ffb35c' : '#05070c'}" stroke-width="${sel ? pr * 0.6 : pr * 0.25}"><title>${esc(p.name)}</title></circle>`
+    const lonely = p.late && !M.lanes.some(([a, b]) => a === p.id || b === p.id);
+    return (lonely ? `<circle cx="${p.x}" cy="${p.y}" r="${pr * 2.6}" fill="none" stroke="#ffb35c" stroke-width="${pr * 0.25}" stroke-dasharray="${pr * 0.6} ${pr * 0.5}" pointer-events="none"/>` : '')
+      + `<circle class="w" data-w="${p.id}" cx="${p.x}" cy="${p.y}" r="${pr * (p.home ? 1.5 : 1)}" fill="${esc(col)}" stroke="${sel ? '#ffb35c' : '#05070c'}" stroke-width="${sel ? pr * 0.6 : pr * 0.25}"><title>${esc(p.name)}${lonely ? ' (late player: no hyperlanes yet)' : ''}</title></circle>`
       + (sel ? `<text x="${p.x + (p.x > 0 ? -1.6 : 1.6) * pr}" y="${p.y + pr * 0.5}" text-anchor="${p.x > 0 ? 'end' : 'start'}" style="font-size:${pr * 1.6}px;stroke-width:${pr * 0.4}px">${esc(p.name)}</text>` : '');
   }).join('');
   svg.innerHTML = h;
@@ -318,8 +337,58 @@ $('lane-add').addEventListener('click', async () => {
   setTimeout(() => { $('lane-err').style.color = ''; }, 8000);
 });
 
+let lateSpot = null, lateArmed = false, lateGame = null, lateCreditsSet = false;
+function lateProblem(M, x, y) {
+  if (Math.hypot(x, y) > M.radius * M.reach) return 'Too far out: pick a spot nearer the galaxy.';
+  const near = M.planets.find((p) => Math.hypot(p.x - x, p.y - y) < M.clearance);
+  if (near) return `Too close to ${near.name}: home worlds need more room.`;
+  const seg = (P, A, B) => { const dx = B.x - A.x, dy = B.y - A.y, l2 = dx * dx + dy * dy, t = l2 ? Math.max(0, Math.min(1, ((P.x - A.x) * dx + (P.y - A.y) * dy) / l2)) : 0; return Math.hypot(P.x - (A.x + t * dx), P.y - (A.y + t * dy)); };
+  const lane = M.lanes.find(([a, b]) => seg({ x, y }, M.planets[a], M.planets[b]) < M.laneGap);
+  if (lane) return `Too close to the hyperlane ${M.planets[lane[0]].name} ↔ ${M.planets[lane[1]].name}.`;
+  return null;
+}
+function drawLate(G) {
+  lateGame = G;
+  const M = G.map, svg = $('late-map'), R = M.radius * M.reach * 1.03, pr = M.radius / 55, c = {};
+  for (const p of G.players) c[p.id] = p.color;
+  svg.setAttribute('viewBox', `${-R} ${-R} ${2 * R} ${2 * R}`);
+  let h = `<rect x="${-R}" y="${-R}" width="${2 * R}" height="${2 * R}" fill="transparent"/>`;
+  h += `<circle cx="0" cy="0" r="${M.radius * M.reach}" fill="none" stroke="rgba(140,170,210,0.25)" stroke-width="${pr * 0.2}" stroke-dasharray="${pr} ${pr}"/>`;
+  h += M.lanes.map(([a, b]) => `<line x1="${M.planets[a].x}" y1="${M.planets[a].y}" x2="${M.planets[b].x}" y2="${M.planets[b].y}" stroke="rgba(120,190,210,0.45)" stroke-width="${pr * 0.35}"/>`).join('');
+  h += M.planets.map((p) => `<circle cx="${p.x}" cy="${p.y}" r="${pr * (p.home ? 1.5 : 1)}" fill="${esc(p.owner === null || c[p.owner] === undefined ? '#8a8f99' : c[p.owner])}" stroke="#05070c" stroke-width="${pr * 0.25}"><title>${esc(p.name)}</title></circle>`).join('');
+  const bad = lateSpot && lateProblem(M, lateSpot.x, lateSpot.y);
+  if (lateSpot) h += `<circle cx="${lateSpot.x}" cy="${lateSpot.y}" r="${M.clearance}" fill="${bad ? 'rgba(255,107,107,0.08)' : 'rgba(255,179,92,0.08)'}" stroke="${bad ? '#ff6b6b' : '#ffb35c'}" stroke-width="${pr * 0.25}" stroke-dasharray="${pr * 0.8} ${pr * 0.6}"/>`
+    + `<circle cx="${lateSpot.x}" cy="${lateSpot.y}" r="${pr * 1.5}" fill="${bad ? '#ff6b6b' : '#ffb35c'}" stroke="#05070c" stroke-width="${pr * 0.25}"/>`;
+  svg.innerHTML = h;
+  $('late-pick').innerHTML = !lateSpot ? 'No spot picked.' : bad ? `<span style="color:var(--bad)">${esc(bad)}</span>` : '<b style="color:var(--ink)">Spot picked.</b> The world gets a name of its own when it\'s made.';
+  const full = G.players.length >= G.maxSeats;
+  $('late-add').disabled = !lateSpot || !!bad || full;
+  $('late-add').textContent = lateArmed ? 'Click again to confirm' : 'Add player';
+  const live = G.players.filter((p) => !p.eliminated);
+  const avg = (k) => Math.round(live.reduce((a, p) => a + p[k], 0) / Math.max(1, live.length));
+  $('late-hint').innerHTML = `${G.players.length} of ${G.maxSeats} players${full ? ' (full: no more colours for new players)' : ''}. For comparison, players still in earn on average <b>${avg('income').toLocaleString('en')} cr/h</b> from <b>${(live.reduce((a, p) => a + p.worlds, 0) / Math.max(1, live.length)).toFixed(1)}</b> worlds and have <b>${avg('credits').toLocaleString('en')} cr</b> unspent. A new game starts everyone on ${G.startCredits.toLocaleString('en')} cr; the new world earns like any home world.`;
+  if (!lateCreditsSet) { $('late-credits').value = G.startCredits; lateCreditsSet = true; }
+}
+$('late-map').addEventListener('click', (e) => {
+  if (!lateGame) return;
+  const svg = $('late-map'), pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+  const q = pt.matrixTransform(svg.getScreenCTM().inverse());
+  lateSpot = { x: Math.round(q.x * 10) / 10, y: Math.round(q.y * 10) / 10 }; lateArmed = false; $('late-err').textContent = '';
+  drawLate(lateGame);
+});
+$('late-add').addEventListener('click', async () => {
+  if (!lateSpot) return;
+  if (!lateArmed) { lateArmed = true; drawLate(lateGame); setTimeout(() => { if (lateArmed) { lateArmed = false; drawLate(lateGame); } }, 5000); return; }
+  lateArmed = false; $('late-add').disabled = true;
+  const r = await api('/api/admin/add-player', { x: lateSpot.x, y: lateSpot.y, credits: Number($('late-credits').value) });
+  if (!r.ok) { $('late-err').textContent = r.error; $('late-add').disabled = false; $('late-add').textContent = 'Add player'; return; }
+  lateSpot = null; render(r); showPasswords(r.passwords);
+  $('late-err').style.color = 'var(--azure)'; $('late-err').textContent = `Added ${r.added.planet}. Send your friend the password above: they choose their name and colour when they log in. Join their world with a hyperlane when they're ready.`;
+  setTimeout(() => { $('late-err').style.color = ''; }, 15000);
+});
+
 function showLogin(msg = '') {
-  for (const id of ['game', 'create', 'passwords', 'lanes']) $(id).hidden = true;
+  for (const id of ['game', 'create', 'passwords', 'lanes', 'late']) $(id).hidden = true;
   $('logout').hidden = true; $('login').hidden = false; $('login-err').textContent = msg;
   $('login-pw').focus();
 }

@@ -22,15 +22,15 @@ import { mulberry32, hash32 } from '../shared/rng.js';
 import {
   SHIPYARD_INTERVAL_MIN, SHIPS_PER_BUILD, shipyardPrice, crowdingSurcharge, SHIPYARD_SELL_REFUND,
   defensePrice, MAX_DEFENSE_ORDER, BOUNTY_SHARE, STARTING_CREDITS, NEUTRAL_GARRISON_HOURS, NEUTRAL_GARRISON_BASE, SELL_HOURS, SELL_GAP_HOURS, DEFENSE_BUILD_HOURS,
-  BOT_INCOME_MULT, planetIncome,
+  BOT_INCOME_MULT, planetIncome, HOME_INCOME,
 } from '../shared/economy.js';
-import { generateGalaxy, linkHomesInward, segmentsCross, pointSegDist } from './galaxyGen.js';
+import { generateGalaxy, linkHomesInward, segmentsCross, pointSegDist, nameGen } from './galaxyGen.js';
 import { planRoute, travelSpeed, laneMap, laneSpeed } from './routes.js';
 import { makeBattleScenario } from './battleSetup.js';
 import { cleanLayout, shapeOf } from './defenceLayout.js';
 import { botsDue, runBots } from './bots.js';
 import { backfillStats, finalize, noteIncome, noteBuilt, noteCapture, noteBattle, playerStats } from './stats.js';
-import { HOUR_MS, MIN_FLEET_SPEED, NEUTRAL_COLOR, PLAYER_COLORS, CHOOSABLE_COLORS, MIN_PLAYERS, MAX_PLAYERS, BATTLE_MAX_TIME, BATTLE_HOLD_MIN, SPACE_VS_LANE, PLANET_SPACING, ARRIVE_TOGETHER_MIN } from './rules.js';
+import { HOUR_MS, MIN_FLEET_SPEED, NEUTRAL_COLOR, PLAYER_COLORS, CHOOSABLE_COLORS, MIN_PLAYERS, MAX_PLAYERS, BATTLE_MAX_TIME, BATTLE_HOLD_MIN, SPACE_VS_LANE, PLANET_SPACING, HOME_CLEARANCE, ARRIVE_TOGETHER_MIN } from './rules.js';
 
 export const YARD_MS = SHIPYARD_INTERVAL_MIN * 60 * 1000;
 export const HOLD_MS = BATTLE_HOLD_MIN * 60 * 1000;
@@ -916,8 +916,9 @@ export function nextHop(world, from, who, goal = null, ships = null) {
       if (c < best[v] - 1e-9) { best[v] = c; prev[v] = u; }
     }
   }
-  // A destination the locks cut off: seek the nearest target instead (fleets never sit and wait).
-  if (found < 0 && blocked && goal !== null) return nextHop(world, from, who, null, ships);
+  // A destination the locks cut off, or one no hyperlane reaches (a late player's world before the admin
+  // links it, 26 Nov 2026): seek the nearest target instead (fleets never sit and wait).
+  if (found < 0 && goal !== null) return nextHop(world, from, who, null, ships);
   // Waiting for a battle wins: move up along friendly worlds to the one next to it and wait there
   // (owner, 19 Nov 2026: fleets waited 2 or 3 worlds away; "they may as well keep moving towards the
   // fight then wait"). Already next to it: wait here (null).
@@ -1087,7 +1088,11 @@ function autoRetreatTarget(world, fleet, here) {
   const dist = (p) => Math.hypot(p.x - here.x, p.y - here.y);
   const pick = (ids) => ids.map((id) => world.planets[id]).sort((a, b) => dist(a) - dist(b) || a.id - b.id)[0]?.id ?? null;
   if (near.length) return pick(near);
-  return pick(world.planets.filter((p) => p.id !== here.id && allied(world, p.owner, fleet.owner)).map((p) => p.id));
+  // Through normal space: not to a world no hyperlane reaches (a late player's home before the admin
+  // links it), where the ships would be stuck, unless there's nowhere else.
+  const lanes = lanesOf(world), friends = world.planets.filter((p) => p.id !== here.id && allied(world, p.owner, fleet.owner));
+  const linked = friends.filter((p) => lanes.get(p.id)?.size);
+  return pick((linked.length ? linked : friends).map((p) => p.id));
 }
 
 /** Route for a retreat to `back`: one lane leg to a neighbour, else a straight flight through normal space. */
@@ -1746,6 +1751,61 @@ export function makeBot(world, pid) {
   world.botNext = Math.min(world.botNext ?? world.clock, world.clock);
   log(world, 'join', old === pl.name ? `${pl.name} is now played by a bot.` : `${old} is now ${pl.name}, played by a bot.`, { players: [pid] });
   return { ok: true };
+}
+
+// ---------------------------------------------------------------- joining late (admin)
+
+/** Most players a galaxy can have: one each of the colours players can pick (late joiners need a free one). */
+export const MAX_SEATS = CHOOSABLE_COLORS.length;
+/** How far out (× the galaxy's radius) a late player's world may go. */
+export const LATE_REACH = 1.4;
+
+/**
+ * Why a late player's home world can't go at (x, y), or null if it can. The generator's rules for home
+ * worlds: HOME_CLEARANCE from every world, no hyperlane passing right by it (so lanes never look as if
+ * they run through it), and inside LATE_REACH × the radius.
+ */
+export function lateSpotProblem(world, x, y) {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return 'Click a spot on the map.';
+  if (Math.hypot(x, y) > world.radius * LATE_REACH) return 'That is too far out: pick a spot nearer the galaxy.';
+  const near = world.planets.find((p) => Math.hypot(p.x - x, p.y - y) < HOME_CLEARANCE);
+  if (near) return `Too close to ${near.name}: home worlds need more room.`;
+  const P = { x, y }, lane = world.lanes.find(([a, b]) => pointSegDist(P, world.planets[a], world.planets[b]) < PLANET_SPACING * 0.5);
+  if (lane) return `Too close to the hyperlane ${world.planets[lane[0]].name} ↔ ${world.planets[lane[1]].name}.`;
+  return null;
+}
+
+/**
+ * Owner, 26 Nov 2026 ("a friend who wants to join late… create a new planet for him… this planet doesn't
+ * have any hyperlanes… then i can use the add hyperlane ability when he is ready"): the admin adds a player
+ * to a running game. A new open seat ("Player N": they pick their name and colour on first login) with a
+ * new home world at (x, y) and `credits` to start with. The world has NO hyperlanes: nobody can reach it
+ * and its ships can't leave (they wait there) until the admin joins it with addLane. It is marked `late`,
+ * so it never gets a lane by itself (linkHomesInward). Starts at war with everyone, like any player.
+ * Returns { ok, error?, player, planet }.
+ */
+export function addLatePlayer(world, { x, y, credits } = {}) {
+  if (world.winner !== null && world.winner !== undefined) return { ok: false, error: 'The galaxy has already been won.' };
+  if (world.players.length >= MAX_SEATS) return { ok: false, error: `A galaxy can have at most ${MAX_SEATS} players.` };
+  const c = Math.floor(Number(credits));
+  if (!Number.isFinite(c) || c < 0 || c > 100_000_000) return { ok: false, error: 'Starting credits: a whole number from 0 to 100,000,000.' };
+  x = Math.round(Number(x) * 10) / 10; y = Math.round(Number(y) * 10) / 10;
+  const bad = lateSpotProblem(world, x, y);
+  if (bad) return { ok: false, error: bad };
+  const color = CHOOSABLE_COLORS.find((col) => !world.players.some((p) => p.color.toLowerCase() === col));
+  if (!color) return { ok: false, error: 'Every player colour is taken.' };
+  const pid = world.players.length, planetId = world.planets.length;
+  let n = pid + 1;
+  while (world.players.some((p) => p.name.toLowerCase() === `player ${n}`)) n++;
+  const name = nameGen(mulberry32(world.seed * 31 + 7 + planetId * 977), world.planets.map((p) => p.name))();
+  world.planets.push({ id: planetId, name, x, y, size: 1, income: HOME_INCOME, home: pid, owner: pid, yards: [], garrison: [], late: true });
+  world.players.push({ id: pid, name: `Player ${n}`, color, team: '', credits: c, home: planetId, eliminated: false, claimed: false });
+  // Keep the whole galaxy on the map.
+  world.radius = Math.max(world.radius, Math.round((Math.hypot(x, y) + PLANET_SPACING * 0.6) * 10) / 10);
+  laneCache.delete(world);
+  playerStats(world, pid);
+  log(world, 'join', `A new player has joined the galaxy: Player ${n}, at ${name}. No hyperlane reaches it yet.`, { players: [pid], planet: planetId });
+  return { ok: true, player: pid, planet: planetId };
 }
 
 /**
