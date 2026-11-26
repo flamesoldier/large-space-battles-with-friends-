@@ -177,7 +177,7 @@ Middle < Back toward the world, Top/Bottom flank on the designer-top/bottom wing
 `tools/test-world.mjs`. Closest enemy pair at the start: 304 / 282 / 289. Replay sent: "4-way at Bo's world: every player in
 their own spot". **Both changes live 26 Nov 2026** (owner: "that works really well good job, make it live"); patch notes `2026-11-26-start-spots`.
 
-**Combat log search (owner, 26 Nov 2026: "can the battle log have a search function too")**, on `v2-dev`, **not live**. A search
+**Combat log search (owner, 26 Nov 2026: "can the battle log have a search function too")**, **live 26 Nov 2026** (owner: "make it all live"; patch notes `2026-11-26-combat-search`). A search
 box in the combat log's header (`#combat-search`, full width on phones), read by `renderCombat` on every `input`; works on top of
 Mine / Allies / Everyone. `searchWords()` lower-cases and splits on anything not a letter or digit; `combatHaystack(e)` = the
 entry's story **without the bounty sentence** (it names everyone paid, and "bo" matched "Bounty" in every battle), the world's
@@ -188,8 +188,10 @@ Chrome (18-battle bot galaxy, 1300×850 and a 412×915 phone; "bo" = exactly Bo'
 **Aegis prices (owner, same message: "i've changed the price of a few things but aegis citadels are still 150,000")**: they are
 exactly 750,000 cr of blocks (150,000 as a defence) because the 2.0 price rise (cannon/laser 120, PD 90) was met by regenerating
 them to the same budget (fewer guns in II/III, much armour turned to frame). The v1.0 versions at today's prices would be I
-816,890 / II 857,680 / III 835,920 / IV 825,630 cr of blocks (163,378 / 171,536 / 167,184 / 165,126 as defences). The menu label
-"Aegis fortresses (150,000 cr each)" in `addFortressTemplates()` is fixed text. Asked the owner which he wants.
+816,890 / II 857,680 / III 835,920 / IV 825,630 cr of blocks (163,378 / 171,536 / 167,184 / 165,126 as defences). **Owner's decision (26 Nov 2026): keep the current designs, drop the exact price; "next time there is a weapon cost change don't
+bother about redesigning the fortress"**, live 26 Nov 2026: the menu group is now "Aegis fortresses" and each option shows its real
+defence price (`defensePrice` of the loaded design, filled in when `loadFortress` resolves); `tools/test-designer.mjs` checks only
+that they're valid (no exact 750,000 / 150,000). **Never regenerate the fortresses for price changes.**
 
 **Defences and selling, 5 minutes (owner, 18 Nov 2026, after 2.0 went live):** "building defences will be much more important and should be able to be done reactively": `DEFENSE_BUILD_HOURS` and `SELL_HOURS` = 5/60 (were 15 h), **selling a shipyard gives back 65%** (`SHIPYARD_SELL_REFUND`, was 95%). Texts use `fmtHours()` ("5 min"). Test: defences ordered 10 min before a battle are ready for it, ones ordered 2 min before are lost with the world. Live 18 Nov 2026. **No patch notes for now** (owner: nobody is playing; he'll say when to start again).
 

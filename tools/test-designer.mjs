@@ -481,14 +481,13 @@ assert.ok(Math.abs(sc.enemyCost - sc.budget) / sc.budget < 0.1, `budgets ${sc.en
   console.log(`shields: ${[1, 2, 10, 100].map(shieldCap).join('/')} pool, ${[1, 2, 10, 100].map(shieldRegen).join('/')}/s refill for 1/2/10/100 generators, blocks protected, generator explodes whole`);
 }
 
-// The ready-made Aegis fortresses in the defence designer's Start from menu: valid 150,000 cr
-// defences (750,000 cr of blocks, no thrusters, nothing buried or sealed in), and they survive a
-// save/load round trip like any design.
+// The ready-made Aegis fortresses in the defence designer's Start from menu: valid defences (no
+// thrusters, nothing buried or sealed in), and they survive a save/load round trip like any
+// design. Their price follows block prices (owner, 26 Nov 2026), so it isn't checked.
 for (let k = 0; k < FORTRESSES.length; k++) {
   const d = await loadFortress(k), a = analyzeDesign(d);
   assert.ok(a.ok, `${d.name}: ${a.errors.join('; ')}`);
-  assert.equal(a.cost, 750000, `${d.name} costs 750,000 cr of blocks`);
-  assert.equal(defensePrice(d), 150000, `${d.name} is a 150,000 cr defence`);
+  assert.ok(a.cost > 0 && defensePrice(d) > 0, `${d.name} has a price`);
   assert.ok(!a.byType[BT.THRUSTER], `${d.name} has no thrusters`);
   assert.equal(a.weapons.filter((w) => w.buried).length, 0, `${d.name}: no buried weapons or sealed bays`);
   const back = decodeDesign(JSON.parse(JSON.stringify(encodeDesign(d))));
@@ -1005,4 +1004,4 @@ for (let k = 0; k < FORTRESSES.length; k++) {
   console.log(`  guided missiles: come round for another pass (turned ${turned.toFixed(1)} rad), re-target ahead`);
 }
 console.log(`designer stats match the sim for ${checked} generated designs; validation ok`);
-console.log(`${FORTRESSES.length} Aegis fortresses are valid 150,000 cr defences`);
+console.log(`${FORTRESSES.length} Aegis fortresses are valid defences`);

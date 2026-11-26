@@ -163,8 +163,13 @@ function addFortressTemplates() {
   if (fortressesShown) return;
   fortressesShown = true;
   const grp = document.createElement('optgroup');
-  grp.label = 'Aegis fortresses (150,000 cr each)';
-  FORTRESSES.forEach((f, k) => { const o = new Option(`${f.name}: ${f.blurb}`, `f${k}`); grp.append(o); });
+  // Owner, 26 Nov 2026: their price simply follows block prices (no longer held at 150,000), so
+  // each option shows what it costs as a defence today, filled in once the designs are unpacked.
+  grp.label = 'Aegis fortresses';
+  FORTRESSES.forEach((f, k) => {
+    const o = new Option(`${f.name}: ${f.blurb}`, `f${k}`); grp.append(o);
+    loadFortress(k).then((d) => { o.text = `${f.name} (${fmt(defensePrice(d))} cr): ${f.blurb}`; }).catch(() => {});
+  });
   const yards = [...tpl.querySelectorAll('optgroup')].find((g) => g.label === 'Your shipyards');
   tpl.insertBefore(grp, yards || [...tpl.options].find((o) => o.value === 'blank'));
 }

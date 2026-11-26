@@ -12,4 +12,5 @@ Export format) at exactly 750,000 cr of blocks. Run from this folder:
 
 Block prices or weapon rules changing can change the output (guns with too narrow an arc
 are dropped, the budget is trimmed to 750,000 exactly); `npm test` checks the packed ones
-are still valid 750,000 cr defences.
+are still valid defences. **Owner, 26 Nov 2026: don't regenerate them when block prices
+change.** Their price just follows the block prices (the Start from menu shows it).

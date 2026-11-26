@@ -8,6 +8,15 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-26-combat-search',
+    date: '26 Nov 2026',
+    title: 'Search the combat log',
+    items: [
+      'The combat log has a search box: type a player, a world, or a word like "legendary", "huge" or "taken". Every word you type must match, and the start of a word is enough ("bo" finds Bo). It works together with Mine / Allies / Everyone.',
+      'Aegis fortresses: their price now follows block prices, so they no longer all cost exactly 150,000. The Defence Designer\'s Start from menu shows each one\'s real price.',
+    ],
+  },
+  {
     id: '2026-11-26-start-spots', date: '26 Nov 2026', title: 'Every player starts a battle in their own spot',
     items: [
       'In battles with three or more players, everyone now starts in a spot of their own round the world: the world\'s owner at the world, everyone else spread evenly round it, allies included.',
