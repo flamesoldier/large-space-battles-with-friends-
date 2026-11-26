@@ -197,6 +197,9 @@ table.grid td:first-child { text-align: left; white-space: nowrap; }
 #combat { width: min(860px, calc(100% - 24px)); }
 #combat .head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
 #combat .head h3 { margin: 0; flex: 1; }
+#combat-search { flex: 0 1 220px; min-width: 120px; }
+@media (max-width: 640px), (pointer: coarse) and (max-height: 500px) { #combat-search { flex: 1 1 100%; order: 5; } }
+#combat-count { margin: -4px 0 8px; color: var(--dim, #8a94a6); font-size: 12px; }
 #combat-list { display: grid; gap: 6px; max-height: 64vh; overflow-y: auto; padding-right: 2px; }
 .fight { border: 1px solid var(--line); border-left: 3px solid var(--dim); padding: 8px 10px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; }
 .fight.good { border-left-color: var(--azure); }
@@ -507,9 +510,11 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
         <button class="small" data-cfilter="allies" aria-pressed="false" title="Battles you or any of your allies fought in">Allies</button>
         <button class="small" data-cfilter="all" aria-pressed="false">Everyone</button>
       </div>
+      <input id="combat-search" type="search" placeholder="Search battles…" aria-label="Search the combat log" title="Type a world, a player, a result like &quot;world lost&quot; or an importance like &quot;epic&quot;. Every word must match." autocomplete="off" spellcheck="false">
       <button class="small" id="combat-close">Close</button>
     </div>
     <p class="size-key" title="Importance = credits of ships and defences destroyed, all sides together, compared with every other battle in this galaxy">Importance: <span class="size-legendary"><i></i>Legendary (the most destructive)</span><span class="size-epic"><i></i>Epic (top 5%)</span><span class="size-huge"><i></i>Huge (top 20%)</span><span class="size-large"><i></i>Large (top half)</span><span class="size-medium"><i></i>Medium</span><span class="size-small"><i></i>Small (bottom 20%)</span></p>
+    <p id="combat-count" hidden></p>
     <div id="combat-list"></div>
     <p class="hint">Replays are saved in this browser (the last 80 battles).</p>
   </dialog>

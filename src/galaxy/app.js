@@ -1755,7 +1755,13 @@ function syncCombatBadge() {
 function renderCombat() {
   const seen = ui.seen?.[ui.me] ?? 0;
   if (['mine', 'allies', 'all'].includes(ui.combatFilter)) combatFilter = ui.combatFilter; // remembered per browser
-  const items = world.log.filter((e) => isCombat(e) && passesFilter(e, combatFilter)).reverse();
+  const shown = world.log.filter((e) => isCombat(e) && passesFilter(e, combatFilter));
+  // Search (owner, 26 Nov 2026): every word typed must appear somewhere in the entry (world, players, story,
+  // result, importance), any order, any case.
+  const words = searchWords($('combat-search').value);
+  const items = (words.length ? shown.filter((e) => { const h = combatHaystack(e); return words.every((w) => h.some((t) => t.startsWith(w))); }) : shown).reverse();
+  $('combat-count').hidden = !words.length;
+  $('combat-count').textContent = words.length ? `${fmt(items.length)} of ${fmt(shown.length)} battle${shown.length === 1 ? '' : 's'} match` : '';
   document.querySelectorAll('[data-cfilter]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.cfilter === combatFilter)));
   $('combat-list').innerHTML = items.map((e) => {
     const [tone, label] = verdict(e, ui.me), P = world.planets[e.planet];
@@ -1775,7 +1781,19 @@ function renderCombat() {
       <p>${esc(e.text)}</p>${nums ? `<div class="nums">${nums}</div>` : ''}
       <div class="acts">${e.battle ? `<button class="small ${can ? 'go' : ''}" data-watch="${e.battle.id}" ${can ? '' : `disabled title="${ONLINE ? 'No replay for this battle' : 'This replay is no longer saved in this browser'}"`}>Watch</button>` : ''}${can ? `<button class="small" data-dl="${e.battle.id}" title="Save this replay as a web page you can open in any browser, keep, or send to a friend">Download</button>` : ''}<button class="small" data-planet="${e.planet}">Map</button></div>
     </div>`;
-  }).join('') || `<p class="empty">${combatFilter === 'mine' ? 'No battles involving you yet. Every battle you fight shows up here.' : combatFilter === 'allies' ? 'No battles involving you or your allies yet.' : 'No battles yet.'}</p>`;
+  }).join('') || `<p class="empty">${words.length ? `No battles match “${esc(words.join(' '))}”${combatFilter !== 'all' ? ' (try Everyone)' : ''}.` : combatFilter === 'mine' ? 'No battles involving you yet. Every battle you fight shows up here.' : combatFilter === 'allies' ? 'No battles involving you or your allies yet.' : 'No battles yet.'}</p>`;
+}
+/** Search words: lower case, split on anything that isn't a letter or digit (so "#12" is 12). */
+const searchWords = (s) => (s || '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+/** The words a combat log search looks through for one entry: its story (without the bounty sentence, which names
+ * everyone who was paid), the world's name now, the players in it, its result and importance, its battle number.
+ * A typed word matches the start of any of these, so "bo" finds Bo, not "bounty". */
+function combatHaystack(e) {
+  const P = world.planets[e.planet];
+  const names = entryPlayers(e).filter((x) => x !== undefined).map((x) => (x === null ? 'militia' : playerName(world, x)));
+  const sz = e.battle ? battleSize(e.battle) : null;
+  const story = (e.text || '').replace(/\s*Bounty \(.*$/s, '');
+  return searchWords([story, P?.name, ...names, verdict(e, ui.me)[1], sz?.label, e.battle ? e.battle.id : ''].join(' '));
 }
 function openCombat() {
   renderCombat();
@@ -1786,6 +1804,7 @@ function openCombat() {
 }
 $('combat-btn').addEventListener('click', openCombat);
 $('combat-close').addEventListener('click', () => $('combat').close());
+$('combat-search').addEventListener('input', () => renderCombat());
 document.querySelectorAll('[data-cfilter]').forEach((b) => b.addEventListener('click', () => { combatFilter = ui.combatFilter = b.dataset.cfilter; store.set(UI_KEY, ui); renderCombat(); }));
 $('combat-list').addEventListener('click', (e) => {
   const w = e.target.closest('[data-watch]');

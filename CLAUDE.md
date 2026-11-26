@@ -177,6 +177,20 @@ Middle < Back toward the world, Top/Bottom flank on the designer-top/bottom wing
 `tools/test-world.mjs`. Closest enemy pair at the start: 304 / 282 / 289. Replay sent: "4-way at Bo's world: every player in
 their own spot". **Both changes live 26 Nov 2026** (owner: "that works really well good job, make it live"); patch notes `2026-11-26-start-spots`.
 
+**Combat log search (owner, 26 Nov 2026: "can the battle log have a search function too")**, on `v2-dev`, **not live**. A search
+box in the combat log's header (`#combat-search`, full width on phones), read by `renderCombat` on every `input`; works on top of
+Mine / Allies / Everyone. `searchWords()` lower-cases and splits on anything not a letter or digit; `combatHaystack(e)` = the
+entry's story **without the bounty sentence** (it names everyone paid, and "bo" matched "Bounty" in every battle), the world's
+current name, the players in it (`entryPlayers`, militia as "militia"), the verdict label, the importance label and the battle id.
+**Every typed word must match the start of some word** ("bo" finds Bo, "moru" Morutis Minor, "legendary", "large"). A line under
+the key says "N of M battles match"; no match says so and suggests Everyone. Not remembered between visits. Checked in headless
+Chrome (18-battle bot galaxy, 1300×850 and a 412×915 phone; "bo" = exactly Bo's 5 battles).
+**Aegis prices (owner, same message: "i've changed the price of a few things but aegis citadels are still 150,000")**: they are
+exactly 750,000 cr of blocks (150,000 as a defence) because the 2.0 price rise (cannon/laser 120, PD 90) was met by regenerating
+them to the same budget (fewer guns in II/III, much armour turned to frame). The v1.0 versions at today's prices would be I
+816,890 / II 857,680 / III 835,920 / IV 825,630 cr of blocks (163,378 / 171,536 / 167,184 / 165,126 as defences). The menu label
+"Aegis fortresses (150,000 cr each)" in `addFortressTemplates()` is fixed text. Asked the owner which he wants.
+
 **Defences and selling, 5 minutes (owner, 18 Nov 2026, after 2.0 went live):** "building defences will be much more important and should be able to be done reactively": `DEFENSE_BUILD_HOURS` and `SELL_HOURS` = 5/60 (were 15 h), **selling a shipyard gives back 65%** (`SHIPYARD_SELL_REFUND`, was 95%). Texts use `fmtHours()` ("5 min"). Test: defences ordered 10 min before a battle are ready for it, ones ordered 2 min before are lost with the world. Live 18 Nov 2026. **No patch notes for now** (owner: nobody is playing; he'll say when to start again).
 
 **Bots (owner, 18 Nov 2026: "they don't have to be good, just basic bots"):** `src/world/bots.js`. A bot is a player with `bot: true` (no password; sessions refused). Every `BOT_EVERY_MIN` (10) game minutes a world event `'bots'` (`dueEvent`, after anything else due then; `world.botNext`) runs `runBots()`: alliance proposals to it are declined; any of its worlds `pinned()` by an enemy gets defences (a generated cruiser with thrusters turned to armour, up to half its credits, ≤ 200, once per world per 3 h); then shipyards for its own generated frigate/destroyer/cruiser/battleship (random, weighted to mid sizes) on the cheapest world, keeping 2 h of income back. Works on the server and the hot-seat page alike (it's an ordinary event); the server saves bot turns once per catch-up. Admin page: **Bots** field when making a game (extra seats "Bot 1"…, after the people; 1+ person, 2–10 seats in all; `bots` in `/api/admin/new-game`, `--bots` on the command line) and **Make it a bot** per seat (`makeBot()` in `world.js`, `/api/admin/make-bot`: an open seat becomes "Bot N", a named one keeps its name; its password is deleted). Diplomacy window tags bots and hides Propose. Names "Bot N" are reserved. Tests in `tools/test-world.mjs` and `tools/test-server.mjs`. Live 18 Nov 2026.
