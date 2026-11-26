@@ -30,7 +30,7 @@ import { makeBattleScenario } from './battleSetup.js';
 import { cleanLayout, shapeOf } from './defenceLayout.js';
 import { botsDue, runBots } from './bots.js';
 import { backfillStats, finalize, noteIncome, noteBuilt, noteCapture, noteBattle, playerStats } from './stats.js';
-import { HOUR_MS, MIN_FLEET_SPEED, NEUTRAL_COLOR, PLAYER_COLORS, CHOOSABLE_COLORS, MIN_PLAYERS, MAX_PLAYERS, BATTLE_MAX_TIME, BATTLE_HOLD_MIN, SPACE_VS_LANE, PLANET_SPACING, HOME_CLEARANCE, ARRIVE_TOGETHER_MIN } from './rules.js';
+import { HOUR_MS, MIN_FLEET_SPEED, NEUTRAL_COLOR, PLAYER_COLORS, CHOOSABLE_COLORS, MIN_PLAYERS, MAX_PLAYERS, BATTLE_MAX_TIME, BATTLE_HOLD_MIN, SPACE_VS_LANE, PLANET_SPACING, ARRIVE_TOGETHER_MIN } from './rules.js';
 
 export const YARD_MS = SHIPYARD_INTERVAL_MIN * 60 * 1000;
 export const HOLD_MS = BATTLE_HOLD_MIN * 60 * 1000;
@@ -1761,16 +1761,19 @@ export const MAX_SEATS = CHOOSABLE_COLORS.length;
 export const LATE_REACH = 1.4;
 
 /**
- * Why a late player's home world can't go at (x, y), or null if it can. The generator's rules for home
- * worlds: HOME_CLEARANCE from every world, no hyperlane passing right by it (so lanes never look as if
- * they run through it), and inside LATE_REACH × the radius.
+ * Why a late player's home world can't go at (x, y), or null if it can. The spacing every ordinary world
+ * was generated with (owner, 26 Nov 2026: "put him in the middle of the map… make the circle smaller";
+ * home-world spacing, HOME_CLEARANCE, left no room in the middle of any test map): LATE_CLEARANCE from
+ * every world, no hyperlane within LATE_LANE_GAP (the addLane rule, so lanes never look as if they run
+ * through it), and inside LATE_REACH × the radius.
  */
+export const LATE_CLEARANCE = PLANET_SPACING, LATE_LANE_GAP = PLANET_SPACING * 0.35;
 export function lateSpotProblem(world, x, y) {
   if (!Number.isFinite(x) || !Number.isFinite(y)) return 'Click a spot on the map.';
   if (Math.hypot(x, y) > world.radius * LATE_REACH) return 'That is too far out: pick a spot nearer the galaxy.';
-  const near = world.planets.find((p) => Math.hypot(p.x - x, p.y - y) < HOME_CLEARANCE);
-  if (near) return `Too close to ${near.name}: home worlds need more room.`;
-  const P = { x, y }, lane = world.lanes.find(([a, b]) => pointSegDist(P, world.planets[a], world.planets[b]) < PLANET_SPACING * 0.5);
+  const near = world.planets.find((p) => Math.hypot(p.x - x, p.y - y) < LATE_CLEARANCE);
+  if (near) return `Too close to ${near.name}: worlds need room round them.`;
+  const P = { x, y }, lane = world.lanes.find(([a, b]) => pointSegDist(P, world.planets[a], world.planets[b]) < LATE_LANE_GAP);
   if (lane) return `Too close to the hyperlane ${world.planets[lane[0]].name} ↔ ${world.planets[lane[1]].name}.`;
   return null;
 }

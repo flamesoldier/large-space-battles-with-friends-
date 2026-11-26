@@ -26,9 +26,8 @@ import { gzipSync } from 'node:zlib';
 import { Accounts, sha256, writeJsonAtomic } from './accounts.mjs';
 import { Game, gameExists } from './game.mjs';
 import { makeNewGame } from './setup.mjs';
-import { makeBot, addLane, addLatePlayer, incomeOf, MAX_SEATS, LATE_REACH } from '../src/world/world.js';
+import { makeBot, addLane, addLatePlayer, incomeOf, MAX_SEATS, LATE_REACH, LATE_CLEARANCE, LATE_LANE_GAP } from '../src/world/world.js';
 import { STARTING_CREDITS } from '../src/shared/economy.js';
-import { HOME_CLEARANCE, PLANET_SPACING } from '../src/world/rules.js';
 
 const ROOT = resolve(new URL('..', import.meta.url).pathname);
 const env = process.env;
@@ -223,7 +222,7 @@ function adminState() {
       seed: W.seed, worlds: W.planets.length, day: Math.floor(game.gameNow() / 864e5) + 1, speed: game.speed, clock: game.gameNow(),
       winner: W.winner, replays: game.replays.size, traffic: TRAFFIC,
       disk: { ...game.disk(), replayBytes: [...game.replayBytes.values()].reduce((a, b) => a + b, 0), replayCap: game.replayCap, saveError: game.saveError },
-      map: { radius: W.radius, reach: LATE_REACH, clearance: HOME_CLEARANCE, laneGap: PLANET_SPACING * 0.5, planets: W.planets.map((p) => ({ id: p.id, name: p.name, x: p.x, y: p.y, owner: p.owner ?? null, home: p.home >= 0, ...(p.late ? { late: true } : {}) })), lanes: W.lanes },
+      map: { radius: W.radius, reach: LATE_REACH, clearance: LATE_CLEARANCE, laneGap: LATE_LANE_GAP, planets: W.planets.map((p) => ({ id: p.id, name: p.name, x: p.x, y: p.y, owner: p.owner ?? null, home: p.home >= 0, ...(p.late ? { late: true } : {}) })), lanes: W.lanes },
       maxSeats: MAX_SEATS, startCredits: STARTING_CREDITS,
       players: W.players.map((p) => ({ id: p.id, name: p.name, color: p.color, team: p.team, eliminated: p.eliminated, bot: !!p.bot, joined: p.claimed !== false, password: !!accounts.get(p.id), worlds: W.planets.filter((x) => x.owner === p.id).length, income: Math.round(incomeOf(W, p.id)), credits: Math.floor(p.credits) })),
     },

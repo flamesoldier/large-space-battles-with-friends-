@@ -10,7 +10,7 @@ export const PATCH_NOTES = [
   {
     id: '2026-11-26-late-join', date: '26 Nov 2026', title: 'Friends can join a game already under way',
     items: [
-      'A new player can now join a running galaxy. They get a new home world of their own, usually out at the edge of the map.',
+      'A new player can now join a running galaxy. They get a new home world of their own, in a gap somewhere on the map.',
       'At first no hyperlane reaches a newcomer\'s world: nobody can attack it, and its ships can\'t leave yet. Once a hyperlane joins it to the rest of the galaxy (you\'ll see "New hyperlane" in the log), their fleets set off like everyone else\'s, and the world can be attacked like any other.',
       'If you set a world\'s Destination to a world that no hyperlane reaches, your fleets now go for the nearest enemy instead of waiting.',
     ],

@@ -215,6 +215,12 @@ at once (`dispatchAll`). The Hyperlanes map marks lane-less late worlds with a d
 back, the save gives it no lane, after a lane his ships fight; up to 18 players then refused) and `tools/test-server.mjs` (endpoint,
 login, claim). Checked in headless Chrome (admin section, game page as Player 11 with the name/colour dialog). Patch notes
 `2026-11-26-late-join` written.
+**Room in the middle (owner, same day: "i wanted to put him in the middle of the map is it possible to make the circle smaller")**,
+on `v2-dev`, not live: `lateSpotProblem` used home-world spacing (`HOME_CLEARANCE` 95, lanes ≥ 29), which left no free spot within half
+the radius on any of 20 generated 10-player maps. Now `LATE_CLEARANCE` = `PLANET_SPACING` (58, what every ordinary world was generated
+with) and `LATE_LANE_GAP` = `PLANET_SPACING` × 0.35 (the `addLane` rule): 20 / 20 maps have a spot, median 0.21 × radius from the centre
+(45 / 15 would give 0.09, tighter than the map's own worlds; not offered). Admin map ring and wording follow; patch note says "in a gap
+somewhere on the map". Test in `tools/test-world.mjs` (a spot within 0.4 × radius, joined to 2+ neighbours). Checked in headless Chrome.
 
 **Defences and selling, 5 minutes (owner, 18 Nov 2026, after 2.0 went live):** "building defences will be much more important and should be able to be done reactively": `DEFENSE_BUILD_HOURS` and `SELL_HOURS` = 5/60 (were 15 h), **selling a shipyard gives back 65%** (`SHIPYARD_SELL_REFUND`, was 95%). Texts use `fmtHours()` ("5 min"). Test: defences ordered 10 min before a battle are ready for it, ones ordered 2 min before are lost with the world. Live 18 Nov 2026. **No patch notes for now** (owner: nobody is playing; he'll say when to start again).
 

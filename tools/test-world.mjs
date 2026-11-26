@@ -1680,6 +1680,16 @@ const lanePlanHours = (W, a, b, d) => { const A = W.planets[a], B = W.planets[b]
     ok(s2 && addLatePlayer(g, { ...s2, credits: 0 }).ok, `player ${g.players.length + 1} added`);
   }
   ok(new Set(g.players.map((p) => p.color)).size === MAX_SEATS, 'everyone has their own colour');
+  // owner, 26 Nov 2026: "put him in the middle of the map": ordinary world spacing leaves room near the centre of a fresh map
+  {
+    const m = createAutoWorld({ players: Array.from({ length: 10 }, (_, k) => `Q${k}`), seed: 7 });
+    let mid = null;
+    for (let r = 0; r < m.radius * 0.5 && !mid; r += 4) for (let a = 0; a < 72 && !mid; a++) { const x = Math.cos(a / 72 * Math.PI * 2) * r, y = Math.sin(a / 72 * Math.PI * 2) * r; if (!lateSpotProblem(m, x, y)) mid = { x, y }; }
+    ok(mid && Math.hypot(mid.x, mid.y) < m.radius * 0.4, `a spot near the middle (${mid && (Math.hypot(mid.x, mid.y) / m.radius).toFixed(2)} × radius)`);
+    const rr = addLatePlayer(m, { ...mid, credits: 1 });
+    const near = m.planets.filter((P) => P.id !== rr.planet).sort((p, q) => Math.hypot(p.x - mid.x, p.y - mid.y) - Math.hypot(q.x - mid.x, q.y - mid.y));
+    ok(rr.ok && near.slice(0, 6).filter((P) => addLane(m, rr.planet, P.id).ok).length >= 2, 'and it can be joined to its neighbours');
+  }
   ok(!addLatePlayer(g, { x: 0, y: g.radius * 1.3, credits: 0 }).ok, `no more than ${MAX_SEATS}`);
 }
 
