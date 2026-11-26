@@ -30,7 +30,7 @@ import { makeBattleScenario } from './battleSetup.js';
 import { cleanLayout, shapeOf } from './defenceLayout.js';
 import { botsDue, runBots } from './bots.js';
 import { backfillStats, finalize, noteIncome, noteBuilt, noteCapture, noteBattle, playerStats } from './stats.js';
-import { HOUR_MS, MIN_FLEET_SPEED, NEUTRAL_COLOR, PLAYER_COLORS, CHOOSABLE_COLORS, RECOLOR, MIN_PLAYERS, MAX_PLAYERS, BATTLE_MAX_TIME, BATTLE_HOLD_MIN, SPACE_VS_LANE, PLANET_SPACING, ARRIVE_TOGETHER_MIN } from './rules.js';
+import { HOUR_MS, MIN_FLEET_SPEED, NEUTRAL_COLOR, PLAYER_COLORS, CHOOSABLE_COLORS, RECOLOR, COLOR_SWAP, MIN_PLAYERS, MAX_PLAYERS, BATTLE_MAX_TIME, BATTLE_HOLD_MIN, SPACE_VS_LANE, PLANET_SPACING, ARRIVE_TOGETHER_MIN } from './rules.js';
 
 export const YARD_MS = SHIPYARD_INTERVAL_MIN * 60 * 1000;
 export const HOLD_MS = BATTLE_HOLD_MIN * 60 * 1000;
@@ -60,6 +60,7 @@ export function createWorld({ players, seed = 1, planetsPerPlayer, clock = 0 }) 
   const g = generateGalaxy({ players: players.length, seed, planetsPerPlayer });
   const world = {
     format: 'lsb-world', version: 3, seed, clock, nextId: 1, winner: null,
+    colorFix: 1, // player colours are the 26 Nov 2026 palette (upgradeWorld's one-off swap is not for this world)
     auto: true, // 2.0: fleets launch and move by themselves (see "the fleet brain"); 1.0 saves have no flag
     radius: g.radius,
     players: players.map((p, k) => ({
@@ -744,6 +745,15 @@ function launch(world, owner, from, to, ships, plan, retreat) {
 
 /** Bring a saved world up to date with the current rules (older saves had no per-leg stops). */
 export function upgradeWorld(world) {
+  // Colour swap (26 Nov 2026, owner): games already moved to the new colours by the first version of the remap
+  // below trade four pairs of colours, once (world.colorFix). Worlds still on old colours have none of these, so
+  // this changes nothing for them and the corrected RECOLOR below does the job. New games are made with the flag.
+  if (!world.colorFix) {
+    const sw = (c) => COLOR_SWAP[String(c || '').toLowerCase()];
+    for (const pl of world.players) { const to = sw(pl.color); if (to) pl.color = to; }
+    for (const r of world.final?.standings || []) { const to = sw(r.color); if (to) r.color = to; }
+    world.colorFix = 1;
+  }
   // New player colours (26 Nov 2026): anyone on an old palette colour moves to the new one in the
   // same slot, unless another player already has it. Runs on every load; new colours aren't in the
   // old list, so it only ever changes a player once.

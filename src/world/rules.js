@@ -58,6 +58,11 @@ export const CHOOSABLE_COLORS = [...PLAYER_COLORS, '#f89890', '#309800', '#00b0f
 // The palette before 26 Nov 2026, slot for slot: upgradeWorld moves players on to the new colour in
 // the same slot, and the replay viewer draws old replays in the new colours.
 const OLD_COLORS = ['#86e8ff', '#ffb35c', '#a3f27c', '#ff6fa8', '#c59bff', '#ffe66b', '#5ce0c0', '#ff7a5c', '#7aa7ff', '#e8e8e8', '#ff4d4d', '#4dff88', '#3d7bff', '#ffa3e0', '#b8ff3d', '#ff9f1a', '#00c2c7', '#a17cff'];
-export const RECOLOR = Object.fromEntries(OLD_COLORS.map((c, k) => [c, CHOOSABLE_COLORS[k]]));
+// Owner, 26 Nov 2026 (after the first remap went live): "swap the oranges, the greens, the purples and the
+// (player 7 / player 17 one) so that my players get the colours they want". These four pairs of new colours trade
+// places: old #ffb35c → brown, old #ff9f1a → orange, and so on.
+export const COLOR_SWAP = Object.fromEntries([['#ff9a1f', '#b07840'], ['#8fe04a', '#309800'], ['#b77cff', '#e800e8'], ['#2fd1a0', '#009878']]
+  .flatMap(([a, b]) => [[a, b], [b, a]]));
+export const RECOLOR = Object.fromEntries(OLD_COLORS.map((c, k) => [c, COLOR_SWAP[CHOOSABLE_COLORS[k]] || CHOOSABLE_COLORS[k]]));
 /** A colour from the old palette → its new one; anything else unchanged. */
 export const recolor = (c) => (typeof c === 'string' && RECOLOR[c.toLowerCase()]) || c;

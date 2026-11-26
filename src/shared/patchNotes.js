@@ -12,6 +12,7 @@ export const PATCH_NOTES = [
     items: [
       'Some player colours were almost the same (two purples, two oranges, two greens). All 18 colours have been spread out so no two look alike.',
       'Your colour changed a little to the new one in its place: oranges stay orange, purples stay purple, and so on. Old replays are shown in the new colours too.',
+      'Later the same evening four pairs were swapped round (the oranges, greens, purples and teals) so everyone has the colour they wanted.',
     ],
   },
   {

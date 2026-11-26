@@ -1701,17 +1701,27 @@ const lanePlanHours = (W, a, b, d) => { const A = W.planets[a], B = W.planets[b]
   g.players[0].color = '#c59bff'; g.players[1].color = '#A17CFF'; g.players[2].color = '#ffb35c'; g.players[3].color = '#ff9f1a'; g.players[4].color = '#123456';
   g.final = { standings: g.players.map((p) => ({ id: p.id, color: p.color })) };
   upgradeWorld(g);
-  ok(g.players.map((p) => p.color).join() === ['#b77cff', '#e800e8', '#ff9a1f', '#b07840', '#123456'].join(), 'old palette colours move to the new colour in the same slot; others are left alone');
-  ok(g.final.standings[0].color === '#b77cff', 'the frozen victory standings too');
+  ok(g.players.map((p) => p.color).join() === ['#e800e8', '#b77cff', '#b07840', '#ff9a1f', '#123456'].join(), 'old palette colours move to their new colour (with the owner\'s swaps); others are left alone');
+  ok(g.final.standings[0].color === '#e800e8', 'the frozen victory standings too');
   const before = g.players.map((p) => p.color).join(); upgradeWorld(g);
   ok(g.players.map((p) => p.color).join() === before, 'only once');
   ok(old.length === 18 && CHOOSABLE_COLORS.every((c) => !old.includes(c)) && new Set(CHOOSABLE_COLORS).size === 18, '18 new colours, none from the old palette');
-  ok(recolor('#FF9F1A') === '#b07840' && recolor('#abcdef') === '#abcdef' && recolor(null) === null, 'recolor for old replays');
+  ok(recolor('#FF9F1A') === '#ff9a1f' && recolor('#abcdef') === '#abcdef' && recolor(null) === null, 'recolor for old replays');
   // a player already on a new colour keeps it; nobody is moved onto a colour someone has
   const h = createAutoWorld({ players: ['A', 'B'], seed: 3 });
-  h.players[0].color = '#ff9a1f'; h.players[1].color = '#ffb35c';
+  h.players[0].color = '#b07840'; h.players[1].color = '#ffb35c';
   upgradeWorld(h);
   ok(h.players[1].color === '#ffb35c', 'no move onto a colour already taken');
+  // the live game, already moved by the first remap (no colorFix): the four pairs trade places, once
+  const L = createAutoWorld({ players: ['A', 'B', 'C', 'D', 'E'], seed: 3 });
+  delete L.colorFix;
+  L.players.forEach((p, k) => { p.color = ['#ff9a1f', '#b07840', '#309800', '#e800e8', '#5ce8ff'][k]; });
+  upgradeWorld(L);
+  ok(L.players.map((p) => p.color).join() === ['#b07840', '#ff9a1f', '#8fe04a', '#b77cff', '#5ce8ff'].join(), 'oranges, greens and purples swapped in a game already on the new colours');
+  upgradeWorld(L);
+  ok(L.players[0].color === '#b07840' && L.colorFix, 'only once');
+  const N = createAutoWorld({ players: ['A', 'B'], seed: 3 }); const nc = N.players.map((p) => p.color).join(); upgradeWorld(N);
+  ok(N.players.map((p) => p.color).join() === nc, 'new games are not swapped');
 }
 
 console.log(`world: ${checks} checks passed`);
