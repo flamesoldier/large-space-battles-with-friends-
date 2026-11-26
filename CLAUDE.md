@@ -236,7 +236,10 @@ players get the colours they want")**, **live 26 Nov 2026** (owner: "make it liv
 #b77cff ↔ #e800e8, #2fd1a0 ↔ #009878); `RECOLOR` now maps old #ffb35c → brown, old #ff9f1a → orange, etc. The live game was
 already moved by the first remap, so `upgradeWorld` swaps those pairs once (`world.colorFix`; `createWorld` sets it so new games
 aren't swapped; a world still on old colours has none of them, so the swap is a no-op there). Replays recorded between the two
-deploys keep the colours they were recorded with. Tests in `tools/test-world.mjs`.
+deploys keep the colours they were recorded with. Tests in `tools/test-world.mjs`. **Then (owner, same evening: "player 15 wants the player 3 colour and player 11 wants the player 8 colour then
+make it live"; "player N" = slot N of `CHOOSABLE_COLORS`, as labelled in the swatch picture sent)**, **live 26 Nov 2026**:
+`COLOR_SWAP2` (#989000 ↔ #8fe04a, #f89890 ↔ #ff5a3a), applied once in `upgradeWorld` while `colorFix` < 2 (now 2; `createWorld`
+sets 2); a swap, so whoever already had the wanted colour takes the other.
 
 **Replay share links (owner, 26 Nov 2026: "one of my friends said it would be cool to send each other replays i downloaded a replay and
 sent it into the Facebook group chat but it doesn't open on my phone"; chose "Share links": anyone with the link can watch, no login)**,

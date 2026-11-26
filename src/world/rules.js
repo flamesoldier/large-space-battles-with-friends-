@@ -63,6 +63,10 @@ const OLD_COLORS = ['#86e8ff', '#ffb35c', '#a3f27c', '#ff6fa8', '#c59bff', '#ffe
 // places: old #ffb35c → brown, old #ff9f1a → orange, and so on.
 export const COLOR_SWAP = Object.fromEntries([['#ff9a1f', '#b07840'], ['#8fe04a', '#309800'], ['#b77cff', '#e800e8'], ['#2fd1a0', '#009878']]
   .flatMap(([a, b]) => [[a, b], [b, a]]));
+// Second request the same evening (owner: "player 15 wants the player 3 colour and player 11 wants the player 8 colour";
+// "player N" = slot N of CHOOSABLE_COLORS): olive ↔ light green, salmon ↔ red-orange. Swapped, so if someone already
+// had the wanted colour they take the other one and no two players share a colour.
+export const COLOR_SWAP2 = Object.fromEntries([['#989000', '#8fe04a'], ['#f89890', '#ff5a3a']].flatMap(([a, b]) => [[a, b], [b, a]]));
 export const RECOLOR = Object.fromEntries(OLD_COLORS.map((c, k) => [c, COLOR_SWAP[CHOOSABLE_COLORS[k]] || CHOOSABLE_COLORS[k]]));
 /** A colour from the old palette → its new one; anything else unchanged. */
 export const recolor = (c) => (typeof c === 'string' && RECOLOR[c.toLowerCase()]) || c;

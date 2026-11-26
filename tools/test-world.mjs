@@ -1717,9 +1717,15 @@ const lanePlanHours = (W, a, b, d) => { const A = W.planets[a], B = W.planets[b]
   delete L.colorFix;
   L.players.forEach((p, k) => { p.color = ['#ff9a1f', '#b07840', '#309800', '#e800e8', '#5ce8ff'][k]; });
   upgradeWorld(L);
-  ok(L.players.map((p) => p.color).join() === ['#b07840', '#ff9a1f', '#8fe04a', '#b77cff', '#5ce8ff'].join(), 'oranges, greens and purples swapped in a game already on the new colours');
+  ok(L.players.map((p) => p.color).join() === ['#b07840', '#ff9a1f', '#989000', '#b77cff', '#5ce8ff'].join(), 'oranges, greens and purples swapped in a game already on the new colours (then light green ↔ olive)');
   upgradeWorld(L);
   ok(L.players[0].color === '#b07840' && L.colorFix, 'only once');
+  // second request: a game after the first swap (colorFix 1): olive ↔ light green, salmon ↔ red-orange, once
+  const M2 = createAutoWorld({ players: ['A', 'B', 'C', 'D'], seed: 3 });
+  M2.colorFix = 1;
+  M2.players.forEach((p, k) => { p.color = ['#989000', '#f89890', '#8fe04a', '#5ce8ff'][k]; });
+  upgradeWorld(M2); upgradeWorld(M2);
+  ok(M2.players.map((p) => p.color).join() === ['#8fe04a', '#ff5a3a', '#989000', '#5ce8ff'].join() && M2.colorFix === 2, 'player 15 gets slot 3, player 11 gets slot 8 (a holder of the wanted colour swaps), once');
   const N = createAutoWorld({ players: ['A', 'B'], seed: 3 }); const nc = N.players.map((p) => p.color).join(); upgradeWorld(N);
   ok(N.players.map((p) => p.color).join() === nc, 'new games are not swapped');
 }
