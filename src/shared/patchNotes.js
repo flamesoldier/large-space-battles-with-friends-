@@ -8,6 +8,13 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-27-designer-buttons', date: '27 Nov 2026', title: 'Ship designer buttons stay put',
+    items: [
+      'The buttons along the top of the ship and defence designers (Start from, Credits, Build shipyard and the rest) no longer shuffle sideways while you place blocks. This was worst on phones.',
+      'Start from → Sample frigate works again (it used to do nothing).',
+    ],
+  },
+  {
     id: '2026-11-26-colours', date: '26 Nov 2026', title: 'Player colours easier to tell apart',
     items: [
       'Some player colours were almost the same (two purples, two oranges, two greens). All 18 colours have been spread out so no two look alike.',

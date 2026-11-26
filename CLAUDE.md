@@ -1822,6 +1822,15 @@ designer's numbers against the sim.
   a Bresenham diagonal would fall off the ship), `snapLine()` = **Shift** snaps to straight or exactly 45°, `line()` refuses
   multi-block units and the hub (like Rect). Controls hint mentions it. Test in `tools/test-designer.mjs`. Checked in headless
   Chrome (1300×850 and a 412×915 phone).
+- **Top-bar buttons stay put (owner, 27 Nov 2026: a friend's "Start from, credits, build shipyard etc kept moving around when
+  he placed blocks")**, on `v2-dev`, **not live**, patch notes `2026-11-27-designer-buttons`. Cause: "Build shipyard · N cr" (and
+  the Credits chip, the phone Stats button) changed width with every price change; on phones `#test-btn, #use-design,
+  #credits-chip` are `order: -1` at the front of the scrolling row, so everything after them slid (13 layouts in 40 clicks); on
+  very wide screens the right group sits right-aligned on row 1, so it all slid there too (5). Now each number is in a
+  `.num-slot` (mono, tabular, letter-spacing 0) written by `numSlot(el, text, min)` in `designer/app.js`: `min-width` in `ch`,
+  starting at 7 (6 for the Stats button) and **only ever widening**; the button is `#use-label` + `#use-price`. Measured after: 1
+  layout in 40 clicks at 2600, 1920, 1100 and 412 px wide (price 540 → 5,440, credits 9,990 → 10,050). Also fixed: **Start from →
+  Sample frigate did nothing** (`v.startsWith('f')` took it for an Aegis fortress `f<k>`; now `/^f\d+$/`).
 - The **Thruster** palette tooltip (and the Top speed stat's hover text) says thrusters also set
   galaxy map speed: a fleet travels at its slowest ship's top speed (owner, Nov 2026).
 - Plasma cannon tooltips (palette and weapon table) end with a capitals warning about friendly

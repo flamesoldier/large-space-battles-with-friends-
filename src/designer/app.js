@@ -18,6 +18,16 @@ import { BATTLE_MAX_TIME } from '../world/rules.js';
 
 const $ = (id) => document.getElementById(id);
 const fmt = (n) => Math.round(n).toLocaleString();
+/**
+ * Writes a number into a fixed-width slot (`.num-slot`, monospaced digits) that only ever widens, so the buttons next to a
+ * price or credit total don't shift as blocks are placed or credits come in (owner, 26 Nov 2026: a friend's top-bar
+ * buttons kept moving while he built). `min` = characters kept free from the start ("999,999" = 7).
+ */
+function numSlot(el, text, min = 7) {
+  el.textContent = text;
+  const need = Math.max(min, text.length, Number(el.dataset.ch) || 0);
+  if (String(need) !== el.dataset.ch) { el.dataset.ch = need; el.style.minWidth = `${need}ch`; }
+}
 
 // Same colours as the replay viewer's Azure side, so a design looks like it will in battle.
 const COLOR = {
@@ -123,7 +133,7 @@ tpl.addEventListener('change', () => {
   const v = tpl.value;
   tpl.value = '';
   if (!v) return;
-  if (v.startsWith('f')) { // a ready-made Aegis fortress (defence designer only)
+  if (/^f\d+$/.test(v)) { // a ready-made Aegis fortress (defence designer only); was startsWith('f'), which caught "frigate"
     const f = FORTRESSES[Number(v.slice(1))];
     toast(`Loading ${f.name}…`);
     loadFortress(Number(v.slice(1))).then((d) => { ed.load(d); dropThrusters(); syncFields(); fit(); toast(`Loaded ${f.name}. Undo to go back.`); })
@@ -212,7 +222,7 @@ function refresh(force = false) {
   dirty = true;
   const a = info;
   $('cost').textContent = fmt(a.cost);
-  $('stats-cost').textContent = `${fmt(a.cost)} cr`; // phone Stats button (hidden on computers)
+  numSlot($('stats-cost-n'), fmt(a.cost), 6); // phone Stats button (hidden on computers)
   $('stats-btn').classList.toggle('bad', !a.ok);
   $('yard').textContent = fmt(shipyardPrice(design));
   $('yard-hint').textContent = `A shipyard costs ${SHIPYARD_PRICE_MULT}× the ship and builds ${SHIPS_PER_BUILD} free every ${SHIPYARD_INTERVAL_MIN} min until the world falls. It pays for itself in ${(SHIPYARD_PRICE_MULT / SHIPS_PER_BUILD * SHIPYARD_INTERVAL_MIN / 60).toFixed(0)} h.`;
@@ -1494,7 +1504,7 @@ function enterSimMode() {
 function showCredits(price) {
   const c = Math.floor(embed.credits ?? 0), short = price != null && price > c;
   $('credits-chip').hidden = false;
-  $('credits').textContent = fmt(c);
+  numSlot($('credits'), fmt(c));
   $('credits-chip').classList.toggle('short', short);
   $('have-box').hidden = price == null;
   if (price == null) return;
@@ -1509,7 +1519,8 @@ function syncEmbed() {
     const price = defensePrice(design), thr = (info.byType[BT.THRUSTER] || 0) + (info.byType[BT.MEGA] || 0);
     const b = $('use-design');
     b.hidden = false;
-    b.textContent = `Build defence · ${fmt(price)} cr`;
+    $('use-label').textContent = 'Build defence';
+    numSlot($('use-price'), fmt(price));
     b.disabled = !info.ok || thr > 0 || price > embed.credits;
     b.title = !info.ok || thr ? 'Fix the red issues first' : price > embed.credits ? `You have ${fmt(embed.credits)} credits` : `Build one of these defences at ${embed.planet} (build more from the Build defences list)`;
     $('yard-label').textContent = 'Defence';
@@ -1522,7 +1533,8 @@ function syncEmbed() {
   const price = shipyardPriceAt(design, embed.existing || 0), extra = crowdingSurcharge(shipyardPrice(design), embed.existing || 0);
   const b = $('use-design');
   b.hidden = false;
-  b.textContent = `Build shipyard · ${fmt(price)} cr`;
+  $('use-label').textContent = 'Build shipyard';
+  numSlot($('use-price'), fmt(price));
   b.disabled = !info.ok || price > embed.credits;
   showCredits(price);
   b.title = !info.ok ? 'Fix the red issues first' : price > embed.credits ? `You have ${fmt(embed.credits)} credits` : `Build a shipyard for this design at ${embed.planet}`;

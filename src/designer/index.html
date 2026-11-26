@@ -109,6 +109,9 @@ main { grid-area: grid; position: relative; min-width: 0; min-height: 0; }
 .credits-chip small { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
 .credits-chip b { font-family: var(--mono); font-weight: 500; color: var(--signal); font-variant-numeric: tabular-nums; }
 .credits-chip.short b { color: var(--bad); }
+/* Numbers that change as you build (price, credits) sit in a slot that never gets narrower, so the buttons beside them
+   stay put (owner, 26 Nov 2026: a friend's buttons kept moving as he placed blocks). Width set by numSlot() in app.js. */
+.num-slot { display: inline-block; text-align: right; font-family: var(--mono); font-weight: 500; letter-spacing: 0; font-variant-numeric: tabular-nums; }
 .cls { margin-top: 12px; }
 .cls header { display: flex; justify-content: space-between; align-items: baseline; }
 .cls b { font-size: 15px; letter-spacing: 0.04em; }
@@ -292,9 +295,9 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
       <button id="export">Export</button>
       <button id="import">Import</button>
       <input id="import-file" type="file" accept=".json,application/json" hidden>
-      <span id="credits-chip" class="credits-chip" hidden title="Your credits right now (kept up to date while the designer is open)"><small>Credits</small><b id="credits">0</b></span>
+      <span id="credits-chip" class="credits-chip" hidden title="Your credits right now (kept up to date while the designer is open)"><small>Credits</small><b id="credits" class="num-slot">0</b></span>
       <button id="test-btn" class="go">Test battle</button>
-      <button id="use-design" class="go" hidden>Build shipyard</button>
+      <button id="use-design" class="go" hidden><span id="use-label">Build shipyard</span> · <span id="use-price" class="num-slot"></span> cr</button>
     </div>
   </header>
 
@@ -302,7 +305,7 @@ dialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top
     <h2>Blocks</h2>
     <div class="blocks" id="blocks" role="group" aria-label="Block to place"></div>
     <div class="tools">
-    <button id="stats-btn" class="phone-only" aria-pressed="false" title="Cost, stats and checks">Stats<span id="stats-cost"></span></button>
+    <button id="stats-btn" class="phone-only" aria-pressed="false" title="Cost, stats and checks">Stats<span id="stats-cost"><span id="stats-cost-n" class="num-slot"></span> cr</span></button>
     <h2>Tool</h2>
     <div class="row" role="group" aria-label="Tool">
       <button data-tool="pencil" title="Pencil (B)">Pencil</button>
