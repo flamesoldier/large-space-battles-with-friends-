@@ -8,6 +8,13 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-26-colours', date: '26 Nov 2026', title: 'Player colours easier to tell apart',
+    items: [
+      'Some player colours were almost the same (two purples, two oranges, two greens). All 18 colours have been spread out so no two look alike.',
+      'Your colour changed a little to the new one in its place: oranges stay orange, purples stay purple, and so on. Old replays are shown in the new colours too.',
+    ],
+  },
+  {
     id: '2026-11-26-share-replays', date: '26 Nov 2026', title: 'Share replays with a link',
     items: [
       'New Share button next to Watch in the combat log: it gives you a link to that battle. Paste it in a group chat and anyone can watch the replay in their browser, phones included, without logging in.',

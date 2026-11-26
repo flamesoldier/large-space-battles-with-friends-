@@ -54,8 +54,8 @@ const ART = {
     ${label(160, 104, `battle in ${holdText}`, 'var(--warn)')}`),
   defence: W(`${world(270, 55, 14, MINE)}${[0, 1, 2].map((r) => [0, 1, 2, 3].map((c) => `<rect x="${215 - r * 26}" y="${14 + c * 24 + (r % 2) * 12}" width="14" height="10" fill="${r === 0 ? '#41597a' : '#5c7ea3'}" stroke="var(--azure)" stroke-width="1"/>`).join('')).join('')}
     ${[[54, 35], [44, 65], [59, 90]].map(([x, y]) => `<path d="M${x} ${y} l-14 -5 l0 10 z" fill="var(--ember)"/>`).join('')}${label(80, 104, `ready in ${mins(DEFENSE_BUILD_HOURS)}`, 'var(--ink)')}`),
-  allies: W(`${lane(70, 55, 160, 55)}${lane(160, 55, 250, 55)}${world(70, 55, 14, MINE)}${world(250, 55, 14, '#a3f27c')}${world(160, 55, 9, MILITIA)}
-    ${label(70, 90, 'you', MINE)}${label(250, 90, 'your ally', '#a3f27c')}${label(160, 25, 'attack together', 'var(--ink)')}`),
+  allies: W(`${lane(70, 55, 160, 55)}${lane(160, 55, 250, 55)}${world(70, 55, 14, MINE)}${world(250, 55, 14, '#8fe04a')}${world(160, 55, 9, MILITIA)}
+    ${label(70, 90, 'you', MINE)}${label(250, 90, 'your ally', '#8fe04a')}${label(160, 25, 'attack together', 'var(--ink)')}`),
   replays: W(`${[['#ffd35c', 'Legendary'], ['#e879f9', 'Epic'], ['#ff7a45', 'Huge'], ['#5aaeff', 'Large'], ['#5fd39a', 'Medium'], ['#8b98ad', 'Small']].map(([c, t], i) => `<rect x="${20 + (i % 3) * 100}" y="${22 + Math.floor(i / 3) * 40}" width="88" height="26" rx="4" fill="none" stroke="${c}" stroke-width="${i ? 1.5 : 3}"/>${label(64 + (i % 3) * 100, 39 + Math.floor(i / 3) * 40, t, c)}`).join('')}`),
 };
 

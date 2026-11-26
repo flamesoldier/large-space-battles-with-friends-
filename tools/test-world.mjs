@@ -21,7 +21,7 @@ import { makeTestScenario } from '../src/designer/testBattle.js';
 import { BT } from '../src/shared/blocks.js';
 import { designCost, encodeDesign, decodeDesign } from '../src/shared/shipStats.js';
 import { STARTING_CREDITS, HOME_INCOME, SHIPYARD_SELL_REFUND, SHIPYARD_CROWDING_VALUE, SHIPS_PER_BUILD, BOUNTY_SHARE, shipyardPrice, defensePrice, SELL_HOURS, SELL_GAP_HOURS, DEFENSE_BUILD_HOURS } from '../src/shared/economy.js';
-import { HOUR_MS, HYPERLANE_SPEEDUP, MAX_PLAYERS, PLANET_SPACING } from '../src/world/rules.js';
+import { HOUR_MS, HYPERLANE_SPEEDUP, MAX_PLAYERS, PLANET_SPACING, CHOOSABLE_COLORS, RECOLOR, recolor } from '../src/world/rules.js';
 
 // The 1.0 tests below drive fleets by hand (sieges, captures, bounties and so on all still apply in
 // 2.0), so they use a world with the fleet brain off. The 2.0 tests at the end use createAutoWorld.
@@ -1691,6 +1691,27 @@ const lanePlanHours = (W, a, b, d) => { const A = W.planets[a], B = W.planets[b]
     ok(rr.ok && near.slice(0, 6).filter((P) => addLane(m, rr.planet, P.id).ok).length >= 2, 'and it can be joined to its neighbours');
   }
   ok(!addLatePlayer(g, { x: 0, y: g.radius * 1.3, credits: 0 }).ok, `no more than ${MAX_SEATS}`);
+}
+
+// Player colours respread (owner, 26 Nov 2026: "the 2 purples and the 2 oranges are too similar").
+{
+  const g = createAutoWorld({ players: ['A', 'B', 'C', 'D', 'E'], seed: 3 });
+  const old = Object.keys(RECOLOR);
+  // A game made before: two purples, two oranges, one custom colour
+  g.players[0].color = '#c59bff'; g.players[1].color = '#A17CFF'; g.players[2].color = '#ffb35c'; g.players[3].color = '#ff9f1a'; g.players[4].color = '#123456';
+  g.final = { standings: g.players.map((p) => ({ id: p.id, color: p.color })) };
+  upgradeWorld(g);
+  ok(g.players.map((p) => p.color).join() === ['#b77cff', '#e800e8', '#ff9a1f', '#b07840', '#123456'].join(), 'old palette colours move to the new colour in the same slot; others are left alone');
+  ok(g.final.standings[0].color === '#b77cff', 'the frozen victory standings too');
+  const before = g.players.map((p) => p.color).join(); upgradeWorld(g);
+  ok(g.players.map((p) => p.color).join() === before, 'only once');
+  ok(old.length === 18 && CHOOSABLE_COLORS.every((c) => !old.includes(c)) && new Set(CHOOSABLE_COLORS).size === 18, '18 new colours, none from the old palette');
+  ok(recolor('#FF9F1A') === '#b07840' && recolor('#abcdef') === '#abcdef' && recolor(null) === null, 'recolor for old replays');
+  // a player already on a new colour keeps it; nobody is moved onto a colour someone has
+  const h = createAutoWorld({ players: ['A', 'B'], seed: 3 });
+  h.players[0].color = '#ff9a1f'; h.players[1].color = '#ffb35c';
+  upgradeWorld(h);
+  ok(h.players[1].color === '#ffb35c', 'no move onto a colour already taken');
 }
 
 console.log(`world: ${checks} checks passed`);

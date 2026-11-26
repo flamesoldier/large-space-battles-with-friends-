@@ -30,7 +30,7 @@ import { makeBattleScenario } from './battleSetup.js';
 import { cleanLayout, shapeOf } from './defenceLayout.js';
 import { botsDue, runBots } from './bots.js';
 import { backfillStats, finalize, noteIncome, noteBuilt, noteCapture, noteBattle, playerStats } from './stats.js';
-import { HOUR_MS, MIN_FLEET_SPEED, NEUTRAL_COLOR, PLAYER_COLORS, CHOOSABLE_COLORS, MIN_PLAYERS, MAX_PLAYERS, BATTLE_MAX_TIME, BATTLE_HOLD_MIN, SPACE_VS_LANE, PLANET_SPACING, ARRIVE_TOGETHER_MIN } from './rules.js';
+import { HOUR_MS, MIN_FLEET_SPEED, NEUTRAL_COLOR, PLAYER_COLORS, CHOOSABLE_COLORS, RECOLOR, MIN_PLAYERS, MAX_PLAYERS, BATTLE_MAX_TIME, BATTLE_HOLD_MIN, SPACE_VS_LANE, PLANET_SPACING, ARRIVE_TOGETHER_MIN } from './rules.js';
 
 export const YARD_MS = SHIPYARD_INTERVAL_MIN * 60 * 1000;
 export const HOLD_MS = BATTLE_HOLD_MIN * 60 * 1000;
@@ -744,6 +744,14 @@ function launch(world, owner, from, to, ships, plan, retreat) {
 
 /** Bring a saved world up to date with the current rules (older saves had no per-leg stops). */
 export function upgradeWorld(world) {
+  // New player colours (26 Nov 2026): anyone on an old palette colour moves to the new one in the
+  // same slot, unless another player already has it. Runs on every load; new colours aren't in the
+  // old list, so it only ever changes a player once.
+  for (const pl of world.players) {
+    const to = RECOLOR[String(pl.color || '').toLowerCase()];
+    if (to && !world.players.some((q) => q !== pl && String(q.color).toLowerCase() === to)) pl.color = to;
+  }
+  for (const r of world.final?.standings || []) { const to = RECOLOR[String(r.color || '').toLowerCase()]; if (to) r.color = to; }
   for (const f of world.fleets) {
     if (f.leg !== undefined) continue;
     let h = 0;

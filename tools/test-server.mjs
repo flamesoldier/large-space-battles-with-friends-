@@ -120,16 +120,16 @@ try {
     await cat2.json('POST', '/api/login', { password: catNow });
     let w = (await p2.state()).body.world;
     ok(w.players[1].claimed === false && w.players[0].claimed === true, 'open seats are marked until claimed');
-    ok(/already called/.test((await p2.act({ type: 'claim', name: 'cat', color: '#ff4d4d' })).body.error), 'names must be different (any case)');
-    ok(/of your own/.test((await p2.act({ type: 'claim', name: 'player 9', color: '#ff4d4d' })).body.error), 'placeholder names are refused');
+    ok(/already called/.test((await p2.act({ type: 'claim', name: 'cat', color: '#f89890' })).body.error), 'names must be different (any case)');
+    ok(/of your own/.test((await p2.act({ type: 'claim', name: 'player 9', color: '#f89890' })).body.error), 'placeholder names are refused');
     ok(/colours shown/.test((await p2.act({ type: 'claim', name: 'Dan', color: w.players[0].color })).body.error), 'someone else\'s colour is refused');
     ok(/colours shown/.test((await p2.act({ type: 'claim', name: 'Dan', color: 'red' })).body.error), 'made-up colours are refused');
-    let c = await p2.act({ type: 'claim', name: '  Dan <b>the</b>  Bold ', color: '#FF4D4D' });
-    ok(c.body.ok && c.body.state.world.players[1].name === 'Dan bthe/b Bold' && c.body.state.world.players[1].color === '#ff4d4d' && c.body.state.world.players[1].claimed, 'a player claims their seat (name tidied)');
-    ok(!(await p2.act({ type: 'claim', name: 'Again', color: '#4dff88' })).body.ok, 'only once');
-    ok(!(await cat2.act({ type: 'claim', name: 'Kitty', color: '#4dff88' })).body.ok, 'named players can\'t rename');
-    ok(/colours shown/.test((await p3.act({ type: 'claim', name: 'Eve', color: '#ff4d4d' })).body.error), 'a colour just taken is gone');
-    ok((await p3.act({ type: 'claim', name: 'Eve', color: '#4dff88' })).body.ok, 'the next player claims theirs');
+    let c = await p2.act({ type: 'claim', name: '  Dan <b>the</b>  Bold ', color: '#F89890' });
+    ok(c.body.ok && c.body.state.world.players[1].name === 'Dan bthe/b Bold' && c.body.state.world.players[1].color === '#f89890' && c.body.state.world.players[1].claimed, 'a player claims their seat (name tidied)');
+    ok(!(await p2.act({ type: 'claim', name: 'Again', color: '#309800' })).body.ok, 'only once');
+    ok(!(await cat2.act({ type: 'claim', name: 'Kitty', color: '#309800' })).body.ok, 'named players can\'t rename');
+    ok(/colours shown/.test((await p3.act({ type: 'claim', name: 'Eve', color: '#f89890' })).body.error), 'a colour just taken is gone');
+    ok((await p3.act({ type: 'claim', name: 'Eve', color: '#309800' })).body.ok, 'the next player claims theirs');
     // ---- the admin controls the game's speed for everyone
     ok((await p3.json('POST', '/api/admin/speed', { speed: 0 })).status === 401, 'players can\'t change the speed');
     let sp = await boss.json('POST', '/api/admin/speed', { speed: 0 });
@@ -189,7 +189,7 @@ try {
       ok((await late.json('POST', '/api/login', { password: got.passwords[0].password })).status === 200, 'the new player can log in');
       const lw = (await late.state()).body.world, me = lw.players[n0];
       ok(me.credits >= 77777 && me.credits < 80000 && lw.planets[me.home].owner === n0 && !lw.lanes.some(([x, y]) => x === me.home || y === me.home), 'with their credits and a world with no hyperlanes');
-      const free = lw.players.length && ['#ff4d4d', '#4dff88', '#3d7bff', '#ffa3e0', '#b8ff3d', '#ff9f1a', '#00c2c7', '#a17cff', '#e8e8e8', '#7aa7ff'].find((c) => !lw.players.some((p) => p.color.toLowerCase() === c));
+      const free = lw.players.length && ['#f89890', '#309800', '#00b0f0', '#f8b8f8', '#989000', '#b07840', '#009878', '#e800e8', '#ececec', '#5b8cff'].find((c) => !lw.players.some((p) => p.color.toLowerCase() === c));
       ok((await late.act({ type: 'claim', name: 'Latecomer', color: free })).body.ok, 'and pick their name and colour');
       ok((await p2.state()).body.world.players.some((p) => p.name === 'Latecomer'), 'everyone sees them');
     }

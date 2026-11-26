@@ -222,6 +222,16 @@ with) and `LATE_LANE_GAP` = `PLANET_SPACING` × 0.35 (the `addLane` rule): 20 / 
 (45 / 15 would give 0.09, tighter than the map's own worlds; not offered). Admin map ring and wording follow; patch note says "in a gap
 somewhere on the map". Test in `tools/test-world.mjs` (a spot within 0.4 × radius, joined to 2+ neighbours). Checked in headless Chrome.
 
+**Player colours respread (owner, 26 Nov 2026: "in my current game the 2 purples and the 2 oranges are too similar could you
+make all the double up colours further apart")**, on `v2-dev`, **not live**. `PLAYER_COLORS` / `CHOOSABLE_COLORS` in `rules.js`
+replaced slot for slot: the old 18 had pairs 6–10 apart in CIEDE2000 (orange/orange 6.4, green/green 8.6, purple/purple 10.0);
+now every pair of the 18 is ≥ 15 and of the first ten ≥ 18.7 (lightness ≥ 50, chroma ≥ 40, ≥ 22 from `NEUTRAL_COLOR`; the first
+ten hand-picked near the old hues, the other eight searched to spread round them, so the extras are darker/earthier: dark green,
+olive, brown, dark teal, magenta). `RECOLOR` (old → new, same slot) and `recolor()`: `upgradeWorld` moves every player on an old
+palette colour to the new one (unless someone already has it; also `world.final.standings`), so the running game switches at the
+deploy; the viewer's `applyColors` recolours old replays' `meta.colors` / `sideColors`. Custom colours untouched. Patch notes
+`2026-11-26-colours`. Test in `tools/test-world.mjs`. Checked on an 18-player map in headless Chrome.
+
 **Replay share links (owner, 26 Nov 2026: "one of my friends said it would be cool to send each other replays i downloaded a replay and
 sent it into the Facebook group chat but it doesn't open on my phone"; chose "Share links": anyone with the link can watch, no login)**,
 **live 26 Nov 2026** (owner: "Perfect, make it live!"). The downloaded `.html` can't work there (Messenger and phone file viewers don't run a local page's scripts), so:

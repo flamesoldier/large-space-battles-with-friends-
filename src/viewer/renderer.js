@@ -7,6 +7,7 @@ import { BT } from '../shared/blocks.js';
 import { hash01 } from '../shared/rng.js';
 import { lowerBound } from './model.js';
 import { riftParticle, RIFT_W } from '../shared/rift.js';
+import { recolor } from '../world/rules.js';
 
 const VS = `#version 300 es
 layout(location=0) in vec2 corner;
@@ -647,9 +648,10 @@ export function applyColors(model, sideColors) {
   // take each side's colour from its own ships (fixed Nov 2026: fighters, missiles, beams and
   // the name labels were drawn in the other player's colour).
   const own = (model.meta.colors || []).length > 0;
-  const sides = Array.from({ length: nT }, (_, t) => (own ? null : sideColors?.[t] || null));
+  // Replays recorded before the colours were respread (26 Nov 2026) are drawn in the new ones.
+  const sides = Array.from({ length: nT }, (_, t) => (own ? null : recolor(sideColors?.[t] || null)));
   const byShip = new Array(model.meta.shipCount).fill(null);
-  for (const [start, n, col] of model.meta.colors || []) for (let k = start; k < start + n && k < byShip.length; k++) byShip[k] = col;
+  for (const [start, n, c] of model.meta.colors || []) { const col = recolor(c); for (let k = start; k < start + n && k < byShip.length; k++) byShip[k] = col; }
   // A side with no colour given takes the colour of its first ship (the leader's group comes first).
   for (let t = 0; t < nT; t++) if (!sides[t]) for (let k = 0; k < byShip.length; k++) if (byShip[k] && model.ents[k].team === t) { sides[t] = byShip[k]; break; }
   for (let k = 0; k < model.ents.length; k++) {
