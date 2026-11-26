@@ -1823,7 +1823,7 @@ designer's numbers against the sim.
   multi-block units and the hub (like Rect). Controls hint mentions it. Test in `tools/test-designer.mjs`. Checked in headless
   Chrome (1300×850 and a 412×915 phone).
 - **Top-bar buttons stay put (owner, 27 Nov 2026: a friend's "Start from, credits, build shipyard etc kept moving around when
-  he placed blocks")**, on `v2-dev`, **not live**, patch notes `2026-11-27-designer-buttons`. Cause: "Build shipyard · N cr" (and
+  he placed blocks")**, **live 27 Nov 2026** (owner: "If you've fixed it make it live"), patch notes `2026-11-27-designer-buttons`. Cause: "Build shipyard · N cr" (and
   the Credits chip, the phone Stats button) changed width with every price change; on phones `#test-btn, #use-design,
   #credits-chip` are `order: -1` at the front of the scrolling row, so everything after them slid (13 layouts in 40 clicks); on
   very wide screens the right group sits right-aligned on row 1, so it all slid there too (5). Now each number is in a
