@@ -352,7 +352,8 @@ export class ReplayModel {
   decodeRifts(meta, c) {
     const n = c.rfT0 ? c.rfT0.length : 0, q = meta.evQ;
     this.rift = n ? { n, t0: Float32Array.from(c.rfT0), t1: Float32Array.from(c.rfT1), x: Float32Array.from(c.rfX, (v) => v / q), y: Float32Array.from(c.rfY, (v) => v / q),
-      cnt: c.rfN, seed: c.rfSeed, team: c.rfTeam, end: c.rfEnd, dieAt: [] } : null;
+      cnt: c.rfN, seed: c.rfSeed, team: c.rfTeam, end: c.rfEnd, dieAt: [],
+      W: { ...RIFT_W, radius: 60, orbit: 28, ...(meta.rift || {}) } } : null; // the swirl's shape as recorded (older replays: radius 60, orbit 28)
     // swirling projectiles that flew into an enemy ship (rkRift/rkK/rkT): drawn up to that tick
     if (n) for (let i = 0; i < n; i++) this.rift.dieAt.push(new Float32Array(c.rfN[i]).fill(Infinity));
     if (n && c.rkRift) for (let j = 0; j < c.rkRift.length; j++) { const D = this.rift.dieAt[c.rkRift[j]]; if (D && c.rkK[j] < D.length) D[c.rkK[j]] = c.rkT[j]; }

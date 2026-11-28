@@ -912,6 +912,9 @@ for (let k = 0; k < FORTRESSES.length; k++) {
   assert.ok(worst < 0.3, `projectiles leave from where the swirl has them (worst ${worst.toFixed(2)} blocks off)`);
   assert.ok(hits + dead.size >= 10, `rift projectiles hit enemies (${dead.size} while swirling, ${hits} of ${n} released)`);
   const E = m.ents[0].rfEng;
+  // The swirl's shape is in the replay (owner, 28 Nov 2026: twice the size), so replays from before it keep the old one.
+  assert.ok(m.rift.W.radius === RW.radius && m.rift.W.orbit === RW.orbit, 'the viewer draws the swirl at the size it was fought at');
+  { const old = new ReplayModel(packReplay({ ...rep.meta, rift: undefined }, rep.cols)); assert.ok(old.rift.W.radius === 60 && old.rift.W.orbit === 28, 'replays from before 28 Nov 2026 draw the old swirl (radius 60)'); }
   assert.ok(E && E.lx.length === 1 && m.rift.n === c.rfT0.length && m.riftShot.n === c.shotKind.filter((z) => z === 8).length, 'viewer reads the rift');
   assert.ok(Math.abs(E.lx[0] - (70 - W / 2)) < 0.01 && Math.abs(E.ly[0] - (62 - H / 2)) < 0.01, 'viewer finds the engine centre');
   assert.ok(m.riftEngines(m.ents[0], c.rfT0[0] - 1).chg[0] > 0.95 && m.riftEngines(m.ents[0], c.rfT0[0] + 10).st[0] > 1, 'engine glow charges, then shows its rift open');

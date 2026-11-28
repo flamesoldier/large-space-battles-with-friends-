@@ -1051,7 +1051,7 @@ export class Renderer {
    * lost, they all fall back into the eye. No rings (owner, 22 Nov 2026: "I don't like the green circles").
    */
   drawRifts(F, t, vis, minW) {
-    const g = this.glow, W = RIFT_W, Rr = W.radius, P = this._rfp || (this._rfp = { x: 0, y: 0, vx: 0, vy: 0, r: 0, rr: 0, grow: 0 });
+    const g = this.glow, W = F.W || RIFT_W, Rr = W.radius, P = this._rfp || (this._rfp = { x: 0, y: 0, vx: 0, vy: 0, r: 0, rr: 0, grow: 0 });
     const Q = this._rfq || (this._rfq = { x: 0, y: 0, vx: 0, vy: 0, r: 0, rr: 0, grow: 0 });
     const C0 = this._rfc0 || (this._rfc0 = [0, 0]), C1 = this._rfc1 || (this._rfc1 = [0, 0]);
     for (let i = 0; i < F.n; i++) {
@@ -1076,13 +1076,13 @@ export class Renderer {
         for (let j = 1; j <= 7; j++) { F.at(i, t - j, C1); TC[j * 2] = C1[0]; TC[j * 2 + 1] = C1[1]; }
         let last = -1;
         for (let k = 0; k < n; k++) {
-          if (!riftParticle(k, n, seed, a, P)) break;
+          if (!riftParticle(k, n, seed, a, P, W)) break;
           if (t >= die[k]) continue;
           last = k;
           const px = x + P.x, py = y + P.y;
           let hx = px, hy = py;
           for (let j = 1; j <= 7; j++) {
-            if (!riftParticle(k, n, seed, a - j * 0.1, Q)) break;
+            if (!riftParticle(k, n, seed, a - j * 0.1, Q, W)) break;
             const qx = TC[j * 2] + Q.x, qy = TC[j * 2 + 1] + Q.y, len = Math.hypot(qx - hx, qy - hy) / 2 + 0.15, ang = Math.atan2(qy - hy, qx - hx), f = 1 - j / 8;
             g.push((hx + qx) / 2, (hy + qy) / 2, ang, len, Math.max(0.35, minW * 0.8), 4, alpha2(C.rfTrail, 0.75 * f));
             if (j <= 3) g.push((hx + qx) / 2, (hy + qy) / 2, ang, len, Math.max(1.4, minW * 2), 4, alpha2(C.rfGlow, 0.18 * f));
@@ -1097,7 +1097,7 @@ export class Renderer {
           const slot = Math.floor(t / 3), life = 1 - (t - slot * 3) / 3;
           for (let arc = 0; arc < 2 + Math.round(3 * fill); arc++) {
             const k = Math.floor(hash01(slot * 7 + i, arc) * (last + 1));
-            if (t >= die[k] || !riftParticle(k, n, seed, a, P)) continue;
+            if (t >= die[k] || !riftParticle(k, n, seed, a, P, W)) continue;
             let px = x, py = y;
             for (let j = 1; j <= 5; j++) {
               const f = j / 5, jit = j < 5 ? (hash01(slot * 13 + arc, j + i) - 0.5) * 9 : 0;
@@ -1118,7 +1118,7 @@ export class Renderer {
         if (v < 1) {
           const sh = (1 - v) * (1 - v);
           for (let k = 0; k < n; k++) {
-            if (!riftParticle(k, n, seed, a + (t - t1) * 0.1, P)) break;
+            if (!riftParticle(k, n, seed, a + (t - t1) * 0.1, P, W)) break;
             if (t1 >= die[k]) continue;
             g.push(x + P.x * sh, y + P.y * sh, 0, Math.max(2.4, minW * 3), Math.max(2.4, minW * 3), 1, alpha2(C.rfGlow, 0.6 * (1 - v)));
           }

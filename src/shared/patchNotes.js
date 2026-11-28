@@ -8,6 +8,13 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-28-bigger-rifts', date: '28 Nov 2026', title: 'Bigger Doomsday rifts',
+    items: [
+      'The Doomsday Interdimensional Rift Engine now opens a rift twice the size: the green projectiles swirl over twice the distance, twice as fast, and there are 2,000 of them instead of 1,000.',
+      'Rifts aim for crowds over the bigger area too. Replays of older battles still show their rifts at the size they were fought at.',
+    ],
+  },
+  {
     id: '2026-11-28-allies-hold', date: '28 Nov 2026', title: "An owner's ally only holds a world against its own enemies",
     items: [
       "Fixed: when the owner of a world was beaten in a battle, an ally of theirs who was there fighting someone else could keep the world for them, even against an attacker the ally wasn't at war with and could never have stopped.",

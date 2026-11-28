@@ -70,7 +70,9 @@ const RIFT_W = WEAPON[BT.RIFT];
 // Rift spot (riftSpot; owner, 22 Nov 2026, fourth round: open among as many enemy ships as possible, and stay put):
 // enemy ships looked at as candidate centres, swirl reach (a ship this close to the centre counts 1), outer reach (counts
 // half), clear space wanted round the centre, how far from the crowd's middle it may move to find it.
-const RIFT_PICKS = 40, RIFT_REACH = 70, RIFT_OUTER = 110, RIFT_CLEAR = 15, RIFT_SHIFT = 40;
+// Reach, spread and shift scale with the swirl (they were set for radius 60; owner made it 120 on 28 Nov 2026).
+const RIFT_SCALE = WEAPON[BT.RIFT].radius / 60;
+const RIFT_PICKS = 40, RIFT_REACH = 70 * RIFT_SCALE, RIFT_OUTER = 110 * RIFT_SCALE, RIFT_CLEAR = 15, RIFT_SHIFT = 40 * RIFT_SCALE, RIFT_APART = 160 * RIFT_SCALE;
 // Fighters (owner, Nov 2026): launched by fighter bays, kept in their own list (this.Fi), not P.
 const FIGHTER = WEAPON[BT.BAY].fighter;
 const FIGHTER_R = 2; // how close a shot must pass to hit one (blocks)
@@ -1697,7 +1699,7 @@ export class Battle {
       const o = n <= RIFT_PICKS ? pool[k] : pool[(this.rng() * n) | 0];
       if (o.dead) continue;
       let v = this.riftCrowd(e.team, o.x, o.y);
-      for (const r of this.rifts) if ((r.x - o.x) ** 2 + (r.y - o.y) ** 2 < 160 * 160) v *= 0.15;
+      for (const r of this.rifts) if ((r.x - o.x) ** 2 + (r.y - o.y) ** 2 < RIFT_APART * RIFT_APART) v *= 0.15;
       v *= 0.9 + 0.2 * this.rng();
       if (v > bs) { bs = v; best = o; }
     }
@@ -3428,7 +3430,7 @@ export class Battle {
     const meta = {
       version: 1, friendlyFire: this.friendlyFire, trackTotal: total, evQ: this.evQ, dt: DT, trackEvery: TRACK_EVERY, shoveEvery: SHOVE_EVERY, velQ: VEL_Q, missileEvery: MISSILE_EVERY, posQ: POS_Q, angQ: ANG_Q,
       ticks: this.tick, shipCount: S, chunkCount: this.byId.length - S,
-      autoFlightMs: 1, shotSpeed: [WEAPON[BT.CANNON].speed, WEAPON[BT.MISSILE].speed, WEAPON[BT.LANCE].speed, WEAPON[BT.GUIDED].speed, FIGHTER.speed, WEAPON[BT.FLAK].speed, WEAPON[BT.FLAK].fragSpeed, WEAPON[BT.AUTO].speed, RIFT_W.speed], fighterSpeed: FIGHTER.speed,
+      autoFlightMs: 1, shotSpeed: [WEAPON[BT.CANNON].speed, WEAPON[BT.MISSILE].speed, WEAPON[BT.LANCE].speed, WEAPON[BT.GUIDED].speed, FIGHTER.speed, WEAPON[BT.FLAK].speed, WEAPON[BT.FLAK].fragSpeed, WEAPON[BT.AUTO].speed, RIFT_W.speed], fighterSpeed: FIGHTER.speed, rift: { radius: RIFT_W.radius, orbit: RIFT_W.orbit, swirl: RIFT_W.swirl },
       designs: this.designs.map((d) => ({ name: d.name, cls: d.cls, stance: d.stance, w: d.w, h: d.h, hub: d.hub, cells: Array.from(d.cells) })),
       survivors: [...this.teamAlive], teams: this.nT,
     };

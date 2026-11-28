@@ -187,7 +187,7 @@ export const WEAPON = {
   // If the engine is destroyed while its rift is open, the rift collapses. `radius`: the swirl reaches about
   // this far from its eye (each loop has a radius of 0.28-0.5 × this and passes back near the eye); `orbit`: how fast they fly round at first (blocks/s). `cooldown` is the whole cycle, for
   // figures only (designer damage/s). Numbers are first guesses: the owner wants the look first.
-  [BT.RIFT]: { kind: 'rift', range: 0, charge: 30, swirl: 30, cooldown: 60, count: 1000, damage: 150, splash: 8, speed: 50, life: 10, radius: 60, orbit: 28 },
+  [BT.RIFT]: { kind: 'rift', range: 0, charge: 30, swirl: 30, cooldown: 60, count: 2000, damage: 150, splash: 8, speed: 50, life: 10, radius: 120, orbit: 56 }, // owner, 28 Nov 2026 ("not big enough"): swirl twice the size (radius 60 → 120, orbit speed 28 → 56 so loops turn as fast), count 1,000 → 2,000
 };
 
 // Firing arcs: every weapon can fire in any direction where its shot wouldn't pass through its
