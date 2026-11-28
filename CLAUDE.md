@@ -1209,7 +1209,7 @@ Weapons (numbers in `blocks.js`):
     (enemies within the splash still do). Test: an unarmed friendly cruiser moved into the swirl gets green blasts and
     loses no hp to them. **The whole rift engine is live 22 Nov 2026** (no patch notes, as asked).
   - **Twice the size (owner, 28 Nov 2026: "complaints the doomsday attack was not big enough… projectiles circle in an area about
-    twice the size it may need more projectiles too")**, on `v2-dev`, **not live** (shown first): `radius` 60 → **120**, `orbit`
+    twice the size it may need more projectiles too")**, **live 28 Nov 2026** (owner: "yes great change make it live"): `radius` 60 → **120**, `orbit`
     28 → **56** (loops turn as fast as before), `count` 1,000 → **2,000**. `riftSpot` numbers scale with the radius (`RIFT_SCALE`
     = radius / 60: `RIFT_REACH` 140, `RIFT_OUTER` 220, `RIFT_SHIFT` 80, `RIFT_APART` 320; `RIFT_CLEAR` 15 kept). **The swirl's
     shape is in the replay** (`meta.rift = { radius, orbit, swirl }`; viewer `model.rift.W`, passed to `riftParticle` in
@@ -1218,8 +1218,7 @@ Weapons (numbers in `blocks.js`):
     fleet, 200 s, 3 seeds): old 6 rifts, enemy routs at 187–204 s; new (2,000) 4–6 rifts, swirl hits 3.6–6.8k (was 1.3–2.9k), rout
     at 132–188 s; 3,000 tried: rout ~100 s, viewer frame 3.3 → 11.8 ms (software GL, one full rift; 2,000: 3.3), so 2,000 chosen.
     Compute and replay size unchanged. Bench identical. Test in `tools/test-designer.mjs` (the viewer uses the recorded shape;
-    an old replay without it draws radius 60). Replays sent: "Doomsday rift: BEFORE / AFTER". Patch notes `2026-11-28-bigger-rifts`
-    written (goes live with it).
+    an old replay without it draws radius 60). Replays sent: "Doomsday rift: BEFORE / AFTER". Patch notes `2026-11-28-bigger-rifts`.
 - **Mega thruster** (`BT.MEGA` = 17; owner, 22 Nov 2026: "it's difficult to fit so many thrusters on a big ship… same size,
   10 times as powerful, 10 times as expensive, 5 times the HP"; "no need to send me replays… make it live"), **live 22 Nov
   2026**, no patch notes: one block, thrust **100**, **200 cr**, **300 hp**, mass **15** (owner, same night: "should weigh 10
