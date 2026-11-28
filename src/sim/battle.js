@@ -63,7 +63,7 @@ export const MAX_TEAMS = 16; // sides in one battle (players plus militia); fr[]
 // Debris stays hittable and solid for the whole battle (owner: debris is part of the fight).
 // The retire mechanism is kept as a cap that can be set if very long battles ever get slow.
 const CHUNK_RETIRE_TICKS = Infinity;
-const FLAK_STAND = [2, 6]; // a burst goes off this many blocks short of the hull it was walked to (fireFlak)
+const FLAK_STAND = [4, 16]; // a burst goes off this many blocks short of the hull it was walked to (fireFlak; owner, 28 Nov 2026: in the gaps round ships, not touching them; was 2-6)
 const FLAK_PICKS = 16, FLAK_RECENT = 30, FLAK_CROWD_R = 40, FLAK_CROWD_EVERY = 10; // flak: ships looked at per burst, ticks a target counts as just hit, crowd radius beyond its hull, crowd recount (ticks)
 const K_KINETIC = 0, K_SHELL = 1, K_MISSILE = 2, K_PLASMA = 3, K_FIGHTER = 4, K_FLAK = 5, K_FRAG = 6, K_AUTO = 7, K_RIFT = 8; // K_AUTO: auto gun bullets (20 Nov 2026), handled like shells; K_RIFT: the rift engine's green projectiles (22 Nov 2026)
 const RIFT_W = WEAPON[BT.RIFT];
@@ -1848,25 +1848,32 @@ export class Battle {
       // and burst just short of the first hull met (owner, 22 Nov 2026: bursts placed by the
       // target's size often went off in empty space next to big or long ships, 37% of them
       // against titans; now they land FLAK_STAND blocks off a hull).
-      const nb = tg.crowdN >= 0 ? this.byId[tg.crowdN] : null;
-      let sx, sy;
+      // Owner, 28 Nov 2026 ("flak isn't hitting in empty spaces between ships… I want flak to look like
+      // it's randomly exploding around ships like in the movies"): bursts now go off FLAK_STAND 4-16
+      // blocks off the hull (was 2-6, so the fireball sat on the hull), and a lone target is approached
+      // from any side, not only the gun's. Distances are from the hull, so it's the same for a frigate
+      // and an Aegis citadel. Every burst still reaches the hull: radius 20 > 16.
+      const nb = tg.crowdN >= 0 ? this.byId[tg.crowdN] : null, whole = Math.hypot(tg.x - wx, tg.y - wy) + tg.radius + FLAK_STAND[1] <= W.range;
+      const stand = FLAK_STAND[0] + (FLAK_STAND[1] - FLAK_STAND[0]) * this.rng(), sc = W.scatter || 0;
+      let sx, sy, bx, by;
       if (nb && !nb.dead) {
         const u = 0.3 + 0.4 * this.rng();
         sx = tg.x + (nb.x - tg.x) * u; sy = tg.y + (nb.y - tg.y) * u;
       } else {
-        const d = Math.hypot(ax - wx, ay - wy) || 1, off = Math.min(tg.radius + W.fuse, d * 0.5);
-        sx = ax - (ax - wx) / d * off; sy = ay - (ay - wy) / d * off;
+        // Alone: from a random side; a ship only partly in range (a giant), from the gun's half.
+        const g = Math.atan2(wy - tg.y, wx - tg.x), a = whole ? this.rng() * 2 * Math.PI : g + (this.rng() - 0.5) * Math.PI;
+        const off = tg.radius + FLAK_STAND[1] + 4;
+        sx = tg.x + Math.cos(a) * off; sy = tg.y + Math.sin(a) * off;
       }
-      const sc = W.scatter || 0;
       sx += (this.rng() * 2 - 1) * sc; sy += (this.rng() * 2 - 1) * sc;
-      const [bx, by] = this.aimPoint(tg);
-      const L = Math.hypot(bx - sx, by - sy), stand = FLAK_STAND[0] + (FLAK_STAND[1] - FLAK_STAND[0]) * this.rng();
+      if (whole) [bx, by] = this.aimPoint(tg); else { bx = ax; by = ay; } // ax/ay: a block of it in range
+      const L = Math.hypot(bx - sx, by - sy);
       ax = sx; ay = sy;
       if (L > 0.5 && !this.blockAt(sx, sy)) {
         const ux = (bx - sx) / L, uy = (by - sy) / L;
         let d = Math.max(0, L - 400); // a giant: start no more than 400 blocks out
         for (; d < L; d += 1) if (this.blockAt(sx + ux * d, sy + uy * d)) break;
-        const back = Math.max(0, d - stand);
+        const back = d - stand; // may be behind the start spot: further out into open space
         ax = sx + ux * back; ay = sy + uy * back;
       }
       tg.flakIn = this.now;
@@ -1968,7 +1975,7 @@ export class Battle {
         const j = o.i;
         if (Fi.hp[j] <= 0 || !this.fighterFoe(j, team)) return;
         const d = Math.hypot(Fi.x[j] - x, Fi.y[j] - y);
-        if (d < R) Fi.hp[j] -= peak;
+        if (d < R) Fi.hp[j] -= W.fighterDamage ?? peak;
       });
     }
   }

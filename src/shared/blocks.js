@@ -42,7 +42,7 @@ export const MULTIBLOCK = {
  * block, radius 16, against a swarm of small boats), for firepower figures: the designer's damage/s
  * and the way ships turn to bring their guns to bear.
  */
-export const flakBurstValue = (W) => W.damage * W.radius * 0.5;
+export const flakBurstValue = (W) => W.damage * W.radius * 0.67; // 0.67 since 28 Nov 2026 (30 a block, bursts 4-16 off the hull): still ~400
 
 export const BLOCKS = {
   [BT.HUB]: { name: 'Hub', hp: 60, mass: 4, cost: 40 }, // fragile on purpose (owner): a hit hub and the ship falls apart
@@ -174,8 +174,8 @@ export const WEAPON = {
   // (see fireFlak), within `scatter` of the spot picked. The burst does `damage` to every enemy block
   // within `radius` that it can see: the first block on each line from it, no drop-off (see flakBurst).
   // Old replays still have flak shells (shot kind 5) and shrapnel shots (kind 6).
-  [BT.FLAK]: { kind: 'flak', range: 900, damage: 40, radius: 20, fragSpeed: 90, scatter: 4, cooldown: 1, fuse: 6, speed: 75, life: 14, maxLead: 4, spread: 0,
-    vs: { [4]: 1, [2]: 1, [3]: 1 }, shieldMult: 0.1 }, // shields take 10% (owner, 21 Nov 2026: was 30%); damage share against frame (4), armour (2), heavy armour (3); owner, 15 Nov 2026
+  [BT.FLAK]: { kind: 'flak', range: 900, damage: 30, fighterDamage: 40, radius: 20, fragSpeed: 90, scatter: 4, cooldown: 1, fuse: 6, speed: 75, life: 14, maxLead: 4, spread: 0,
+    vs: { [4]: 1, [2]: 1, [3]: 1 }, shieldMult: 0.1 }, // damage 40 → 30 (28 Nov 2026) when bursts moved 4-16 blocks off the hull: further out a burst sees more of the hull, so the same damage per burst needed less per block; fighters keep 40. Shields take 10% (owner, 21 Nov 2026: was 30%); damage share against frame (4), armour (2), heavy armour (3); owner, 15 Nov 2026
   // Doomsday Interdimensional Rift Engine (owner, 22 Nov 2026, inspired by guided missiles that swirled in
   // circles in the Elenris Minor replay): needs no line of sight and has no range limit. It charges for
   // `charge` s, then opens a rift in an empty space in the middle of the enemy's ships; over `swirl` s

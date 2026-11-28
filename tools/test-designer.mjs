@@ -752,6 +752,35 @@ for (let k = 0; k < FORTRESSES.length; k++) {
   assert.ok(empty / bursts < 0.05, `flak bursts against titans and dreadnoughts hurt something (${empty} of ${bursts} hit nothing)`);
   console.log(`  flak vs big ships: ${bursts - empty} of ${bursts} bursts hurt something`);
 }
+// Flak bursts go off in the open round a ship, not on its hull, and from every side (owner, 28 Nov 2026: "I want flak
+// to look like it's randomly exploding around ships like in the movies"; bursts were 2-6 blocks off the hull, all on
+// the gun's side). Same for a frigate and a titan: the gap is measured to the hull, not the centre.
+{
+  const w = 40, h = 32, cells = new Uint8Array(w * h);
+  for (let y = 4; y < h - 4; y++) for (let x = 2; x < w - 2; x++) cells[y * w + x] = BT.ARMOR;
+  for (let y = 0; y < 10; y++) for (let x = 14; x < 24; x++) { cells[y * w + x] = BT.FLAK; cells[(h - 1 - y) * w + x] = BT.FLAK; }
+  cells[16 * w + 6] = BT.HUB;
+  const gunship = { name: 'flak platform', cls: 'battleship', w, h, cells, hub: 16 * w + 6, stance: 'line' };
+  const gapTo = (e, x, y) => { // distance from (x, y) to e's nearest live block
+    const dx = x - e.x, dy = y - e.y, gx = dx * e.c + dy * e.s + e.w * 0.5, gy = -dx * e.s + dy * e.c + e.h * 0.5;
+    let best = Infinity;
+    for (let c = 0; c < e.types.length; c++) if (e.types[c] && e.hp[c] > 0) best = Math.min(best, Math.hypot((c % e.w) + 0.5 - gx, ((c / e.w) | 0) + 0.5 - gy));
+    return best;
+  };
+  for (const cls of ['frigate', 'titan']) {
+    const foe = makeDesign(cls, 11);
+    const b = new Battle({ designs: [gunship, foe], ships: [{ design: 0, team: 0, x: 0, y: 0, a: 0, fixed: true }, { design: 1, team: 1, x: 0, y: -500, a: Math.PI, fixed: true }], seed: 5, maxTime: 40 });
+    const tg = b.ents[1], gaps = [], sides = [0, 0, 0, 0], ob = b.flakBurst.bind(b);
+    b.flakBurst = (x, y, ...r) => { gaps.push(gapTo(tg, x, y)); sides[(((Math.atan2(y - tg.y, x - tg.x) + Math.PI) / (Math.PI / 2)) | 0) & 3]++; return ob(x, y, ...r); };
+    while (!b.done && b.tick < 300) b.step();
+    gaps.sort((a, c) => a - c);
+    const med = gaps[gaps.length >> 1];
+    assert.ok(gaps.length >= 12, `flak fired at the ${cls} (${gaps.length} bursts)`);
+    assert.ok(gaps.filter((g) => g < 3).length <= gaps.length * 0.2 && med >= 6 && gaps[gaps.length - 1] <= 18, `flak bursts go off in the open round the ${cls}, not on it (${gaps.filter((g) => g < 3).length} under 3, gap to hull min ${gaps[0].toFixed(1)}, median ${med.toFixed(1)}, max ${gaps[gaps.length - 1].toFixed(1)})`);
+    assert.ok(sides.every((n) => n > 0), `flak bursts all round the ${cls}, not only on the gun's side (${sides.join('/')})`);
+    console.log(`  flak round a ${cls}: ${gaps.length} bursts, ${gaps[0].toFixed(1)}-${gaps[gaps.length - 1].toFixed(1)} blocks off the hull (median ${med.toFixed(1)}), by side ${sides.join('/')}`);
+  }
+}
 // Flankers and raiders get into the enemy formation (owner, 22 Nov 2026: "2 stance types that are supposed to fly
 // through enemy lines"). A flanker behind its own line goes for the big ship at the enemy's back, not the front row, and
 // gets there past both lines (own ships make room, it threads the gaps); a raider carries on well out the far side of

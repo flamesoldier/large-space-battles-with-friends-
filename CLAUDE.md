@@ -915,6 +915,23 @@ Weapons (numbers in `blocks.js`):
   At radius 16 with the walk small-ship damage fell to ~370 (crowd bursts used to land between two small ships).
   Designer tooltip: "a few blocks off an enemy hull". Test in `tools/test-designer.mjs` (flak vs titans and
   dreadnoughts: < 5% empty; old code 15 of 59). Bench identical. Replay sent: "Flak bursts next to the hull".
+- **Flak bursts in the open round ships (owner, 28 Nov 2026, with screenshots: "flak cannons aren't hitting in empty spaces
+  between ships (i want flak to look like its randomly exploding around ships like in the movies) they are hitting exactly
+  next to ships… make sure any fix works from something huge like an aegis citadel to tiny ships. once its fixed make it
+  live")**, **live 28 Nov 2026**, patch notes `2026-11-28-flak-bursts`. Where the flak lines above disagree, this wins.
+  `FLAK_STAND` 2–6 → **4–16** blocks off the first hull met (the burst may now be behind the start spot, further out);
+  a lone target is approached **from a random side** (start = its centre + `radius` + 20 in a random direction; a ship not
+  wholly in range, `whole` = centre distance + radius + 16 > range, e.g. a giant: from the gun's half, walking toward the
+  in-range block `aimInRange` found); crowded targets as before (spot between it and its neighbour, then the walk). Distances
+  are to the hull, so the same for every size. Bursts further out see more of a hull (fewer blocks hidden behind others), so
+  damage per burst rose ~45% (`/tmp`-style `flk/run.mjs`: 6 of the "flakker" test gunships, 4 seeds, real battles; per burst
+  live → 40 a block: mixed 324 → 474, frigates 288 → 333, titans 662 → 893): **`damage` 40 → 30** (mixed 378, frigates 284,
+  titans 685; owner had called the old amount right); **`fighterDamage` 40** (new field, fighters unchanged);
+  `flakBurstValue` factor 0.5 → 0.67 (still ~400). Gap from burst to nearest enemy hull block p10/50/90: live 1.6/3.2/5.1
+  → 3.8/8.2/13.4 (mixed), titans 1.6/2.9/4.8 → 2.7/6.7/12.8, Aegis Star Citadel 1.3/2.9/5.4 → 3.8/8.3/14.6; empty bursts
+  unchanged (≈0 against ships; against an Aegis ~75% both ways, nearly all at its fighters, as before). Bench identical.
+  Test in `tools/test-designer.mjs` ("flak round a frigate / titan": median ≥ 6 off the hull, ≤ 20% under 3, ≤ 18, all four
+  sides; fails on the old code). Replays sent: "Flak BEFORE / AFTER" vs a mixed fleet, vs dreadnoughts, vs an Aegis.
 - **Flak range 900, fighter bays 45 hp (owner, 22 Nov 2026**, after asking whether flak goes for "hundreds" of back-line
   boats made of thrusters + a bay or plasma: "900 range would be fine it's meant to be a long range weapon… fighter
   bays can have their health nerfed as that should be built inside ships… 45 health per block same as frame… make a

@@ -8,6 +8,14 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-28-flak-bursts', date: '28 Nov 2026', title: 'Flak bursts in the open round ships',
+    items: [
+      'Flak cannons now burst in the empty space round and between enemy ships, a few blocks to about 16 blocks off their hulls and on every side, instead of right against the hull. Battles look more like flak in the movies.',
+      'It works the same way against anything from a frigate to an Aegis citadel: the distance is measured from the hull, not the middle of the ship.',
+      'Damage is about the same as before: a burst further out reaches more of a hull, so each block it reaches now takes 30 instead of 40. Fighters still take 40.',
+    ],
+  },
+  {
     id: '2026-11-27-neutral-ground', date: '27 Nov 2026', title: "A shared ally's world is neutral ground",
     items: [
       "If two players at war with each other are both allied with a third, that third player's worlds are neutral ground: their fleets can both stop there without fighting.",
