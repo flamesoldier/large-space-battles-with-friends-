@@ -97,6 +97,18 @@ before. After it, Cy and Di ignore each other there: targets are worlds, never f
 world. Test in `tools/test-world.mjs` (fails on the old code). Stand-in bot games with that alliance setup (3 seeds, 4 days):
 identical before and after (225 battles, no idle ships, no ally attacks).
 
+**An owner's ally only holds a world against its own enemies (owner, 28 Nov 2026: his battle b8154 at Fenudis II was
+"beaten off" though he lost 39 of 481 ships and Cupcake 189 of 219; "great fix, when its fixed make it live")**, **live 28 Nov
+2026**, patch notes `2026-11-28-allies-hold`. Cause (from the downloaded replay): Cupcake routed at ~2:33; his ally Tiffinator
+had come to fight Rowans saviour (dead by ~75 s) and was **allied with flamesoldier**, so with Cupcake out no two sides were
+enemies and the battle ended; `siegeEnds` kept the world for the owner because an ally that fought (Tiffinator, 30 ships) still
+held the field. Now `kept` = some holding defender is at war (`!allied`) with some holding attacker, or no attacker holds the field
+(a time-limit or stalled battle still goes to the owner); otherwise the holding attackers are the candidates as before
+(`pickWinner`). The owner's allies' ships there leave unharmed through `capture()`/fall back as for any capture. Not caused by the
+flak deploy: no flak in that battle, and an interrupted battle reruns from the start with the same seed. Test in
+`tools/test-world.mjs` (4 players as at Fenudis: the world goes to flamesoldier, Tiffinator's ships all survive; with Tiffinator
+at war with flamesoldier the owner keeps it; fails on the old code).
+
 **Stronger militia (owner, 22 Nov 2026: "militia planets are too easy to take… a fleet worth 10,000 credits with its first
 attack… I don't want militia planets too strong though, enough for 1.5 attacks to take it")**, **live 22 Nov 2026**.
 `NEUTRAL_GARRISON_BASE` **20,000** in `economy.js`: militia = 20,000 + 12 h of income (was 12 h only: 1,560–3,960 cr).

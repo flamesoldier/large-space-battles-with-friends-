@@ -8,6 +8,13 @@
 
 export const PATCH_NOTES = [
   {
+    id: '2026-11-28-allies-hold', date: '28 Nov 2026', title: "An owner's ally only holds a world against its own enemies",
+    items: [
+      "Fixed: when the owner of a world was beaten in a battle, an ally of theirs who was there fighting someone else could keep the world for them, even against an attacker the ally wasn't at war with and could never have stopped.",
+      "Now the owner only keeps the world if one of their side still in the fight is at war with an attacker still in the fight. Otherwise the winning attacker takes it, and the owner's allies' ships fly home unharmed.",
+    ],
+  },
+  {
     id: '2026-11-28-flak-bursts', date: '28 Nov 2026', title: 'Flak bursts in the open round ships',
     items: [
       'Flak cannons now burst in the empty space round and between enemy ships, a few blocks to about 16 blocks off their hulls and on every side, instead of right against the hull. Battles look more like flak in the movies.',

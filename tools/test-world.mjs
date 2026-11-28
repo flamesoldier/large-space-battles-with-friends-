@@ -840,6 +840,39 @@ const resolve = (scen) => {
   ok(/4 defences destroyed/.test(w.log.filter((e) => e.battle).at(-1).text), 'the log counts the destroyed defences');
 }
 
+// ---- an ally of the owner only holds the world against attackers it is at war with (owner, 28 Nov 2026,
+// Fenudis II: Cupcake routed, his ally Tiffinator had come to fight Rowans saviour and wasn't at war with
+// flamesoldier, yet Tiffinator's survivors kept the world for Cupcake against flamesoldier's 442 ships)
+for (const tiffVsFlame of [false, true]) {
+  const w = createWorld({ players: [{ name: 'Cu' }, { name: 'Ti' }, { name: 'Fl' }, { name: 'Ro' }], seed: 21 });
+  const [Cu, Ti, Fl, Ro] = [0, 1, 2, 3], rel = (a, b, r) => { w.relations[a < b ? `${a}|${b}` : `${b}|${a}`] = r; };
+  for (let a = 0; a < 4; a++) for (let b = a + 1; b < 4; b++) rel(a, b, 'war');
+  rel(Cu, Ti, 'ally'); rel(Fl, Ro, 'ally'); if (!tiffVsFlame) rel(Ti, Fl, 'ally');
+  const P = w.planets[w.players[Cu].home];
+  for (const p of w.players) p.credits = 1e7;
+  const ds = [Cu, Ti, Fl, Ro].map((o) => buildShipyard(w, o, w.players[o].home, { ...makeDesign('destroyer', 8 + o), name: `D${o}` }).yard.design);
+  P.garrison = [{ owner: Cu, design: ds[Cu], n: 10 }, { owner: Ti, design: ds[Ti], n: 6 }];
+  const H = w.planets[w.players[Fl].home]; H.garrison = [{ owner: Fl, design: ds[Fl], n: 8 }, { owner: Ro, design: ds[Ro], n: 8 }];
+  const send = (o) => sendFleet(w, o, H.id, P.id, { [ds[o]]: 8 }, { avoid: true, lanes: false }).fleet; // from the same world: they arrive together
+  const fr = send(Ro), ff = send(Fl);
+  runWorld(w, Math.max(fr.arrive, ff.arrive), resolve);
+  const sg = siegeAt(w, P.id)[0];
+  ok(sg, 'Rowans and flamesoldier besiege Cupcake');
+  const plan = planEvent(w, { kind: 'siege', siege: sg }), owners = plan.battle.owners;
+  ok(owners.includes(Ti) && owners.includes(Fl) && owners.includes(Ro), 'Tiffinator, flamesoldier and Rowans all fight');
+  // Cupcake routs with ships left, Rowans is wiped out, Tiffinator and flamesoldier keep everything.
+  const result = { routed: owners.map((o) => (o === Cu ? 1 : 0)), groups: plan.battle.groups.map((g) => ({ ...g, survived: g.owner === Ro ? 0 : g.owner === Cu ? 2 : g.n })), seconds: 60 };
+  w.clock = sg.startsAt;
+  const tiCount = () => w.planets.reduce((t, Q) => t + Q.garrison.filter((g) => g.owner === Ti).reduce((u, g) => u + g.n, 0), 0) + w.fleets.filter((f) => f.owner === Ti).reduce((t, f) => t + countShips(f.ships), 0), ti0 = tiCount();
+  applyEvent(w, { kind: 'siege', siege: sg }, plan, result);
+  if (tiffVsFlame) ok(P.owner === Cu, 'an ally at war with the attacker still holding the field keeps the world for the owner');
+  else ok(P.owner === Fl, `an ally not at war with flamesoldier doesn't keep the world from him (owner now ${P.owner})`);
+  if (!tiffVsFlame) {
+    ok(tiCount() === ti0, `Tiffinator's ships aren't lost (${tiCount()} of ${ti0})`);
+    ok(/Fl won the battle/.test(w.log.filter((e) => e.battle).at(-1).text), 'the log says flamesoldier won');
+  }
+}
+
 // ---- unfinished jobs are lost with the world: no payout for a yard being sold, no defences
 {
   const w = createWorld({ players: [{ name: 'A' }, { name: 'B' }], seed: 14 });

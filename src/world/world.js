@@ -1199,7 +1199,8 @@ export function fmtHours(h) {
 // 2026): each player is their own side and shoots only the players they are at war with, so any
 // mixture of alliances works. Players with no enemy there sit it out, untouched. Who gets the
 // world (owner's rule):
-//  - the owner keeps it if the owner or an ally that fought still has armed ships (not routed);
+//  - the owner keeps it if the owner or an ally that fought still has armed ships (not routed) and is at war
+//    with an attacker still holding the field (owner, 28 Nov 2026), or no attacker holds it;
 //  - otherwise the player who started the siege takes it, if they still have armed ships there;
 //  - otherwise the surviving attacker with the most ships left.
 // The winner's allies stay on as guests; everyone else who fought against the winner falls back.
@@ -1492,8 +1493,13 @@ function siegeEnds(world, s, plan, result) {
   // Who holds the field: armed survivors of a side that didn't rout.
   const holds = (q) => q.survived > 0 && !q.routed;
   const defends = (o) => (P.owner === null ? o === null : o === P.owner || allied(world, o, P.owner));
-  const kept = per.some((q) => holds(q) && defends(q.id));
-  const cands = kept ? [] : per.filter((q) => holds(q) && !defends(q.id)).map((q) => q.id);
+  // Owner, 28 Nov 2026 (Fenudis II: Cupcake's side routed, but his ally Tiffinator, there to fight Rowans saviour
+  // and not at war with flamesoldier, still held the field, so Cupcake kept the world from flamesoldier's 442
+  // ships): a defender only holds the world against attackers it is at war with. The owner keeps it if no
+  // attacker holds the field, or if a defender still holding is at war with one still holding (e.g. time limit).
+  const holdDef = per.filter((q) => holds(q) && defends(q.id)), holdAtk = per.filter((q) => holds(q) && !defends(q.id));
+  const kept = holdDef.length > 0 && (!holdAtk.length || holdDef.some((d) => holdAtk.some((a) => !allied(world, d.id, a.id))));
+  const cands = kept ? [] : holdAtk.map((q) => q.id);
   const winner = pickWinner(world, s, cands, (o) => per.find((q) => q.id === o).survived);
   const won = winner !== null;
   const attackers = per.filter((q) => !defends(q.id)).map((q) => q.id);
